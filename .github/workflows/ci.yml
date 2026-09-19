@@ -58,8 +58,19 @@ jobs:
         with:
           environments: dev docs utils
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
-      - name: Clippy + fmt check
-        run: pixi run -e dev lint-cargo
+      - name: Debug env
+        run: |
+          pixi --version
+          pixi info
+          ls -la .pixi/envs/ || true
+          ls -la .cargo/ || true
+          .pixi/envs/dev/bin/rustc --version || true
+          .pixi/envs/dev/bin/cargo --version || true
+          cat .cargo/config.toml || true
+      - name: Clippy
+        run: pixi run -e dev cargo clippy --all-targets --all-features -- --deny warnings
+      - name: Fmt check
+        run: pixi run -e dev cargo fmt -- --check
       - name: Biome
         run: pixi run -e docs lint-biome
       - name: Actionlint
@@ -75,14 +86,19 @@ jobs:
         with:
           environments: dev
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Debug
+        run: |
+          pixi --version
+          ls -la .cargo/ || true
+          .pixi/envs/dev/bin/cargo --version
       - name: Cargo test locked
         run: pixi run -e dev cargo test --locked --all-features
-      - name: Cargo test offline (if vendor present)
+      - name: Cargo test offline if vendor present
         run: |
           if [ -d .cargo/vendor ]; then
             pixi run -e dev cargo test --offline --all-features
           else
-            echo "no .cargo/vendor, skip offline test (expected in CI without compressed-env restore)"
+            echo "no vendor, skip offline"
           fi
 
   docs:
