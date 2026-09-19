@@ -1,10 +1,5 @@
 name: Build binaries
 
-# D21/D22: P0 = x86_64-unknown-linux-musl (musl-static ⇒ zero runtime deps, alpine included)
-# P1 = x86_64-pc-windows-msvc, P2 macOS triples added when needed.
-# This workflow owns the build matrix; release.yml calls it via workflow_call.
-# Oracle job replays T1-T9 against compiled binary — release gate per Testing Strategy.
-
 on:
   workflow_call:
     inputs:
@@ -46,7 +41,7 @@ jobs:
           - triple: x86_64-unknown-linux-musl
             runner: ubuntu-latest
           - triple: aarch64-unknown-linux-musl
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-latest
           - triple: x86_64-pc-windows-msvc
             runner: windows-latest
     steps:
@@ -56,15 +51,15 @@ jobs:
           fetch-depth: 0
 
       - name: Set up pixi env (linux)
-        if: runner.os != 'Windows'
+        if: ${{ runner.os != 'Windows' }}
         uses: ./.github/actions/setup-env
         with:
           environments: dev
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
       - name: Set up Rust (windows)
-        if: runner.os == 'Windows'
-        uses: dtolnay/rust-toolchain@a9a36d6dc6a10b720a1d2a06c2a8c1d92b0988d # v1
+        if: ${{ runner.os == 'Windows' }}
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           targets: x86_64-pc-windows-msvc
@@ -78,8 +73,8 @@ jobs:
             rm -f .cargo/config.toml
           fi
 
-      - name: Install cross (for musl cross-link, linux only)
-        if: runner.os != 'Windows' && contains(matrix.triple, 'musl')
+      - name: Install cross (for musl, linux only)
+        if: ${{ runner.os != 'Windows' && contains(matrix.triple, 'musl') }}
         shell: bash
         run: |
           set -eu
@@ -87,8 +82,8 @@ jobs:
           pixi run -e dev cargo binstall --no-confirm cross --version 0.2.5 || pixi run -e dev cargo install cross --version 0.2.5 --locked
           pixi run -e dev cross --version || true
 
-      - name: Build ${{ matrix.triple }} (linux)
-        if: runner.os != 'Windows'
+      - name: Build (linux)
+        if: ${{ runner.os != 'Windows' }}
         shell: bash
         run: |
           set -eu
@@ -107,10 +102,9 @@ jobs:
               ;;
           esac
           ls -lh "target/$TRIPLE/release/" || true
-          find "target/$TRIPLE/release" -maxdepth 1 -type f -name "pixi-sandbox*" | head -n 20 || true
 
-      - name: Build ${{ matrix.triple }} (windows)
-        if: runner.os == 'Windows'
+      - name: Build (windows)
+        if: ${{ runner.os == 'Windows' }}
         shell: bash
         run: |
           set -eu
@@ -119,8 +113,8 @@ jobs:
           cargo build --release --target "$TRIPLE" --locked
           ls -lh "target/$TRIPLE/release/" || true
 
-      - name: Musl assertion (ldd must say not dynamic)
-        if: runner.os != 'Windows' && contains(matrix.triple, 'musl')
+      - name: Musl assertion
+        if: ${{ runner.os != 'Windows' && contains(matrix.triple, 'musl') }}
         shell: bash
         run: |
           set -eu
@@ -140,16 +134,16 @@ jobs:
               if file "$BIN" | grep -q "statically linked"; then
                 echo "✅ musl-static via file check"
               else
-                echo "⚠️ musl check: binary may not be fully static, but continuing (P0 check)"
+                echo "⚠️ musl check: binary may not be fully static, but continuing"
               fi
             fi
           else
-            echo "Binary not found at target/$TRIPLE/release/, listing:"
+            echo "Binary not found, listing:"
             find target -type f -name "pixi-sandbox*" | head -n 20 || true
           fi
 
-      - name: Smoke-run in alpine (musl x86_64 only)
-        if: matrix.triple == 'x86_64-unknown-linux-musl'
+      - name: Smoke-run in alpine (x86_64 musl only)
+        if: ${{ matrix.triple == 'x86_64-unknown-linux-musl' }}
         shell: bash
         run: |
           set -eu
@@ -181,7 +175,7 @@ jobs:
             echo "sha=unknown" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload artifact pixi-sandbox-${{ matrix.triple }}
+      - name: Upload artifact
         uses: actions/upload-artifact@ea4e35621f0a4f5bd3634d4e1596d38d2d0c3a5 # v4.6.2
         with:
           name: pixi-sandbox-${{ matrix.triple }}
@@ -212,14 +206,14 @@ jobs:
             rm -f .cargo/config.toml
           fi
 
-      - name: Download x86_64 musl artifact (if available)
+      - name: Download x86_64 musl artifact
         uses: actions/download-artifact@d3f86a106a0c654b56c1d3d0c3a5 # v4.3.0
         with:
           name: pixi-sandbox-x86_64-unknown-linux-musl
           path: /tmp/pixi-sandbox-musl
         continue-on-error: true
 
-      - name: Run L1+L2 tests (oracle replay)
+      - name: Run L1+L2 tests
         shell: bash
         run: |
           set -eu
