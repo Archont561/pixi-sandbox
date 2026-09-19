@@ -18,7 +18,7 @@ runs:
   using: "composite"
   steps:
     - name: Set up pixi
-      uses: prefix-dev/setup-pixi@3311a1bb33ed42df99aa19c2b3c828fb7e1d419b # v0.8.8
+      uses: prefix-dev/setup-pixi@19eac09b398e3d0c747adc7921926a6d802df4da # v0.8.8
       with:
         pixi-version: ${{ inputs.pixi-version }}
         cache: true
