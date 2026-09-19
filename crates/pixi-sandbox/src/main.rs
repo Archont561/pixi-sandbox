@@ -13,7 +13,7 @@ fn main() -> std::process::ExitCode {
         Command::Pack(args) => {
             let mut envs = args.envs;
             envs.extend(args.env);
-            sandbox_core::pack::run(
+            pixi_sandbox_core::pack::run(
                 envs,
                 args.target,
                 args.out.as_deref(),
@@ -24,23 +24,25 @@ fn main() -> std::process::ExitCode {
             )
         }
         Command::Inventory(args) => {
-            sandbox_core::inventory::run(&args.tier, args.json, cwd, manifest_path)
+            pixi_sandbox_core::inventory::run(&args.tier, args.json, cwd, manifest_path)
         }
         Command::Reconstruct(args) => {
             let mode = match args.mode {
-                cli::ReconstructMode::Auto => sandbox_core::reconstruct::Mode::Auto,
-                cli::ReconstructMode::Cache => sandbox_core::reconstruct::Mode::Cache,
-                cli::ReconstructMode::FileChannel => sandbox_core::reconstruct::Mode::FileChannel,
-                cli::ReconstructMode::Unpack => sandbox_core::reconstruct::Mode::Unpack,
-                cli::ReconstructMode::EnvYml => sandbox_core::reconstruct::Mode::EnvYml,
-                cli::ReconstructMode::Tar => sandbox_core::reconstruct::Mode::Tar,
+                cli::ReconstructMode::Auto => pixi_sandbox_core::reconstruct::Mode::Auto,
+                cli::ReconstructMode::Cache => pixi_sandbox_core::reconstruct::Mode::Cache,
+                cli::ReconstructMode::FileChannel => {
+                    pixi_sandbox_core::reconstruct::Mode::FileChannel
+                }
+                cli::ReconstructMode::Unpack => pixi_sandbox_core::reconstruct::Mode::Unpack,
+                cli::ReconstructMode::EnvYml => pixi_sandbox_core::reconstruct::Mode::EnvYml,
+                cli::ReconstructMode::Tar => pixi_sandbox_core::reconstruct::Mode::Tar,
             };
             let pack_format = match args.pack_format {
-                cli::PackFormat::Auto => sandbox_core::reconstruct::PackFormat::Auto,
-                cli::PackFormat::Pack => sandbox_core::reconstruct::PackFormat::Pack,
-                cli::PackFormat::Raw => sandbox_core::reconstruct::PackFormat::Raw,
+                cli::PackFormat::Auto => pixi_sandbox_core::reconstruct::PackFormat::Auto,
+                cli::PackFormat::Pack => pixi_sandbox_core::reconstruct::PackFormat::Pack,
+                cli::PackFormat::Raw => pixi_sandbox_core::reconstruct::PackFormat::Raw,
             };
-            let reconstruct_args = sandbox_core::reconstruct::ReconstructArgs {
+            let reconstruct_args = pixi_sandbox_core::reconstruct::ReconstructArgs {
                 from: std::path::PathBuf::from(args.from),
                 envs: args.env,
                 workspace: args.workspace,
@@ -51,9 +53,9 @@ fn main() -> std::process::ExitCode {
                 promote_path: args.promote_path,
                 self_test: args.self_test,
             };
-            sandbox_core::reconstruct::run(reconstruct_args)
+            pixi_sandbox_core::reconstruct::run(reconstruct_args)
         }
-        Command::Plan(args) => sandbox_core::plan::run(
+        Command::Plan(args) => pixi_sandbox_core::plan::run(
             args.env,
             args.target,
             &args.components,
@@ -64,9 +66,9 @@ fn main() -> std::process::ExitCode {
         ),
         Command::Publish(args) => {
             let no_push = args.no_push || !args.push;
-            sandbox_core::publish::run(&args.branch, no_push, cwd)
+            pixi_sandbox_core::publish::run(&args.branch, no_push, cwd)
         }
-        Command::Verify(args) => sandbox_core::verify::run(&args.dir),
+        Command::Verify(args) => pixi_sandbox_core::verify::run(&args.dir),
     };
 
     match result {

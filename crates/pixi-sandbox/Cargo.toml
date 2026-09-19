@@ -8,7 +8,7 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 clap-verbosity-flag = { workspace = true }
-sandbox-core = { path = "../sandbox-core" }
+pixi-sandbox-core = { path = "../pixi-sandbox-core" }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -11,5 +11,5 @@ pub mod verify;
 mod reconstruct_tests;
 
 pub fn placeholder() -> &'static str {
-    "sandbox-core: library crate (KB spec, §4.1)"
+    "pixi-sandbox-core: library crate (KB spec, §4.1)"
 }

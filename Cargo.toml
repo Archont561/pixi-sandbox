@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/sandbox-core", "crates/pixi-sandbox"]
+members = ["crates/pixi-sandbox-core", "crates/pixi-sandbox"]
 
 [workspace.dependencies]
 anyhow = "1"
