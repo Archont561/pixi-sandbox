@@ -8,6 +8,26 @@ fn main() -> std::process::ExitCode {
     let cli = cli::Cli::parse();
     let cwd = cli.cwd.as_deref();
     let manifest_path = cli.manifest_path.as_deref();
+    let config_path = cli.config.as_deref();
+
+    // Load config per spec/configuration.md §6: pixi-sandbox.toml searched upward, every key optional,
+    // kebab-case ↔ snake_case, deny_unknown_fields, ~ expanded once, paths relative to workspace root
+    let _config = match pixi_sandbox_core::config::load_config(cwd, config_path) {
+        Ok((cfg, path)) => {
+            if cli.verbose > 0 {
+                if let Some(p) = path {
+                    eprintln!("config: loaded from {}", p.display());
+                } else {
+                    eprintln!("config: using defaults (no pixi-sandbox.toml found)");
+                }
+            }
+            cfg
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            return std::process::ExitCode::from(e.code());
+        }
+    };
 
     let result = match cli.command {
         Command::Pack(args) => {
