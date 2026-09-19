@@ -20,6 +20,17 @@ knowledge bundle. Read these before editing anything.
 - **Never smooth the confidence labels.** `verified` (✅) means measured here or read from upstream source;
   `reasoned` (⚠️) means inferred; `open` (🚧) means unproven. Every claim keeps its label.
 - **Do not commit or push unless asked.** Work stays in the working tree.
+- **Manage this repo via pixi tasks.** All lint/format/check/build flows are defined in `pixi.toml` and must be run through `pixi`, not by invoking `cargo`, `bun`, `biome`, `actionlint` directly. This guarantees the exact pinned toolchains from `pixi.lock` and the restored `.pixi/envs/*` are used:
+  ```bash
+  export PATH=".pixi/bin:$PATH"   # pixi 0.81.0 from compressed-env or installer
+  pixi run lint          # = pixi run -e dev lint-cargo && -e docs lint-biome && -e utils lint-actions
+  pixi run format        # = format-cargo + format-biome
+  pixi run -e dev lint-cargo   # clippy --all-targets --all-features -- --deny warnings && cargo fmt -- --check
+  pixi run -e docs lint-biome  # biome check .
+  pixi run -e utils lint-actions
+  pixi run -e dev cargo build --offline   # cargo must be run via dev env for vendored-sources
+  ```
+  If `.pixi/envs/*` are missing, restore from `compressed-env` branch (see `CONTEXT.md` §6 and `.knowledge/research/pixi-pack.md §16.9`) — never `pixi install` from network in airlock, use `pixi-unpack` pair from `bin/`.
 
 ## The one-line design
 
