@@ -1,0 +1,17 @@
+# build artifacts
+dist/
+build/
+.pixi/
+target/
+*.tsbuildinfo
+
+# docs site build output (kept in sync with docs/.gitignore)
+docs/.astro/
+docs/dist/
+docs/build/
+docs/node_modules/
+
+# local tooling / package caches
+.cargo/vendor/
+*.log.cargo/vendor
+*.tar.gz

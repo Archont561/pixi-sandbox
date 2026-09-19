@@ -1,0 +1,27 @@
+# lefthook.yml
+pre-commit:
+  parallel: true
+  commands:
+    lint-cargo:
+      glob: "*.{rs,toml}"
+      run: pixi run -e dev lint-cargo
+
+    lint-biome:
+      glob: "*.{js,ts,jsx,tsx,json}"
+      run: pixi run -e docs lint-biome
+
+    lint-actions:
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: pixi run -e utils lint-actions
+
+commit-msg:
+  commands:
+    convco:
+      run: pixi run -e utils -- convco check --from-stdin --strip < "{1}"
+
+pre-push:
+  parallel: true
+  commands:
+    test:
+      glob: "*.rs"
+      run: pixi run -e dev -- cargo test --locked

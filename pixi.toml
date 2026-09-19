@@ -1,0 +1,54 @@
+[workspace]
+name = "pixi-sandbox"
+version = "0.1.0"
+description = "pixi environments for the pixi-sandbox repo"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-64", "osx-arm64"]
+
+[environments]
+dev = ["rust", "pixi-utils"]
+docs = ["docs"]
+utils = ["utils"]
+
+[feature.rust.dependencies]
+rust = "==1.98.1"
+cargo-audit = "==0.22.1"
+cargo-deny = "==0.20.2"
+cargo-nextest = "==0.9.144"
+cargo-edit = "==0.13.13"
+cargo-expand = "==1.0.124"
+cargo-insta = "==1.48.0"
+cargo-machete = "==0.9.1"
+cargo-binstall = "==1.23.0"
+
+[feature.docs.dependencies]
+bun = "==1.3.11"
+biome = "==2.5.14"
+
+[feature.utils.dependencies]
+lefthook = "==2.1.12"
+convco = "==0.7.2"
+actionlint = "==1.7.12"
+
+[feature.pixi-utils.dependencies]
+pixi-pack = "==0.7.11"
+pixi-unpack = "==0.7.11"
+
+[tasks]
+lint = "pixi run -e dev lint-cargo && pixi run -e docs lint-biome && pixi run -e utils lint-actions"
+format = "pixi run -e dev format-cargo && pixi run -e docs format-biome"
+
+[feature.rust.tasks]
+lint-cargo = "cargo clippy --all-targets --all-features -- --deny warnings && cargo fmt -- --check"
+format-cargo = "cargo fmt"
+# Task to vendor Rust dependencies locally
+vendor-cargo = "cargo vendor .cargo/vendor"
+
+[feature.docs.tasks]
+lint-biome = "biome check ."
+format-biome = "biome format --write ."
+
+[feature.utils.tasks]
+lint-actions = { cmd = "sh -c 'if [ -d .github/workflows ]; then actionlint; else echo \"no .github/workflows yet, actionlint skipped\"; fi'" }
+commit-lint = "convco check"
+changelog = "convco changelog -s --output CHANGELOG.md"
