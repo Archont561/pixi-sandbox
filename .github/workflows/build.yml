@@ -43,7 +43,15 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
+
+      - name: Set up pixi env (linux)
+        if: ${{ runner.os != 'Windows' }}
+        uses: ./.github/actions/setup-env
+        with:
+          environments: dev
+          cache-write: false
+
       - name: Echo
         shell: bash
         run: |
-          echo "Building ${{ matrix.triple }} on ${{ runner.os }} ref ${{ inputs.ref }}"
+          echo "Building ${{ matrix.triple }} on ${{ runner.os }}"
