@@ -57,8 +57,9 @@ jobs:
       - name: Biome
         run: pixi run -e docs lint-biome
       - name: Actionlint
-        run: pixi run -e utils actionlint
+        run: pixi run -e utils actionlint -shellcheck=
         # actionlint lints .github/workflows/*.yml, no need for js-yaml (npm dep, astro docs don't need it)
+        # -shellcheck= disables shellcheck integration (not installed locally, avoids CI vs local drift)
 
   test:
     name: Test

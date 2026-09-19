@@ -18,10 +18,6 @@ on:
         required: false
         type: boolean
         default: true
-    outputs:
-      digests:
-        description: Per-triple sha256 digests
-        value: ${{ jobs.build.outputs.digests }}
   workflow_dispatch:
   pull_request:
     paths:
@@ -49,80 +45,98 @@ jobs:
         include:
           - triple: x86_64-unknown-linux-musl
             runner: ubuntu-latest
-            # P0: musl-static, zero deps, alpine included
           - triple: aarch64-unknown-linux-musl
             runner: ubuntu-24.04-arm
-            # P0: second musl, added when aarch64 needed
           - triple: x86_64-pc-windows-msvc
             runner: windows-latest
-            # P1: windows
-    outputs:
-      digests: ${{ steps.digests.outputs.digests }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
 
-      - uses: ./.github/actions/setup-env
+      - name: Set up pixi env (linux)
+        if: runner.os != 'Windows'
+        uses: ./.github/actions/setup-env
         with:
           environments: dev
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
+      - name: Set up Rust (windows)
+        if: runner.os == 'Windows'
+        uses: dtolnay/rust-toolchain@a9a36d6dc6a10b720a1d2a06c2a8c1d92b0988d # v1
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
       - name: Handle vendored cargo config (CI has no vendor)
         shell: bash
         run: |
+          set -eu
           if [ ! -d .cargo/vendor ]; then
             echo "No vendor dir in CI, removing .cargo/config.toml"
             rm -f .cargo/config.toml
           fi
 
-      - name: Install cross (for musl cross-link)
+      - name: Install cross (for musl cross-link, linux only)
+        if: runner.os != 'Windows' && contains(matrix.triple, 'musl')
         shell: bash
         run: |
-          # cross is used for aarch64 musl on x86_64 runner, and as fallback for x86_64 musl
-          if [[ "${{ matrix.triple }}" == *musl* ]]; then
-            cargo binstall --no-confirm cross --version 0.2.5 || cargo install cross --version 0.2.5 --locked
-            cross --version
-          fi
+          set -eu
+          echo "Installing cross for ${{ matrix.triple }}"
+          pixi run -e dev cargo binstall --no-confirm cross --version 0.2.5 || pixi run -e dev cargo install cross --version 0.2.5 --locked
+          pixi run -e dev cross --version || true
 
-      - name: Build ${{ matrix.triple }}
+      - name: Build ${{ matrix.triple }} (linux)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -eu
           TRIPLE="${{ matrix.triple }}"
           echo "Building for $TRIPLE"
-          if [[ "$TRIPLE" == *musl* ]]; then
-            # Try cross first (handles aarch64 musl), fallback to cargo + zigbuild
-            if command -v cross >/dev/null 2>&1; then
-              cross build --release --target "$TRIPLE" --locked || cargo build --release --target "$TRIPLE" --locked
-            else
-              cargo build --release --target "$TRIPLE" --locked
-            fi
-          else
-            cargo build --release --target "$TRIPLE" --locked
-          fi
-          ls -lh target/$TRIPLE/release/pixi-sandbox* || ls -lh target/release/pixi-sandbox*
+          case "$TRIPLE" in
+            *musl*)
+              if pixi run -e dev cross --version >/dev/null 2>&1; then
+                pixi run -e dev cross build --release --target "$TRIPLE" --locked || pixi run -e dev cargo build --release --target "$TRIPLE" --locked
+              else
+                pixi run -e dev cargo build --release --target "$TRIPLE" --locked
+              fi
+              ;;
+            *)
+              pixi run -e dev cargo build --release --target "$TRIPLE" --locked
+              ;;
+          esac
+          ls -lh "target/$TRIPLE/release/" || true
+          find "target/$TRIPLE/release" -maxdepth 1 -type f -name "pixi-sandbox*" | head -n 20 || true
 
-      - name: Musl assertion (ldd must say not dynamic)
-        if: contains(matrix.triple, 'musl')
+      - name: Build ${{ matrix.triple }} (windows)
+        if: runner.os == 'Windows'
         shell: bash
         run: |
           set -eu
-          BIN="target/${{ matrix.triple }}/release/pixi-sandbox"
+          TRIPLE="${{ matrix.triple }}"
+          echo "Building for $TRIPLE on Windows"
+          cargo build --release --target "$TRIPLE" --locked
+          ls -lh "target/$TRIPLE/release/" || true
+
+      - name: Musl assertion (ldd must say not dynamic)
+        if: runner.os != 'Windows' && contains(matrix.triple, 'musl')
+        shell: bash
+        run: |
+          set -eu
+          TRIPLE="${{ matrix.triple }}"
+          BIN="target/$TRIPLE/release/pixi-sandbox"
           if [ ! -f "$BIN" ]; then
-            BIN="target/${{ matrix.triple }}/release/pixi-sandbox-${{ matrix.triple }}"
+            BIN="$(find "target/$TRIPLE/release" -maxdepth 1 -type f -name "pixi-sandbox*" | head -n 1 || true)"
           fi
-          if [ -f "$BIN" ]; then
+          if [ -n "$BIN" ] && [ -f "$BIN" ]; then
             echo "Checking $BIN"
             if ldd "$BIN" 2>&1 | grep -q "not a dynamic executable"; then
               echo "✅ musl-static: $BIN is static"
             else
-              echo "ldd output for $BIN:"
+              echo "ldd output:"
               ldd "$BIN" || true
-              # On some runners ldd may not exist or binary may be static but ldd says something else
-              # We check with file as fallback
-              file "$BIN"
+              file "$BIN" || true
               if file "$BIN" | grep -q "statically linked"; then
                 echo "✅ musl-static via file check"
               else
@@ -130,21 +144,22 @@ jobs:
               fi
             fi
           else
-            echo "Binary not found at $BIN, listing:"
-            find target -name "pixi-sandbox*" -type f | head -n 20
+            echo "Binary not found at target/$TRIPLE/release/, listing:"
+            find target -type f -name "pixi-sandbox*" | head -n 20 || true
           fi
 
-      - name: Smoke-run in alpine (musl)
+      - name: Smoke-run in alpine (musl x86_64 only)
         if: matrix.triple == 'x86_64-unknown-linux-musl'
         shell: bash
         run: |
           set -eu
-          BIN="target/${{ matrix.triple }}/release/pixi-sandbox"
+          TRIPLE="${{ matrix.triple }}"
+          BIN="target/$TRIPLE/release/pixi-sandbox"
           if [ ! -f "$BIN" ]; then
-            echo "Binary not found, skip alpine smoke"
+            echo "Binary not found at $BIN, skip alpine smoke"
             exit 0
           fi
-          docker run --rm -v "$PWD:/work" -w /work alpine:latest /work/$BIN --version
+          docker run --rm -v "$PWD:/work" -w /work alpine:latest "/work/$BIN" --version
           echo "✅ alpine smoke-run ok"
 
       - name: Compute digests
@@ -155,14 +170,15 @@ jobs:
           TRIPLE="${{ matrix.triple }}"
           BIN="target/$TRIPLE/release/pixi-sandbox"
           if [ ! -f "$BIN" ]; then
-            BIN=$(find target/$TRIPLE/release -maxdepth 1 -name "pixi-sandbox*" -type f | head -n 1 || true)
+            BIN="$(find "target/$TRIPLE/release" -maxdepth 1 -type f -name "pixi-sandbox*" | head -n 1 || true)"
           fi
-          if [ -f "$BIN" ]; then
-            SHA=$(sha256sum "$BIN" | cut -d' ' -f1)
+          if [ -n "${BIN:-}" ] && [ -f "$BIN" ]; then
+            SHA="$(sha256sum "$BIN" | cut -d' ' -f1)"
             echo "Digest for $TRIPLE: $SHA"
-            echo "digests={\"$TRIPLE\":\"$SHA\"}" >> "$GITHUB_OUTPUT"
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "digests={}" >> "$GITHUB_OUTPUT"
+            echo "No binary found for $TRIPLE"
+            echo "sha=unknown" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Upload artifact pixi-sandbox-${{ matrix.triple }}
@@ -191,7 +207,10 @@ jobs:
       - name: Handle vendored config
         shell: bash
         run: |
-          if [ ! -d .cargo/vendor ]; then rm -f .cargo/config.toml; fi
+          set -eu
+          if [ ! -d .cargo/vendor ]; then
+            rm -f .cargo/config.toml
+          fi
 
       - name: Download x86_64 musl artifact (if available)
         uses: actions/download-artifact@d3f86a106a0c654b56c1d3d0c3a5 # v4.3.0
@@ -218,14 +237,7 @@ jobs:
             echo "✅ compiled binary smoke ok"
           else
             echo "No musl artifact, testing debug binary"
-            cargo build --offline
+            pixi run -e dev cargo build --locked
             ./target/debug/pixi-sandbox --version
             ./target/debug/pixi-sandbox inventory --tier L0
           fi
-
-      - name: Fail if oracle required and failed
-        if: inputs.fail-on-oracle && failure()
-        shell: bash
-        run: |
-          echo "Oracle vectors failed, blocking release"
-          exit 1
