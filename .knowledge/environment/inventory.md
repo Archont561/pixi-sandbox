@@ -141,4 +141,33 @@ constraints still stand, but the "cannot be executed here" rows are **historical
 *end-to-end on this host* (2026-09-19) — see the §16.8 probe in
 [research/pixi-pack.md](/research/pixi-pack.md).
 
+## 7. Re-measurement (2026-09-19): restoring `compressed-env` in an airlocked arena
+
+Second host, this time **E2B-like airlock** (arena `01a0ba0f`), not open Codespace. Branch `compressed-env` at `aa2a6e1` is manual dist prototype (15 files, 530 MiB total, chunked ≤45 MiB).
+
+| Probe | Result |
+|---|---|
+| `git checkout compressed-env -- *.tar.gz*` | ✅ 530 MiB in ~2.5s, 15 files |
+| `file` / `hexdump` | ❌ absent, but python magic `channel\0` shows plain tar, not gz |
+| `tar -tzf env-dev.tar.gz` | ❌ `not in gzip format` |
+| `tar -tf env-dev.tar.gz` | ✅ lists `channel/linux-64/*.conda`, `environment.yml`, `pixi-pack.json` |
+| `pixi-bin.tar.gz` | ✅ gz, contains `pixi` 0.81.0 musl 77 MiB |
+| `cargo-vendor.tar.gz` | ✅ gz, 7217 files, 124 crates after full extract |
+| `tar -xzf cargo-vendor.tar.gz -C .cargo/ -v | head` | ⚠️ SIGPIPE → only 2 crates, `cargo build --offline` fails `flate2` |
+| `tar -xzf cargo-vendor.tar.gz -C .cargo/` (no pipe) | ✅ 124 crates, 102 MiB |
+| `zstd` CLI / `tar -I zstd` | ❌ `Cannot exec: zstd` |
+| `pip install zstandard --break-system-packages` | ✅ pypi.org reachable even when prefix.dev blocked |
+| Manual `.conda` extract via `zipfile` + `zstandard.ZstdDecompressor` | ✅ `bin/pixi-unpack` 16 MiB, 0.7.11 |
+| `/tmp/pixi-unpack env-dev.tar.gz -o .pixi/envs --env-name dev` | ✅ 1.7 GiB, 29 pkgs, `rustc 1.98.1`, `cargo 1.98.1`, `pixi-pack/unpack 0.7.11` |
+| `/tmp/pixi-unpack env-docs.tar.gz -o .pixi/envs --env-name docs` | ✅ 255 MiB, `bun 1.3.11`, `biome 2.5.14` |
+| `/tmp/pixi-unpack env-utils.tar.gz -o .pixi/envs --env-name utils` | ✅ 55 MiB, `lefthook 2.1.12`, `convco 0.7.2`, `actionlint 1.7.12` |
+| `cargo build --offline` | ✅ 19.5s |
+| `cargo test --offline` | ✅ 11.28s |
+| `pixi run lint` (all envs) | ✅ `lint-cargo` clippy+fmt, `lint-biome` 8 files, `lint-actions` skipped |
+| `pixi --version` | ✅ 0.81.0 from `.pixi/bin/pixi` |
+| egress `prefix.dev`, `index.crates.io`, `release-assets.githubusercontent.com` | ❌ `SSL_ERROR_SYSCALL` (000) — airlock confirmed |
+| egress `github.com`, `api.github.com`, `pypi.org` | ✅ 200 |
+
+**Net**: `compressed-env` is restorable in pure git-only airlock, but requires pair `pixi`+`pixi-unpack` in `bin/` and correct CLI `pixi-unpack <file> -o <parent> --env-name <name>` (not `unpack` subcommand). Full details in [pixi-pack §16.9](/research/pixi-pack.md#169-measured-2026-09-19-restoring-the-compressed-env-branch-in-an-airlocked-arena) and [corrections C5-C8](/research/corrections.md).
+
 ---

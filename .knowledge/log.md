@@ -3,6 +3,18 @@
 History of this corpus. The dates are when the material was authored or corrected in the session that produced
 it; `legacy:` front matter on each concept names the pre-OKF file and section it came from.
 
+## 2026-09-19 (compressed-env restore)
+
+* **Measure** (user: "look at branch compresses-env and check if you could restore it on current branch"):
+  * Found `compressed-env` (typo in request) at `aa2a6e1` — orphan branch with 15 files: `pixi-bin.tar.gz` (33 MiB gz → 77 MiB pixi 0.81.0), `cargo-vendor.tar.gz` (15 MiB → 124 crates), `env-dev.tar.gz.part_00..08` (398 MiB), `env-docs.tar.gz.part_00..01` (67 MiB), `env-utils.tar.gz` (18 MiB). Chunked to ≤45 MiB to stay under GitHub 100 MiB limit without LFS.
+  * **File type surprise**: `env-*.tar.gz` are **plain tar, not gzipped** (magic `channel\0\0\0`), so `tar -tzf` fails with `not in gzip format`; `tar -tf` succeeds. Same for `env-utils`. `pixi-bin.tar.gz` and `cargo-vendor.tar.gz` are real gzip.
+  * **CLI drift**: branch README says `pixi-unpack unpack env-dev.tar.gz --output-dir .pixi/envs/dev` — stale. Real 0.7.11 syntax (measured from binary) is `pixi-unpack <pack> -o <out> --env-name <name>`; `-o` is parent dir, env becomes subdir. Correct restore: `pixi-unpack env-dev.tar.gz -o .pixi/envs --env-name dev` → `.pixi/envs/dev/bin/rustc`.
+  * **Bootstrap chicken-egg**: dev env contains `pixi-unpack` and `pixi-pack` conda packages, but need `pixi-unpack` to unpack dev env. Solved by manually extracting conda `.conda` (zip → `pkg-*.tar.zst`) via python `zstandard` module (pip install with `--break-system-packages` since `zstd` CLI absent and `tar --zstd` fails `Cannot exec: zstd`). `pip install zstandard` works (pypi.org reachable even when prefix.dev blocked). Extracted `bin/pixi-unpack` (16 MiB) and used it to unpack all three envs.
+  * **Cargo vendor SIGPIPE**: `tar -xzf cargo-vendor.tar.gz -C .cargo/ -v | head` stops after SIGPIPE → only 2 crates extracted, `flate2` missing → `cargo build --offline` fails. Must run `tar -xzf` without pipe. Full extract → 124 crates, `cargo build --offline` green, `cargo test --offline` green.
+  * **Network re-probed**: this arena host is E2B-like airlock: `prefix.dev`, `index.crates.io`, `release-assets.githubusercontent.com` → `SSL_ERROR_SYSCALL` (000), but `github.com`, `api.github.com`, `codeload.github.com` → 200. Validates design target. `pip install zstandard` still works (pypi.org reachable).
+  * **Pixi tasks**: `pixi run lint` → `lint-cargo` (clippy + fmt check) green, `lint-biome` green (8 files), `lint-actions` skipped (no workflows). `.pixi/envs/*` gitignored, so branch stays clean after restore (1.7 GiB dev, 255 MiB docs, 55 MiB utils).
+  * **Design lessons**: kit must ship **both** `pixi` and `pixi-unpack` binaries (pair, not single) in `bin/`; `pixi-bin.tar.gz` only had pixi, causing bootstrap. Chunked tar naming `.tar.gz.part_*` misleading when payload is tar; prefer `.tar.part_*` or document. Assembler binary (D21) must handle plain tar vs gz detection and include zstd handling. `sandbox.lock.json` should record chunking.
+
 ## 2026-09-19
 
 * **Tooling change** (user: "remove python val script from repo and remove rule that enforced this, install

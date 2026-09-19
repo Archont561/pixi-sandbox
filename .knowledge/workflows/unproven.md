@@ -33,6 +33,11 @@ legacy: { files: [`WORKFLOWS.md`], sections: ["6"] }
 | Under [D21](/spec/decisions.md): a musl-static `pixi-sandbox` binary **runs on any Linux with zero runtime deps** (alpine included) | ⚠️ inferred from pixi-pack's own musl release assets ✅ — same shape, but our binary has never been linked | the L3 alpine-container reconstruction; a segfault/`not found` there falsifies the musl assumption |
 | `assemble.ps1` walks the same ladder on Windows | 🚧 never executed — no PowerShell in this sandbox ✅ (absent) | a `windows-latest` job reconstructing a fixture kit; until then Windows kits are R5-only by policy |
 | A pack built on `ubuntu-latest` unpacks on *any* `linux-64` target | ⚠️ assumed: the same-platform rule is documented, glibc/sysroot drift between runners and targets is not | reconstruct on `alpine` and a debian-oldstable container in one CI run |
+| `*.tar.gz` is really gzipped | ❌ **falsified 2026-09-19**: `compressed-env` branch's `env-*.tar.gz` are plain tar (magic `channel\0`), `tar -tzf` fails | assembler must sniff magic, not extension; doc chunked naming `.tar.part_*` vs `.tar.gz.part_*` | 
+| `pixi-unpack unpack --output-dir` CLI | ❌ **stale**: real 0.7.11 binary has no `unpack` subcommand; correct is `pixi-unpack <file> -o <parent> --env-name <name>` | generate help from binary in CI, not copy old README |
+| Kit with only `pixi` binary sufficient | ❌ **falsified**: dev env contains `pixi-unpack`, but need `pixi-unpack` to unpack dev env — chicken-egg; `compressed-env` prototype shipped only pixi, required manual `.conda` zstd extraction via python | ship pair `pixi`+`pixi-unpack` in `bin/` (D19 `ship-pixi` already says pair); assembler fallback manual extraction |
+| `tar -x -v | head` safe | ❌ **falsified**: SIGPIPE truncates extraction after 20 lines → only 2 crates | never pipe tar extract to pager; separate list vs extract |
+| Chunked `.part_*` reassembly via `cat` | ✅ **measured 2026-09-19**: `cat env-dev.tar.gz.part_* > env-dev.tar.gz` restores 398 MiB from 9×45 MiB chunks, git transports 530 MiB branch | document in `kit/assemble` shim and `dist-manifest.json` chunking field |
 
 > [!NOTE]
 > **Settled by D19 + D21** (2026-09-19): "can a machine with only git open a kit?" — the question that motivated

@@ -293,6 +293,19 @@ The honest summary to print into `reconstruct-report.json`:
 > executable version of it in
 > [Manifest discovery, platform validation, offline reconstruction §15.3](/research/rev2-discovery.md#153-the-offlinecache-facts-that-make-reconstruction-defensible).
 
+### 9.5 Chunked artifacts for GitHub's 100 MiB limit
+
+GitHub rejects blobs >100 MiB without LFS. `compressed-env` branch at `aa2a6e1` measured the workaround: split into ≤45 MiB chunks (`.part_00`, `.part_01`, …) to stay safe:
+
+```bash
+# packing
+split -b 45M env-dev.tar.gz env-dev.tar.gz.part_
+# unpacking (documented in branch README, but extension lies — see C5)
+for f in *.part_00; do [ -e "$f" ] || continue; base="${f%.part_00}"; cat "${base}.part_"* > "$base"; done
+```
+
+Measured: 398 MiB dev pack → 9×45 MiB parts, 67 MiB docs → 2 parts, total branch 530 MiB transports via `git clone --depth 1 --branch compressed-env` in ~2.5s (arena airlock). `dist-manifest.json` should record `chunked: true`, `chunk-size: 47185920`, `chunks: 9`, and original `sha256` so `kit/assemble` can verify after reassembly before extracting. Assembler must sniff magic (plain tar vs gzip) not extension — `env-*.tar.gz` are plain tar despite name.
+
 Operational view of all of this — what a human types on each side of the airlock, and what breaks:
 [One Lockfile, One Digest](/workflows/lockfile-digest-map.md).
 
