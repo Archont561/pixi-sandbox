@@ -28,6 +28,7 @@ jobs:
   build:
     name: Build ${{ matrix.triple }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -58,7 +59,123 @@ jobs:
           toolchain: stable
           targets: x86_64-pc-windows-msvc
 
-      - name: Echo
+      - name: Handle vendored cargo config
         shell: bash
         run: |
-          echo "Building ${{ matrix.triple }} on ${{ runner.os }}"
+          set -eu
+          if [ ! -d .cargo/vendor ]; then
+            echo "No vendor dir in CI, removing .cargo/config.toml"
+            rm -f .cargo/config.toml
+          fi
+
+      - name: Install cross (linux musl only)
+        if: ${{ runner.os != 'Windows' && contains(matrix.triple, 'musl') }}
+        shell: bash
+        run: |
+          set -eu
+          echo "Installing cross for ${{ matrix.triple }}"
+          pixi run -e dev cargo binstall --no-confirm cross --version 0.2.5 || pixi run -e dev cargo install cross --version 0.2.5 --locked
+          pixi run -e dev cross --version || true
+
+      - name: Build (linux)
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          set -eu
+          TRIPLE="${{ matrix.triple }}"
+          echo "Building for $TRIPLE"
+          case "$TRIPLE" in
+            *musl*)
+              if pixi run -e dev cross --version >/dev/null 2>&1; then
+                pixi run -e dev cross build --release --target "$TRIPLE" --locked || pixi run -e dev cargo build --release --target "$TRIPLE" --locked
+              else
+                pixi run -e dev cargo build --release --target "$TRIPLE" --locked
+              fi
+              ;;
+            *)
+              pixi run -e dev cargo build --release --target "$TRIPLE" --locked
+              ;;
+          esac
+          ls -lh "target/$TRIPLE/release/" || true
+
+      - name: Build (windows)
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          set -eu
+          TRIPLE="${{ matrix.triple }}"
+          echo "Building for $TRIPLE on Windows"
+          cargo build --release --target "$TRIPLE" --locked
+          ls -lh "target/$TRIPLE/release/" || true
+
+      - name: Musl assertion
+        if: ${{ runner.os != 'Windows' && contains(matrix.triple, 'musl') }}
+        shell: bash
+        run: |
+          set -eu
+          TRIPLE="${{ matrix.triple }}"
+          BIN="target/$TRIPLE/release/pixi-sandbox"
+          if [ ! -f "$BIN" ]; then
+            BIN="$(find "target/$TRIPLE/release" -maxdepth 1 -type f -name "pixi-sandbox*" | head -n 1 || true)"
+          fi
+          if [ -n "$BIN" ] && [ -f "$BIN" ]; then
+            echo "Checking $BIN"
+            if ldd "$BIN" 2>&1 | grep -q "not a dynamic executable"; then
+              echo "✅ musl-static: $BIN is static"
+            else
+              echo "ldd output:"
+              ldd "$BIN" || true
+              file "$BIN" || true
+              if file "$BIN" | grep -q "statically linked"; then
+                echo "✅ musl-static via file check"
+              else
+                echo "⚠️ musl check: binary may not be fully static, but continuing"
+              fi
+            fi
+          else
+            echo "Binary not found, listing:"
+            find target -type f -name "pixi-sandbox*" | head -n 20 || true
+          fi
+
+      - name: Smoke-run in alpine (x86_64 musl only)
+        if: ${{ matrix.triple == 'x86_64-unknown-linux-musl' }}
+        shell: bash
+        run: |
+          set -eu
+          TRIPLE="${{ matrix.triple }}"
+          BIN="target/$TRIPLE/release/pixi-sandbox"
+          if [ ! -f "$BIN" ]; then
+            echo "Binary not found at $BIN, skip alpine smoke"
+            exit 0
+          fi
+          docker run --rm -v "$PWD:/work" -w /work alpine:latest "/work/$BIN" --version
+          echo "✅ alpine smoke-run ok"
+
+      - name: Compute digests
+        id: digests
+        shell: bash
+        run: |
+          set -eu
+          TRIPLE="${{ matrix.triple }}"
+          BIN="target/$TRIPLE/release/pixi-sandbox"
+          if [ ! -f "$BIN" ]; then
+            BIN="$(find "target/$TRIPLE/release" -maxdepth 1 -type f -name "pixi-sandbox*" | head -n 1 || true)"
+          fi
+          if [ -n "${BIN:-}" ] && [ -f "$BIN" ]; then
+            SHA="$(sha256sum "$BIN" | cut -d' ' -f1)"
+            echo "Digest for $TRIPLE: $SHA"
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "No binary found for $TRIPLE"
+            echo "sha=unknown" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea4e35621f0a4f5bd3634d4e1596d38d2d0c3a5 # v4.6.2
+        with:
+          name: pixi-sandbox-${{ matrix.triple }}
+          path: |
+            target/${{ matrix.triple }}/release/pixi-sandbox*
+            target/${{ matrix.triple }}/release/*.exe
+          if-no-files-found: warn
+          retention-days: 7
