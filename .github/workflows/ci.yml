@@ -61,12 +61,15 @@ jobs:
       - name: Debug env
         run: |
           pixi --version
-          pixi info
-          ls -la .pixi/envs/ || true
           ls -la .cargo/ || true
-          .pixi/envs/dev/bin/rustc --version || true
-          .pixi/envs/dev/bin/cargo --version || true
           cat .cargo/config.toml || true
+          # In CI, .cargo/vendor is gitignored and not present, but .cargo/config.toml forces vendored-sources
+          # Remove config to allow network fetch, or keep vendor if present (from compressed-env restore)
+          if [ ! -d .cargo/vendor ]; then
+            echo "No vendor dir in CI, removing .cargo/config.toml to allow crates.io fetch"
+            rm -f .cargo/config.toml
+          fi
+          ls -la .cargo/ || true
       - name: Clippy
         run: pixi run -e dev cargo clippy --all-targets --all-features -- --deny warnings
       - name: Fmt check
@@ -88,9 +91,12 @@ jobs:
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - name: Debug
         run: |
-          pixi --version
           ls -la .cargo/ || true
-          .pixi/envs/dev/bin/cargo --version
+          cat .cargo/config.toml || true
+          if [ ! -d .cargo/vendor ]; then
+            echo "No vendor, removing config for network test"
+            rm -f .cargo/config.toml
+          fi
       - name: Cargo test locked
         run: pixi run -e dev cargo test --locked --all-features
       - name: Cargo test offline if vendor present
@@ -98,7 +104,7 @@ jobs:
           if [ -d .cargo/vendor ]; then
             pixi run -e dev cargo test --offline --all-features
           else
-            echo "no vendor, skip offline"
+            echo "no vendor, skip offline (expected in CI without compressed-env)"
           fi
 
   docs:
