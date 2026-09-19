@@ -517,13 +517,32 @@ dependencies = [
  "clap-verbosity-flag",
  "clap_complete",
  "insta",
+ "pixi-sandbox-core",
  "predicates",
  "proptest",
- "sandbox-core",
  "serde_json",
  "tempfile",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "pixi-sandbox-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "hex",
+ "insta",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "tracing",
 ]
 
 [[package]]
@@ -710,24 +729,6 @@ dependencies = [
  "quick-error",
  "tempfile",
  "wait-timeout",
-]
-
-[[package]]
-name = "sandbox-core"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "hex",
- "insta",
- "proptest",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "thiserror",
- "toml",
- "tracing",
 ]
 
 [[package]]

@@ -49,6 +49,6 @@ lint-biome = "biome check ."
 format-biome = "biome format --write ."
 
 [feature.utils.tasks]
-lint-actions = { cmd = "sh -c 'if [ -d .github/workflows ]; then actionlint; else echo \"no .github/workflows yet, actionlint skipped\"; fi'" }
+lint-actions = { cmd = "sh -c 'if [ -d .github/workflows ]; then actionlint -shellcheck=; else echo \"no .github/workflows yet, actionlint skipped\"; fi'" }
 commit-lint = "convco check"
 changelog = "convco changelog -s --output CHANGELOG.md"

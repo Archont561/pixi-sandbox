@@ -327,3 +327,49 @@ that is the builder side, which lives in CI by design). Three unproven rows in
 [What Is Still Unproven](/workflows/unproven.md) move because of this probe: the pack-is-a-channel row becomes
 ✅ measured; the D-rows that were "stubbed drivers" are now driver-real for `pixi-pack`; and "is pixi-pack on
 conda-forge" is answered above.
+
+### 16.9 Measured (2026-09-19): restoring the `compressed-env` branch in an airlocked arena
+
+Second airlock probe, this time on the **E2B-like arena host** (not the open Codespace). Branch `compressed-env` at `aa2a6e1` is the manual prototype of `pixi-sandbox-dist`:
+
+| Asset | Size | Type | Content |
+|---|---|---|---|
+| `pixi-bin.tar.gz` | 33 MiB gz → 77 MiB | gzip tar | `pixi` 0.81.0 musl |
+| `cargo-vendor.tar.gz` | 15 MiB gz → 102 MiB | gzip tar | 124 crates, `vendor/` |
+| `env-dev.tar.gz.part_00..08` | 398 MiB reassembled | **plain tar** (not gz) | 29 pkgs: rust 1.98.1, cargo-*, pixi-pack/unpack 0.7.11, gcc, sysroot |
+| `env-docs.tar.gz.part_00..01` | 67 MiB | plain tar | 31 pkgs: bun 1.3.11, biome 2.5.14, bzip2, icu, libarchive |
+| `env-utils.tar.gz` | 18 MiB | plain tar | 7 pkgs: lefthook 2.1.12, convco 0.7.2, actionlint 1.7.12 |
+
+**Reassembly**: `cat env-dev.tar.gz.part_* > env-dev.tar.gz` works (45 MiB chunks avoid GitHub 100 MiB limit). Git can transport 400 MiB via branch — measured.
+
+**File type gotcha (C5)**: `env-*.tar.gz` magic is `channel\0\0\0` → plain tar. `tar -tzf` fails `not in gzip format`, `tar -tf` succeeds. `pixi-bin` and `cargo-vendor` are real gzip. Extension lies.
+
+**CLI drift (C6)**: Branch README says `pixi-unpack unpack env-dev.tar.gz --output-dir .pixi/envs/dev` — stale. Real 0.7.11 help: `pixi-unpack [PACK_FILE] -o <out> --env-name <name>`. `-o` is parent, env is subdir. Correct: `pixi-unpack env-dev.tar.gz -o .pixi/envs --env-name dev` → `.pixi/envs/dev/bin/rustc`. `tar -xf` alone loses `conda-meta/history` and prefix relocation.
+
+**Bootstrap (C8)**: Dev env contains `pixi-unpack` conda pkg, but need `pixi-unpack` to unpack dev env. `compressed-env` only shipped `pixi` binary, not pair. Workaround: manually extract `.conda` (zip containing `pkg-*.tar.zst` + `info-*.tar.zst`) via python:
+
+```python
+import zipfile, tarfile, zstandard, pathlib
+conda = pathlib.Path("channel/linux-64/pixi-unpack-0.7.11-h2d90d6e_0.conda")
+tmp = pathlib.Path("/tmp/conda-extract")
+with zipfile.ZipFile(conda) as z: z.extractall(tmp)
+pkg = next(tmp.glob("pkg-*.tar.zst"))
+with open(pkg,'rb') as f:
+    dctx = zstandard.ZstdDecompressor()
+    with dctx.stream_reader(f) as r:
+        with tarfile.open(fileobj=r, mode='r|*') as tar:
+            tar.extractall("/tmp") # contains bin/pixi-unpack
+```
+
+Requires `pip install zstandard --break-system-packages` (pypi.org reachable even when prefix.dev blocked). `zstd` CLI absent (`tar -I zstd` → `Cannot exec: zstd`), GNU tar 1.34 has no zstd built-in — hence python path needed. After extracting `/tmp/pixi-unpack` (16 MiB, 0.7.11), unpacking all three envs succeeds:
+
+```
+⏳ Extracting and installing 29 packages to /tmp/.tmp.../cache...
+💫 Finished unpacking to .pixi/envs.
+```
+
+**Vendor SIGPIPE (C7)**: `tar -xzf cargo-vendor.tar.gz -C .cargo/ -v | head` → SIGPIPE after 20 lines, only 2 crates extracted → `cargo build --offline` fails `no matching package named flate2`. Must use `tar -xzf` without pipe. Full extract → 124 crates, `cargo build --offline` (19.5s) and `cargo test --offline` (11.28s) green.
+
+**Pixi tasks**: `pixi run lint` → `lint-cargo` (clippy + fmt check) green, `lint-biome` 8 files green, `lint-actions` skipped (no workflows). `.pixi/` gitignored, so restore keeps branch clean.
+
+**Lessons for D21 assembler binary**: must (1) auto-detect gzip vs plain tar, (2) handle `.conda` zstd without external `zstd` binary (bundle zstd or use python fallback), (3) ship **pair** `pixi` + `pixi-unpack` in `bin/` (not only inside env), (4) never pipe tar extract to pager, (5) document chunk reassembly `cat *.part_* > file`, (6) record chunking in `sandbox.lock.json`/`dist-manifest.json`.

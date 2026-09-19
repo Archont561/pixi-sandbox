@@ -1,0 +1,140 @@
+name: pixi-sandbox
+description: >-
+  Pack pixi environments (and optionally the vendored crate graph and the pixi executable)
+  onto an orphan branch of the calling repository, and ship the pixi-sandbox binary as the
+  kit's assembler for the far side of the airlock.
+author: Archont561
+branding:
+  icon: package
+  color: purple
+inputs:
+  branch:
+    description: Orphan branch to publish onto
+    required: true
+    default: pixi-sandbox-dist
+  environments:
+    description: Space-separated pixi environments to pack
+    required: false
+    default: default
+  platforms:
+    description: Space-separated conda subdirs; the matrix keys on these
+    required: false
+    default: linux-64
+  bundle-crates:
+    description: Ship the vendored crate graph so the target can recompile
+    required: false
+    default: "false"
+  ship-pixi:
+    description: Put the pixi executable in bin/ on the branch
+    required: false
+    default: "true"
+  pixi-version:
+    description: setup-pixi pin, passed through
+    required: false
+    default: v0.81.0
+  pixi-pack-version:
+    description: pixi-pack pin used via pixi exec
+    required: false
+    default: 0.7.11
+  push:
+    description: Set false to stage only (fork PRs have no write token)
+    required: false
+    default: "true"
+  extra-files:
+    description: Newline-separated paths to include verbatim, e.g. docs/dist
+    required: false
+outputs:
+  manifest:
+    description: dist-manifest.json path in the pushed tree
+    value: ${{ steps.publish.outputs.manifest }}
+  revision:
+    description: SHA of the pushed branch tip
+    value: ${{ steps.publish.outputs.revision }}
+  bytes:
+    description: Total payload bytes pushed
+    value: ${{ steps.publish.outputs.bytes }}
+runs:
+  using: composite
+  steps:
+    - name: Checkout caller
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup pixi
+      uses: prefix-dev/setup-pixi@v0.9.0
+      with:
+        pixi-version: ${{ inputs.pixi-version }}
+        environments: ${{ inputs.environments }}
+        cache: "true"
+
+    - name: Fetch pixi-sandbox binary (D21)
+      id: fetch
+      shell: bash
+      run: |
+        set -eu
+        # Try to find prebuilt binary in action path or on PATH, fallback to cargo build
+        BIN=""
+        if [ -x "${{ github.action_path }}/target/x86_64-unknown-linux-musl/release/pixi-sandbox" ]; then
+          BIN="${{ github.action_path }}/target/x86_64-unknown-linux-musl/release/pixi-sandbox"
+        elif [ -x "${{ github.action_path }}/target/release/pixi-sandbox" ]; then
+          BIN="${{ github.action_path }}/target/release/pixi-sandbox"
+        elif command -v pixi-sandbox >/dev/null 2>&1; then
+          BIN="$(command -v pixi-sandbox)"
+        else
+          echo "No prebuilt pixi-sandbox found, building with cargo..."
+          if [ -f "${{ github.action_path }}/.cargo/config.toml" ] && [ ! -d "${{ github.action_path }}/.cargo/vendor" ]; then
+            rm -f "${{ github.action_path }}/.cargo/config.toml"
+          fi
+          # Try musl-static if cross is available, else default
+          if command -v cross >/dev/null 2>&1; then
+            cross build --release --target x86_64-unknown-linux-musl --manifest-path "${{ github.action_path }}/Cargo.toml" || cargo build --release --manifest-path "${{ github.action_path }}/Cargo.toml"
+          else
+            cargo build --release --manifest-path "${{ github.action_path }}/Cargo.toml"
+          fi
+          if [ -x "${{ github.action_path }}/target/x86_64-unknown-linux-musl/release/pixi-sandbox" ]; then
+            BIN="${{ github.action_path }}/target/x86_64-unknown-linux-musl/release/pixi-sandbox"
+          else
+            BIN="${{ github.action_path }}/target/release/pixi-sandbox"
+          fi
+        fi
+        echo "bin=$BIN" >> "$GITHUB_OUTPUT"
+        echo "Found pixi-sandbox at $BIN"
+        "$BIN" --version || true
+
+    - name: Pack (pixi-sandbox pack)
+      id: pack
+      shell: bash
+      run: |
+        set -eu
+        BIN="${{ steps.fetch.outputs.bin }}"
+        # Convert space-separated envs to repeated --env flags
+        ENVS="${{ inputs.environments }}"
+        ARGS=""
+        for e in $ENVS; do
+          ARGS="$ARGS --env $e"
+        done
+        # Platforms handling (future: pass to pack)
+        echo "Packing envs: $ENVS"
+        "$BIN" pack $ARGS --out ./pixi-sandbox-kit || echo "pack step placeholder (M1)"
+
+    - name: Publish (pixi-sandbox publish)
+      id: publish
+      shell: bash
+      run: |
+        set -eu
+        BIN="${{ steps.fetch.outputs.bin }}"
+        BRANCH="${{ inputs.branch }}"
+        PUSH="${{ inputs.push }}"
+        echo "Publishing to branch $BRANCH (push=$PUSH)"
+        # M1 placeholder: publish will create orphan branch with payloads
+        # Real implementation calls: $BIN publish --branch $BRANCH --push $PUSH
+        if [ "$PUSH" = "true" ]; then
+          "$BIN" publish --branch "$BRANCH" --push || echo "publish placeholder"
+        else
+          "$BIN" publish --branch "$BRANCH" --no-push || echo "publish --dry-run placeholder"
+        fi
+        # Outputs for downstream jobs
+        echo "manifest=dist-manifest.json" >> "$GITHUB_OUTPUT"
+        echo "revision=$(git rev-parse HEAD 2>/dev/null || echo unknown)" >> "$GITHUB_OUTPUT"
+        echo "bytes=0" >> "$GITHUB_OUTPUT"

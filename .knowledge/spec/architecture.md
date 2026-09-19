@@ -25,15 +25,15 @@ pixi-sandbox/
 ├── crates/
 │   ├── pixi-sandbox/           # BINARY: clap definitions + rendering + exit codes. ~300 lines, no logic.
 │   │   └── src/{main.rs,cli.rs,render.rs}
-│   └── sandbox-core/           # LIBRARY: all logic, thiserror-typed, zero I/O surprises.
+│   └── pixi-sandbox-core/      # LIBRARY: all logic, thiserror-typed, zero I/O surprises. (renamed from sandbox-core per Cargo convention D22)
 │       └── src/{config,host,exec,hash,lock,inventory,platforms,toolchain,pack,vendor,node,kit,transport,selfhost,doctor,plan}.rs
 ├── .knowledge/                 # the OKF v0.2 knowledge bundle (this corpus): index.md, log.md, 5 areas
-└── .github/workflows/{ci,release,dist}.yml
+└── .github/workflows/{ci,release,dist,reusable-publish}.yml
 ```
 
 Rationale: the `bin` crate is a thin shell so `cargo install --git` output stays readable and so the whole
 behaviour is testable through the library API (pixi-pack v0.7.11 uses exactly this `src/lib.rs` +
-`src/bin/*.rs` shape ✅ verified). `sandbox-core` is publishable to crates.io later without changing shape.
+`src/bin/*.rs` shape ✅ verified). `pixi-sandbox-core` is publishable to crates.io later without changing shape — kebab-case `pixi-sandbox-core` → import `pixi_sandbox_core`, prefixed to avoid collision (D22).
 
 ### 4.2 Layering
 
@@ -42,7 +42,7 @@ flowchart LR
   subgraph ui["pixi-sandbox (bin)"]
     A["clap derive CLI"] --> R["render: human | --json"]
   end
-  subgraph core["sandbox-core (lib)"]
+  subgraph core["pixi-sandbox-core (lib)"]
     I["Inventory\nL0 fs → L1 manifest → L2 lock → L3 tools"] --> P["Plan\nordered Action list"]
     C["Config (overrides only)\npixi-sandbox.toml"] --> P
     T["Toolchain graph\nconda|npm|pypi|git|system"] --> P

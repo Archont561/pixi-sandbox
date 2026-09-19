@@ -49,13 +49,22 @@ git clone --depth 1 --branch pixi-sandbox-dist https://github.com/acme/myproj.gi
 cd kit
 sha256sum -c SHA256SUMS                      # integrity BEFORE executing anything (exit 4 on mismatch)
 
+# If large archives were chunked (GitHub 100 MiB limit without LFS):
+for f in *.part_00; do [ -e "$f" ] || continue; base="${f%.part_00}"; cat "${base}.part_"* > "$base"; done
+# Note: despite .tar.gz extension, pixi-pack archives are often plain tar (magic channel\0), so use tar -tf to list, tar -xf to extract, not -tzf
+
 export PIXISB_HOME="$HOME/.local"             # no root needed
 install -m755 bin/pixi-$(uname -m)-unknown-linux-musl         "$PIXISB_HOME/bin/pixi"
 install -m755 bin/pixi-sandbox-$(uname -m)-unknown-linux-musl "$PIXISB_HOME/bin/pixi-sandbox"
 install -m755 bin/pixi-unpack-$(uname -m)-unknown-linux-musl  "$PIXISB_HOME/bin/pixi-unpack" 2>/dev/null || true
+# If kit only shipped pixi (prototype compressed-env did), bootstrap pixi-unpack manually:
+#   python3 -c "import zipfile,tarfile,zstandard; ..." extracts bin/pixi-unpack from channel/linux-64/pixi-unpack-*.conda
+#   (needs pip install zstandard --break-system-packages, pypi.org reachable even when prefix.dev blocked)
 export PATH="$PIXISB_HOME/bin:$PATH"
 pixi --version        # 0.81.0 — from OUR branch, not pixi.sh
 ```
+
+**Measured 2026-09-19 — `compressed-env` branch `aa2a6e1`**: prototype dist branch with chunked tars (≤45 MiB). Restored in arena airlock (prefix.dev blocked, github.com open) via manual conda extraction because kit shipped only `pixi` not pair. Full steps in [pixi-pack §16.9](/research/pixi-pack.md#169-measured-2026-09-19-restoring-the-compressed-env-branch-in-an-airlocked-arena). Lessons: ship pair `pixi`+`pixi-unpack` in `bin/`, auto-detect tar vs tar.gz, avoid `tar -v | head` SIGPIPE, document `cat *.part_*` reassembly.
 
 ### 2.2 Reconstruct: the ladder, now with the rungs the docs actually support
 

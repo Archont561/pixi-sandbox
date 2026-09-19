@@ -16,7 +16,7 @@ sources:
 
 ## 13. Error taxonomy and UX contract
 
-`thiserror` in `sandbox-core`, exit codes in the binary (the split I verified upstream: `thiserror` for
+`thiserror` in `pixi-sandbox-core` (renamed from `sandbox-core` D22), exit codes in the binary (the split I verified upstream: `thiserror` for
 typed library errors, `anyhow`-style aggregation only at the `main` boundary ✅
 [oneuptime](https://oneuptime.com/blog/post/2026-01-25-error-types-thiserror-anyhow-rust/view)) — but with
 **distinct, documented exit codes**, because this tool is meant to be driven by scripts and agents:

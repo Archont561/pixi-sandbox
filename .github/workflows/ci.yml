@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  commit-lint:
+    name: Commit lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-env
+        with:
+          environments: utils
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Lint commits
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          pixi run -e utils convco check "$BASE..$HEAD" || pixi run -e utils commit-lint -- "$BASE..$HEAD"
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup-env
+        with:
+          environments: dev docs utils
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Handle vendored cargo config (CI has no vendor, local airlock does)
+        run: |
+          if [ ! -d .cargo/vendor ]; then
+            echo "No vendor dir in CI, removing .cargo/config.toml to allow crates.io fetch"
+            rm -f .cargo/config.toml
+          fi
+      - name: Clippy
+        run: pixi run -e dev cargo clippy --all-targets --all-features -- --deny warnings
+      - name: Fmt check
+        run: pixi run -e dev cargo fmt -- --check
+      - name: Biome
+        run: pixi run -e docs lint-biome
+      - name: Actionlint
+        run: pixi run -e utils actionlint -shellcheck=
+        # actionlint lints .github/workflows/*.yml, no need for js-yaml (npm dep, astro docs don't need it)
+        # -shellcheck= disables shellcheck integration (not installed locally, avoids CI vs local drift)
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup-env
+        with:
+          environments: dev
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Handle vendored config
+        run: |
+          if [ ! -d .cargo/vendor ]; then
+            rm -f .cargo/config.toml
+          fi
+      - name: Cargo test locked
+        run: pixi run -e dev cargo test --locked --all-features
+      - name: Cargo test offline if vendor present
+        run: |
+          if [ -d .cargo/vendor ]; then
+            pixi run -e dev cargo test --offline --all-features
+          else
+            echo "no vendor, skip offline (expected in CI without compressed-env)"
+          fi
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup-env
+        with:
+          environments: docs
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - run: pixi run -e docs lint-biome
+
+  verify-restore:
+    name: Verify restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Check compressed-env
+        run: |
+          git fetch origin compressed-env:compressed-env || echo "no branch"
+          git log --oneline compressed-env -n 3 || true
+      - run: test -f pixi.toml && test -f Cargo.toml && echo "manifests ok"
