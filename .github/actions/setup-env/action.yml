@@ -1,0 +1,33 @@
+name: "Set up pixi environment"
+description: "Installs pixi, restores envs from pixi.lock with caching policy: cache-write only on main, explicit envs, locked"
+inputs:
+  environments:
+    description: "Space-separated list of pixi environments to install (default: dev docs utils)"
+    required: false
+    default: "dev docs utils"
+  pixi-version:
+    description: "Pixi version to install"
+    required: false
+    default: "v0.81.0"
+  cache-write:
+    description: "Whether to write cache (true only on main)"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up pixi
+      uses: prefix-dev/setup-pixi@3311a1bb33ed42df99aa19c2b3c828fb7e1d419b # v0.8.8
+      with:
+        pixi-version: ${{ inputs.pixi-version }}
+        cache: true
+        cache-write: ${{ inputs.cache-write }}
+        locked: true
+        environments: ${{ inputs.environments }}
+    - name: Show pixi info
+      shell: bash
+      run: |
+        pixi --version
+        pixi info
+        ls -la .pixi/envs/ || true

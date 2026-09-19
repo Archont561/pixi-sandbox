@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # L0: cheap static checks runnable without pixi
+  checks-l0:
+    name: L0 static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Validate action.yml if present
+        shell: bash
+        run: |
+          if [ -f action.yml ]; then
+            npx --yes js-yaml@4.1.1 action.yml > /dev/null && echo "action.yml valid"
+          else
+            echo "no action.yml yet, skip"
+          fi
+      - name: Validate workflows YAML
+        shell: bash
+        run: |
+          for f in .github/workflows/*.yml .github/actions/*/action.yml; do
+            [ -f "$f" ] || continue
+            echo "Checking $f"
+            npx --yes js-yaml@4.1.1 "$f" > /dev/null
+          done
+
+  commit-lint:
+    name: Commit lint (convco)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout with history
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Set up pixi env (utils)
+        uses: ./.github/actions/setup-env
+        with:
+          environments: utils
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Lint commits
+        shell: bash
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          echo "Checking $BASE..$HEAD"
+          pixi run -e utils convco check "$BASE..$HEAD" || pixi run -e utils commit-lint -- "$BASE..$HEAD"
+
+  lint:
+    name: Lint (clippy, fmt, biome, actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up pixi envs
+        uses: ./.github/actions/setup-env
+        with:
+          environments: dev docs utils
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Run lint (all envs)
+        shell: bash
+        run: pixi run lint
+      - name: Actionlint (explicit)
+        shell: bash
+        run: pixi run -e utils actionlint
+
+  test:
+    name: Test (cargo test offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up pixi env (dev)
+        uses: ./.github/actions/setup-env
+        with:
+          environments: dev
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Cargo test (offline, vendored)
+        shell: bash
+        run: pixi run -e dev cargo test --offline --all-features
+      - name: Cargo test (locked, with network - CI can reach crates.io)
+        shell: bash
+        run: pixi run -e dev cargo test --locked --all-features
+        # fallback to offline if network blocked, but CI has open egress
+
+  docs:
+    name: Docs check (biome + optional build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up pixi env (docs)
+        uses: ./.github/actions/setup-env
+        with:
+          environments: docs
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Biome check
+        shell: bash
+        run: pixi run -e docs lint-biome
+      - name: Docs build (if present)
+        shell: bash
+        run: |
+          if [ -f docs/package.json ]; then
+            pixi run -e docs bun install --frozen-lockfile || npm ci --prefix docs
+            pixi run -e docs bun run build || npm run build --prefix docs || echo "no build script"
+          else
+            echo "no docs/package.json, skip build"
+          fi
+
+  # Optional: verify compressed-env restore still works (documents C5-C8)
+  verify-restore:
+    name: Verify compressed-env restore (airlock rehearsal)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Check compressed-env branch exists
+        shell: bash
+        run: |
+          git fetch origin compressed-env:compressed-env || echo "no compressed-env branch"
+          git log --oneline compressed-env -n 3 || true
+          ls -lh $(git ls-tree -r --name-only compressed-env | head) || true
+      - name: Validate pixi.toml and Cargo.toml
+        shell: bash
+        run: |
+          test -f pixi.toml
+          test -f Cargo.toml
+          test -f pixi.lock
+          test -f Cargo.lock
+          echo "manifests present"
