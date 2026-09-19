@@ -1,6 +1,13 @@
 name: Build binaries
 
 on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Ref to build at
+        required: false
+        type: string
+        default: ""
   pull_request:
     paths:
       - "Cargo.toml"
@@ -9,6 +16,10 @@ on:
       - ".cargo/**"
       - ".github/workflows/build.yml"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -29,7 +40,10 @@ jobs:
             runner: windows-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
       - name: Echo
         shell: bash
         run: |
-          echo "Building ${{ matrix.triple }} on ${{ runner.os }}"
+          echo "Building ${{ matrix.triple }} on ${{ runner.os }} ref ${{ inputs.ref }}"
