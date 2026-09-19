@@ -1,0 +1,109 @@
+name: Reusable Publish (pixi-sandbox)
+
+# D22: Action is primary (marketplace, step-level). This reusable workflow is
+# an opinionated wrapper that enforces runner matrix = platform coverage
+# (spec/action-shape.md § Runner matrix) and minimal permissions.
+# Callers that want full CI with one line should use this; callers that want
+# to embed packing into existing jobs should use `uses: Archont561/pixi-sandbox@main`.
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: Orphan branch to publish onto
+        required: false
+        type: string
+        default: pixi-sandbox-dist
+      environments:
+        description: Space-separated pixi environments to pack
+        required: false
+        type: string
+        default: default
+      platforms:
+        description: Space-separated conda subdirs; matrix keys on these
+        required: false
+        type: string
+        default: linux-64
+      bundle-crates:
+        description: Ship vendored crate graph
+        required: false
+        type: string
+        default: "false"
+      ship-pixi:
+        description: Put pixi executable in bin/
+        required: false
+        type: string
+        default: "true"
+      pixi-version:
+        description: setup-pixi pin
+        required: false
+        type: string
+        default: v0.81.0
+      pixi-pack-version:
+        description: pixi-pack pin
+        required: false
+        type: string
+        default: 0.7.11
+      push:
+        description: Set false to stage only (fork PRs have no write token)
+        required: false
+        type: string
+        default: "true"
+      extra-files:
+        description: Newline-separated extra files
+        required: false
+        type: string
+        default: ""
+    outputs:
+      manifest:
+        description: dist-manifest.json path
+        value: ${{ jobs.publish.outputs.manifest }}
+      revision:
+        description: SHA of pushed branch tip
+        value: ${{ jobs.publish.outputs.revision }}
+      bytes:
+        description: Total payload bytes
+        value: ${{ jobs.publish.outputs.bytes }}
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Pack & publish ${{ inputs.platforms }}
+    runs-on: ${{ fromJSON('{"linux-64":"ubuntu-latest","linux-aarch64":"ubuntu-24.04-arm","osx-64":"macos-13","osx-arm64":"macos-14","win-64":"windows-latest"}')[inputs.platforms] || 'ubuntu-latest' }}
+    # For multi-platform callers, they should matrix over platforms in their caller workflow:
+    #   strategy:
+    #     matrix:
+    #       platform: [linux-64, osx-arm64]
+    #   with:
+    #     platforms: ${{ matrix.platform }}
+    # This job enforces one runner per platform per spec/action-shape.md § Runner matrix.
+    timeout-minutes: 30
+    outputs:
+      manifest: ${{ steps.publish.outputs.manifest }}
+      revision: ${{ steps.publish.outputs.revision }}
+      bytes: ${{ steps.publish.outputs.bytes }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      # Use the composite action itself — D22 says action is primary, reusable workflow wraps it.
+      # This keeps logic in one place (action.yml calls binary), and this workflow enforces
+      # permissions + runner selection. Inside a reusable workflow, `./` refers to the callee repo
+      # (pixi-sandbox), so this works both for self and for external callers that do:
+      #   uses: Archont561/pixi-sandbox/.github/workflows/reusable-publish.yml@main
+      - name: Pack & publish via action
+        uses: ./
+        with:
+          branch: ${{ inputs.branch }}
+          environments: ${{ inputs.environments }}
+          platforms: ${{ inputs.platforms }}
+          bundle-crates: ${{ inputs.bundle-crates }}
+          ship-pixi: ${{ inputs.ship-pixi }}
+          pixi-version: ${{ inputs.pixi-version }}
+          pixi-pack-version: ${{ inputs.pixi-pack-version }}
+          push: ${{ inputs.push }}
+          extra-files: ${{ inputs.extra-files }}
+        id: publish

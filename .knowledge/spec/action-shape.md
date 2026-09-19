@@ -424,3 +424,25 @@ resurrecting either**, because the binary is *mirrored*, not installed — built
 digest-verified before execution on a target where it does not. The measured `assemble.sh` oracle is the
 guarantee that the compiled artifact behaves exactly like the design that ran here.
 
+# D22: Action is primary, reusable workflow is wrapper (2026-09-19)
+
+**Question:** should `pixi-sandbox` be exposed as reusable workflow (`workflow_call`) or as composite action (`action.yml`)?
+
+**Decision:** **Action is primary** (marketplace, `uses: Archont561/pixi-sandbox@main` as step), **reusable workflow is opinionated wrapper** that enforces runner matrix = platform coverage and calls the action internally via `./`.
+
+| Aspect | Composite Action | Reusable Workflow |
+|---|---|---|
+| Granularity | Step-level: embeds in existing `test` job | Job-level: creates its own job(s) |
+| Runner matrix = platform coverage (this doc § Runner matrix) | Caller must write matrix, easy to forget `macos-14` for `osx-arm64` | Enforces `linux-64→ubuntu-latest`, `osx-arm64→macos-14`, `win-64→windows-latest` |
+| Permissions & anti-loop | Must document `contents: write`, `GITHUB_TOKEN` push doesn't trigger | Sets `permissions: contents: write` centrally, no PAT loop |
+| Fork PRs `push: false` | Caller passes flag, action stages | Workflow can auto-detect fork and stage |
+| Discovery | Marketplace `branding: icon: package`, versioned via tag `v1` | Not in marketplace, called via `uses: org/repo/.github/workflows/reusable-publish.yml@tag` |
+| Composability | Can be called N times in same workflow, wraps easily | Cannot be called from composite action step, creates separate jobs |
+| Logic location | `action.yml` calls `pixi-sandbox pack/publish` binary (D21) | Calls `./` (the action) internally — logic stays in one place |
+
+**Implementation:** `.github/workflows/reusable-publish.yml` with `on: workflow_call` inputs mirroring `action.yml`, `permissions: contents: write`, job `publish` that does `uses: ./` (callee repo root = action). External callers do `uses: Archont561/pixi-sandbox/.github/workflows/reusable-publish.yml@main`.
+
+**Why not only reusable?** Loses step-level embedding and marketplace discovery. Why not only action? Leaves runner matrix unenforced — pack made on `ubuntu-latest` only unpacks on `linux-64` (pixi-pack constraint ✅), so `osx-arm64` without `macos-14` would silently produce `omitted[]` + exit 5. Hybrid gives both surfaces with one implementation.
+
+See [Decision Log D22](/spec/decisions.md).
+

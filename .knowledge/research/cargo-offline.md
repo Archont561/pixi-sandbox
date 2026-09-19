@@ -132,7 +132,7 @@ flag: a vendored tree carries every platform's crates, plus dev/build deps.
 | Flag | Documented behaviour ✅ | Why the kit cares |
 |---|---|---|
 | *(stdout)* | *"the configuration necessary to use the vendored sources would be printed to stdout after `cargo vendor` completes"* | the tool can **capture** it and replay it as `--config` flags instead of editing a repo |
-| `-s, --sync <manifest>` | *"an extra `Cargo.toml` manifest to workspaces which should also be vendored and synced to the output"* (repeatable) | multi-crate workspaces (`pixi-sandbox` bin + `sandbox-core` lib) need one shared `vendor/` |
+| `-s, --sync <manifest>` | *"an extra `Cargo.toml` manifest to workspaces which should also be vendored and synced to the output"* (repeatable) | multi-crate workspaces (`pixi-sandbox` bin + `pixi-sandbox-core` lib, renamed from `sandbox-core` D22) need one shared `vendor/` |
 | `--versioned-dirs` | *"all directories in the 'vendor' directory to be versioned … can help with the performance of re-vendoring when only a subset of the packages have changed"* | makes `--sync` cheap and diffs readable (`serde-1.0.2` never overwritten) |
 | `--no-delete` | *"don't delete the 'vendor' directory … keep all existing contents"* | needed when a vendor dir is shared/append-only across branches |
 | `--respect-source-config` | *"instead of **ignoring** `[source]` configuration by default … read it and use it when downloading"* | ⚠️ default is *ignore*: vendoring through an internal mirror needs this flag explicitly |

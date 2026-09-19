@@ -71,7 +71,7 @@ write-config = true                      # emit the [source.*] replacement block
 all-features = false
 features = ["native-tls"]
 respect-source-config = false            # needed when vendoring from a mirror ✅
-sync-manifests = ["crates/sandbox-core/Cargo.toml"]   # `-s <manifest>` per extra workspace member ✅
+sync-manifests = ["crates/pixi-sandbox-core/Cargo.toml"]   # `-s <manifest>` per extra workspace member ✅ (renamed from sandbox-core D22)
 no-delete = false                        # true ⇒ keep foreign files in vendor/ across re-syncs ✅
 prune-unverified = false                 # 🚧 shrinking A/B to the host triple: cargo resolves against the
                                          #   replacement source, so a pruned tree is expected to fail with
