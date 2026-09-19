@@ -36,7 +36,7 @@ payloads live on the **dist branch** (large, binary).
     "environments": { "rust": { "features": ["build"], "platforms": ["linux-64"],
                                 "locked-packages": { "linux-64": 128 } },
                       "gpu":   { "platforms": ["linux-64"], "heuristic": true } },
-    "components": { "env": "on", "vendor": "on (Cargo.lock)", "node": "off (no lockfile)",
+    "components": { "env": "on", "vendor": "on (Cargo.lock)", "node": "n/a (D20: retired)",
                     "self": "on" }
   },
   "sources": {
@@ -77,8 +77,8 @@ Two fields are new in this revision, both because requirements (a)–(e) changed
 
 * **`inventory` records what detection concluded, at which tier.** So `git log -p sandbox.lock.json`
   answers "why did the kit contents change?" with something better than a diff of file lists: an
-  environment appeared, a platform stopped being locked, `node` turned off because nobody committed a
-  JS lockfile. Detection is only debuggable if it is *persisted*.
+  environment appeared, a platform stopped being locked, `vendor` was skipped because
+  `[kit] targets-compile` was false. Detection is only debuggable if it is *persisted*.
 * **`reconstruction.preferred-rung` / `guaranteed-rung` split promise from hope.** A consumer (or CI gate)
   can assert "this kit can *reconstitute a workspace*" (`R1`/`R2` — and only R2 leaves an index you can
   `pixi add` against offline ✅) versus "this kit can *lay down a prefix*" (`R3`), and the `needs` map is the exact file list to check after a shallow clone — which is also what
@@ -140,7 +140,6 @@ sandbox/kit/
 │   └── pixi-sandbox.toml        #   if present (config is optional, so this may not exist)
 ├── packs/                       # <ws>-<env>-<plat>.tar  (pixi-pack output, or environment.sh)
 ├── vendor/                      # cargo vendor tarball, or a pointer to the vendor branch
-├── node/                        # node_modules.<plat>.tar.gz
 ├── bin/
 │   ├── pixi-sandbox-<triple>    # (+ .sha256 siblings)   ← the tool itself, self-hosted (§10.5)
 │   ├── pixi-<triple>            # ← without this there is no `pixi run`, so no *tasks*, on a fresh box

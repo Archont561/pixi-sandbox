@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [spec, bootstrap]
 status: stable
 confidence: mixed
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-20T00:15:00Z }
 legacy: { files: [`DESIGN.md`], sections: ["11"] }
 sources:
   - { id: mintlifywiki-prefix-dev-pixi, resource: https://mintlify.wiki/prefix-dev/pixi/concepts/package-specifications, title: mintlify.wiki/prefix-dev/pixi/concepts/package-specification }
@@ -15,6 +15,14 @@ sources:
 ---
 
 # Bootstrap: Installing the Tool
+
+**D19 shrank this concept, and D21 keeps it small.** The tool *is* a binary again, but it is never *installed*:
+CI builds it and the kit ships it digest-pinned in `bin/`, so the "bootstrap" is just the mirror discipline —
+the reconstructor verifies `SHA256SUMS` before executing anything, and looks up `bin/<name>-$(uname -m)-…` with
+a bare-name fallback ✅ (measured with a partial `bin/`). There is no seed cache and no `--self-test`, because
+nothing is compiled on the target. Everything below — the seed ceremony, installing a `.conda` built from the
+branch — is **v2 material**, kept because the mirror discipline it specifies (verify the digest before
+executing, record `upstream-sha256`) is exactly what the reconstructor's first action does for every driver.
 
 ## 11. Bootstrap: installing the tool itself
 

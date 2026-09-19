@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [workflow, packing]
 status: stable
 confidence: mixed
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-19T00:50:00+02:00 }
 legacy: { files: [`WORKFLOWS.md`], sections: ["1"] }
 sources:
   - { id: githubcom-rust-lang-cargo, resource: https://github.com/rust-lang/cargo/issues/10729, title: rust-lang/cargo — issues/10729 }
@@ -33,7 +33,7 @@ Then the two lines that make this repo sandbox-portable — and *only* these:
 
 ```bash
 pixi sandbox init            # writes pixi-sandbox.toml; optional, see below
-pixi sandbox kit build       # detects lockfiles → packs + vendor + node + bin/* + channel/
+pixi sandbox kit build       # detects lockfiles → packs + vendor + bin/* + channel/
 ```
 
 `init` is optional **by design**: `kit build` derives components from the lockfiles it finds
@@ -59,6 +59,16 @@ pixi sandbox kit build && pixi sandbox dist push   # republish (Workflow C does 
 > `vendor/` and can "succeed" against the wrong crate ✅ [cargo#10729](https://github.com/rust-lang/cargo/issues/10729).
 > `pixi sandbox vendor disable` is the escape hatch the tool prints instead of letting you lose an hour.
 
+**The same step, on the CI side (D19).** Packing is not always a local act, and the action is the v1 default:
+
+```yaml
+- uses: archont561/pixi-sandbox@<sha>          # see /workflows/action-run.md
+  with: { environments: rust, platforms: linux-64, bundle-crates: "true", push: "false" }
+```
+
+`push: "false"` is what v1 keeps of `--dry-run`: it stages the kit and prints the manifest without writing the
+branch ✅. Everything §1.1–§1.2 produced is exactly what that step consumes.
+
 ### 1.3 What a workspace looks like after a kit build
 
 ```
@@ -66,7 +76,7 @@ myproj/
 ├── pixi.toml  pixi.lock            # the two files pixi needs to be a workspace
 ├── Cargo.toml Cargo.lock          # the two files cargo needs to be a package
 ├── vendor/  .cargo/config.toml    # ONLY if the target must compile (decision in §4.3)
-├── package.json bun.lock
+├── package.json bun.lock               # validated by CI; never packed (D20)
 ├── pixi-sandbox.toml              # optional
 ├── sandbox.lock.json              # committed: what the kit contains + digests
 └── .gitignore                     # /sandbox/  /target/  (artifacts → dist branch)

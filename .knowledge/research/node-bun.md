@@ -21,6 +21,13 @@ sources:
 
 # node_modules and bun in a pixi workspace
 
+> [!NOTE]
+> **Outcome (2026-09-19):** the research stands, the *feature* does not. D20 retired `node_modules`
+> packing from v1 — the runtimes (`nodejs`, `bun`) still travel as conda packages and a JS lockfile is still
+> a CI assertion, but no JS dependency tree is pushed to a branch. Kept because it is the evidence base for
+> that decision (bun on conda-forge ✅, `bun.lockb` hazards ✅, finding C2 ✅: an npm-installed bun works even
+> in a GitHub-only sandbox) and because resurrecting the component means re-reading this, not re-researching it.
+
 ## 5. node_modules / bun in a pixi workspace
 
 **First, the trap.** "pixi" is a heavily collided name: on PyPI `pixi 1.0.1` is *"a command line tool to

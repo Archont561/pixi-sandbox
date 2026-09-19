@@ -25,9 +25,8 @@ flowchart TD
   C --> D["per-component build matrix, keyed by digest"]
   D --> D1["env packs: key = sha256(pixi.lock)+env+platform+feature-set"]
   D --> D2["vendor: key = sha256(Cargo.lock)"]
-  D --> D3["node: key = sha256(bun.lock)"]
   D --> D4["bin/* + .conda: key = git rev of main"]
-  D1 & D2 & D3 & D4 --> E{"dist-manifest.json already has\nALL keys for this commit?"}
+  D1 & D2 & D4 --> E{"dist-manifest.json already has\nALL keys for this commit?"}
   E -- yes --> F["publish skipped: 'no artifact moved' ✅ idempotent"]
   E -- no --> G["git-plumbing commit on pixi-sandbox-dist\n+ updated dist-manifest.json + tag dist/x.y.z"]
   G --> H["reconstruct-e2e: alpine container, git+tar only\n→ bootstrap → reconstruct → pixi run test"]

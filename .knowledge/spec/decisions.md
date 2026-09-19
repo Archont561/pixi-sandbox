@@ -1,18 +1,18 @@
 ---
 type: Decision Log
-title: "Decision Log D1-D18"
+title: "Decision Log D1-D21"
 description: Every design decision, the alternative rejected, why, and its status (decided / open / corrected).
 resource: https://github.com/Archont561/pixi-sandbox
 tags: [spec, decisions]
 status: stable
 confidence: mixed
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-20T00:15:00Z }
 legacy: { files: [`DESIGN.md`], sections: ["16"] }
 sources:
   - { id: githubcom-googlecloudplatform-knowledge-catalog, resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md, title: GoogleCloudPlatform/knowledge-catalog — blob/main/okf/SPEC.md }
 ---
 
-# Decision Log D1-D18
+# Decision Log D1-D21
 
 ## 16. Decision log
 
@@ -38,3 +38,7 @@ sources:
 | D16 | **`vendor` is conditional on `[kit] targets-compile`; by default a kit ships the built binary via `pixi-pack --inject <own .conda>` ✅** | always vendoring; expecting `pixi-pack` to carry the crate graph | a pack is conda packages + wheels ✅ — `.crate` files are not in it and `--inject` won't take them; 400 crates of build-time source for a target that only runs a binary is pure weight, while `--inject`-ing the project's own `.conda` is the documented pattern for "you build the project itself and want it in the environment" ✅ |
 
 ---
+
+| D19. | **v1 ships as a public GitHub Action** *(as decided here: "not a Rust binary" — the zero-Rust artifact was later superseded by D21; the distribution model stands)* — the `pixi-sandbox` *action* takes `branch`, `environments`, `platforms`, `bundle-crates`, `ship-pixi`; CI packs; the branch carries the payloads; `assemble.sh` reconstructs. | Keep the CLI as v1 and treat the action as an extra front end. | The binary is what created the bootstrap ceremony (D11), the seed cache, the `--self-test` mode and the unverifiable-code problem all at once. YAML + shell is lintable and *runnable* in a sandbox like this one, which is where every other decision on this project was validated. The CLI returns as an optional v2 for target-side ergonomics, with `assemble.sh` as its reference implementation. | **Decided, amended by D21** (2026-09-19, user: "instead of building a `pixi-sandbox` binary") — the distribution model (action + branch + one-liner, nothing for the user to install) stands; D21 replaces the zero-Rust *artifact* with the mirrored Rust binary |
+| D20. | **No `node_modules` component** — JS deps are not shipped in the kit. | Ship the JS slice as originally designed (`node pack`/`node sync`, a `node/` directory on the branch). | This sandbox has `node`/`npm` preinstalled ✅ and neither host nor target needs JS *packages* to run the Rust core; the JS surface in play (the docs site) is built in CI. Dropping it removes the largest payload class (measured: 227 MB for one Astro site ✅) and the one component whose failure mode (hoisting, symlinks) our detection could not see. | **Decided** (2026-09-19, user: "drop support for node as it is available here") — `bun`/`nodejs` may still travel as conda packages inside an env pack, so [node-bun](/research/node-bun.md) stays as evidence |
+| D21. | **One Rust binary, two surfaces**: the action's CI steps run `pixi-sandbox pack/publish`, and the kit ships the *same binary* as its assembler (`pixi-sandbox reconstruct`) — prebuilt, statically linked (musl), mirrored into `bin/` with a sha256 exactly like the `pixi`/`pixi-unpack` pair. The user installs nothing: no conda-forge route, no git-install of the tool. | (a) keep the POSIX `assemble.sh` as the v1 target artifact (D19 as written); (b) distribute the CLI as a `.conda` / `pixi global install` (the pre-D19 plan, which needed a conda route on the target). | The binary is what the author wants to develop, and developing one crate gives both halves of the product from one build — the CI verbs the action calls and the target verb the kit ships. Shipping it prebuilt keeps every promise D19 was making: distribution is still *action + branch + one-liner*, the target still executes nothing before `sha256sum` passes, and the D11 bootstrap stays dead because the binary is just another mirrored artifact built where network exists (CI) and consumed where it doesn't (the airlock). Static musl means the assembler runs on any Linux (alpine included) with zero runtime deps — the same shape pixi-pack's own 16 release assets use ✅ — and gives `win-64` a first-class `.exe` instead of a second script. The measured nine-outcome run of `assemble.sh` is not thrown away: it is frozen as the **behavioural oracle** — the Rust assembler's acceptance vectors ([Testing Strategy](/spec/testing-strategy.md)). | **Decided** (2026-09-19, proposed by user: "What if action would be executed by rust binary and would ship assembler binary not sh? … no pixi sandbox installation from condaforge or git"; accepted same day: "Accept D21") — supersedes D19's "zero Rust" framing of the deliverable while keeping its distribution model; see [The Assembler Binary](/spec/assembler-binary.md) |

@@ -38,9 +38,25 @@ The honest structure, given that `cargo` cannot run in this sandbox:
    `test_reproducible_shasum` test ✅ verified — we assert our manifest records the hash, not that the
    hash is stable) and Windows path handling in CI without a Windows self-hosted runner. 🚧
 
-**In-sandbox verification available right now** (useful for the Node half, measured in this session):
-`bun install`/`bun ci`/`bun.lock` all work, so `node sync`/`node check` logic can be *exercised* here even
-though the Rust half can only be reviewed. 🚧 Proposal: keep an `examples/js-fixture/` (package.json +
-lockfile) so `node` verbs have something real to run against in CI.
+**What is verifiable in this sandbox, measured 2026-09-19** — the answer changes completely if the
+artifact is *shell + YAML* instead of Rust, because then the author's box can execute the thing it is
+shipping. Probed with a throwaway npm project (registry reachable ✅):
+
+| Checker | Usable here? | How it was established |
+|---|---|---|
+| `bash -n script.sh` | ✅ | always; syntax only |
+| `npx js-yaml file.yml` | ✅ | `npm i js-yaml` (pure JS) — parses `action.yml`, and **fails loudly** on malformed input (`YAMLException: deficient indentation (2:1)`) ✅ |
+| `shellcheck` (npm) | ❌ | package installs (4.1.0 ✅) but its postinstall downloads the real binary → `unable to verify the first certificate` ✅ — pure-JS wrappers still fetch native code |
+| `actionlint` (npm) | ❌ | 2.0.6 installs but exposes no runnable bin in this sandbox ✅ |
+| `zizmor` | ❌ | not on npm ✅ |
+| `pixi` / `pixi-pack` / `cargo` | ❌ | the whole point (egress matrix) |
+
+Consequences: **(1)** YAML and shell *syntax* + a hand-written schema check are testable in the airlock;
+**(2)** semantic linting (shellcheck/actionlint/zizmor) belongs in CI, which costs nothing since CI is where
+the action runs anyway; **(3)** the shipped script must therefore be **self-testing** — `assemble.sh
+--self-test` (stub `pixi`/`tar` on `PATH`, fixture branch, assert the file set + digests) is what lets a
+sealed box prove the thing rather than trust it. Prototype run here: the script's verify→install→unpack→
+cargo-wire sequence executed green against stubs, and returned the integrity failure when a checksum was
+perturbed 🚧 *(single local run, not CI)*.
 
 ---

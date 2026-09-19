@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [workflow, dogfooding]
 status: stable
 confidence: mixed
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-20T00:15:00Z }
 legacy: { files: [`WORKFLOWS.md`], sections: ["7"] }
 sources:
   - { id: staticcratesio-crates-serde, resource: https://static.crates.io/crates/serde/1.0.0.crate, title: static.crates.io/crates/serde/1.0.0.crate }
@@ -200,3 +200,17 @@ tiers above:
 Reproducibility is deliberately **not** a gate: cargo's output is not guaranteed byte-identical across
 containers, so promotion compares *behaviour + recorded digests*, and says so in `NOTICE.md` instead of
 pretending to reproducible builds ⚠️.
+
+### 7.7 What the Action shape (D19) and the binary artifact (D21) do to this ladder
+
+The hardest rung here was **D1.5** — "run our own reconstruct", which needs a compiled binary this box can never
+produce. D19 collapsed that rung into something this sandbox *can* do: `assemble.sh` was executed here against a
+fixture kit with `pixi`/`pixi-unpack`/`cargo` stubbed on `PATH` ✅, and since the reconstructor's whole job is
+selection, verification and wiring, a stub exercises all of it. **D21 keeps that measurement and adds one hop:**
+the compiled Rust assembler must replay those exact outcomes in CI before it may ship in a kit, so D1.5 becomes
+"oracle ran here ✅ ⇒ binary reproduces it there 🚧". D0 and D1 are unchanged (they never needed us); D2
+survives (it is about pixi); D3/D4 become CI's — but the CI job is now *the product's own action*
+(`uses: archont561/pixi-sandbox@<sha>` in this repo's workflow), a stricter form of dogfooding than compiling a
+crate, because the release artifact and the thing under test are the same file. The residual gap is stated in
+[Running the Action](/workflows/action-run.md#the-nine-outcomes-measured-in-this-sandbox): stubbed drivers do not
+prove `pixi-unpack`'s semantics; one real run does.

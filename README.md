@@ -1,13 +1,18 @@
 # pixi-sandbox
 
-**Design proposal, not implementation.** An ergonomic Rust tool that packs `pixi` environments, `cargo vendor`
-trees and optional `node_modules` into portable artifacts, publishes them on an **orphan branch of this repo**,
-and reconstructs a working, task-driven environment on a machine whose only network access is `git`.
+**Design, not implementation.** `pixi-sandbox` is a **public GitHub Action** that packs `pixi`
+environments and `cargo vendor` trees into portable artifacts, publishes them on an **orphan branch of this
+repo**, and ships a reconstructor alongside them so a machine whose only network access is `git` can
+reconstruct a working, task-driven environment. The reconstructor is **one Rust binary**
+([D21](/.knowledge/spec/decisions.md), decided): the action runs its CI verbs (`pack`/`publish`) and the kit
+ships the *same binary* as its assembler (`reconstruct`) — built in CI, mirrored digest-pinned, installed by
+nobody. Its behaviour is pinned by the measured `assemble.sh` oracle, which is what keeps every claim here
+testable in the sandbox that wrote it.
 
 Everything about it lives in a knowledge bundle:
 
 ```
-.knowledge/            # OKF v0.2 bundle — 51 concepts, 5 areas, this repo's whole corpus
+.knowledge/            # OKF v0.2 bundle — 55 concepts, 5 areas, this repo's whole corpus
   index.md             # start here (progressive disclosure: areas → groups → concepts)
   log.md               # dated history of the corpus
   conventions.md       # labels ↔ trust tiers, front-matter extensions, editing rules
@@ -23,14 +28,16 @@ Everything about it lives in a knowledge bundle:
 
 ## The idea in one paragraph
 
-A git ref is an immutable, content-addressed artifact registry. `pixi-sandbox kit build` runs the packagers
-that already exist (`pixi-pack` for environments, `cargo vendor` for the crate graph, `bun install --frozen-lockfile`
-for JS), writes their outputs into an orphan `pixi-sandbox-dist` branch with a `dist-manifest.json` and a
-`.sha256` per artifact, and pins the digests in `sandbox.lock.json` on `main`. On the far side of the airlock,
-`pixi-sandbox reconstruct` clones *that branch only* (`--filter=blob:none`), verifies digests, and reinstalls
-the environment so that `pixi run <task>`, `pixi shell` and workspace management keep working — with `pixi`
-itself and `pixi-sandbox` shipped from the same branch, so no registry, CDN or release asset is ever needed.
-Start with [The one idea](/.knowledge/overview/problem.md); the mechanics are in
+A git ref is an immutable, content-addressed artifact registry. The action runs the packagers that already exist
+(`pixi-pack` for environments, `cargo vendor` for the crate graph), writes their outputs into an orphan
+`pixi-sandbox-dist` branch with a `dist-manifest.json`, a `SHA256SUMS` and the mirrored `pixi` + `pixi-unpack`
+binaries, and pins the digests in `sandbox.lock.json` on `main`. On the far side of the airlock one command —
+`git clone --depth 1 --branch pixi-sandbox-dist … && sh kit/assemble.sh` — verifies digests *before executing
+anything*, then reconstructs the environment so `pixi run <task>`, `pixi shell` and workspace management keep
+working, with no registry, CDN or release asset needed at any point. JS dependencies are **not** part of a kit:
+`node` and `npm` exist on the hosts that build the docs, and the docs build is a CI job (D20). Start with
+[The one idea](/.knowledge/overview/problem.md); the mechanics are in
+[The Action Shape](/.knowledge/spec/action-shape.md),
 [Artifact Formats and Integrity](/.knowledge/spec/artifacts.md) and
 [Reconstructing on an Airlocked Machine](/.knowledge/workflows/airlock-clone.md).
 
@@ -39,15 +46,18 @@ Start with [The one idea](/.knowledge/overview/problem.md); the mechanics are in
 | Area | Concepts | Contents |
 |---|---|---|
 | [`overview/`](/.knowledge/overview/index.md) | 4 | the problem, goals G1–G9, the five requirements traced to answers, the constraints that decide everything |
-| [`spec/`](/.knowledge/spec/index.md) | 15 | architecture, command surface, config schema, toolchain/platform resolution, the three packagers, artifacts + the R1–R5 rung ladder, docs site, git registry, bootstrap, CI, error taxonomy, testing, roadmap, **decision log D1–D18**, risks |
-| [`workflows/`](/.knowledge/workflows/index.md) | 9 | the lockfile→digest map, create-and-pack, airlock rebuild, CI republish, **pixi ↔ cargo interop verdict**, copy-paste scripts, the unproven register, dogfooding D0–D4, publishing the docs |
+| [`spec/`](/.knowledge/spec/index.md) | 18 | architecture, command surface, config schema, toolchain/platform resolution, the three packagers, artifacts + the R1–R5 rung ladder, docs site, git registry, bootstrap, the Action shape, **the assembler binary (D21)**, CI, error taxonomy, testing + **testing strategy**, roadmap, **decision log D1–D21**, risks |
+| [`workflows/`](/.knowledge/workflows/index.md) | 10 | the lockfile→digest map, create-and-pack, airlock rebuild, CI republish, **running the action (nine measured outcomes)**, **pixi ↔ cargo interop verdict**, copy-paste scripts, the unproven register, dogfooding D0–D4, publishing the docs |
 | [`research/`](/.knowledge/research/index.md) | 16 | first-hand notes on pixi 0.81.0, pixi-pack 0.7.11, `cargo vendor`, bun/node, Actions limits, GitHub Markdown, AGENTS.md, clap/thiserror, OKF — plus sandbox measurements, corrections, bibliography |
 | [`environment/`](/.knowledge/environment/index.md) | 7 | the reference host: inventory, egress matrix, consequences, execution and git semantics, budgets, session safety, reproduction commands |
 
 Three lines carry the whole project: **detect, don't declare** (`Inventory` tiers L0→L3, so packing an
 environment needs no config edit); **the lockfile is the spec** (which artifacts exist, and their digests, are
-derived from `pixi.lock` / `Cargo.lock` / `bun.lock` — one lockfile, one digest key); and **the tool must work
-where it cannot be built** (G9: it consumes its own kits, so every release doubles as an airlock rehearsal).
+derived from `pixi.lock` / `Cargo.lock` — one lockfile, one digest key); and **the tool must work where it cannot
+be built** (G9: answered by D19 + [D21](/.knowledge/spec/decisions.md) together — the binary comes back, but
+only as a *mirrored artifact*: built in CI where network exists, shipped digest-pinned in the kit, and never
+compiled or installed on the target; the design's behaviour was first proven as the `assemble.sh` oracle,
+executed in the sandbox that specified it).
 
 ## Reading it as an agent
 
@@ -61,20 +71,21 @@ Editing rules are in [Bundle Conventions](/.knowledge/conventions.md).
 
 ## Status, decisions, next step
 
-* **Open decisions for you:** the 18 rows of [Decision Log](/.knowledge/spec/decisions.md). D1–D16 are
-  `decided`/`recommended`; D17 (dogfooding tiers) and D18 (docs publishing) are the newest and still need your
-  acceptance — accepting them is also the gate that closes **M0 (spec)**.
-* **Next milestone:** **M1 — the walking skeleton**, read-only verbs only (`inventory`, `environments`,
-  `platforms`, `plan`, `doctor`, `completions`) with argv goldens and no writes; then M2 packs and unpacks a
-  `linux-64` environment, verified by `tar -xf` on a box with no conda or pixi on `PATH`. Gates are in
-  [Roadmap and Acceptance Gates](/.knowledge/spec/roadmap.md).
+* **Decision status:** the 21 rows of the [Decision Log](/.knowledge/spec/decisions.md) are all decided —
+  D1–D16 from the original design pass, D17–D20 accepted on 2026-09-19, and **D21 (one Rust binary, two
+  surfaces — the action runs it, the kit ships it, nobody installs it) accepted the same day**, with its test
+  plan in [Testing Strategy](/.knowledge/spec/testing-strategy.md). That acceptance closed **M0 (spec)**.
+* **Next milestone:** **M1 — the binary + the action**: the `pixi-sandbox` Rust crate (`pack`/`publish` invoked
+  by the action, `reconstruct` shipped in the kit), with the nine measured `assemble.sh` outcomes as its
+  acceptance vectors; then **M1.5**, the end-to-end run against
+  real `pixi-pack`/`pixi-unpack` in a clean container.
 * **Docs site:** `.knowledge/` is the canonical markdown; an Astro Starlight site builds from it and publishes
   *twice* — GitHub Pages for browsers, a `pixi-sandbox-docs` orphan branch for sealed boxes (because
   `*.github.io` is unreachable from inside an airlock — [Publishing the Docs](/.knowledge/workflows/publishing-docs.md)).
-* **Install once it exists:** the default is the one that works in a GitHub-only sandbox —
-  `git clone --depth 1 --branch pixi-sandbox-dist` + checksum + `chmod` (or `pixi sandbox install`, same four
-  steps); offline users then `pixi add ./pixi-sandbox-0.1.0-linux-64.conda` ✅, and a networked machine can
-  `cargo install --git https://github.com/Archont561/pixi-sandbox.git --bin pixi-sandbox`. Note the gap this
-  design exists to close: pixi's documented git support is **PyPI-flavoured**, so there is no
-  `pixi add --from git+…` for a Rust binary — see [Bootstrap](/.knowledge/spec/bootstrap.md).
-  Until then, this repo has no binaries, dist branches or releases to consume.
+* **How it arrives once it exists:** nobody installs anything. The action builds the `pixi-sandbox` binary in
+  CI and the kit mirrors it digest-pinned into `bin/` next to `pixi`/`pixi-unpack` — so a GitHub-only machine
+  just runs `git clone --depth 1 --branch pixi-sandbox-dist …` and executes the verified blob
+  ([The Assembler Binary](/.knowledge/spec/assembler-binary.md)). The gap this closes: pixi's documented git
+  support is **PyPI-flavoured**, so there is no `pixi add --from git+…` for a Rust binary — see
+  [Bootstrap](/.knowledge/spec/bootstrap.md). Until M1 lands, this repo has no binaries, dist branches or
+  releases to consume.

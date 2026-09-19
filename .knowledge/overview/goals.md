@@ -24,7 +24,7 @@ legacy: { files: [`DESIGN.md`], sections: ["2"] }
 6. **G6 — Auditable provenance.** Every artifact records which *source* produced it, not just its version (see [C1/C3](/research/corrections.md#14-corrections--method-notes): conda-forge `bun` = 1.3.11 vs upstream 1.4.2 — same name, different runtime).
 7. **G7 — Zero config to be useful.** Detection (`Inventory`, [§4.4](/spec/architecture.md#44-discovery-the-inventory)) must cover: *any* environment in *any* manifest (a stranger's `pyproject.toml` is in scope), *any* target
    platform (validated, [§7.4](/spec/toolchain-resolution.md#74-platform-validation-does-this-platform-actually-exist)), and *which* artifacts
-   are needed (`Cargo.lock`/`bun.lock` decide, [§8](/spec/packagers.md#8-the-three-packagers)). Config is an **override, not a
+   are needed (`Cargo.lock` decides; `bun.lock` is a CI assertion, not a payload — [§8](/spec/packagers.md#8-the-three-packagers)). Config is an **override, not a
    prerequisite** — a repo with no `pixi-sandbox.toml` must still get a correct `plan`.
 8. **G8 — The kit must make pixi work.** A `git clone` of the dist branch on a machine with nothing but
    `git` + `tar` must yield: the `pixi` binary, `pixi-sandbox`, a manifest + `pixi.lock`, and usable

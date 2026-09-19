@@ -18,7 +18,7 @@ legacy: { files: [`WORKFLOWS.md`], sections: ["0"] }
 |---|---|---|---|---|
 | a conda dep (`pixi add rust`) | `pixi.lock` | `pixi add` / `pixi lock` ✅ | `pixi install --frozen` ✅ | `env` packs for **every (env × platform) whose hash moved** |
 | a PyPI dep (`[pypi-dependencies]`) | `pixi.lock` (same file!) | same ✅ | same, **but** ⚠️ `uv` is not restricted to cached wheels by `--offline` ✅ | `env` packs; sdists can't be packed ✅ → `--ignore-pypi-non-wheel` |
-| a JS dep (`package.json`) | `bun.lock` (or npm/pnpm/yarn equivalent) | `bun install` ✅ (`bun ci` ≡ `--frozen-lockfile` ✅) | `bun ci --frozen-lockfile` fails on drift ✅ | `node` tarball (keyed by lockfile digest) |
+| a JS dep (`package.json`) | `bun.lock` (or npm/pnpm/yarn equivalent) | `bun install` ✅ (`bun ci` ≡ `--frozen-lockfile` ✅) | `bun ci --frozen-lockfile` fails on drift ✅ | **no artifact** (D20) — the lockfile guards CI; the tree is installed where a registry is reachableball (keyed by lockfile digest) |
 | a Rust dep (`Cargo.toml`) | `Cargo.lock` **and** `vendor/` | `cargo add` **before** vendoring, then `cargo vendor --locked --sync vendor` ✅ | `cargo metadata --locked --offline` ✅ | `vendor` artifact (keyed by `Cargo.lock` digest) |
 | your own Rust code | nothing | — | `cargo build --offline` | `self`/`bin/*` + the injected `.conda` ([§4](/workflows/pixi-cargo-interop.md#4-pixi--cargo-interoperability-and-what-pixi-pack-does-not-carry)) |
 

@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [spec, ux, errors]
 status: stable
 confidence: reasoned
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-20T00:15:00Z }
 legacy: { files: [`DESIGN.md`], sections: ["13"] }
 sources:
   - { id: oneuptimecom-blog-post, resource: https://oneuptime.com/blog/post/2026-01-25-error-types-thiserror-anyhow-rust/view, title: oneuptime.com/blog/post/2026-01-25-error-types-thiserror-any }
@@ -41,5 +41,22 @@ Every error renders as `error[E-CODE]: what\n = where\n = why\n = try: <exact co
 `--json`, as `{code, class, message, artifact, remediation: [cmd…]}`. **Never** `expect()` in library
 code; `unwrap` is confined to tests. Exit codes are the API for CI (`|| exit 0` is a smell; `--strict`
 opts into treating warnings as errors for gating).
+
+## What a shell implementation must do about exit codes
+
+These obligations were discovered while proving the reconstruction ladder as `assemble.sh`
+([The Action Shape](/spec/action-shape.md)). Under D21 they bind the **Rust assembler binary** just the same —
+a typed error enum mapped onto the exact same codes — and the shell findings below are why the mapping is an
+acceptance vector, not a formality:
+
+* **`set -eu` alone leaks foreign statuses.** The first `assemble.sh` draft exited **2** — `tar`'s code — where
+  the contract promises **8**; the fix is that every external command ends in
+  `|| fail <CLASS> "<what failed>" <code>`, so only mapped classes reach the caller ✅ (measured by fixture T4).
+* **The integrity class must fire before the first executed payload byte.** `sha256sum -c` is the *first*
+  statement that touches a payload; fixture T3 confirmed exit **4** with nothing unpacked ✅.
+* **`E-NOT-DETECTED` is a lookup, not a guess**: an `--env` with no matching pack in `dist-manifest.json` reports
+  the missing pair and lists what *is* there ✅ (T5).
+* **A rung that cannot be reached is reported, not hidden.** `--print-rung` makes `3` vs `5` machine-readable, so
+  "I got files but no `conda-meta`" shows up in logs instead of being discovered by a broken `activate` ✅ (T2).
 
 ---

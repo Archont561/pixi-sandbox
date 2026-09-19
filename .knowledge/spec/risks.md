@@ -36,7 +36,9 @@ sources:
 | pixi `--offline` **not** enforced for build backends, and uv's PyPI solve can still reach out ✅ [docs](https://pixi.prefix.dev/latest/reference/pixi_configuration/) | 🟠 | the tool never claims "fully offline" from `--offline` alone; `kit verify` asserts *its own* files, and §11's default path makes no claim about source builds |
 | Partial clone / `--filter=blob:none` unsupported on a private git host | 🟡 | `dist pull --full` fallback (measured: plain `--depth 1` of a 73 MB repo took ~3.5 s here) |
 | GNU-tar-only flags (`--sort`, `--mtime`) break on bsdtar/Windows | 🟡 | detect `tar --version`, degrade determinism with a recorded `note`, never fail the pack for it |
-| Windows: symlinks/`chmod`/path length in `node_modules` | 🟡 | `win-64` kits ship packs only; `node pack` is `enabled = false` on Windows by default 🚧 confirm |
+| ~~Windows: symlinks/`chmod`/path length in `node_modules`~~ | ✅ closed | **moot since D20** — no `node_modules` payload exists in v1, so JS-tree unpack semantics on Windows are nobody's problem until `[node] pack` returns |
+| A CI-side packager pushes **huge tarballs to a branch** (227 MB of `node_modules` would have been a typical payload ✅ measured) | 🟠 | `keep-last = 3` + a force-pushed orphan tip prune *references*, but **git blobs are forever** ⚠️; per-artifact `git-oid` fetch keeps the size off a consumer's clone ✅; documented escapes: LFS opt-in, `git bundle` for the air-gap hop — [Action Shape](/spec/action-shape.md) |
+| **"tar of `.pixi/envs`" instead of a `pixi-pack`** ⇒ prefixes with the build box's absolute paths baked in | 🟠 | ship `pixi-pack` output (channel-shaped ⇒ R2/R3 ✅); a raw env tree may travel only as an *extra* artifact and `assemble.sh` must refuse to relocate it ⚠️ — [Action Shape](/spec/action-shape.md) |
 | CI minutes (private repo: 2 000/mo) with a 7-job matrix | 🟡 | `paths:` filters, `cache-write` on main only, `pack` nightly not per-PR |
 | **The design's premises are all measured in *this* sandbox** — a different host changes them | 🔴 (process) | `doctor` must be run at install time, not assumed; §14.5 keeps the premises under test |
 

@@ -142,7 +142,7 @@ Two more cargo gotchas encoded as behaviour:
   always possible, only generation needs egress**. That asymmetry is the whole reason this design works
   here at all.
 
-### 8.3 `node` — optional `node_modules`
+### 8.3 `node` — **retired in v1** (D20), kept here as the reasoning
 
 * `node sync` → `bun ci` (preferred; equivalent to `bun install --frozen-lockfile`, which errors if
   `package.json` and `bun.lock` disagree ✅ [bun docs](https://bun.com/docs/pm/cli/install)), or
@@ -154,7 +154,7 @@ Two more cargo gotchas encoded as behaviour:
   `--exclude` (defaults: `.cache`, `*.map`), `--sort`/`--mtime 1970-01-01` normalisation so re-packing
   the same tree yields the same SHA-256 (⚠️ needs `tar` ≥1.28; on Windows use bsdtar `tar.exe`; verify
   flags per flavour at runtime rather than assuming GNU tar).
-* **Why a tarball at all** if pixi could ship `nodejs`: because `node_modules` contains *platform-native*
+* ⚠️ *Historical:* **why a tarball was ever proposed**, when pixi could ship `nodejs`: because `node_modules` contains *platform-native*
   optional deps (esbuild/swc/@rollup) that conda won't resolve for you — same problem pixi solves for
   conda packages. But note bun's install cache layout is explicitly documented as unstable ("don't think
   of it as an API" ✅), so we snapshot the **`node_modules` tree only**, never `~/.bun/install/cache`, and

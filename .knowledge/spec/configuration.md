@@ -1,7 +1,7 @@
 ---
 type: Configuration Schema
 title: "Every key pixi.toml and sandbox.lock.json may carry"
-description: Full annotated config schema: [kit], [node], [policy], [doctor], [docs], plus the lockfile schema and defaults.
+description: Full annotated config schema: [kit], [vendor], [policy], [doctor], [docs] plus the lockfile schema (the former [node] block is retired — D20).
 resource: https://github.com/Archont561/pixi-sandbox
 tags: [spec, configuration]
 status: stable
@@ -10,7 +10,7 @@ generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
 legacy: { files: [`DESIGN.md`], sections: ["6"] }
 sources:
   - { id: pixiprefixdev-latest-reference, resource: https://pixi.prefix.dev/latest/reference/pixi_configuration/, title: pixi.prefix.dev/latest/reference/pixi_configuration/ }
-  - { id: bunsh-docs-installation, resource: https://bun.sh/docs/installation", title: bun.sh/docs/installation" }
+  - { id: bunsh-docs-installation, resource: https://bun.sh/docs/installation, title: bun.sh/docs/installation }
 ---
 
 # Every key pixi.toml and sandbox.lock.json may carry
@@ -79,19 +79,23 @@ prune-unverified = false                 # 🚧 shrinking A/B to the host triple
 # `check` = `cargo metadata --locked --offline` + config/directory consistency; cargo's documented exit
 # codes are 0/101 ✅, and 101 with empty stderr is reported as E-VENDOR-INCOMPLETE, never as a pass
 
-# ── node deps (optional, off by default) ────────────────────────────────────
-[node]
-enabled = false
-package-manager = "bun"                  # bun | npm | pnpm | yarn | "auto" (lockfile sniff)
-lockfile = "bun.lock"                    # text form; see C2 caveat on bun.lockb
-pack = true                              # snapshot node_modules -> node_modules.<plat>.tar.gz
-exclude = [".cache", "**/*.map"]
+# ── node: NOT a v1 component (D20) ─────────────────────────────────────────
+# `node_modules` is no longer packed as a kit component. What stays supported:
+#   • JS *runtimes* travel as conda packages (`nodejs`, `bun` ✅ see [toolchain.bun] below);
+#   • a JS lockfile is still **validated** by CI (`bun ci` ≡ `--frozen-lockfile` ✅), and a binary
+#     `bun.lockb` is still a hard failure whose remediation is the migration command;
+#   • the docs pipeline installs its 227 MB of `node_modules` with npm in whatever box builds it ✅.
+# What is gone: the pack, the `node/` artifact dir, the `node` verbs, the platform-keyed JS tarball.
+# `[node] pack = true` remains **reserved** and returns `not-supported` (exit 5) rather than silently
+# doing nothing — a config key that lies is worse than one that never existed.
+# Evidence behind the decision: §8.3 of [The Three Packagers](/spec/packagers.md) and
+# [node_modules and bun in a pixi workspace §5](/research/node-bun.md#5-node_modules--bun-in-a-pixi-workspace).
 
 # ── the offline kit ─────────────────────────────────────────────────────────
 [kit]
 output-dir = "kit"
 components = "auto"                      # "auto" = derive from Inventory; or an explicit list:
-                                         #   ["env", "vendor", "node", "self"]
+                                         #   ["env", "vendor", "self"]   (node → D20)
 checksums = true                         # sha256sums.txt
 bootstrap = true                         # embed apply.sh / apply.ps1
 tarball = false                          # also produce kit.tar.gz (for a USB-stick hop)

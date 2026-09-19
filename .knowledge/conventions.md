@@ -84,5 +84,11 @@ an area, and stop.
 4. Add the concept to its area `index.md`, and add one dated line to the nearest `log.md` (§9).
 5. Never fork prose into a second file. If the docs site needs a rewrite (title, callouts, routes), generate it
    in `docs-sync` — the bundle is the single source of truth.
-6. Run the validator (`python3 val.py` at the repo root) before committing: it checks front matter,
-   `type` presence, reserved-name usage, every internal link and anchor, and code-fence parity.
+6. Run the validator before committing: `python3 val.py` (the file lives at the **workspace root, outside the
+   repo** — `../val.py` from here — because the bundle is markdown-only until
+   [the decision log](/spec/decisions.md) is accepted). It checks front matter and its shapes, `type` presence,
+   reserved-name usage, every internal link *and anchor*, reachability from an `index.md`, code-fence parity,
+   `confidence` values, and stale references to the removed pre-OKF root documents. It runs with **zero
+   dependencies** (no PyYAML: it carries its own parser for the two front-matter shapes above), which is why it
+   works in a sandbox like this one ⚠️ and why a snapshot restore that loses it must simply re-create it from this
+   list — the checks are part of the contract, not the file.

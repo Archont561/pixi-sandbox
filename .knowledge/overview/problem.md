@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [overview, core-idea]
 status: stable
 confidence: reasoned
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-20T00:15:00Z }
 legacy: { files: [`DESIGN.md`], sections: ["1"] }
 sources:
   - { id: pixish-install, resource: https://pixi.sh/install, title: pixi.sh/install }
@@ -23,13 +23,13 @@ reproducible, three-ecosystem dev setup:
   ordinary packages — including their native/system libraries, which is the part pip and npm cannot do.
 * **`pixi-pack`** to freeze those environments into portable archives.
 * **`cargo vendor`** to do the same for Rust *source* deps, so a build needs no registry.
-* optionally **`node_modules`** snapshotted the same way.
-* delivered by **a Rust binary named `pixi-sandbox`**, ergonomic, installable from a git repo.
+* delivered by **a Rust binary named `pixi-sandbox`** — one the user never installs: CI builds it, the kit
+  mirrors it digest-pinned, the target just executes it (D21).
 
 **The core idea: treat a git ref as an immutable, content-addressed artifact registry.**
 Not "git as a source host that then goes and fetches from crates.io" — the *artifacts themselves*
-(`environment.tar`, `vendor.tar.zst`, `node_modules.tar.gz`, the `pixi-sandbox` binary) live in an
-**orphan branch** of the same repo, addressed by SHA-256, and are consumed by `git clone --depth 1
+(env packs, the vendor tree, the `pixi`/`pixi-unpack` drivers, the `pixi-sandbox` assembler binary) live on
+**orphan branches** of the same repo, addressed by SHA-256, and are consumed by `git clone --depth 1
 --branch <dist>`. Everything else in the design follows from that.
 
 Why this and not the obvious alternatives:

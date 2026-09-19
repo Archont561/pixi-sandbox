@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [spec, git, transport]
 status: stable
 confidence: verified
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-19T23:40:00Z }
 legacy: { files: [`DESIGN.md`], sections: ["10"] }
 sources:
   - { id: pixish-install, resource: https://pixi.sh/install, title: pixi.sh/install }
@@ -118,3 +118,40 @@ pixi-sandbox-dist (orphan branch, one commit per release)
 * **The closure property to test in CI (M7):** the tool must be able to install *itself* from a `.conda`
   file it produced, into a workspace whose env it produced, on a machine with only `git` + `tar`. That is
   the whole design in one assertion.
+
+### 10.6 Branch sharding: one branch until it hurts
+
+A single `pixi-sandbox-dist` branch holds the **kit** — the small, always-needed index: the reconstructor
+(`assemble.sh` under D19, `bin/pixi-sandbox-<triple>` under D21), `README.md` + `AGENTS.md`, `SHA256SUMS`,
+`dist-manifest.json` + `manifest.tsv`, `workspace/{pixi.toml,pixi.lock}` and the `bin/` drivers. Payloads live
+on sibling branches of the same remote: `<dist>-envs`, `<dist>-vendor` — and a class gets a numbered shard
+(`<dist>-envs-2`, `-3`, …) only when its byte budget is exceeded. Greedy first-fit assignment in listing order
+keeps the plan readable; nothing about consumption changes, because the consumer reads the manifest, not the
+branch names.
+
+Two budgets, both derived from measured GitHub behaviour:
+
+* **Blob budget — 99 MB** (default `max-blob-bytes`). GitHub refuses files over **100 MB** and warns over
+  50 MB ✅ (the `GH006` class of push failure), so any payload above the budget is split with `split -b` into
+  `<name>.part-aa…` pieces at publish time; the reconstructor concatenates the parts in scratch space and
+  verifies the **reassembled** digest from the manifest before using it. No LFS: LFS needs an extra server
+  conversation an airlock cannot have, and splitting keeps every byte a plain blob.
+* **Branch budget — 1 GB** (default `max-branch-bytes`). Blobs are forever (§10.4), so each branch stays lean
+  enough that keep-last rotation and a shallow clone remain cheap.
+
+`manifest.tsv` is the index that makes this one command on the far side — tab-separated, parseable by POSIX
+`cut`/`awk` and trivially by Rust:
+
+```
+# component  env  platform  branch                    path                          sha256  bytes  parts
+env          demo linux-64  pixi-sandbox-dist-envs    packs/ws-demo-linux-64.tar    <sha>   1234   1
+vendor       -    -         pixi-sandbox-dist-vendor  vendor/vendor.tar.gz          <sha>   9999   3
+```
+
+Consumption is **lazy**: `git clone --depth 1 --branch <dist>` fetches only the kit branch (small by
+construction); the reconstructor then shallow-clones only the payload branches that contain the requested
+`--env`s (and the vendor branch only with `--with-vendor`), each into its own scratch dir, verifying each
+branch's `SHA256SUMS` on arrival and the reassembled digest before unpacking. A kit whose manifest lists six
+branches therefore still costs one clone for a single-env target. Both halves of this design were prototyped
+against a local bare remote in the authoring sandbox (publish → clone → lazy-fetch → digest-verify) ✅ as shell;
+under [D21](/spec/decisions.md) the same layout is read by the assembler binary instead.

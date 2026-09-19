@@ -6,7 +6,9 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [research, pixi-pack]
 status: stable
 confidence: verified
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-19T00:55:00Z }
+verified:
+  - { by: process:sandbox-measurement, at: 2026-09-19T00:55:00Z }
 legacy: { files: [`WEB_SEARCH_RESULTS.md`], sections: ["3", "16"] }
 stale_after: 2026-12-19T00:00:00Z
 sources:
@@ -262,3 +264,25 @@ and `cache/pkgs/` becomes an optional size optimisation. Red ⇒ rung 3 is the g
 is documented as unsupported, and `pixi add <abs path>.conda` ✅ is the only manifest-editing escape.
 
 ---
+
+### 16.7 The release assets, measured — why the action mirrors a *pair*
+
+`GET https://api.github.com/repos/Quantco/pixi-pack/releases/latest` from this sandbox, 2026-09-19 ✅:
+
+| Fact | Value |
+|---|---|
+| Latest release | `v0.7.11`, published 2026-08-31 |
+| Assets | **16** — 8 × `pixi-pack-<triple>` (9.6–14.7 MB) and 8 × `pixi-unpack-<triple>` (10.1–15.7 MB) |
+| Integrity | **every asset carries `digest: sha256:…`** in the API payload — e.g. `x86_64-unknown-linux-musl` pack `8191f586b734e634…`, unpack `7cf766c38436406f…` |
+
+Three consequences for the design:
+
+* The kit's `bin/` directory is a **pair**, not a single binary ([The Action Shape](/spec/action-shape.md)
+  `ship-pixi`): `pixi-pack` is only needed by the *builder*, `pixi-unpack` by the *target* — and dropping the
+  second is what pins a sealed machine to the `tar` floor instead of rung 3.
+* Because `api.github.com` is reachable even from a GitHub-only sandbox ✅, a sealed target can **re-verify our
+  mirrored copy against upstream's own digest** — the property `provenance = "mirror"` + `upstream-sha256` encodes
+  in [Artifacts](/spec/artifacts.md), now with a concrete number to compare against.
+* ⚠️ `api.anaconda.org` returned `000` from this host on the same day, so "is `pixi-pack`/`pixi-unpack` also on
+  conda-forge?" is **unresolved here**; the documented route `pixi global install pixi-pack pixi-unpack` stays the
+  assumption, and `binary_relocation`/prefix questions for those two packages are open ⚠️.

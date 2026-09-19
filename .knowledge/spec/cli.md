@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [spec, cli]
 status: stable
 confidence: reasoned
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-20T00:15:00Z }
 legacy: { files: [`DESIGN.md`], sections: ["5"] }
 ---
 
@@ -31,15 +31,17 @@ pixi sandbox vendor         sync [--features F…] [--all-features] [--strategy 
 pixi sandbox vendor        check [--offline] [--strict]
 pixi sandbox vendor        prune
 
-pixi sandbox node           sync [--pkg auto|bun|npm|pnpm|yarn] [--frozen]
-pixi sandbox node          check
-pixi sandbox node           pack [--out DIR] / unpack <tar>
+# no `node` verbs in v1 (D20): JS deps are validated by CI, never packed.
+# `pixi sandbox node …` exits 1 with `not-supported` + a pointer to D20.
 
-pixi sandbox kit           build  [--components auto|env,vendor,node,self] [--only-changed [--against REF]] [--tar] [--cache]
+pixi sandbox kit           build  [--components auto|env,vendor,self] [--only-changed [--against REF]] [--tar] [--cache]
 pixi sandbox kit          verify  [DIR]
 pixi sandbox kit          apply   <dir|url> [--prefix DIR]          # alias of reconstruct (below)
 
-pixi sandbox reconstruct          [--from DIR|git-url] [--env E…] [--tasks] [--mode auto|cache|file-channel|unpack|env-yml|tar] [--print-rung]
+pixi sandbox reconstruct          [--from DIR|git-url] [--env E…] [--tasks] [--workspace DIR] [--with-vendor] [--with-docs] \
+                                  [--mode auto|cache|file-channel|unpack|env-yml|tar] [--print-rung]
+                                  # v1 (D21): this is a subcommand of the shipped Rust binary — and its contract
+                                  # was proven as assemble.sh ✅; `--with-docs`/`--tasks` remain 🚧
 pixi sandbox docs          build / pack [--out F] / publish [--branch B] / check [--base B]   # §9.6: Starlight site,
                                          #   mirrored into the repo so the airlock can read it (docs are OFF by default)
 pixi sandbox mirror        binary [--path P | --url U] [--as pixi] [--version V]   # ingest pixi/pixi-pack/… into dist staging
@@ -65,6 +67,17 @@ from pixi's `pixi-<verb>` PATH lookup ✅ verified. Because that lookup only see
 `doctor` reports whether `pixi-sandbox` is discoverable and offers the exact `pixi global install
 --from-lockfile`/`pixi link` remediation. 🚧 (Verify the intended discovery path on your pixi version
 before shipping the `pixi sandbox` sugar as documented behaviour.)
+
+> [!NOTE]
+> **D19 + D21 set what "implemented" means for v1.** [The Action Shape](/spec/action-shape.md) routes `kit build`,
+> `pack`, `dist push`, `binaries mirror`, `vendor pack` and `reconstruct` through **one Rust binary**
+> ([The Assembler Binary](/spec/assembler-binary.md)): the action's CI steps call its `pack`/`publish` verbs and
+> the kit ships the same binary as its assembler. So every row below is a subcommand of that binary; the ones the
+> v1 pipeline does not invoke yet (`plan`, `explain`, `docs *`, `dist bundle/tag/pull`, `kit verify`, `doctor`,
+> `completions`) stay specified-but-unlocked (v2 ergonomics). The exit codes, the `--dry-run`/`--json` discipline
+> and "absent components are never an error" carry over unchanged; the measured `assemble.sh` oracle is the
+> behavioural contract `reconstruct` must reproduce
+> ([Testing Strategy](/spec/testing-strategy.md)).
 
 ### 5.1 Global flags (uniform across verbs)
 
@@ -93,7 +106,7 @@ before shipping the `pixi sandbox` sugar as documented behaviour.)
    everybody and CI. Both routes converge on the same resolved `plan`, which is the property that makes
    them interchangeable — and it is why a config file is optional rather than a gate.
 2. **Idempotent + convergent.** Running any verb twice does not change the tree: `vendor check`,
-   `kit verify`, `node check` are *assertions*; `sync` verbs converge. This is what makes it usable as a
+   `kit verify` are *assertions*; `sync` verbs converge. This is what makes it usable as a
    CI gate and safe for agents to re-run.
 3. **`plan` before everything.** `plan` is the only verb that must be perfect, because it is how you
    review a mutation before allowing it (and how the test suite asserts behaviour without a compiler —
@@ -128,7 +141,6 @@ targets
 components  auto-derived
   env     on    pixi.lock present (L0)          → pixi-pack per (env × platform)
   vendor  on    Cargo.lock present (L0)         → cargo vendor --locked --versioned-dirs
-  node    off   no package.json / lockfile (L0) → not-applicable, not an error
   self    on    package "pixi-sandbox" (L1)     → bin/* into kit + dist branch
 toolchains
   pixi 0.81.0 ✅   pixi-pack ⛔ not-found → `pixi exec --spec pixi-pack --` or ship `bin/pixi-pack-<triple>` from the branch (D14)
@@ -139,7 +151,7 @@ hosts (measured, not assumed)
 ```
 
 Three properties worth naming, because they are what "detects what is available" has to mean to be worth
-implementing: it prints **absences as findings** (`node off` is a result, not a shrug); it never claims a
+implementing: it prints **absences as findings** (`vendor off` is a result, not a shrug); it never claims a
 tier it didn't reach (`--tier L2` is *how you test the tool on a box with nothing installed*); and the
 platform answer is *layered*, so "win-64 is not declared" and "win-64 is not published by anyone" produce
 different remediations — the first is a manifest edit, the second is a substitution or a degraded kit.

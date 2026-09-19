@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [workflow, airlock]
 status: stable
 confidence: mixed
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-20T00:15:00Z }
 legacy: { files: [`WORKFLOWS.md`], sections: ["2"] }
 sources:
   - { id: githubcom-acme-myprojgit, resource: https://github.com/acme/myproj.git, title: acme/myproj.git }
@@ -21,6 +21,13 @@ sandbox ✅, and on plain `alpine` until `apk add zstd` ⇒ hence `kit.tar.gz` /
 `.tar.zst` artifact is only allowed when the pack itself ships `zstd` in `bin/`). It does **not** have pixi, cargo, python, or network except
 to the git host. Everything below is the *documented* offline path — the interesting part is that pixi
 itself supports a **local channel**, so the kit is not a dead prefix, it is a package source.
+
+> [!NOTE]
+> The ladder below is not a ritual a human performs: **the assembler binary shipped inside every kit (D21) *is*
+> §2.1–§2.6 as code** — it tries rung 3, then 2, lands on 5 only with an explicit warning, and prints which rung
+> it took (`--print-rung`). Its contract is the measured `assemble.sh` oracle ✅
+> ([nine outcomes](/workflows/action-run.md#the-nine-outcomes-measured-in-this-sandbox)); read the steps that
+> follow as that contract's specification, and keep them as the manual fallback for when no kit binary exists.
 
 ### 2.1 Fetch, verify, install the drivers
 
