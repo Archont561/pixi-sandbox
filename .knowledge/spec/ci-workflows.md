@@ -34,7 +34,8 @@ where the request and a decision collide, the collision is named, not smoothed.
 
 | Unit | Kind | Trigger | Mutates | Permissions |
 |---|---|---|---|---|
-| `action.yml` (repo root) | **the product** ([Action Shape](/spec/action-shape.md)) | `uses:` from any repo, incl. this one | the dist branch | `contents: write` in the *caller's* scope |
+| `action.yml` (repo root) | **the product** ([Action Shape](/spec/action-shape.md)) — primary, marketplace | `uses:` from any repo, step-level | the dist branch | `contents: write` in the *caller's* scope |
+| `.github/workflows/reusable-publish.yml` | reusable wrapper (D22) — opinionated, enforces runner matrix | `workflow_call` from any repo | the dist branch (via action) | `contents: write` |
 | `.github/actions/setup-env/` | local composite — the env-setup **policy** | called by this repo's jobs | nothing (cache writes) | inherits the job |
 | `.github/workflows/ci.yml` | guards | `pull_request` + `push: main` | **nothing** | `contents: read` |
 | `.github/workflows/build.yml` | builds the binary | PR (`paths:`), `workflow_call`, `workflow_dispatch` | artifacts only | `contents: read` |
