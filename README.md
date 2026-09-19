@@ -12,7 +12,7 @@ testable in the sandbox that wrote it.
 Everything about it lives in a knowledge bundle:
 
 ```
-.knowledge/            # OKF v0.2 bundle — 55 concepts, 5 areas, this repo's whole corpus
+.knowledge/            # OKF v0.2 bundle — 58 concepts, 5 areas, this repo's whole corpus
   index.md             # start here (progressive disclosure: areas → groups → concepts)
   log.md               # dated history of the corpus
   conventions.md       # labels ↔ trust tiers, front-matter extensions, editing rules
@@ -32,7 +32,7 @@ A git ref is an immutable, content-addressed artifact registry. The action runs 
 (`pixi-pack` for environments, `cargo vendor` for the crate graph), writes their outputs into an orphan
 `pixi-sandbox-dist` branch with a `dist-manifest.json`, a `SHA256SUMS` and the mirrored `pixi` + `pixi-unpack`
 binaries, and pins the digests in `sandbox.lock.json` on `main`. On the far side of the airlock one command —
-`git clone --depth 1 --branch pixi-sandbox-dist … && sh kit/assemble.sh` — verifies digests *before executing
+`git clone --depth 1 --branch pixi-sandbox-dist … && sh kit/assemble` — verifies digests *before executing
 anything*, then reconstructs the environment so `pixi run <task>`, `pixi shell` and workspace management keep
 working, with no registry, CDN or release asset needed at any point. JS dependencies are **not** part of a kit:
 `node` and `npm` exist on the hosts that build the docs, and the docs build is a CI job (D20). Start with
@@ -46,9 +46,9 @@ working, with no registry, CDN or release asset needed at any point. JS dependen
 | Area | Concepts | Contents |
 |---|---|---|
 | [`overview/`](/.knowledge/overview/index.md) | 4 | the problem, goals G1–G9, the five requirements traced to answers, the constraints that decide everything |
-| [`spec/`](/.knowledge/spec/index.md) | 18 | architecture, command surface, config schema, toolchain/platform resolution, the three packagers, artifacts + the R1–R5 rung ladder, docs site, git registry, bootstrap, the Action shape, **the assembler binary (D21)**, CI, error taxonomy, testing + **testing strategy**, roadmap, **decision log D1–D21**, risks |
-| [`workflows/`](/.knowledge/workflows/index.md) | 10 | the lockfile→digest map, create-and-pack, airlock rebuild, CI republish, **running the action (nine measured outcomes)**, **pixi ↔ cargo interop verdict**, copy-paste scripts, the unproven register, dogfooding D0–D4, publishing the docs |
-| [`research/`](/.knowledge/research/index.md) | 16 | first-hand notes on pixi 0.81.0, pixi-pack 0.7.11, `cargo vendor`, bun/node, Actions limits, GitHub Markdown, AGENTS.md, clap/thiserror, OKF — plus sandbox measurements, corrections, bibliography |
+| [`spec/`](/.knowledge/spec/index.md) | 19 | architecture, command surface, config schema, toolchain/platform resolution, the three packagers, artifacts + the R1–R5 rung ladder, docs site, git registry, bootstrap, the Action shape, **the assembler binary (D21)**, CI + **this repo's workflow set (draft)**, error taxonomy, testing + **testing strategy**, roadmap, **decision log D1–D21**, risks |
+| [`workflows/`](/.knowledge/workflows/index.md) | 11 | the lockfile→digest map, create-and-pack, airlock rebuild, CI republish, **running the action (nine measured outcomes)**, **the copy-paste sandbox-environment template (the integration format)**, **pixi ↔ cargo interop verdict**, copy-paste scripts, the unproven register, dogfooding D0–D4, publishing the docs |
+| [`research/`](/.knowledge/research/index.md) | 17 | first-hand notes on pixi 0.81.0, pixi-pack 0.7.11, `cargo vendor`, bun/node, Actions limits, GitHub Markdown, AGENTS.md, clap/thiserror, OKF — plus sandbox measurements, corrections, bibliography |
 | [`environment/`](/.knowledge/environment/index.md) | 7 | the reference host: inventory, egress matrix, consequences, execution and git semantics, budgets, session safety, reproduction commands |
 
 Three lines carry the whole project: **detect, don't declare** (`Inventory` tiers L0→L3, so packing an

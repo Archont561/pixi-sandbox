@@ -4,6 +4,7 @@
 * [Creating and Packing an Environment](/workflows/create-environment.md) - Step-by-step: pixi init, add packages with platforms, tasks, cargo init, sandbox init, kit build - on a networked box. _(✅ ⚠️)_
 * [Reconstructing on an Airlocked Machine](/workflows/airlock-clone.md) - What a human types on the sealed box: fetch the dist branch, verify digests, install the drivers, reconstruct, run. _(✅ ⚠️)_
 * [Running the Action](/workflows/action-run.md) - How to call the action, what the target types, the nine outcomes measured in this sandbox, and how to publish the action itself. _(✅ ⚠️)_
+* [Publishing Your Environment: the sandbox-environment Template](/workflows/sandbox-template.md) - 🚧 draft: the copy-paste workflow that IS the integration format - one file, six knobs, publish → verify → pin, and the marker convention that keeps it identical to the author's own dogfood file. _(🚧 ⚠️)_
 * [Republishing When a Lockfile Changes](/workflows/ci-republish.md) - The CI loop that keeps the branch honest: lock-guard, digest-keyed matrix, --only-changed, push and tag. _(⚠️ reasoned)_
 * [pixi and cargo: What Travels Where](/workflows/pixi-cargo-interop.md) - The interoperability verdict - pixi-pack packs environments, not crate graphs - plus source replacement and the build.rs hole. _(✅)_
 * [Copy-paste Scripts](/workflows/scripts.md) - Runnable shell for both sides of the airlock, kept verbatim so a reviewer can diff intent against implementation. _(✅ ⚠️)_

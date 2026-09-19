@@ -17,6 +17,7 @@
 
 ## Delivery and trust
 * [CI Design](/spec/ci.md) - The workflow set, triggers, pins and permissions that build, verify and publish kits. _(✅)_
+* [The Repository's Workflow Set](/spec/ci-workflows.md) - 🚧 draft: this repo's own CI wiring — five workflows, two actions (the product at the root, a local setup-env policy composite), the naming/splitting rules, the release-to-marketplace sequence and the dogfood publish that closes D4. _(🚧 ⚠️)_
 * [Error Taxonomy and UX Contract](/spec/error-taxonomy.md) - Exit codes, message voice, and the promise that every refusal names the check that failed. _(⚠️ reasoned)_
 * [Testing Without a Compiler](/spec/testing.md) - The strategy that keeps a Rust CLI trustworthy when the authoring box cannot compile it: fixtures, snapshot plans, and CI-only proofs. _(✅ ⚠️)_
 * [Testing Strategy (for the Rust assembler + action)](/spec/testing-strategy.md) - The five-layer plan for the D21 binary: what each layer proves, where it runs, the oracle vector table, and which layer this sandbox is locked out of. _(⚠️ reasoned)_

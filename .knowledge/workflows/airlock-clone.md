@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [workflow, airlock]
 status: stable
 confidence: mixed
-generated: { by: arena-agent/agent-mode, at: 2026-09-20T00:15:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-19T10:30:00Z }
 legacy: { files: [`WORKFLOWS.md`], sections: ["2"] }
 sources:
   - { id: githubcom-acme-myprojgit, resource: https://github.com/acme/myproj.git, title: acme/myproj.git }
@@ -28,6 +28,19 @@ itself supports a **local channel**, so the kit is not a dead prefix, it is a pa
 > it took (`--print-rung`). Its contract is the measured `assemble.sh` oracle ✅
 > ([nine outcomes](/workflows/action-run.md#the-nine-outcomes-measured-in-this-sandbox)); read the steps that
 > follow as that contract's specification, and keep them as the manual fallback for when no kit binary exists.
+
+**The default path is none of the ladder below** *(amended 2026-09-19 — "one command": the binary ships
+inside the kit, and the airlocked host fetches nothing else)*:
+
+```bash
+git clone --depth 1 --single-branch --branch pixi-sandbox-dist https://github.com/acme/myproj.git kit
+sh kit/assemble                          # verify → pick the host's binary → reconstruct; add --print-rung
+```
+
+`kit/assemble` — the entry shim [The Assembler Binary §2](/spec/assembler-binary.md#2-the-one-command)
+specifies — is what a kit published by the action carries at its root. The manual steps that follow stay for
+two reasons: they are the *specification* the shim and binary implement, and the fallback for a kit too old
+to carry one.
 
 ### 2.1 Fetch, verify, install the drivers
 

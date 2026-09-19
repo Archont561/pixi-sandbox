@@ -9,12 +9,12 @@ knowledge bundle. Read these before editing anything.
 1. [`.knowledge/index.md`](.knowledge/index.md) — the bundle root; areas → groups → concepts.
 2. [`.knowledge/conventions.md`](.knowledge/conventions.md) — labels ↔ trust tiers, front-matter extensions,
    editing rules.
-3. [`context.md`](context.md) — the five-line state summary, if you only have a moment.
+3. [`CONTEXT.md`](CONTEXT.md) — the five-line state summary, if you only have a moment.
 
 ## Hard rules
 
 - **Markdown only.** No source files, no binaries, no `action.yml`, no `scripts/` — the deliverable of this
-  repo is the bundle plus root `README.md`, `AGENTS.md`, `context.md`. [D21](.knowledge/spec/decisions.md) is
+  repo is the bundle plus root `README.md`, `AGENTS.md`, `CONTEXT.md`. [D21](.knowledge/spec/decisions.md) is
   decided, so the *implementation* will be a Rust crate — but it arrives in a later phase; until then all code
   lives as fenced blocks inside markdown, with `assemble.sh` as the measured behavioural oracle.
 - **Never smooth the confidence labels.** `verified` (✅) means measured here or read from upstream source;
@@ -44,8 +44,8 @@ decided): the action runs its CI verbs (`pack`/`publish`) and the kit ships the 
 
 | Path | What it is |
 |---|---|
-| `.knowledge/` | the OKF bundle (55 concepts, 5 areas) |
+| `.knowledge/` | the OKF bundle (58 concepts, 5 areas) |
 | `README.md` | front door for humans |
 | `AGENTS.md` | this file |
-| `context.md` | slim state summary for agents |
+| `CONTEXT.md` | slim state summary for agents |
 | `val.py` (workspace root, outside the repo) | bundle validator — reconstructible from [conventions.md item 6](.knowledge/conventions.md) |

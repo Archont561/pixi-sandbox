@@ -6,6 +6,7 @@
 * [cargo vendor and offline builds](/research/cargo-offline.md) - Vendoring mechanics, source replacement, and cargo's own rules for dependency sources - what an offline Rust build really needs. _(✅)_
 * [node_modules and bun in a pixi workspace](/research/node-bun.md) - How JS dependencies can (and cannot) travel with a pixi environment: bun on conda-forge, node_modules packaging, lockfile formats. _(✅)_
 * [Rust CLI engineering with clap and thiserror](/research/rust-cli.md) - The dependency set and error-design patterns chosen for the tool, grounded in upstream docs and issue tracker. _(✅)_
+* [convco: conventional-commit linting and changelog](/research/convco.md) - The commit-convention CLI this repo adopts via pixi: check/changelog/version from upstream docs, conda-forge v0.7.2 on all six subdirs (win-64 included, unlike bun), and the CI integration. _(✅ ⚠️)_
 
 ## Platform limits
 * [GitHub Actions limits and branch rules](/research/github-actions.md) - Quotas, pinning, permissions, caching and the branch/ref constraints that bound the CI design. _(✅)_

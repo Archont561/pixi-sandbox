@@ -19,9 +19,9 @@ nobody, verified before execution. Its behaviour is specified by the measured `a
 # Areas
 
 * [Why this exists](overview/) - The problem, the nine goals, the five requirements and the constraints that decide everything else. Start here. (4 concepts)
-* [The design](spec/) - The design itself: modules, verbs, config, resolution rules, artifacts, the Action shape, the assembler binary, CI, testing, decisions and risks. (18 concepts)
-* [Operational playbooks](workflows/) - What a human or agent actually types on each side of the airlock, how to run the action, plus the honest register of what is still unproven. (10 concepts)
-* [Evidence base](research/) - The external evidence every claim leans on: upstream docs and source read first-hand, registry queries, sandbox probes. (16 concepts)
+* [The design](spec/) - The design itself: modules, verbs, config, resolution rules, artifacts, the Action shape, the assembler binary, CI + this repo's own workflow set, testing, decisions and risks. (19 concepts)
+* [Operational playbooks](workflows/) - What a human or agent actually types on each side of the airlock, how to run the action, the copy-paste workflow that integrates it, plus the honest register of what is still unproven. (11 concepts)
+* [Evidence base](research/) - The external evidence every claim leans on: upstream docs and source read first-hand, registry queries, sandbox probes, the convco adoption. (17 concepts)
 * [The reference sandbox, measured](environment/) - Hardware, toolchain, egress matrix, execution semantics and budgets of the box this bundle was authored on - reproducible. (7 concepts)
 
 # Reading paths
@@ -40,12 +40,12 @@ nobody, verified before execution. Its behaviour is specified by the measured `a
 | Area | Concepts | Character |
 |---|---|---|
 | [overview/](overview/) | 4 | framing: problem, goals, requirements, constraints |
-| [spec/](spec/) | 18 | the design: architecture, verbs, config, resolution, artifacts, the Action shape, CI, testing, roadmap, decisions, risks |
-| [workflows/](workflows/) | 10 | operational half: run the action, unbox on a sealed box, and the unproven-claims register |
-| [research/](research/) | 16 | upstream evidence, measurements, corrections, bibliography |
+| [spec/](spec/) | 19 | the design: architecture, verbs, config, resolution, artifacts, the Action shape, CI + the repo's workflow set, testing, roadmap, decisions, risks |
+| [workflows/](workflows/) | 11 | operational half: run the action, unbox on a sealed box, **the copy-paste sandbox-environment template**, and the unproven-claims register |
+| [research/](research/) | 17 | upstream evidence (incl. convco), measurements, corrections, bibliography |
 | [environment/](environment/) | 7 | this host: inventory, egress, execution, budgets, safety, reproduction |
 | root | 2 | [conventions.md](conventions.md), [log.md](log.md) |
 
 Front matter on every concept records `generated`, `sources`, `status`, a `confidence` extension, and a
 `legacy` key naming the pre-OKF file and section each concept was converted from, so older citations still
-resolve. `55` concepts, all conformant with OKF v0.2 §11 as checked by the repo validator.
+resolve. `58` concepts, all conformant with OKF v0.2 §11 as checked by the repo validator.

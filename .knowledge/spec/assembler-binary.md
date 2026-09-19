@@ -6,7 +6,7 @@ resource: https://github.com/Archont561/pixi-sandbox
 tags: [spec, action, rust, distribution, d21]
 status: stable
 confidence: reasoned
-generated: { by: arena-agent/agent-mode, at: 2026-09-19T23:55:00Z }
+generated: { by: arena-agent/agent-mode, at: 2026-09-19T10:30:00Z }
 sources:
   - { id: quantco-pixi-pack, resource: https://github.com/Quantco/pixi-pack, title: Quantco/pixi-pack — v0.7.11 ships musl-static binaries for 8 triples with sha256 digests ✅ }
   - { id: repo, resource: https://github.com/Archont561/pixi-sandbox, title: Archont561/pixi-sandbox }
@@ -32,23 +32,35 @@ Developing the crate develops both halves at once — that is the point the prop
 `action.yml` steps call the CI verbs; `publish` copies the very binary it is running as into the kit's `bin/`,
 so the target surface is always the *same revision* that built the kit (recorded in `dist-manifest.json`).
 
-## 2. The one-liner, now without any script
+## 2. The one command
 
 ```sh
 git clone --depth 1 --single-branch --branch pixi-sandbox-dist <repo-url> kit
-./kit/bin/pixi-sandbox-x86_64-unknown-linux-musl reconstruct --from kit --with-vendor --workspace .
-. ./.pixi/assemble.env          # the assembler still writes it: PATH only, never PIXI_HOME
-pixi list                       # environment reconstructed — rung printed by --print-rung
-pixi run test                   # any task the project's pixi.toml defines; cargo test if rust is in the env
+sh kit/assemble         # sha256 check → pick the host's binary → reconstruct --from kit
+. ./.pixi/assemble.env  # printed by the assembler: PATH only, never PIXI_HOME (--promote-path = permanent)
+pixi run test           # any task the project's pixi.toml defines; cargo test if rust is in the env
 ```
 
-No `sh` needed for reconstruction itself, no `chmod` (git preserves mode `100755` — the publishing plumbing
-already commits executables with `update-index --cacheinfo 100755` ✅), no installer, no conda route, no
-git-install of the tool. On Windows the second line is
+The reconstruction is still the binary's job — the kit root merely carries `assemble`, a ~30-line POSIX
+**shim** that `publish` writes next to the payloads: it runs `sha256sum -c SHA256SUMS` first (the check
+gates its own later lines — verify-before-execute includes the shim), picks `bin/pixi-sandbox-<triple>` via
+`uname -m` (no arch names typed by humans; one kit can carry both P0 triples), and `exec`s it with
+`reconstruct --from <its own kit dir> "$@"`. Everything measured stays measured: the rung ladder,
+`--print-rung`, `assemble.env`, the exit-code API — the nine oracle outcomes ✅.
+
+*(Amendment 2026-09-19, user direction — "the binary shouldn't be fetched on the airlocked host; the user
+only defines `sandbox-environment.yml` and calls one command": the earlier draft had the user type the
+arch-suffixed path by hand and offered a same-blob `assemble` copy as an optional extra. Rejected: a
+compiled binary is arch-specific, so "regardless of triple" only held when the host matched the publishing
+runner — exactly the class of quiet assumption this corpus exists to catch. The *fetch* of the binary
+happens in CI — the action's digest-pinned fetch step — and `publish` embeds the bytes in the kit; the
+airlock clones the kit branch and contacts nothing else 🚧 until M1.)*
+
+No installer, no conda route, no git-install of the tool, no `chmod` (git preserves mode `100755` — the
+publishing plumbing already commits executables with `update-index --cacheinfo 100755` ✅). On Windows — no
+POSIX `sh` by default — the shim's job is done by hand:
 `kit\bin\pixi-sandbox-x86_64-pc-windows-msvc.exe reconstruct …` — one codebase where the shell design needed a
-second script. Optional ergonomics: `publish` can commit the *same blob* a second time under the path
-`assemble` (git dedupes identical objects, so it costs zero bytes), letting users type `./kit/assemble
-reconstruct …` regardless of triple.
+second script.
 
 The one known hazard: `noexec` mounts (some `/tmp`-style volumes, hardened containers). The assembler cannot
 fix a kernel policy; the remediation is a named error with the workaround (`git clone` into a mounted-exec
@@ -98,7 +110,7 @@ codes, rung semantics, warning prefixes (`W-…`), and the refusal list. The tes
 
 ```
 pixi-sandbox-dist/            # kit branch (small: index + docs + drivers)
-├── assemble                  # optional: same blob as bin/pixi-sandbox-<triple>, zero extra bytes
+├── assemble                  # the POSIX entry shim: sha256 check → host binary → reconstruct
 ├── bin/
 │   ├── pixi-sandbox-x86_64-unknown-linux-musl      # the assembler (NEW under D21)
 │   ├── pixi-x86_64-unknown-linux-musl

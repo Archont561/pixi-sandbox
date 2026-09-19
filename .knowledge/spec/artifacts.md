@@ -13,7 +13,7 @@ sources:
   - { id: githubcom-googlecloudplatform-knowledge-catalog, resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md, title: GoogleCloudPlatform/knowledge-catalog — blob/main/okf/SPEC.md }
   - { id: githubcom-quantco-pixi-pack, resource: https://github.com/Quantco/pixi-pack, title: Quantco/pixi-pack }
   - { id: pixiprefixdev-latest-reference, resource: https://pixi.prefix.dev/latest/reference/pixi_configuration/, title: pixi.prefix.dev/latest/reference/pixi_configuration/ }
-  - { id: mirroracme-, resource: https://mirror.acme/"], title: mirror.acme/"] }
+  - { id: mirroracme, resource: https://mirror.acme/, title: mirror.acme — illustrative org mirror host }
 ---
 
 # Artifact Formats and Integrity

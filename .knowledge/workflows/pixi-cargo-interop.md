@@ -9,7 +9,7 @@ confidence: verified
 generated: { by: arena-agent/agent-mode, at: 2026-09-19T21:00:00Z }
 legacy: { files: [`WORKFLOWS.md`], sections: ["4"] }
 sources:
-  - { id: prefixdev-conda-forge, resource: https://prefix.dev/conda-forge"], title: prefix.dev/conda-forge"] }
+  - { id: prefixdev-conda-forge, resource: https://prefix.dev/conda-forge, title: prefix.dev/conda-forge }
   - { id: githubcom-rust-lang-cratesio-index, resource: https://github.com/rust-lang/crates.io-index, title: rust-lang/crates.io-index }
 ---
 
