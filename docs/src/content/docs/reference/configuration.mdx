@@ -1,0 +1,152 @@
+---
+title: Configuration Reference
+description: .pixi-sandbox.toml schema and options for reviewed native publishing.
+---
+
+import { Icon } from 'astro-icon/components';
+
+## File location
+
+`.pixi-sandbox.toml` at repo root. Validated by `pixi-sandbox plan --config .pixi-sandbox.toml`.
+
+## Schema
+
+```toml
+schema = 1
+branch_prefix = "sandbox"   # optional, default "sandbox"
+cargo_vendor = true         # optional, default true, top-level default for bundles
+
+# Optional runner overrides — required for platforms without hosted default (e.g., linux-aarch64)
+[runners]
+linux-aarch64 = "self-hosted-arm64"
+osx-arm64 = "macos-14"      # example: override default macos-14
+# win-64 = "windows-latest"
+
+[[bundle]]
+name = "developer"          # used in branch name: <prefix>/<name>-<platform>
+environments = ["dev", "docs"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+cargo_vendor = true         # optional per-bundle override
+
+[[bundle]]
+name = "minimal"
+environments = ["default"]
+platforms = ["linux-64"]
+cargo_vendor = false
+```
+
+## Top-level fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `schema` | int | **required** `1` | Config schema version. Readers refuse newer. |
+| `branch_prefix` | string | `"sandbox"` | Prefix for orphan branches: `<prefix>/<bundle>-<platform>` |
+| `cargo_vendor` | bool | `true` | Default for bundles if not set per-bundle |
+| `runners` | table | `{}` | Map platform → runner label override |
+
+## Runners
+
+| Platform | Default runner | Notes |
+|----------|----------------|-------|
+| `linux-64` | `ubuntu-latest` | Hosted |
+| `linux-aarch64` | **none** — must provide `[runners]` | No safe hosted default, require self-hosted |
+| `osx-64` | `macos-15-intel` | Hosted Intel |
+| `osx-arm64` | `macos-14` | Hosted Apple Silicon |
+| `win-64` | `windows-latest` | Hosted |
+
+Rules enforced by `plan`:
+- Runner label cannot contain control chars or outer whitespace
+- Every `[runners]` entry must be used by at least one bundle (stale typo = error)
+- Platform must have embedded pins for `pixi`, `pixi-pack`, `pixi-unpack` (compiled into binary from `tools.lock.json`)
+
+## Bundle
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Bundle name, used in branch: `sandbox/<name>-<platform>` |
+| `environments` | string[] | yes | Explicit pixi envs — never inferred from `pixi.toml` |
+| `platforms` | string[] | yes | Platforms to publish (e.g., `linux-64`, `osx-arm64`) |
+| `cargo_vendor` | bool | no | Override top-level `cargo_vendor` |
+
+Emitted branches for example:
+
+```text
+sandbox/developer-linux-64
+sandbox/developer-osx-arm64
+sandbox/developer-win-64
+sandbox/minimal-linux-64
+```
+
+## Validation
+
+```bash
+pixi-sandbox plan --config .pixi-sandbox.toml
+pixi-sandbox plan --config .pixi-sandbox.toml --json  # GitHub Actions matrix
+
+# Lint in CI (keeps release matrix valid against embedded catalogue)
+pixi run -e dev lint-sandbox-plan
+```
+
+Errors:
+- Unknown platform
+- Empty environments
+- Runner override unused
+- Platform without embedded tool pins
+- Invalid runner label
+
+## Examples
+
+### Minimal (conda only, no cargo)
+
+```toml
+schema = 1
+cargo_vendor = false
+
+[[bundle]]
+name = "python"
+environments = ["dev", "test"]
+platforms = ["linux-64", "win-64"]
+```
+
+### Full (multi-env, multi-platform, cargo)
+
+```toml
+schema = 1
+branch_prefix = "sandbox"
+cargo_vendor = true
+
+[runners]
+linux-aarch64 = "self-hosted-arm64"
+
+[[bundle]]
+name = "developer"
+environments = ["dev", "docs"]
+platforms = ["linux-64", "linux-aarch64", "osx-arm64", "win-64"]
+
+[[bundle]]
+name = "ci"
+environments = ["default"]
+platforms = ["linux-64"]
+cargo_vendor = false
+```
+
+### Self-hosted override
+
+```toml
+schema = 1
+
+[runners]
+linux-64 = "my-large-runner"
+osx-arm64 = "self-hosted-mac"
+
+[[bundle]]
+name = "prod"
+environments = ["prod"]
+platforms = ["linux-64", "osx-arm64"]
+```
+
+## Related
+
+- [Using in your project](/pixi-sandbox/guides/using-in-your-project/)
+- [CI Publishing](/pixi-sandbox/guides/ci-publishing/)
+- [GitHub Actions](/pixi-sandbox/guides/actions/)

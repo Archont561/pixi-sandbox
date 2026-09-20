@@ -4,6 +4,23 @@ A dependency-free composite GitHub Action that downloads a standalone `pixi-sand
 binary, verifies its SHA-256 checksum before execution, and adds it to `PATH`. Implemented in
 pure POSIX shell (Linux/macOS) and PowerShell (Windows) with zero Python dependency.
 
+Like `prefix-dev/setup-pixi`, you can use it from the repo root, or via short `setup/` path:
+
+```yaml
+# Short references (same repo, like setup-pixi)
+- uses: Archont561/pixi-sandbox@v0.2.0
+  id: sandbox
+  with:
+    version: v0.2.0
+- run: pixi-sandbox --version
+
+- uses: Archont561/pixi-sandbox/setup@v0.2.0
+  with:
+    version: v0.2.0
+```
+
+Or via explicit long path (pin to immutable SHA for supply-chain security):
+
 ```yaml
 - uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<immutable-commit-sha>
   id: sandbox
@@ -13,6 +30,10 @@ pure POSIX shell (Linux/macOS) and PowerShell (Windows) with zero Python depende
 
 - run: pixi-sandbox --version
 ```
+
+`repository` defaults to `Archont561/pixi-sandbox` and `version` defaults to `latest` (warns), so minimal usage is just `uses: Archont561/pixi-sandbox@v0.2.0`.
+
+Publish action short reference is `Archont561/pixi-sandbox/publish@vX` (see `publish/action.yml`).
 
 ## Release Asset Contract
 
@@ -34,8 +55,8 @@ selected asset, for example:
 Ambiguous duplicate entries are rejected rather than resolved by file order.
 
 After native airlock proof has accepted the release assets, generate this file with
-`python3 scripts/write_release_checksums.py --output release/SHA256SUMS release/pixi-sandbox-*`
-and upload both it and the matching binaries to the same release tag.
+`(cd release && sha256sum pixi-sandbox-* > SHA256SUMS)` and upload both it and the matching
+binaries to the same release tag.
 
 Supported automatic target mappings are Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows
 x86_64/aarch64. Pass `target` and/or `asset-template` explicitly for a custom release layout.

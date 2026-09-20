@@ -20,15 +20,13 @@ opinion.
 | `crates/pixi-sandbox-core/src/shard.rs` | the only two file operations: `record_file` (split if oversized) and `materialise`/`join_parts` (verify, then write) |
 | `crates/pixi-sandbox-core/src/tools_lock.rs` | compiles the canonical helper-tool pins into the binary; `--tools-lock` is an explicit override |
 | `crates/pixi-sandbox-core/src/verify.rs` | collects *all* failures instead of stopping at the first — an airlock operator wants the full list |
-| `crates/pixi-sandbox/src/commands/*` | `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, and `tools list` are implemented; the prototype remains the behavioural/portable-bootstrap reference |
+| `crates/pixi-sandbox/src/commands/*` | `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, and `tools list` — pure Rust, no Python |
 | `crates/pixi-sandbox-git` | **all** git access: `GitProtocol` + `ShellGit` (real git, with a swappable `Runner`) + `FakeGit` (in-memory mock). Never run `git` from anywhere else |
 | `crates/pixi-sandbox/tests/fixtures/` | the fixture project and the synthetic transport. **Tests must not point at this repository** — see `.knowledge/decisions.md` D10 |
-| `.knowledge/research/pixi_sandbox.py` | **reference implementation** of the full flow (Python, ~700 lines). When porting a verb, mirror its behaviour, then improve it |
-| `.knowledge/research/reproduce.sh` | runs the entire flow on a bare machine and ends with a network-severed build. Use it to check a change to the design assumptions |
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical embedded helper-tool pins; edit as reviewed data and keep the embedded-lock tests green |
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
 | `feature.utils.actionlint` | runs `actionlint` from conda directly when validating workflows in the `dev` environment |
-| `scripts/write_release_checksums.py` | makes deterministic `SHA256SUMS` only for native artifacts that have already passed release proof |
+| `scripts/restore.sh` | one-liner offline reconstruction from orphan branch with PATH aliases |
 
 ## Invariants (do not break these)
 
@@ -52,8 +50,8 @@ opinion.
 
 Source-driven GitHub Actions commands are one of these lines (design.md §6): **if a
 source-driven workflow command needs more than one line, add a task to `pixi.toml` instead.**
-The checksum-verified release publisher is deliberately implemented as reviewed composite-action
-Python, not caller-inline shell.
+The checksum-verified release publisher is implemented as reviewed composite-action shell
+(POSIX + PowerShell), not Python.
 
 ```bash
 pixi run -e dev lint           # fmt-check + clippy -D warnings + deny + actionlint + taplo + biome

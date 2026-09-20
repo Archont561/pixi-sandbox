@@ -12,8 +12,9 @@ agents who were not in the room.
 | [`research-results.md`](research-results.md) | Concise summary of initial research conclusions and feasibility studies |
 | [`research/EVIDENCE.md`](research/EVIDENCE.md) | Raw lab measurements: bundle sizes, restore timings, Git object economics, Pixi internals |
 | [`research/REPRODUCE-TRANSCRIPT.md`](research/REPRODUCE-TRANSCRIPT.md) | Verbatim cold-run reproduction log on a clean system |
-| [`research/pixi_sandbox.py`](research/pixi_sandbox.py) | Python reference implementation (~700 lines) of the end-to-end airlock workflow |
-| [`research/reproduce.sh`](research/reproduce.sh) | End-to-end network-isolated verification script |
+
+The original Python reference implementation has been removed in favor of the pure Rust CLI.
+Fixture transport is now static and checked in; regeneration is via Rust `pack` flow.
 
 ## Conventions
 

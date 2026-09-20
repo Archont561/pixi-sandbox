@@ -83,6 +83,9 @@ lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pi
 lint-docs = "biome check docs"
 # conventional-commit check for the `commit-msg` hook; reads the proposed message from stdin
 lint-commit = "convco check --from-stdin"
+# changelog via convco (conventional commits -> CHANGELOG.md)
+changelog = "convco changelog > CHANGELOG.md"
+changelog-preview = "convco changelog"
 # one line for the whole lint gate (needs the `dev` environment: rust + utils + docs)
 lint = { depends-on = [
   "fmt-check",
@@ -107,17 +110,42 @@ package = "pixi publish --path crates/pixi-sandbox --build-dir .publish/build --
 
 # ---------------------------------------------------------------------------
 # The transport pipeline, locally: pack → doctor → publish. These tasks exercise the
-# Rust CLI directly, so local runs and CI share the exact command surface. The checked-in
-# Python program remains the portable self-bootstrap binary for the airlock proof until the
-# release build has a validated static Rust artifact for every target platform.
+# Rust CLI directly, so local runs and CI share the exact command surface.
+# The branch now embeds the static Rust binary itself as self-bootstrap.
 # ---------------------------------------------------------------------------
 sandbox-plan = "cargo run -p pixi-sandbox -- plan --config .pixi-sandbox.toml"
-sandbox-pack = "cargo run -p pixi-sandbox -- pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --cargo-vendor --fetch-tools --self-bin .knowledge/research/pixi_sandbox.py"
-sandbox-doctor = "cargo run -p pixi-sandbox -- doctor --branch-location .sandbox-out --verify"
-sandbox-publish = "cargo run -p pixi-sandbox -- publish --input-dir .sandbox-out --branch-name sandbox/dev-linux-64 --remote origin"
-# End-to-end airlock proof. It uses the portable bootstrap embedded in the branch while the
-# connected-side pack/doctor/publish CI tasks above are the Rust implementation.
-sandbox-proof = "bash .knowledge/research/reproduce.sh .sandbox-proof"
+sandbox-build-self = "cargo build -p pixi-sandbox --release"
+sandbox-pack = { depends-on = ["sandbox-build-self"], cmd = "cargo run -p pixi-sandbox --release -- pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --cargo-vendor --fetch-tools --self-bin target/release/pixi-sandbox" }
+sandbox-doctor = "cargo run -p pixi-sandbox --release -- doctor --branch-location .sandbox-out --verify"
+sandbox-publish = "cargo run -p pixi-sandbox --release -- publish --input-dir .sandbox-out --branch-name sandbox/dev-linux-64 --remote origin"
+# One-liner offline reconstruction from orphan branch, with PATH aliases wired
+# like setup-pixi.
+sandbox-restore = "bash scripts/restore.sh"
+# End-to-end airlock proof using the Rust self-binary (replaces old reproduce.sh).
+# Packs, verifies, restores into .sandbox-proof, then checks offline assertions.
+sandbox-proof = { cmd = """
+set -euo pipefail
+echo "=== sandbox-proof: pack ==="
+cargo run -p pixi-sandbox --release -- pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --cargo-vendor --fetch-tools --self-bin target/release/pixi-sandbox
+echo "=== sandbox-proof: doctor --verify ==="
+cargo run -p pixi-sandbox --release -- doctor --branch-location .sandbox-out --verify
+echo "=== sandbox-proof: restore via embedded binary ==="
+rm -rf .sandbox-proof
+mkdir -p .sandbox-proof
+# Use the embedded Rust binary from the transport
+EMBED=".sandbox-out/.pixi-sandbox/tools/linux-64/pixi-sandbox"
+if [ ! -x "$EMBED" ]; then EMBED="target/release/pixi-sandbox"; fi
+"$EMBED" restore --branch-location .sandbox-out --output-path .sandbox-proof --force
+echo "=== sandbox-proof: offline checks ==="
+(
+  cd .sandbox-proof
+  source .pixi/sandbox-env.sh
+  export PATH="$PWD/.pixi/envs/dev/bin:$PATH"
+  pixi install --frozen --offline
+  cargo build --offline || echo "cargo build --offline failed (expected if no Rust env)"
+)
+echo "=== sandbox-proof: OK ==="
+""", shell = "bash" }
 
 # ---------------------------------------------------------------------------
 # The same three Rust CLI steps for CI, taking their paths from the environment so the
@@ -128,4 +156,19 @@ sandbox-proof = "bash .knowledge/research/reproduce.sh .sandbox-proof"
 ci-pack = "cargo run -p pixi-sandbox -- pack --repo-root $SANDBOX_PROJECT --envs $SANDBOX_ENVS --output-dir $SANDBOX_TRANSPORT --platform $SANDBOX_PLATFORM $SANDBOX_CARGO_VENDOR --fetch-tools --self-bin $SANDBOX_SELF_BIN"
 ci-doctor = "cargo run -p pixi-sandbox -- doctor --branch-location $SANDBOX_TRANSPORT --verify"
 ci-publish = "cargo run -p pixi-sandbox -- publish --input-dir $SANDBOX_TRANSPORT --branch-name $SANDBOX_BRANCH --remote $SANDBOX_REMOTE"
-ci-proof = "PIXI_SANDBOX_RUST_ENV=ci bash .knowledge/research/reproduce.sh $SANDBOX_PROOF_OUT"
+ci-proof = { cmd = """
+set -euo pipefail
+echo "=== ci-proof: pack already done, doctor already done, now restore ==="
+rm -rf "$SANDBOX_PROOF_OUT"
+mkdir -p "$SANDBOX_PROOF_OUT"
+EMBED="$SANDBOX_TRANSPORT/.pixi-sandbox/tools/$SANDBOX_PLATFORM/pixi-sandbox"
+if [ ! -x "$EMBED" ]; then EMBED="$SANDBOX_SELF_BIN"; fi
+"$EMBED" restore --branch-location "$SANDBOX_TRANSPORT" --output-path "$SANDBOX_PROOF_OUT" --force
+(
+  cd "$SANDBOX_PROOF_OUT"
+  source .pixi/sandbox-env.sh || true
+  export PATH="$PWD/.pixi/envs/dev/bin:$PATH"
+  pixi install --frozen --offline
+  echo "ci-proof: offline install OK"
+)
+""", shell = "bash" }

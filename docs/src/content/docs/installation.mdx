@@ -1,0 +1,107 @@
+---
+title: Installation
+description: Install pixi-sandbox via cargo, pixi global, or verified release binary.
+---
+
+import { Icon } from 'astro-icon/components';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Pixi-sandbox is a pure Rust CLI with static musl binaries — no Python, no runtime deps.
+
+## Via Cargo
+
+<Tabs>
+  <TabItem label="cargo install">
+    ```bash
+    cargo install pixi-sandbox
+    pixi-sandbox --version
+    # Now available as pixi extension:
+    pixi sandbox --version
+    ```
+  </TabItem>
+  <TabItem label="cargo from git">
+    ```bash
+    cargo install --git https://github.com/Archont561/pixi-sandbox pixi-sandbox
+    ```
+  </TabItem>
+</Tabs>
+
+## Via Pixi Global (conda package)
+
+```bash
+# Build channel locally (needs pixi)
+pixi publish --path crates/pixi-sandbox --build-dir .pixi/bld --target-channel file:///tmp/channel
+pixi global install -c file:///tmp/channel -c conda-forge pixi-sandbox
+
+# Or from future conda-forge release
+pixi global install -c conda-forge pixi-sandbox
+```
+
+## Via Release Binary (verified)
+
+Like `prefix-dev/setup-pixi`, we provide a checksum-verified setup action and one-liner.
+
+<Tabs>
+  <TabItem label="GitHub Action">
+    ```yaml
+    - uses: Archont561/pixi-sandbox@v0.2.0
+      with:
+        version: v0.2.0
+    - run: pixi-sandbox --version
+
+    # Short alias
+    - uses: Archont561/pixi-sandbox/setup@v0.2.0
+      with:
+        version: v0.2.0
+    ```
+  </TabItem>
+  <TabItem label="Shell">
+    ```bash
+    # Download verified binary
+    curl -sSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.2.0/pixi-sandbox-x86_64-unknown-linux-musl -o pixi-sandbox
+    curl -sSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.2.0/SHA256SUMS -o SHA256SUMS
+    sha256sum -c SHA256SUMS --ignore-missing
+    chmod +x pixi-sandbox
+    ./pixi-sandbox --version
+    ```
+  </TabItem>
+</Tabs>
+
+### Asset contract
+
+Each release publishes:
+
+```text
+pixi-sandbox-x86_64-unknown-linux-musl
+pixi-sandbox-aarch64-unknown-linux-musl
+pixi-sandbox-x86_64-apple-darwin
+pixi-sandbox-aarch64-apple-darwin
+pixi-sandbox-x86_64-pc-windows-msvc.exe
+SHA256SUMS
+```
+
+Default template `pixi-sandbox-{target}{exe}` — verified by setup action before exec.
+
+## From Source
+
+```bash
+git clone https://github.com/Archont561/pixi-sandbox
+cd pixi-sandbox
+cargo build -p pixi-sandbox --release
+./target/release/pixi-sandbox --version
+```
+
+## Verify Installation
+
+```bash
+pixi-sandbox tools list
+# Shows embedded helper-tool pins (pixi, pixi-pack, pixi-unpack) per platform
+
+pixi-sandbox --help
+pixi sandbox --help  # via pixi extension
+```
+
+<div style="display: flex; gap: 0.5rem; margin-top: 1.5rem; padding: 1rem; background: var(--sl-color-accent-low); border-radius: 0.5rem;">
+  <Icon name="lucide:info" size={20} />
+  <span>All binaries are static: musl on Linux, native on macOS/Windows. No dynamic `PT_INTERP` — verified by `doctor` and `verify.rs`.</span>
+</div>

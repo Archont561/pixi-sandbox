@@ -1,9 +1,8 @@
 # Design
 
 **Status:** settled and measured. The Rust CLI in `crates/` implements the connected-side
-`pack` flow and the airlock-side `unpack`/`restore` flow; the reference implementation in
-`.knowledge/research/pixi_sandbox.py` remains the stdlib-only reproducibility and bootstrap
-reference while static Rust release artifacts are validated for every target (§9).
+`pack` flow and the airlock-side `unpack`/`restore` flow; static Rust release artifacts are
+now the primary bootstrap, with `action.yml` providing verified download (like `setup-pixi`).
 **Scope:** how pixi environments (and, optionally, vendored cargo crates and the toolchain
 itself) get from a connected machine to one that has no network.
 
@@ -203,7 +202,7 @@ verbs as `pixi sandbox <verb>`.
 | --- | --- |
 | `pack` | `--repo-root . --envs dev,docs --output-dir DIR [--platform linux-64] [--shard-limit-mib 95] [--cargo-vendor] [--cargo-vendor-mode loose\|tarballs] [--fetch-tools] [--tools-lock PATH] [--tools-cache DIR] [--self-bin PATH]` — no override means embedded pins |
 | `publish` | `--input-dir DIR --branch-name NAME [--remote origin] [--keep N] [--dry-run]` |
-| `restore` | `--branch-location DIR --path-to-main-repo-code DIR [--envs a,b] [--verify-only] [--force] [--no-vendor] [--work-dir DIR] [--cargo-config auto\|write\|print\|none]` |
+| `restore` | `--branch-location DIR --output-path DIR [--envs a,b] [--verify-only] [--force] [--no-vendor] [--work-dir DIR] [--cargo-config auto\|write\|print\|none]` |
 | `unpack` | `--input-dir X --output-dir PREFIX [--env NAME] [--unpacker PATH] [--force] [--work-dir DIR] [--verify-only]` |
 | `doctor` | `--branch-location DIR [--verify] [--envs a,b] [--json]` |
 | `plan` | `--config .pixi-sandbox.toml [--json]` — validate explicit bundle/platform publication and emit native jobs |
@@ -224,29 +223,22 @@ machine-readable form for scripts and CI.
 * **`ci.yml`** — on PR/main: rust lint (`fmt`, `clippy -D warnings`, `cargo deny`), config lint
   (`actionlint`, `taplo`), docs lint (`biome`), tests (matrix), coverage (`cargo llvm-cov` →
   codecov), docs build, and an **airlock bootstrap proof**. Its script invokes the Rust
-  connected-side pack/doctor/publish verbs, then restores through the portable self binary
-  embedded in the branch until static Rust release artifacts are validated (§9).
+  connected-side pack/doctor/publish verbs, then restores through the Rust self-binary
+  embedded in the branch.
 * **`docs.yml`** — Astro + Starlight → GitHub Pages (limits that matter: 1 GB site, 10-minute
   build, bandwidth budget). The **payload never lives on Pages**: it is git history, which the
   airlock already knows how to fetch.
-* **`publish-sandbox.yml`** — the original source-driven reusable workflow that packs and
-  force-pushes one sandbox branch. Pack, verify and publish run on the *same* runner (the
-  payload never travels as a build artifact; the branch is the only place it lands). Callers
-  choose which binary the branch embeds (`self-binary` input; today the reference prototype,
-  later a proven release binary).
-* **`publish-sandboxes.yml`** — the release-driven reusable workflow (D11). It checks out an
-  immutable copy of its own composite Actions, checksum-verifies a standalone release, runs
-  `plan --json` against the caller's `.pixi-sandbox.toml`, and publishes one branch per native
-  bundle/platform runner. It deliberately does not cross-pack foreign executables or payloads.
-  See `publish-automation.md` for the config and release asset contract.
-
+* **`publish-sandbox.yml`** — unified publisher (replaces `publish-sandbox` + `publish-sandboxes`):
+  validates `.pixi-sandbox.toml` via `plan --json`, then for each native (bundle×platform)
+  runs on native runner, uses composite actions `setup-pixi-sandbox` (verified download) and
+  `publish-pixi-sandbox` (install, pack with `--self-bin` Rust binary, doctor, publish).
+  Pack, verify and publish run on the *same* runner (payload never travels as artifact).
+* **`release.yml`** — builds 5 tier-1 static binaries (musl Linux x86_64/aarch64, macOS x86_64/aarch64, Windows x86_64), strips, generates `SHA256SUMS`, creates GitHub Release. Contract matches `setup-pixi-sandbox` README.
 ### The one-liner rule (how the workflows are written)
 
 **Source-driven GitHub Actions commands are one line: `pixi run -e <env> <task>`.** If a
 source-driven step needs more than one line, it is a task in `pixi.toml` (or a script in
-`.knowledge/research/`) — not inline bash in YAML. The release-driven publisher is the
-intentional exception: its checksum/download, native-runner, and token-handling logic lives in
-reviewable dependency-free composite-action Python rather than a caller's shell. This is not
+`.knowledge/research/`) — not inline bash in YAML. The release-driven publisher uses dependency-free composite-action shell (bash + pwsh) with checksum verification, native-runner, and token handling, not caller-inline shell. This is not
 style for its own sake:
 
 * the exact command CI runs is the command a developer runs, so gate failures reproduce
@@ -303,7 +295,7 @@ Failure catalogue (each verified in the lab ✅ unless marked):
 | `tool … is dynamically linked` | a `~/.pixi/bin` trampoline or a distro binary got embedded | ship the static asset (D4); the packer refuses it too |
 | `pixi install` wants the network | markers missing/wrong, or a package absent from `envs/<env>/pack` | D5; re-pack with the same `pixi.lock` |
 | unpack fails at ~all of the disk's free space | `$TMPDIR` on a small tmpfs | use `--work-dir`/default work dir (§4) |
-| `FileNotFoundError`-style failures in scripts | ⚠️ CI-only concerns | see `reproduce.sh` notes |
+| restore fails | misconfigured work dir | use --work-dir on same filesystem |
 
 Backward compatibility: `doctor` must keep reading schema 1 across tool versions (§9), and a
 schema bump requires a fixture update in `tests/manifest.rs`.
@@ -318,11 +310,13 @@ schema bump requires a fixture update in `tests/manifest.rs`.
 | `crates/pixi-sandbox` | the CLI: pack, publish, restore, unpack, doctor, plan and tools list; its integration suite uses synthetic transports and fake local helper tools |
 | `.knowledge/` | this document, `decisions.md`, `research/` (evidence + prototype) |
 | `docs/` | Astro + Starlight site; `/restore` is written for someone with no network |
-| `.github/workflows/` | `ci.yml`, `docs.yml`, source-driven `publish-sandbox.yml`, native release-driven `publish-sandboxes.yml` |
+| `.github/workflows/` | `ci.yml`, `docs.yml`, unified `publish-sandbox.yml`, `release.yml` (multi-platform binaries) |
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical helper-tool pins compiled into the CLI (§10) |
 | `.pixi-sandbox.toml` | explicit publish bundles/platform runners consumed by `plan` and the reusable workflow (D11) |
-| `.github/actions/` | checksum-verifying release setup and one-native-target publisher composites (D11) |
-| `pixi.toml` | tasks: `lint`, `test`, `coverage`, `docs-build`, `sandbox-*`, `build-release` |
+| `.github/actions/` | `setup-pixi-sandbox` (like `setup-pixi`) + `publish-pixi-sandbox` composites (D11) |
+| `action.yml` | root composite alias so `uses: Archont561/pixi-sandbox@vX` works like `setup-pixi` |
+| `pixi.toml` | tasks: `lint`, `test`, `coverage`, `docs-build`, `sandbox-*` |
+| `scripts/restore.sh` | one-liner offline reconstruction with PATH aliases |
 
 Conventions that keep it maintainable: the CLI stays a thin shell over `pixi-sandbox-core`;
 comments point at a decision ID or a measurement rather than restating code; generated weight
@@ -333,8 +327,7 @@ user-facing, `.knowledge/` is for people changing the design.
 
 ## §9 Rust implementation status
 
-The prototype (`.knowledge/research/pixi_sandbox.py`) remains the behavioural reference, but the
-v0.1 CLI now implements the flow in Rust without inventing a second wire format:
+The Rust CLI now implements the flow without a second wire format (original Python prototype archived):
 
 1. **`pack`** resolves the requested environments through `pixi-pack`, optionally vendors
    cargo crates in loose or per-crate-tar mode, fetches pinned tools only after sha256
@@ -355,11 +348,8 @@ The test suite includes a hermetic synthetic Rust CLI flow — pack → doctor -
 restore — with an intentionally sharded blob, plus restore tests for the checked-in vendor tree.
 Core tests additionally reject manifest tool paths that escape the transport.
 
-The remaining release-engineering step is a **validated static Rust bootstrap binary** for every
-supported platform. Until that artifact exists, CI invokes Rust for pack/doctor/publish and the
-end-to-end network-severed proof embeds the stdlib-only Python bootstrap. This keeps the branch
-usable on an airlock without weakening the dynamic-tool invariant. When static multi-platform
-artifacts are proven, switch `SANDBOX_SELF_BIN` to them and make the proof run Rust restore too.
+Release engineering now provides **validated static Rust bootstrap binaries** for tier-1 platforms
+via `release.yml`. CI and the airlock proof both use the Rust self-binary embedded in the branch.
 
 ---
 
@@ -473,11 +463,12 @@ four properties are asserted against **both** implementations (`crates/pixi-sand
 
 Implementation notes that are decisions in disguise:
 
-* **The payload is not copied.** `publish` points `GIT_DIR` at a scratch repository *inside*
-  the transport directory, `GIT_INDEX_FILE` at a scratch index, and `GIT_WORK_TREE` at the
-  transport itself, then commits with plumbing (`add` → `write-tree` → `commit-tree` →
-  `update-ref` → `push --force`). No `.git` appears in a directory we do not own, no second
-  copy of a 250 MiB payload is made, and the scratch is removed even if a later step fails.
+* **The payload is not copied.** `publish` points `GIT_DIR` at a scratch repository *next to*
+  the transport directory (same filesystem, never /tmp), `GIT_INDEX_FILE` at a scratch index, and
+  `GIT_WORK_TREE` at the transport itself, then commits with plumbing (`add` → `write-tree` →
+  `commit-tree` → `update-ref` → `push --force`). No `.git` appears in a directory we do not own, no second
+  copy of a 250 MiB payload is made, and the scratch is removed even if a later step fails. Previously
+  the scratch was inside the transport and leaked `.pixi-sandbox-publish-<pid>/` because git only ignores `.git`, not custom GIT_DIR names.
 * **`fetch_into` materialises with plumbing** (`ls-tree -r -z` + `cat-file blob`) instead of
   `archive | tar -x`: no tar crate, no external `tar`, byte-exact control, and the `.git`
   directory is removed afterwards so the airlock gets branch *content*.
@@ -521,9 +512,9 @@ would never be seen. The fixture is the opposite of all four:
 * fixtures are read-only in tests: anything that writes copies them into a `tempfile::TempDir`
   first.
 
-Regeneration is deliberate and checked in: `python3 .knowledge/research/make_fixture_transport.py`
-rewrites `transport/` deterministically (`demo-project/` is a real project — its `pixi.lock`
-came from `pixi lock`, its `Cargo.lock` from `cargo generate-lockfile`).
+Fixture transport is static and checked in. It was originally generated via Python, now maintained
+as a synthetic payload with real digests; `demo-project/` is a real project (pixi.lock from `pixi lock`,
+Cargo.lock from `cargo generate-lockfile`).
 
 Two findings that shaped this section, both measured:
 

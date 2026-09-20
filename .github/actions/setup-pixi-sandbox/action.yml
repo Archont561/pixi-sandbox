@@ -2,13 +2,19 @@ name: Setup pixi-sandbox
 description: Download, checksum-verify, and expose a standalone pixi-sandbox release binary.
 author: pixi-sandbox
 
+branding:
+  icon: package
+  color: orange
+
 inputs:
   repository:
     description: GitHub repository containing the pixi-sandbox release assets (OWNER/REPO).
-    required: true
+    required: false
+    default: Archont561/pixi-sandbox
   version:
     description: Immutable release tag to download. Set `latest` explicitly only for a deliberately non-reproducible workflow.
-    required: true
+    required: false
+    default: latest
   target:
     description: Rust target triple to download, or `auto` for the current hosted runner.
     required: false

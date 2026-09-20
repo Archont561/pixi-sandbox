@@ -1,41 +1,168 @@
 ---
 title: pixi-sandbox
-description: Ship pixi environments and cargo crates to machines that have no network.
+description: Ship pixi environments and cargo crates to machines that have no network — 100% offline, bit-for-bit verified.
+template: splash
+hero:
+  tagline: Offline sandboxes for pixi projects — pack, publish to an orphan branch, restore on an airlock with zero network.
+  image:
+    file: ../../assets/logo-light.svg
+  actions:
+    - text: Get Started
+      link: /pixi-sandbox/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/Archont561/pixi-sandbox
+      icon: external
+      variant: minimal
 ---
 
-`pixi-sandbox` packs one or more [pixi](https://pixi.sh) environments (plus, if you want,
-your vendored cargo dependencies) into a directory, publishes it as an **orphan branch**,
-and restores it on a machine that cannot reach the internet.
+import { Icon } from 'astro-icon/components';
+import Badges from '../../components/Badges.astro';
+import SandboxDiagram from '../../components/SandboxDiagram.astro';
+import FeatureGrid from '../../components/FeatureGrid.astro';
 
-```text
-   connected build machine                      disconnected machine
-   ───────────────────────                      ────────────────────
-   pixi sandbox pack  ─┐
-                       ├─►  orphan branch  ───►  git fetch <branch>
-   pixi sandbox publish┘         │              pixi sandbox restore
-                                 │                      │
-                          .pixi-sandbox/            .pixi/envs/<env>
-                          ├── manifest.json         .pixi-sandbox/vendor
-                          ├── envs/<env>/pack/      .pixi/tools/<platform>/
-                          ├── tools/<platform>/     → pixi run / cargo build --offline
-                          └── vendor/
-```
+<Badges />
 
-## Why it works this way
+## What is pixi-sandbox?
 
-- **Packages, not prefixes.** The payload is the original `.conda` files (a local channel),
-  so install-time prefix rewriting, entry points and post-link scripts still happen on the
-  target. A tarred prefix leaks the build machine's path into hundreds of files.
-- **Whole-file shards.** Git content-addresses blobs, so unchanged packages are free across
-  environments and across publishes. Only a file larger than 95 MiB is split (GitHub blocks
-  any blob above 100 MiB).
-- **Verify before writing.** Every byte is checked against `manifest.json` before it reaches
-  your working tree.
+`pixi-sandbox` packs one or more [pixi](https://pixi.sh) environments plus vendored Cargo crates into a directory, publishes it as an **orphan branch**, and restores it on a machine that cannot reach the internet.
 
-## Where to next
+<div style="display: flex; align-items: center; gap: 0.5rem; margin: 1rem 0; padding: 0.75rem 1rem; background: var(--sl-color-accent-low); border-radius: 0.5rem; border-left: 4px solid var(--sl-color-accent);">
+  <Icon name="lucide:lightbulb" size={20} />
+  <span><strong>Because pixi discovers <code>pixi-&lt;command&gt;</code> on PATH</strong>, installing pixi-sandbox unlocks native subcommands: <code>pixi sandbox pack</code>, <code>doctor</code>, <code>publish</code>, <code>restore</code>.</span>
+</div>
 
-- [Quickstart](/pixi-sandbox/quickstart/) — build a bundle and publish it from CI.
-- [Restore on the airlock](/pixi-sandbox/restore/) — the operator checklist.
-- [Design](/pixi-sandbox/design/) — the measured reasoning behind every choice.
-- [Repository](/pixi-sandbox/repository/) — the three crates, the fixtures, and why every CI
-  step is one line.
+<SandboxDiagram />
+
+### How it works
+
+<div style="display: grid; grid-template-columns: auto 1fr; gap: 1rem; margin: 1.5rem 0;">
+  <div style="display: flex; flex-direction: column; align-items: center;">
+    <div style="width: 2rem; height: 2rem; background: #facc15; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">1</div>
+    <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
+  </div>
+  <div>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:package" size={16} /> Pack</strong>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">Resolves envs via <code>pixi-pack</code>, vendors crates, fetches pinned tools (sha256-verified), writes <code>manifest.json</code> with every blob's digest.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; align-items: center;">
+    <div style="width: 2rem; height: 2rem; background: #3b82f6; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">2</div>
+    <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
+  </div>
+  <div>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:shield" size={16} /> Verify</strong>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>doctor --verify</code> checks every sha256, reports all failures, writes nothing. Same code path as restore.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; align-items: center;">
+    <div style="width: 2rem; height: 2rem; background: #10b981; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">3</div>
+  </div>
+  <div>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:upload-cloud" size={16} /> Publish & Restore</strong>
+    <p style="margin: 0.25rem 0; color: var(--sl-color-gray-2); font-size: 0.9rem;">Force-push as orphan branch. Airlock does <code>git fetch</code> + <code>pixi-sandbox restore --output-path .</code> → offline <code>pixi install --frozen --offline</code> + <code>cargo build --offline</code>.</p>
+  </div>
+</div>
+
+<FeatureGrid />
+
+## Quick Start
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Tabs>
+  <TabItem label="Connected">
+    ```bash
+    # Pack environments and vendor Cargo crates
+    cargo build -p pixi-sandbox --release
+    pixi sandbox pack \
+      --repo-root . \
+      --envs dev,docs \
+      --output-dir .sandbox-transport \
+      --platform linux-64 \
+      --cargo-vendor \
+      --fetch-tools \
+      --self-bin target/release/pixi-sandbox
+
+    # Verify
+    pixi sandbox doctor --branch-location .sandbox-transport --verify
+
+    # Publish
+    pixi sandbox publish \
+      --input-dir .sandbox-transport \
+      --branch-name sandbox/linux-64
+    ```
+  </TabItem>
+  <TabItem label="Airlock">
+    ```bash
+    # Fetch
+    git fetch origin sandbox/linux-64:sandbox/linux-64
+
+    # One-liner offline reconstruction (PATH aliases wired like setup-pixi)
+    bash scripts/restore.sh sandbox/linux-64
+    # or: pixi run sandbox-restore
+
+    # Manual restore
+    .pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+      --branch-location /tmp/sb \
+      --output-path .
+
+    # Prove offline
+    source .pixi/sandbox-env.sh
+    pixi install --frozen --offline
+    cargo build --offline
+    ```
+  </TabItem>
+  <TabItem label="GitHub Actions">
+    ```yaml
+    # .github/workflows/publish-sandbox.yml in your project
+    jobs:
+      sandbox:
+        uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.2.0
+        with:
+          config: .pixi-sandbox.toml
+          release-version: v0.2.0
+        secrets:
+          SANDBOX_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # Or short refs
+    - uses: Archont561/pixi-sandbox/setup@v0.2.0
+      id: setup
+      with:
+        version: v0.2.0
+    - uses: Archont561/pixi-sandbox/publish@v0.2.0
+      with:
+        project: .
+        environments: dev
+        platform: linux-64
+        branch: sandbox/linux-64
+        self-bin: ${{ steps.setup.outputs.path }}
+        remote: https://github.com/OWNER/REPO.git
+        output-dir: /tmp/transport
+    ```
+  </TabItem>
+</Tabs>
+
+## Icons & Stack
+
+This docs site uses [Astro Icon](https://www.astroicon.dev/) with [Iconify](https://iconify.design/) — 300k+ open source icons, one framework.
+
+<div class="icon-showcase">
+  <div class="icon-item"><Icon name="lucide:package" size={24} /><span>lucide</span></div>
+  <div class="icon-item"><Icon name="mdi:package-variant-closed" size={24} /><span>mdi</span></div>
+  <div class="icon-item"><Icon name="tabler:brand-rust" size={24} /><span>tabler</span></div>
+  <div class="icon-item"><Icon name="simple-icons:github" size={24} /><span>simple</span></div>
+  <div class="icon-item"><Icon name="lucide:shield-check" size={24} /><span>shield</span></div>
+  <div class="icon-item"><Icon name="lucide:git-branch" size={24} /><span>git</span></div>
+</div>
+
+Browse all: [icon-sets.iconify.design](https://icon-sets.iconify.design/) — sets like `lucide`, `mdi`, `tabler`, `simple-icons` are included.
+
+## Next Steps
+
+- [Installation](/pixi-sandbox/installation/) — install CLI via cargo, pixi global, or release binary
+- [Quickstart](/pixi-sandbox/quickstart/) — build a bundle and publish from CI
+- [Using in your project](/pixi-sandbox/guides/using-in-your-project/) — user-facing guide
+- [Configuration](/pixi-sandbox/reference/configuration/) — `.pixi-sandbox.toml` reference
+- [Restore on airlock](/pixi-sandbox/restore/) — operator checklist

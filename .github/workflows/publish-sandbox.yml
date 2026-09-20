@@ -1,14 +1,14 @@
 name: publish-sandbox
 
-# Packs environments, proves the payload with `doctor --verify`, then pushes
-# it to an orphan branch. Every step is one `pixi run` line, and all its paths come from the
-# `SANDBOX_*` variables configured in the `env:` block below (design.md §6).
+# Consolidated publisher: packs, verifies, and publishes one orphan branch per
+# native (bundle × platform) target. The reviewed `.pixi-sandbox.toml` becomes
+# a matrix before any packing starts; each job runs on the native runner named
+# by that plan and force-pushes one platform/bundle branch.
 #
-# Runs automatically after `ci` succeeds, or manually via workflow_dispatch,
-# or as a reusable workflow via workflow_call.
-#
-# Packing and publishing run on the *same* runner on purpose: the payload (hundreds of MiB)
-# then never has to travel as a build artifact, and the branch is the only place it lands.
+# Triggers:
+# - workflow_run: after `ci` succeeds on main (automated)
+# - workflow_dispatch: manual with optional overrides
+# - workflow_call: reusable from other repos or self, with optional verified release mode
 
 on:
   workflow_run:
@@ -17,84 +17,396 @@ on:
       - completed
   workflow_dispatch:
     inputs:
+      config:
+        description: Project-relative sandbox bundle declaration
+        type: string
+        default: .pixi-sandbox.toml
       environments:
-        description: Comma-separated pixi environments to pack
+        description: Comma-separated pixi environments to pack (overrides config when set)
         type: string
-        default: "dev"
+        default: ""
       platform:
-        description: Target platform for the packed environments
+        description: Target platform for the packed environments (overrides config when set)
         type: string
-        default: "linux-64"
+        default: ""
       branch-prefix:
-        description: Branch becomes "<prefix>/<platform>" — one branch per platform
+        description: Branch prefix override
         type: string
-        default: "sandbox"
+        default: ""
       self-binary:
         description: Executable embedded in the branch so it can bootstrap itself
         type: string
-        default: ".knowledge/research/pixi_sandbox.py"
+        default: ""
       cargo-vendor:
         description: Also vendor the workspace's cargo dependencies
         type: boolean
         default: true
+      release-repository:
+        description: Repository that publishes pixi-sandbox binary release assets (optional verified release mode)
+        type: string
+        default: ""
+      release-ref:
+        description: Immutable source commit SHA used to obtain the composite actions
+        type: string
+        default: ""
+      release-version:
+        description: Immutable release tag downloaded by setup-pixi-sandbox
+        type: string
+        default: ""
+      checksums-asset:
+        description: Release asset with standard SHA-256 checksum lines
+        type: string
+        default: SHA256SUMS
   workflow_call:
     inputs:
-      environments:
-        description: Comma-separated pixi environments to pack
+      config:
+        description: Project-relative sandbox bundle declaration
+        required: false
         type: string
-        default: "dev"
+        default: .pixi-sandbox.toml
+      environments:
+        description: Comma-separated pixi environments to pack (overrides config when set)
+        required: false
+        type: string
+        default: ""
       platform:
         description: Target platform for the packed environments
+        required: false
         type: string
-        default: "linux-64"
+        default: ""
       branch-prefix:
-        description: Branch becomes "<prefix>/<platform>" — one branch per platform
+        description: Branch prefix override
+        required: false
         type: string
-        default: "sandbox"
+        default: ""
       self-binary:
         description: Executable embedded in the branch so it can bootstrap itself
+        required: false
         type: string
-        default: ".knowledge/research/pixi_sandbox.py"
+        default: ""
       cargo-vendor:
         description: Also vendor the workspace's cargo dependencies
+        required: false
         type: boolean
         default: true
+      release-repository:
+        description: Repository that publishes pixi-sandbox binary release assets
+        required: false
+        type: string
+        default: ""
+      release-ref:
+        description: Immutable source commit SHA used to obtain the composite actions
+        required: false
+        type: string
+        default: ""
+      release-version:
+        description: Immutable release tag downloaded by setup-pixi-sandbox
+        required: false
+        type: string
+        default: ""
+      checksums-asset:
+        description: Release asset with standard SHA-256 checksum lines
+        required: false
+        type: string
+        default: SHA256SUMS
     secrets:
       SANDBOX_PUSH_TOKEN:
-        description: Token allowed to force-push the sandbox branches (defaults to GITHUB_TOKEN)
+        description: Token allowed to force-push sandbox branches (defaults to GITHUB_TOKEN)
+        required: false
+      SANDBOX_RELEASE_TOKEN:
+        description: Optional token for a private pixi-sandbox release repository
         required: false
 
 permissions:
   contents: write
 
-env:
-  CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: "0"
-  SANDBOX_PROJECT: ${{ github.workspace }}
-  SANDBOX_ENVS: ${{ inputs.environments || 'dev' }}
-  SANDBOX_PLATFORM: ${{ inputs.platform || 'linux-64' }}
-  SANDBOX_TRANSPORT: ${{ github.workspace }}/.sandbox-transport
-  SANDBOX_BRANCH: ${{ (inputs.branch-prefix || 'sandbox') }}/${{ inputs.platform || 'linux-64' }}
-  SANDBOX_SELF_BIN: ${{ inputs.self-binary || '.knowledge/research/pixi_sandbox.py' }}
-  SANDBOX_CARGO_VENDOR: ${{ (inputs.cargo-vendor == false) && '' || '--cargo-vendor' }}
-  SANDBOX_REMOTE: https://x-access-token:${{ secrets.SANDBOX_PUSH_TOKEN || github.token }}@github.com/${{ github.repository }}.git
-
 jobs:
-  publish:
-    name: pack, verify, publish
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+  plan:
+    name: validate sandbox publish plan
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout project
+        uses: actions/checkout@v7.0.1 # v7.0.1
         with:
+          path: project
+          persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
-      - run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+
+      # ------------------------------------------------------------------
+      # Release-binary mode: caller provided release-repository
+      # ------------------------------------------------------------------
+      - name: Require immutable pixi-sandbox action source
+        if: ${{ inputs.release-repository != '' && inputs.release-ref != '' }}
+        shell: bash
+        env:
+          RELEASE_REF: ${{ inputs.release-ref }}
+        run: '[[ "$RELEASE_REF" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "::error::release-ref must be a 40-character commit SHA"; exit 1; }'
+
+      - name: Checkout pixi-sandbox actions (release mode)
+        if: ${{ inputs.release-repository != '' }}
+        uses: actions/checkout@v7.0.1 # v7.0.1
         with:
-          environments: ci
+          repository: ${{ inputs.release-repository }}
+          ref: ${{ inputs.release-ref || inputs.release-version }}
+          path: pixi-sandbox-action
+          persist-credentials: false
+          token: ${{ secrets.SANDBOX_RELEASE_TOKEN || secrets.SANDBOX_PUSH_TOKEN || github.token }}
+
+      - name: Install verified pixi-sandbox release (release mode)
+        if: ${{ inputs.release-repository != '' }}
+        id: sandbox-release
+        uses: ./pixi-sandbox-action/.github/actions/setup-pixi-sandbox
+        with:
+          repository: ${{ inputs.release-repository }}
+          version: ${{ inputs.release-version || 'latest' }}
+          checksums-asset: ${{ inputs.checksums-asset }}
+          token: ${{ secrets.SANDBOX_RELEASE_TOKEN || github.token }}
+
+      - name: Emit reviewed native matrix (release mode)
+        if: ${{ inputs.release-repository != '' && inputs.environments == '' }}
+        id: plan-release
+        working-directory: project
+        shell: bash
+        env:
+          CONFIG: ${{ inputs.config || '.pixi-sandbox.toml' }}
+          SANDBOX_BIN: ${{ steps.sandbox-release.outputs.path }}
+        run: echo "matrix=$(\"$SANDBOX_BIN\" plan --config \"$CONFIG\" --json)" >> "$GITHUB_OUTPUT"
+
+      - name: Emit simple matrix (release mode + manual override)
+        if: ${{ inputs.release-repository != '' && inputs.environments != '' }}
+        id: plan-release-simple
+        shell: bash
+        env:
+          ENVIRONMENTS: ${{ inputs.environments }}
+          PLATFORM: ${{ inputs.platform || 'linux-64' }}
+          BRANCH_PREFIX: ${{ inputs.branch-prefix || 'sandbox' }}
+          CARGO_VENDOR: ${{ inputs.cargo-vendor && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          PLATFORM="${PLATFORM:-linux-64}"
+          case "$PLATFORM" in
+            linux-64) RUNNER="ubuntu-latest" ;;
+            linux-aarch64) RUNNER="ubuntu-24.04-arm" ;;
+            osx-arm64) RUNNER="macos-14" ;;
+            osx-64) RUNNER="macos-13" ;;
+            win-64) RUNNER="windows-latest" ;;
+            *) RUNNER="ubuntu-latest" ;;
+          esac
+          BRANCH_PREFIX="${BRANCH_PREFIX:-sandbox}"
+          BRANCH="${BRANCH_PREFIX}/${PLATFORM}"
+          MATRIX=$(jq -cn --arg envs "$ENVIRONMENTS" --arg platform "$PLATFORM" --arg runner "$RUNNER" --arg branch "$BRANCH" --argjson cargo_vendor "$CARGO_VENDOR" '{include:[{bundle:"custom", environments:$envs, platform:$platform, runner:$runner, branch:$branch, cargo_vendor:$cargo_vendor}]}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+      # ------------------------------------------------------------------
+      # Local mode: no release-repository, use cargo run + embedded pins
+      # ------------------------------------------------------------------
+      - name: Install Pixi (local mode)
+        if: ${{ inputs.release-repository == '' }}
+        uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
+        with:
           cache: true
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: pixi run -e ci ci-pack
-      - run: pixi run -e ci ci-doctor
-      - run: pixi run -e ci ci-publish
+          environments: dev
+
+      - name: Rust cache (local mode)
+        if: ${{ inputs.release-repository == '' }}
+        uses: Swatinem/rust-cache@v2.9.2 # v2.9.2
+
+      - name: Emit reviewed native matrix (local mode)
+        if: ${{ inputs.release-repository == '' && inputs.environments == '' }}
+        id: plan-local
+        working-directory: project
+        shell: bash
+        env:
+          CONFIG: ${{ inputs.config || '.pixi-sandbox.toml' }}
+        run: |
+          set -euo pipefail
+          MATRIX=$(cargo run -q -p pixi-sandbox -- plan --config "$CONFIG" --json)
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+      - name: Emit simple matrix (local mode + manual override)
+        if: ${{ inputs.release-repository == '' && inputs.environments != '' }}
+        id: plan-local-simple
+        shell: bash
+        env:
+          ENVIRONMENTS: ${{ inputs.environments }}
+          PLATFORM: ${{ inputs.platform || 'linux-64' }}
+          BRANCH_PREFIX: ${{ inputs.branch-prefix || 'sandbox' }}
+          CARGO_VENDOR: ${{ inputs.cargo-vendor && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          PLATFORM="${PLATFORM:-linux-64}"
+          case "$PLATFORM" in
+            linux-64) RUNNER="ubuntu-latest" ;;
+            linux-aarch64) RUNNER="ubuntu-24.04-arm" ;;
+            osx-arm64) RUNNER="macos-14" ;;
+            osx-64) RUNNER="macos-13" ;;
+            win-64) RUNNER="windows-latest" ;;
+            *) RUNNER="ubuntu-latest" ;;
+          esac
+          BRANCH_PREFIX="${BRANCH_PREFIX:-sandbox}"
+          BRANCH="${BRANCH_PREFIX}/${PLATFORM}"
+          MATRIX=$(jq -cn --arg envs "$ENVIRONMENTS" --arg platform "$PLATFORM" --arg runner "$RUNNER" --arg branch "$BRANCH" --argjson cargo_vendor "$CARGO_VENDOR" '{include:[{bundle:"custom", environments:$envs, platform:$platform, runner:$runner, branch:$branch, cargo_vendor:$cargo_vendor}]}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+      - name: Consolidate matrix output
+        id: plan
+        shell: bash
+        env:
+          MATRIX_RELEASE: ${{ steps.plan-release.outputs.matrix }}
+          MATRIX_RELEASE_SIMPLE: ${{ steps.plan-release-simple.outputs.matrix }}
+          MATRIX_LOCAL: ${{ steps.plan-local.outputs.matrix }}
+          MATRIX_LOCAL_SIMPLE: ${{ steps.plan-local-simple.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          MATRIX=""
+          if [ -n "$MATRIX_RELEASE" ]; then MATRIX="$MATRIX_RELEASE"; fi
+          if [ -n "$MATRIX_RELEASE_SIMPLE" ]; then MATRIX="$MATRIX_RELEASE_SIMPLE"; fi
+          if [ -n "$MATRIX_LOCAL" ]; then MATRIX="$MATRIX_LOCAL"; fi
+          if [ -n "$MATRIX_LOCAL_SIMPLE" ]; then MATRIX="$MATRIX_LOCAL_SIMPLE"; fi
+          if [ -z "$MATRIX" ]; then
+            echo "::error::Failed to produce publish matrix"
+            exit 1
+          fi
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Produced matrix: $MATRIX"
+
+  publish:
+    name: ${{ matrix.bundle }} · ${{ matrix.platform }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    concurrency:
+      group: sandbox-publish-${{ github.repository }}-${{ matrix.branch }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v7.0.1 # v7.0.1
+        with:
+          path: project
+          persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      # ------------------------------------------------------------------
+      # Release mode
+      # ------------------------------------------------------------------
+      - name: Require immutable pixi-sandbox action source (release)
+        if: ${{ inputs.release-repository != '' && inputs.release-ref != '' }}
+        shell: bash
+        env:
+          RELEASE_REF: ${{ inputs.release-ref }}
+        run: '[[ "$RELEASE_REF" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "::error::release-ref must be a 40-character commit SHA"; exit 1; }'
+
+      - name: Checkout pixi-sandbox actions (release)
+        if: ${{ inputs.release-repository != '' }}
+        uses: actions/checkout@v7.0.1 # v7.0.1
+        with:
+          repository: ${{ inputs.release-repository }}
+          ref: ${{ inputs.release-ref || inputs.release-version }}
+          path: pixi-sandbox-action
+          persist-credentials: false
+          token: ${{ secrets.SANDBOX_RELEASE_TOKEN || secrets.SANDBOX_PUSH_TOKEN || github.token }}
+
+      - name: Install Pixi (release)
+        if: ${{ inputs.release-repository != '' }}
+        uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
+        with:
+          cache: true
+
+      - name: Install verified pixi-sandbox release
+        if: ${{ inputs.release-repository != '' }}
+        id: sandbox-release
+        uses: ./pixi-sandbox-action/.github/actions/setup-pixi-sandbox
+        with:
+          repository: ${{ inputs.release-repository }}
+          version: ${{ inputs.release-version || 'latest' }}
+          checksums-asset: ${{ inputs.checksums-asset }}
+          token: ${{ secrets.SANDBOX_RELEASE_TOKEN || github.token }}
+
+      - name: Pack, verify, and publish one native sandbox branch (release)
+        if: ${{ inputs.release-repository != '' }}
+        id: publish-release
+        uses: ./pixi-sandbox-action/.github/actions/publish-pixi-sandbox
+        with:
+          project: project
+          environments: ${{ matrix.environments }}
+          platform: ${{ matrix.platform }}
+          branch: ${{ matrix.branch }}
+          cargo-vendor: ${{ matrix.cargo_vendor }}
+          self-bin: ${{ steps.sandbox-release.outputs.path }}
+          remote: ${{ github.server_url }}/${{ github.repository }}.git
+          output-dir: ${{ runner.temp }}/pixi-sandbox/${{ matrix.bundle }}-${{ matrix.platform }}
+          push-token: ${{ secrets.SANDBOX_PUSH_TOKEN || github.token }}
+
+      # ------------------------------------------------------------------
+      # Local mode
+      # ------------------------------------------------------------------
+      - name: Install Pixi (local)
+        if: ${{ inputs.release-repository == '' }}
+        uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
+        with:
+          cache: true
+          environments: dev
+
+      - name: Rust cache (local)
+        if: ${{ inputs.release-repository == '' }}
+        uses: Swatinem/rust-cache@v2.9.2 # v2.9.2
+
+      - name: Build pixi-sandbox binary (local)
+        if: ${{ inputs.release-repository == '' }}
+        shell: bash
+        working-directory: project
+        run: cargo build -p pixi-sandbox --release
+
+      - name: Resolve self-binary path (local)
+        if: ${{ inputs.release-repository == '' }}
+        id: selfbin
+        shell: bash
+        env:
+          SELF_BINARY_INPUT: ${{ inputs.self-binary }}
+        run: |
+          set -euo pipefail
+          PROJECT_DIR="${{ github.workspace }}/project"
+          if [ -n "$SELF_BINARY_INPUT" ]; then
+            if [ -f "$PROJECT_DIR/$SELF_BINARY_INPUT" ]; then
+              echo "path=$PROJECT_DIR/$SELF_BINARY_INPUT" >> "$GITHUB_OUTPUT"
+            elif [ -f "$SELF_BINARY_INPUT" ]; then
+              echo "path=$SELF_BINARY_INPUT" >> "$GITHUB_OUTPUT"
+            else
+              echo "path=$PROJECT_DIR/$SELF_BINARY_INPUT" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            if [ "${{ runner.os }}" = "Windows" ]; then
+              echo "path=$PROJECT_DIR/target/release/pixi-sandbox.exe" >> "$GITHUB_OUTPUT"
+            else
+              echo "path=$PROJECT_DIR/target/release/pixi-sandbox" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Pack, verify, and publish one native sandbox branch (local)
+        if: ${{ inputs.release-repository == '' }}
+        id: publish-local
+        uses: ./project/.github/actions/publish-pixi-sandbox
+        with:
+          project: project
+          environments: ${{ matrix.environments }}
+          platform: ${{ matrix.platform }}
+          branch: ${{ matrix.branch }}
+          cargo-vendor: ${{ matrix.cargo_vendor }}
+          self-bin: ${{ steps.selfbin.outputs.path }}
+          remote: ${{ github.server_url }}/${{ github.repository }}.git
+          output-dir: ${{ runner.temp }}/pixi-sandbox/${{ matrix.bundle }}-${{ matrix.platform }}
+          push-token: ${{ secrets.SANDBOX_PUSH_TOKEN || github.token }}
+
+      - name: Upload published manifest
+        if: success()
+        uses: actions/upload-artifact@v7.0.1 # v7.0.1
+        with:
+          name: sandbox-manifest-${{ matrix.bundle }}-${{ matrix.platform }}
+          path: ${{ steps.publish-release.outputs.manifest || steps.publish-local.outputs.manifest }}
+          retention-days: 14

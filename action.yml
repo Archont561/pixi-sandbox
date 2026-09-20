@@ -1,0 +1,74 @@
+name: Setup pixi-sandbox
+description: Download, checksum-verify, and expose a standalone pixi-sandbox release binary — like prefix-dev/setup-pixi but for pixi-sandbox. Use as Archont561/pixi-sandbox@vX.
+author: pixi-sandbox
+branding:
+  icon: package
+  color: orange
+
+inputs:
+  repository:
+    description: GitHub repository containing the pixi-sandbox release assets (OWNER/REPO).
+    required: false
+    default: Archont561/pixi-sandbox
+  version:
+    description: Immutable release tag to download. Set `latest` explicitly only for a deliberately non-reproducible workflow.
+    required: false
+    default: latest
+  target:
+    description: Rust target triple to download, or `auto` for the current hosted runner.
+    required: false
+    default: auto
+  asset-template:
+    description: Release asset template; supports {target}, {exe}, {tag}, and {version}.
+    required: false
+    default: pixi-sandbox-{target}{exe}
+  checksums-asset:
+    description: Release asset containing standard SHA-256 checksum lines. Ignored when sha256 is supplied.
+    required: false
+    default: SHA256SUMS
+  sha256:
+    description: Optional explicit SHA-256 for the selected binary asset; overrides checksums-asset lookup.
+    required: false
+    default: ""
+  install-dir:
+    description: Directory for the verified executable. Empty chooses a runner-temporary directory.
+    required: false
+    default: ""
+  add-to-path:
+    description: Add the executable directory to GITHUB_PATH.
+    required: false
+    default: "true"
+  token:
+    description: Optional GitHub token for release API access and private release downloads.
+    required: false
+    default: ""
+
+outputs:
+  path:
+    description: Absolute path of the verified pixi-sandbox executable.
+    value: ${{ steps.setup.outputs.path }}
+  version:
+    description: Resolved immutable GitHub release tag.
+    value: ${{ steps.setup.outputs.version }}
+  sha256:
+    description: Verified SHA-256 of the executable.
+    value: ${{ steps.setup.outputs.sha256 }}
+  target:
+    description: Resolved Rust target triple.
+    value: ${{ steps.setup.outputs.target }}
+
+runs:
+  using: composite
+  steps:
+    - id: setup
+      uses: ./.github/actions/setup-pixi-sandbox
+      with:
+        repository: ${{ inputs.repository }}
+        version: ${{ inputs.version }}
+        target: ${{ inputs.target }}
+        asset-template: ${{ inputs.asset-template }}
+        checksums-asset: ${{ inputs.checksums-asset }}
+        sha256: ${{ inputs.sha256 }}
+        install-dir: ${{ inputs.install-dir }}
+        add-to-path: ${{ inputs.add-to-path }}
+        token: ${{ inputs.token }}

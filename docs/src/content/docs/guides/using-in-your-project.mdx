@@ -1,0 +1,188 @@
+---
+title: Using in your project
+description: User-facing guide to integrate pixi-sandbox into any pixi project.
+---
+
+import { Icon } from 'astro-icon/components';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+This guide is for **project owners** who want to ship their pixi environments to airlocked machines.
+
+## 1. Prerequisites
+
+- Your project has `pixi.toml` + `pixi.lock`
+- Optional: `Cargo.toml` + `Cargo.lock` if you want vendored crates
+- `pixi-sandbox` installed (see [Installation](/pixi-sandbox/installation/))
+
+Check:
+
+```bash
+pixi-sandbox tools list
+# Should show pixi, pixi-pack, pixi-unpack pins for linux-64, osx-arm64, etc.
+```
+
+## 2. Decide what to ship
+
+Not every env in `pixi.toml` should be an airlock branch. Declare explicitly in `.pixi-sandbox.toml`:
+
+```toml
+# .pixi-sandbox.toml
+schema = 1
+branch_prefix = "sandbox"
+cargo_vendor = true  # false if you only need conda envs
+
+[[bundle]]
+name = "developer"
+environments = ["dev", "docs"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+
+[[bundle]]
+name = "minimal"
+environments = ["default"]
+platforms = ["linux-64"]
+cargo_vendor = false
+```
+
+Validate:
+
+```bash
+pixi-sandbox plan --config .pixi-sandbox.toml
+pixi-sandbox plan --config .pixi-sandbox.toml --json
+```
+
+This emits a GitHub Actions matrix — one job per `bundle × platform`.
+
+## 3. Local pack → doctor → publish
+
+<Tabs>
+  <TabItem label="Rust self-bin (recommended)">
+    ```bash
+    # Build static self-binary
+    cargo build -p pixi-sandbox --release
+
+    # Pack
+    pixi-sandbox pack \
+      --repo-root . \
+      --envs dev,docs \
+      --output-dir .sandbox-out \
+      --platform linux-64 \
+      --cargo-vendor \
+      --fetch-tools \
+      --self-bin target/release/pixi-sandbox
+
+    # Verify (writes nothing)
+    pixi-sandbox doctor --branch-location .sandbox-out --verify
+
+    # Publish
+    pixi-sandbox publish \
+      --input-dir .sandbox-out \
+      --branch-name sandbox/developer-linux-64 \
+      --remote origin
+    ```
+  </TabItem>
+  <TabItem label="Release binary">
+    ```bash
+    # Download verified release
+    # (use setup action in CI, or manual curl + sha256sum check)
+
+    pixi-sandbox pack \
+      --repo-root . \
+      --envs dev \
+      --output-dir .sandbox-out \
+      --platform linux-64 \
+      --fetch-tools \
+      --self-bin ./pixi-sandbox-x86_64-unknown-linux-musl
+    ```
+  </TabItem>
+</Tabs>
+
+## 4. What gets published?
+
+```text
+sandbox/developer-linux-64 (orphan branch)
+├── .pixi-sandbox/
+│   ├── manifest.json              # SHA-256 catalog, source commit, tool versions
+│   ├── envs/dev/pack/             # pixi-pack --directory-only output
+│   │   ├── channel/linux-64/*.conda
+│   │   ├── environment.yml
+│   │   └── pixi-pack.json
+│   ├── envs/docs/pack/            # second env, shared .conda files deduped by git
+│   ├── tools/linux-64/            # pixi, pixi-unpack, pixi-sandbox (static, verified)
+│   └── vendor/                    # cargo vendor --versioned-dirs (if enabled)
+├── README.md                      # human restore instructions
+└── AGENTS.md                      # agent instructions
+```
+
+Sizes (measured small project, 2 envs, 33 crates, linux-64):
+
+| Part | Size |
+|------|------|
+| conda envs (.conda) | 133 MB |
+| cargo vendor (loose) | 33 MB |
+| tools (pixi, pixi-unpack, self) | 96 MB |
+| **transport dir** | **262 MB** |
+| **orphan branch after git dedup** | **~110 MB** |
+
+Tools dominate small bundles — expected, git stores each tool blob once.
+
+## 5. Restore on airlock
+
+Give the airlock operator the one-liner:
+
+```bash
+# One-liner with PATH aliases (like setup-pixi)
+bash scripts/restore.sh sandbox/developer-linux-64
+# or
+pixi run sandbox-restore
+
+# Manual
+git fetch origin sandbox/developer-linux-64:sandbox/developer-linux-64
+git worktree add /tmp/sb origin/sandbox/developer-linux-64
+/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+  --branch-location /tmp/sb \
+  --output-path . --force
+git worktree remove /tmp/sb --force
+source .pixi/sandbox-env.sh
+pixi install --frozen --offline   # must be no-op
+cargo build --offline             # uses vendored crates
+```
+
+See [Airlock Restore](/pixi-sandbox/restore/) for full operator checklist.
+
+## 6. Without cargo vendoring
+
+If you only need conda envs:
+
+```toml
+# .pixi-sandbox.toml
+schema = 1
+cargo_vendor = false
+
+[[bundle]]
+name = "python"
+environments = ["dev", "test"]
+platforms = ["linux-64", "win-64"]
+```
+
+And pack without `--cargo-vendor`:
+
+```bash
+pixi-sandbox pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --fetch-tools --self-bin target/release/pixi-sandbox
+```
+
+## 7. Tips
+
+<div style="display: grid; gap: 0.75rem; margin: 1rem 0;">
+  <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:lightbulb" size={20} />
+    <div><strong>Keep envs explicit</strong> — never infer every env from pixi.toml. Test/bench envs shouldn't be published.</div>
+  </div>
+  <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:hard-drive" size={20} />
+    <div><strong>Work dir on same filesystem</strong> — default <code>.pixi/.restore-work</code>. Never use small tmpfs <code>/tmp</code> (pixi-unpack stages into TMPDIR).</div>
+  </div>
+  <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:shield-check" size={20} />
+    <div><strong>Verify before write</strong> — <code>doctor --verify</code> is the same code as restore's preflight. CI must run it.</div>
+  </div>
+</div>

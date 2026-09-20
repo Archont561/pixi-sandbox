@@ -1,0 +1,64 @@
+name: Publish Pixi sandbox bundle
+description: Short alias — install requested Pixi environments, pack with a verified release binary, verify, and publish one orphan branch. Use as Archont561/pixi-sandbox/publish@vX.
+author: pixi-sandbox
+branding:
+  icon: upload-cloud
+  color: blue
+
+inputs:
+  project:
+    description: Checked-out project root to sandbox.
+    required: true
+  environments:
+    description: Comma-separated Pixi environments selected by the reviewed plan.
+    required: true
+  platform:
+    description: Native Pixi platform being packed.
+    required: true
+  branch:
+    description: Orphan branch to force-push.
+    required: true
+  cargo-vendor:
+    description: Whether this bundle should vendor Cargo dependencies.
+    required: false
+    default: "true"
+  self-bin:
+    description: Verified standalone pixi-sandbox executable to embed in the branch.
+    required: true
+  remote:
+    description: Credential-free Git remote URL to publish to.
+    required: true
+  output-dir:
+    description: Fresh runner-temporary directory for the transport.
+    required: true
+  push-token:
+    description: Optional token injected into Git configuration, never into the remote URL.
+    required: false
+    default: ""
+
+outputs:
+  transport:
+    description: Transport directory that was packed and published.
+    value: ${{ steps.publish.outputs.transport }}
+  manifest:
+    description: Manifest path inside the published transport.
+    value: ${{ steps.publish.outputs.manifest }}
+  branch:
+    description: Published branch name.
+    value: ${{ steps.publish.outputs.branch }}
+
+runs:
+  using: composite
+  steps:
+    - id: publish
+      uses: ../.github/actions/publish-pixi-sandbox
+      with:
+        project: ${{ inputs.project }}
+        environments: ${{ inputs.environments }}
+        platform: ${{ inputs.platform }}
+        branch: ${{ inputs.branch }}
+        cargo-vendor: ${{ inputs.cargo-vendor }}
+        self-bin: ${{ inputs.self-bin }}
+        remote: ${{ inputs.remote }}
+        output-dir: ${{ inputs.output-dir }}
+        push-token: ${{ inputs.push-token }}

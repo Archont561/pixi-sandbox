@@ -1,0 +1,168 @@
+---
+title: CLI Reference
+description: pixi-sandbox pack, doctor, publish, restore, unpack, plan, tools commands.
+---
+
+import { Icon } from 'astro-icon/components';
+
+Because pixi discovers `pixi-<command>` on PATH, all verbs work as `pixi sandbox <verb>` too.
+
+## Global
+
+```bash
+pixi-sandbox --help
+pixi-sandbox --version
+pixi sandbox --help   # via pixi extension
+```
+
+## pack
+
+Create transport directory from pixi envs.
+
+```bash
+pixi-sandbox pack \
+  --repo-root . \
+  --envs dev,docs \
+  --output-dir .sandbox-out \
+  --platform linux-64 \
+  --shard-limit-mib 95 \
+  --cargo-vendor \
+  --cargo-vendor-mode loose|tarballs \
+  --fetch-tools \
+  --tools-lock /path/to/reviewed-tools.lock.json \
+  --tools-cache ~/.cache/pixi-sandbox/tools \
+  --self-bin target/release/pixi-sandbox
+```
+
+| Flag | Description |
+|------|-------------|
+| `--repo-root` | Project root (default `.`) |
+| `--envs` | Comma-separated envs |
+| `--output-dir` | Output transport dir |
+| `--platform` | Platform (e.g., `linux-64`) |
+| `--shard-limit-mib` | Shard limit MiB (default 95) |
+| `--cargo-vendor` | Vendor Cargo deps |
+| `--cargo-vendor-mode` | `loose` (default) or `tarballs` |
+| `--fetch-tools` | Fetch pinned tools (sha256-verified) |
+| `--tools-lock` | Override tools.lock.json path |
+| `--tools-cache` | Tools cache dir |
+| `--self-bin` | Release binary to embed as `pixi-sandbox` in branch |
+
+No override means embedded pins from `tools.lock.json` compiled into binary.
+
+## doctor
+
+Verify transport without writing.
+
+```bash
+pixi-sandbox doctor --branch-location .sandbox-out --verify
+pixi-sandbox doctor --branch-location .sandbox-out --verify --envs dev
+pixi-sandbox doctor --branch-location .sandbox-out --verify --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--branch-location` | Transport dir |
+| `--verify` | Verify all blobs |
+| `--envs` | Filter envs |
+| `--json` | Machine-readable output |
+
+Reports all failures, not first. Checks size + sha256 + tool linkage (rejects dynamic).
+
+## publish
+
+Publish transport as orphan branch.
+
+```bash
+pixi-sandbox publish \
+  --input-dir .sandbox-out \
+  --branch-name sandbox/dev-linux-64 \
+  --remote origin \
+  --keep 5 \
+  --dry-run
+```
+
+| Flag | Description |
+|------|-------------|
+| `--input-dir` | Transport dir |
+| `--branch-name` | Orphan branch to force-push |
+| `--remote` | Git remote (default `origin`) |
+| `--keep` | Keep N history (rebuilds history, not shrink) |
+| `--dry-run` | Preview git commands, don't push |
+
+Implementation: `GIT_DIR` points at scratch repo **next to** transport (same FS, never /tmp), `GIT_INDEX_FILE` scratch, `GIT_WORK_TREE` = transport, plumbing `add → write-tree → commit-tree (no -p) → update-ref → push --force`. No `.git` in owned dir, no copy.
+
+## restore
+
+Airlock restore — verify then materialize.
+
+```bash
+pixi-sandbox restore \
+  --branch-location /tmp/sb \
+  --output-path . \
+  --envs dev \
+  --verify-only \
+  --force \
+  --no-vendor \
+  --work-dir .pixi/.restore-work \
+  --cargo-config auto|write|print|none
+```
+
+| Flag | Description |
+|------|-------------|
+| `--branch-location` | Fetched branch dir (read-only) |
+| `--output-path` | Project output (new flag) |
+| `--path-to-main-repo-code` | Alias for `--output-path` (backward compat) |
+| `--envs` | Partial restore (vendor always materialized) |
+| `--verify-only` | Verify, write nothing |
+| `--force` | Overwrite existing envs |
+| `--no-vendor` | Skip vendor |
+| `--work-dir` | Work dir (default `.pixi/.restore-work`, same FS, TMPDIR redirected) |
+| `--cargo-config` | `auto` (default) / `write` / `print` / `none` — how to wire `.cargo/config.toml` |
+
+Order: load manifest → verify everything → materialize tools (idempotent) → preflight disk → install envs (pixi-unpack → rename) → write markers (`conda-meta/pixi_env_prefix`, fingerprint) → vendor + cargo config → assertions `pixi install --frozen --offline` no-op, `cargo build --offline` ok.
+
+## unpack
+
+Single-env primitive, used by restore.
+
+```bash
+pixi-sandbox unpack \
+  --input-dir .sandbox-out \
+  --output-dir /tmp/prefix \
+  --env dev \
+  --unpacker /path/to/pixi-unpack \
+  --force \
+  --work-dir /tmp/work \
+  --verify-only
+```
+
+Accepts transport dir, `.pixi-sandbox/envs/<env>/pack` dir, or bare pack dir. Leaves pixi markers to restore.
+
+## plan
+
+Validate `.pixi-sandbox.toml` and emit matrix.
+
+```bash
+pixi-sandbox plan --config .pixi-sandbox.toml
+pixi-sandbox plan --config .pixi-sandbox.toml --json
+```
+
+Rejects unsafe/implicit runner selection, checks embedded tool coverage.
+
+## tools
+
+```bash
+pixi-sandbox tools list
+pixi-sandbox tools list --tools-lock /path/to/tools.lock.json
+pixi-sandbox tools update   # not yet implemented (reports deferred)
+```
+
+## One-liner reconstruction
+
+```bash
+bash scripts/restore.sh sandbox/linux-64
+pixi run sandbox-restore
+```
+
+Does fetch + worktree + doctor + restore + PATH alias wiring (like setup-pixi's `pixi()` function + tools + dev bin).

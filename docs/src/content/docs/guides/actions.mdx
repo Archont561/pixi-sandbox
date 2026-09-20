@@ -1,0 +1,171 @@
+---
+title: GitHub Actions
+description: Setup and publish actions with short references — like prefix-dev/setup-pixi.
+---
+
+import { Icon } from 'astro-icon/components';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Both actions live in **same repo** with short references.
+
+## Setup Action
+
+Downloads verified release binary, checksum-verified, adds to PATH.
+
+<Tabs>
+  <TabItem label="Short refs">
+    ```yaml
+    # Root = setup (like setup-pixi)
+    - uses: Archont561/pixi-sandbox@v0.2.0
+      with:
+        version: v0.2.0
+    - run: pixi-sandbox --version
+
+    # Explicit short path
+    - uses: Archont561/pixi-sandbox/setup@v0.2.0
+      id: setup
+      with:
+        version: v0.2.0
+        repository: Archont561/pixi-sandbox
+    - run: ${{ steps.setup.outputs.path }} --version
+    ```
+  </TabItem>
+  <TabItem label="Pinned SHA">
+    ```yaml
+    - uses: Archont561/pixi-sandbox@<sha>
+      with:
+        version: v0.2.0
+
+    - uses: Archont561/pixi-sandbox/setup@<sha>
+      with:
+        version: v0.2.0
+
+    - uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<sha>
+      with:
+        version: v0.2.0
+    ```
+  </TabItem>
+</Tabs>
+
+### Inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `repository` | `Archont561/pixi-sandbox` | GitHub repo containing release assets |
+| `version` | `latest` | Immutable tag (e.g., `v0.2.0`). `latest` warns, pin in prod |
+| `target` | `auto` | Rust triple or `auto` (maps runner OS/arch) |
+| `asset-template` | `pixi-sandbox-{target}{exe}` | Asset name template (`{target}`, `{exe}`, `{tag}`, `{version}`) |
+| `checksums-asset` | `SHA256SUMS` | Checksums file asset |
+| `sha256` | `""` | Explicit SHA-256, overrides checksums lookup |
+| `install-dir` | `""` | Dir for verified exe (default runner temp) |
+| `add-to-path` | `true` | Add dir to `GITHUB_PATH` |
+| `token` | `""` | GitHub token for private releases |
+
+### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `path` | Absolute path of verified exe |
+| `version` | Resolved immutable tag |
+| `sha256` | Verified SHA-256 |
+| `target` | Resolved Rust triple |
+
+### Release contract
+
+Each tag must publish:
+
+```text
+pixi-sandbox-x86_64-unknown-linux-musl
+pixi-sandbox-aarch64-unknown-linux-musl
+pixi-sandbox-x86_64-apple-darwin
+pixi-sandbox-aarch64-apple-darwin
+pixi-sandbox-x86_64-pc-windows-msvc.exe
+SHA256SUMS
+```
+
+Generate checksums after native proof:
+
+```bash
+(cd dist && sha256sum pixi-sandbox-* > SHA256SUMS && sha256sum -c SHA256SUMS)
+```
+
+## Publish Action
+
+Packs one `bundle × platform`, verifies, publishes orphan branch.
+
+<Tabs>
+  <TabItem label="Short ref">
+    ```yaml
+    - uses: Archont561/pixi-sandbox/publish@v0.2.0
+      with:
+        project: .
+        environments: dev,docs
+        platform: linux-64
+        branch: sandbox/dev-linux-64
+        self-bin: ${{ steps.setup.outputs.path }}
+        remote: https://github.com/OWNER/REPO.git
+        output-dir: /tmp/transport
+        cargo-vendor: "true"
+        push-token: ${{ secrets.GITHUB_TOKEN }}
+    ```
+  </TabItem>
+  <TabItem label="Long form">
+    ```yaml
+    - uses: Archont561/pixi-sandbox/.github/actions/publish-pixi-sandbox@<sha>
+      with:
+        project: .
+        environments: dev
+        platform: linux-64
+        branch: sandbox/linux-64
+        self-bin: ${{ steps.setup.outputs.path }}
+        remote: https://github.com/OWNER/REPO.git
+        output-dir: /tmp/transport
+    ```
+  </TabItem>
+</Tabs>
+
+### Inputs
+
+| Input | Required | Description |
+|-------|----------|-------------|
+| `project` | yes | Checked-out project root |
+| `environments` | yes | Comma-separated envs (`dev,docs`) |
+| `platform` | yes | Native platform (`linux-64`) |
+| `branch` | yes | Orphan branch to force-push |
+| `self-bin` | yes | Verified exe from setup action |
+| `remote` | yes | Credential-free git remote URL |
+| `output-dir` | yes | Fresh temp dir for transport |
+| `cargo-vendor` | no | `true`/`false` (default true) |
+| `push-token` | no | Token via extraheader, never in URL |
+
+### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `transport` | Transport dir |
+| `manifest` | Manifest path inside transport |
+| `branch` | Published branch name |
+
+## Security
+
+<div style="display: grid; gap: 0.75rem; margin: 1rem 0;">
+  <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:shield-check" size={20} />
+    <div><strong>Verified before exec</strong> — SHA-256 from <code>SHA256SUMS</code> checked before <code>chmod +x</code>. No PATH shadow — exact <code>self-bin</code> path used.</div>
+  </div>
+  <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:lock" size={20} />
+    <div><strong>Token via extraheader</strong> — <code>AUTHORIZATION: basic base64(x-access-token:TOKEN)</code> via <code>GIT_CONFIG</code>, not URL.</div>
+  </div>
+</div>
+
+## Icons
+
+This docs site uses [Astro Icon](https://www.astroicon.dev/) + [Iconify](https://iconify.design/) — browse 300k icons at [icon-sets.iconify.design](https://icon-sets.iconify.design/).
+
+```astro
+import { Icon } from 'astro-icon/components';
+<Icon name="lucide:package" />
+<Icon name="simple-icons:rust" />
+<Icon name="mdi:github" />
+```

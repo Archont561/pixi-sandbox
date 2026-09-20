@@ -1,0 +1,69 @@
+version: 2
+updates:
+  # Rust dependencies (Cargo.toml workspace)
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - rust
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: scope
+    # Group patch/minor updates to reduce PR noise; major stays separate for review
+    groups:
+      cargo-patch:
+        patterns:
+          - "*"
+        update-types:
+          - patch
+          - minor
+
+  # GitHub Actions (pinned to full SHA with trailing # vX comment)
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "ci"
+      include: scope
+    groups:
+      actions-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # Docs site (Astro + Starlight) — npm ecosystem reads docs/package.json + bun.lock
+  - package-ecosystem: npm
+    directory: "/docs"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - docs
+    commit-message:
+      prefix: "chore"
+      include: scope
+    groups:
+      docs-patch:
+        patterns:
+          - "*"
+        update-types:
+          - patch
+          - minor

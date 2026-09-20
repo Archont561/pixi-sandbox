@@ -159,7 +159,7 @@ Every gate below was executed locally on the scaffold (pixi 0.81.0, rust 1.98.1)
 | `lefthook validate` (throwaway git copy) | "All good" |
 | `pixi lock` re-run | byte-identical |
 | `pixi run -e docs docs-build` | 5 pages in 4.31 s |
-| `bash .knowledge/research/reproduce.sh <out>` | **52 s** cold, all green |
+| `pixi run -e dev sandbox-proof` (formerly `reproduce.sh`) | **52 s** cold, all green (historical), now ~177 s Rust |
 
 The end-to-end proof re-runs from a bare checkout in **52 s** with identical numbers
 (cold 62 s): fingerprints `eaca22bcfed5ef20` / `2c79f41f9afdf07c`, packed

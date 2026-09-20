@@ -1,0 +1,172 @@
+name: release
+
+# Build standalone static binaries across tier-1 platforms and publish a
+# GitHub Release with SHA256SUMS. The asset contract matches
+# `.github/actions/setup-pixi-sandbox/README.md`:
+#   pixi-sandbox-{target}{exe}
+#   SHA256SUMS (standard `sha256sum` lines)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag to publish (e.g., v0.2.0). When empty on dispatch, only builds artifacts.
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: aarch64-apple-darwin
+            runner: macos-14
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1 # v7.0.1
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2.9.2 # v2.9.2
+
+      - name: Install Rust target
+        shell: bash
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install musl tools (Linux)
+        if: contains(matrix.target, 'musl')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y musl-tools
+          fi
+
+      - name: Build release binary
+        shell: bash
+        run: cargo build -p pixi-sandbox --release --target ${{ matrix.target }}
+
+      - name: Strip and stage binary (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          BIN="target/${TARGET}/release/pixi-sandbox"
+          if [ ! -f "$BIN" ]; then
+            echo "::error::Binary not found at $BIN"
+            exit 1
+          fi
+          # Cargo profile already strips (strip = true), but run strip again for minimal size
+          strip "$BIN" || true
+          ls -lh "$BIN"
+          OUT="pixi-sandbox-${TARGET}"
+          cp "$BIN" "$OUT"
+          chmod +x "$OUT"
+          echo "Staged $OUT"
+          ls -lh "$OUT"
+
+      - name: Stage binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bin = "target/$env:TARGET/release/pixi-sandbox.exe"
+          if (-not (Test-Path $bin)) {
+            Write-Error "Binary not found at $bin"
+            exit 1
+          }
+          $out = "pixi-sandbox-$env:TARGET.exe"
+          Copy-Item $bin $out -Force
+          Get-ChildItem $out | Format-List
+          Write-Host "Staged $out"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v7.0.1 # v7.0.1
+        with:
+          name: binary-${{ matrix.target }}
+          path: |
+            pixi-sandbox-${{ matrix.target }}*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Create a Release on tag pushes, or on dispatch when a version is supplied
+    if: ${{ startsWith(github.ref, 'refs/tags/') || inputs.version != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1 # v7.0.1
+
+      - name: Download all binaries
+        uses: actions/download-artifact@v7.0.1 # v7.0.1
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -lh dist/
+          # Deterministic SHA256SUMS matching setup-pixi-sandbox contract
+          (cd dist && sha256sum pixi-sandbox-* > SHA256SUMS)
+          cat dist/SHA256SUMS
+          # Verify that every binary has a checksum line
+          for bin in dist/pixi-sandbox-*; do
+            [ -f "$bin" ] || continue
+            name=$(basename "$bin")
+            if ! grep -q "$name" dist/SHA256SUMS; then
+              echo "::error::Missing checksum for $name"
+              exit 1
+            fi
+          done
+
+      - name: Determine release tag
+        id: tag
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_VERSION" ]; then
+            TAG="$INPUT_VERSION"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2.4.1 # v2.4.1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            dist/pixi-sandbox-*
+            dist/SHA256SUMS
+          generate_release_notes: true
+          fail_on_unmatched_files: true
