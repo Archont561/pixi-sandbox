@@ -90,17 +90,35 @@ self-hosted or nonstandard labels. A runner override must also have embedded pin
 `pixi-pack`, and `pixi-unpack`; `plan` rejects an otherwise runnable platform whose release
 tools are not reviewed into the binary.
 
-### Direct setup action (like prefix-dev/setup-pixi)
+### Direct setup and publish actions (like prefix-dev/setup-pixi)
+
+Both live in the same repo with short references:
 
 ```yaml
+# Setup: download verified release binary
 - uses: Archont561/pixi-sandbox@v0.2.0
   with:
     version: v0.2.0
 - run: pixi-sandbox --version
-# Or explicit composite path:
-- uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<immutable-sha>
+
+# Explicit short paths
+- uses: Archont561/pixi-sandbox/setup@v0.2.0
+  id: setup
   with:
     version: v0.2.0
+- uses: Archont561/pixi-sandbox/publish@v0.2.0
+  with:
+    project: .
+    environments: dev
+    platform: linux-64
+    branch: sandbox/dev-linux-64
+    self-bin: ${{ steps.setup.outputs.path }}
+    remote: https://github.com/OWNER/REPO.git
+    output-dir: /tmp/transport
+
+# Long-form paths (pin to SHA for supply-chain security)
+- uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<sha>
+- uses: Archont561/pixi-sandbox/.github/actions/publish-pixi-sandbox@<sha>
 ```
 
 It verifies the release bytes against exactly one matching entry in `SHA256SUMS` before making

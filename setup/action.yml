@@ -1,5 +1,5 @@
 name: Setup pixi-sandbox
-description: Download, checksum-verify, and expose a standalone pixi-sandbox release binary — like prefix-dev/setup-pixi but for pixi-sandbox. Use as Archont561/pixi-sandbox@vX.
+description: Short alias — download, checksum-verify, and expose a standalone pixi-sandbox release binary. Use as Archont561/pixi-sandbox/setup@vX (or root Archont561/pixi-sandbox@vX).
 author: pixi-sandbox
 branding:
   icon: package
@@ -61,7 +61,7 @@ runs:
   using: composite
   steps:
     - id: setup
-      uses: ./.github/actions/setup-pixi-sandbox
+      uses: ../.github/actions/setup-pixi-sandbox
       with:
         repository: ${{ inputs.repository }}
         version: ${{ inputs.version }}

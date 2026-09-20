@@ -83,20 +83,48 @@ sandbox/<platform>/
 
 ## 🤖 GitHub Actions (like `setup-pixi`)
 
+Both actions live in the **same repo** with short references:
+
 ```yaml
-# Download verified release binary (like prefix-dev/setup-pixi)
-- uses: Archont561/pixi-sandbox@v0.2.0
+# Setup: download verified release binary (like prefix-dev/setup-pixi)
+- uses: Archont561/pixi-sandbox@v0.2.0           # root = setup
   with:
     version: v0.2.0
 - run: pixi-sandbox --version
 
-# Or pin to immutable SHA (supply-chain secure)
-- uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<sha>
+# Same setup via explicit short path
+- uses: Archont561/pixi-sandbox/setup@v0.2.0
   with:
     version: v0.2.0
+
+# Publish: pack + doctor + publish one native bundle
+- uses: Archont561/pixi-sandbox/publish@v0.2.0
+  with:
+    project: .
+    environments: dev,docs
+    platform: linux-64
+    branch: sandbox/dev-linux-64
+    self-bin: ${{ steps.setup.outputs.path }}
+    remote: https://github.com/OWNER/REPO.git
+    output-dir: /tmp/transport
 ```
 
-Reusable publisher for other repos (uses `.pixi-sandbox.toml`):
+Pin to immutable SHA for supply-chain security:
+
+```yaml
+- uses: Archont561/pixi-sandbox@<sha>            # setup (root)
+- uses: Archont561/pixi-sandbox/setup@<sha>      # setup (explicit)
+- uses: Archont561/pixi-sandbox/publish@<sha>    # publish
+```
+
+Long-form paths still work:
+
+```yaml
+- uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<sha>
+- uses: Archont561/pixi-sandbox/.github/actions/publish-pixi-sandbox@<sha>
+```
+
+Reusable workflow publisher for other repos (uses `.pixi-sandbox.toml`):
 
 ```yaml
 jobs:
@@ -131,8 +159,8 @@ platforms=["linux-64","win-64"]
 | `crates/pixi-sandbox-git` | Trait-based Git operations: `ShellGit` and in-memory `RecordingRunner` |
 | `crates/pixi-sandbox` | The native CLI binary (`pack`, `publish`, `restore`, `doctor`, `plan`) |
 | `crates/pixi-sandbox/tests/` | Pure Rust integration suites: `cli.rs`, `e2e.rs`, `actions.rs`, `fixtures.rs` |
-| `action.yml` / `.github/actions/setup-pixi-sandbox` | Cross-platform composite Action: downloads & verifies release binary (like `setup-pixi`) |
-| `.github/actions/publish-pixi-sandbox` | Native composite Action: runs pack, doctor, and publish |
+| `action.yml` + `setup/action.yml` + `.github/actions/setup-pixi-sandbox` | Setup: downloads & verifies release binary (short refs: `owner/repo@vX` and `owner/repo/setup@vX`) |
+| `publish/action.yml` + `.github/actions/publish-pixi-sandbox` | Publish: pack, doctor, publish one bundle (short ref: `owner/repo/publish@vX`) |
 | `.github/workflows/ci.yml` | Unified single-job CI with Cargo caching (`Swatinem/rust-cache`) |
 | `.github/workflows/publish-sandbox.yml` | Automated branch publisher (unified, triggers on ci success, dispatch, call) |
 | `.github/workflows/release.yml` | Multi-platform release: builds 5 static binaries + SHA256SUMS |
