@@ -36,6 +36,17 @@
           }
         }
       }
+    },
+    {
+      "includes": ["docs/src/components/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      }
     }
   ]
 }

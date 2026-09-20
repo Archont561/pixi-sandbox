@@ -44,7 +44,7 @@
 .sandbox-box:hover {
   border-color: var(--sl-color-accent);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .sandbox-box.pixi {
@@ -135,7 +135,7 @@
 .feature-card:hover {
   border-color: var(--sl-color-accent);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .feature-card .feature-icon {

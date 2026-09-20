@@ -19,7 +19,8 @@ export default defineConfig({
     }),
     starlight({
       title: "pixi-sandbox",
-      description: "Pack pixi environments and restore them on an air-gapped machine — 100% offline, bit-for-bit verified",
+      description:
+        "Pack pixi environments and restore them on an air-gapped machine — 100% offline, bit-for-bit verified",
       logo: {
         light: "./src/assets/logo-light.svg",
         dark: "./src/assets/logo-dark.svg",
