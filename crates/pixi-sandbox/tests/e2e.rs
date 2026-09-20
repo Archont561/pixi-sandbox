@@ -184,7 +184,7 @@ fn e2e_network_isolated_restore_proof() {
     // Check if `unshare -rn` is supported on this system
     let unshare_check = StdCommand::new("unshare").args(["-rn", "true"]).status();
 
-    if unshare_check.map_or(false, |s| s.success()) {
+    if unshare_check.is_ok_and(|s| s.success()) {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
 
