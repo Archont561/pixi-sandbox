@@ -392,7 +392,7 @@ fn fetch_tool(lock: &ToolsLock, name: &str, platform: &str, cache: &Path) -> Res
             let response = ureq::get(&url)
                 .call()
                 .map_err(|error| anyhow::anyhow!("downloading {name} from {url}: {error}"))?;
-            let mut source = response.into_reader();
+            let mut source = response.into_body().into_reader();
             let mut output = File::create(&temporary)
                 .with_context(|| format!("creating {}", temporary.display()))?;
             io::copy(&mut source, &mut output)
