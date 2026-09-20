@@ -1,41 +1,52 @@
-# Project context
+# Project Context
 
-## Airlock bootstrap executable
+Orientation guide for developers and AI agents working on `pixi-sandbox`.
 
-The Rust CLI implements pack, publish, unpack, and restore, but the default executable embedded
-in a sandbox branch is currently the stdlib-only Python bootstrap script. This is intentional:
-the available experimental static Rust release artifact is not usable yet, while the Python
-script is portable wherever `python3` is present.
+---
 
-A validated standalone Rust release binary can replace it immediately through `--self-bin` or
-`PIXI_SANDBOX_SELF_BIN`; do not use the known-bad experimental `target/release/pixi-sandbox`
-artifact.
+## 🎯 Mission & Core Value
 
-Read **[Rust bootstrap release artifact](.knowledge/rust-bootstrap.md)** before changing the
-embedded bootstrap, release workflow, or airlock proof. It defines the integration commands,
-platform requirements, validation checklist, and the current provenance caveat.
+`pixi-sandbox` enables **fully offline, reproducible airlock restoration** for projects using [pixi](https://pixi.sh) (and Cargo). It bridges the gap between connected CI/developer machines and disconnected air-gapped environments:
 
-## Release-driven publishing
+1. **Pack**: Captures conda environments and Cargo vendored dependencies into an immutable, hashed transport payload.
+2. **Verify**: Asserts all file sizes, split parts, and SHA-256 digests.
+3. **Publish**: Pushes the transport to an isolated Git orphan branch (e.g. `sandbox/linux-64`).
+4. **Restore**: Unpacks environments offline, applies binary prefix relocations, configures Cargo vendor paths, and verifies filesystem markers without internet access.
 
-`crates/pixi-sandbox-core/assets/tools.lock.json` is compiled into released binaries; source
-consumers do not need a root-level tool-pin sidecar. `--tools-lock PATH` remains an explicit
-override for a reviewed internal mirror or emergency pin.
+---
 
-Projects opt into published branches through `.pixi-sandbox.toml`. `pixi-sandbox plan --json`
-turns that file into native bundle/platform jobs. The publishable custom Action
-[`setup-pixi-sandbox`](.github/actions/setup-pixi-sandbox/) checksum-verifies a standalone
-GitHub release before execution; the reusable
-[`publish-sandboxes.yml`](.github/workflows/publish-sandboxes.yml) workflow orchestrates one
-native job and one `sandbox/<bundle>-<platform>` branch per plan entry. Generate `SHA256SUMS`
-only from proof-accepted release bytes with
-[`scripts/write_release_checksums.py`](scripts/write_release_checksums.py). Do not use `latest`
-or cross-platform publication without an explicit reviewed decision. Third-party workflow
-Actions and the custom Action source use full commit-SHA pins; mutable tags are rejected by the
-Action lint policy.
+## 🏗️ Architectural Invariants
 
-## Source of truth
+> [!IMPORTANT]
+> Never violate these architectural invariants:
 
-- Design and architecture: [`.knowledge/design.md`](.knowledge/design.md)
-- Decisions and rationale: [`.knowledge/decisions.md`](.knowledge/decisions.md)
-- Measured proof results: [`.knowledge/research/EVIDENCE.md`](.knowledge/research/EVIDENCE.md)
-- Knowledge-base index: [`.knowledge/README.md`](.knowledge/README.md)
+1. **Verify Before Write**: No file reaches the user's filesystem before its cryptographic SHA-256 matches the manifest.
+2. **Hermetic Test Isolation**: Tests **must never** sandbox or point at this repository root (`tests/fixtures.rs` asserts this). Tests operate strictly on temporary copies of `crates/pixi-sandbox/tests/fixtures/`.
+3. **Pure Native Execution**: GitHub composite actions (`setup-pixi-sandbox`, `publish-pixi-sandbox`) and CI tests are pure shell/PowerShell and native Rust (`cargo nextest`), with zero Python runtime dependency.
+4. **Sharding Limit**: Shards are whole files. Only files exceeding **95 MiB** are split into `.partNNN` segments to guarantee blobs stay safely under GitHub's 100 MiB limit.
+5. **Git Trait Boundary**: All Git commands go through the `GitProtocol` trait (`crates/pixi-sandbox-git`). The CLI uses `ShellGit`, tests use in-memory runners, and tests never touch developers' real Git configuration.
+6. **Airlock Restoration Independence**: The restore step on the disconnected host requires only the embedded static binaries (`pixi-unpack` / `pixi-sandbox`) and no network connectivity.
+
+---
+
+## 🔄 CI & Automation Pipeline
+
+- **Unified Single-Job CI (`.github/workflows/ci.yml`)**:
+  - Runs on `ubuntu-latest` in the `dev` pixi environment.
+  - Leverages `Swatinem/rust-cache` to cache `~/.cargo/` and `./target` across commits.
+  - Sequentially runs `lint` (fmt, clippy, deny, actionlint, taplo, biome), `test` (nextest), `test-doc`, `coverage` (llvm-cov), and `docs-build`.
+- **Publish Workflow (`.github/workflows/publish-sandbox.yml`)**:
+  - Automatically triggered via `workflow_run` once `ci` completes with `success`.
+  - Also callable manually (`workflow_dispatch`) or as a reusable workflow (`workflow_call`).
+  - Packs, verifies with `doctor`, and force-pushes the orphan branch.
+
+---
+
+## 📚 Key References
+
+| Resource | Purpose |
+|:---|:---|
+| [`.knowledge/decisions.md`](.knowledge/decisions.md) | Architectural Decisions D1–D11 with empirical lab measurements |
+| [`.knowledge/design.md`](.knowledge/design.md) | In-depth design specification and airlock invariants |
+| [`.knowledge/rust-bootstrap.md`](.knowledge/rust-bootstrap.md) | Rust static bootstrap binary strategy and validation checklist |
+| [`.knowledge/README.md`](.knowledge/README.md) | Open Knowledge Format index |

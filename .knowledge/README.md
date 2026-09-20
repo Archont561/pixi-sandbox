@@ -1,25 +1,22 @@
 # `.knowledge/` — Open Knowledge Format
 
-Everything needed to understand *why* this project is the way it is. Written for humans and
+Everything needed to understand *why* this project is designed the way it is. Written for humans and
 agents who were not in the room.
 
-| file | read it when |
-| --- | --- |
-| [`decisions.md`](decisions.md) | you want the eight load-bearing decisions and the measurement behind each — **start here** |
-| [`design.md`](design.md) | you are changing the transport, the CLI surface, the CI flow, or you disagree with a decision |
-| [`rust-bootstrap.md`](rust-bootstrap.md) | you are replacing the embedded Python bootstrap with a standalone Rust release artifact |
-| [`publish-automation.md`](publish-automation.md) | you are changing `.pixi-sandbox.toml`, the setup action, or native multi-platform branch publication |
-| [`research-results.md`](research-results.md) | you want the study's conclusions without the full design doc |
-| [`research/EVIDENCE.md`](research/EVIDENCE.md) | you need the raw lab output (sizes, timings, git economics, pixi internals) |
-| [`research/REPRODUCE-TRANSCRIPT.md`](research/REPRODUCE-TRANSCRIPT.md) | you want to see the whole flow run cold, verbatim |
-| [`research/pixi_sandbox.py`](research/pixi_sandbox.py) | you are checking Rust behaviour or the portable bootstrap — this is the reference implementation |
-| [`research/reproduce.sh`](research/reproduce.sh) | you want to re-run the end-to-end proof (`pixi run -e dev sandbox-proof`) |
+| File | Purpose |
+|:---|:---|
+| [`decisions.md`](decisions.md) | The eleven load-bearing decisions (D1–D11) and the empirical measurements behind each — **start here** |
+| [`design.md`](design.md) | In-depth technical specification: transport format, CLI surface, airlock invariants |
+| [`rust-bootstrap.md`](rust-bootstrap.md) | Standalone static Rust bootstrap replacement strategy and platform checklist |
+| [`publish-automation.md`](publish-automation.md) | `.pixi-sandbox.toml` bundle schema, setup actions, and multi-platform branch publication |
+| [`research-results.md`](research-results.md) | Concise summary of initial research conclusions and feasibility studies |
+| [`research/EVIDENCE.md`](research/EVIDENCE.md) | Raw lab measurements: bundle sizes, restore timings, Git object economics, Pixi internals |
+| [`research/REPRODUCE-TRANSCRIPT.md`](research/REPRODUCE-TRANSCRIPT.md) | Verbatim cold-run reproduction log on a clean system |
+| [`research/pixi_sandbox.py`](research/pixi_sandbox.py) | Python reference implementation (~700 lines) of the end-to-end airlock workflow |
+| [`research/reproduce.sh`](research/reproduce.sh) | End-to-end network-isolated verification script |
 
 ## Conventions
 
-- Findings carry their provenance: `✅` means measured in the lab, `⚠️` means reasoned but not
-  verified. Numbers live next to the claim, not in a separate appendix.
-- Sections are referenced by number from code comments (`… §11.3`, `… D4`). Keep those anchors
-  stable when editing.
-- The lab was: Debian 13, 2 vCPU, pixi 0.81.0, pixi-pack/pixi-unpack 0.7.11, cargo 1.98.1,
-  linux-64. Anything version-sensitive says so inline.
+- **Provenance Tags**: `✅` marks empirically measured lab results; `⚠️` marks reasoned assumptions requiring validation.
+- **Stable Anchors**: Code comments and decisions link to specific numbered sections (`… §11.3`, `… D4`). Keep these anchors stable when updating docs.
+- **Reference Environment**: Debian 13, 2 vCPU, Pixi 0.81.0, pixi-pack/pixi-unpack 0.7.11, Cargo 1.98.1, linux-64.
