@@ -211,6 +211,7 @@ pub fn run(args: PackArgs) -> Result<()> {
             support::mib(entry.size_bytes)
         );
         tools.insert("pixi-sandbox".to_string(), entry);
+        copy_root_self_binary(&payload, &out, &args.platform)?;
     }
 
     let (mut vendor, vendor_info) = if args.cargo_vendor {
@@ -446,6 +447,21 @@ fn reported_version(path: &Path) -> Result<String> {
         .last()
         .unwrap_or("unknown")
         .to_string())
+}
+
+fn copy_root_self_binary(payload: &Path, out: &Path, platform: &str) -> Result<()> {
+    let file_name = executable_filename("pixi-sandbox", platform);
+    let source = payload.join("tools").join(platform).join(&file_name);
+    let destination = out.join(&file_name);
+    fs::copy(&source, &destination).with_context(|| {
+        format!(
+            "copying the embedded pixi-sandbox bootstrap from {} to {}",
+            source.display(),
+            destination.display()
+        )
+    })?;
+    support::make_executable(&destination)?;
+    Ok(())
 }
 
 fn embed_tool(
@@ -716,6 +732,8 @@ fn write_branch_docs(
     let commit = manifest.source.commit.as_deref().unwrap_or("unknown");
     let lock = manifest.source.lock_sha256.as_deref().unwrap_or("unknown");
     let pixi_file = executable_filename("pixi", &manifest.platform);
+    let self_file = executable_filename("pixi-sandbox", &manifest.platform);
+    let has_self = manifest.tools.contains_key("pixi-sandbox") && out.join(&self_file).is_file();
     let vendor = manifest
         .vendor
         .as_ref()
@@ -740,39 +758,95 @@ fn write_branch_docs(
             )
         })
         .unwrap_or_default();
+    let bootstrap = if has_self {
+        format!(
+            "The branch root includes `{}`; it is a convenience copy of the verified self-bootstrap binary. \
+             The manifest copy remains under `.pixi-sandbox/tools/{}/{}` for compatibility with older launchers.\n\n",
+            self_file, manifest.platform, self_file
+        )
+    } else {
+        "This transport has no embedded self-bootstrap binary; use an installed `pixi-sandbox` to restore it.\n\n".to_string()
+    };
+    let (shell_language, restore_commands) = if !has_self {
+        (
+            if manifest.platform.starts_with("win-") {
+                "powershell"
+            } else {
+                "bash"
+            },
+            "pixi-sandbox restore --branch-location <extracted-branch> --output-path <project>"
+                .to_string(),
+        )
+    } else if manifest.platform.starts_with("win-") {
+        (
+            "powershell",
+            format!(
+                ".\\{} doctor --branch-location . --verify\n.\\{} restore --branch-location . --output-path <project> --force\n# or: .\\restore.ps1 <project>",
+                self_file, self_file
+            ),
+        )
+    } else {
+        (
+            "bash",
+            format!(
+                "./{} doctor --branch-location . --verify\n./{} restore --branch-location . --output-path <project> --force\n# or: ./restore.sh <project>",
+                self_file, self_file
+            ),
+        )
+    };
 
     let readme = format!(
         "# Offline sandbox (orphan branch)\n\n\
-         Built {} from commit `{commit}` for platform `{}`.\n\
-         `pixi.lock` sha256 `{lock}`.\n\n\
+         Built {} from commit `{}` for platform `{}`.\n\
+         `pixi.lock` sha256 `{}`.\n\n\
+         {}\
          | env | platform | packed | unpacked | files |\n\
          | --- | --- | ---: | ---: | ---: |\n\
-         {rows}\n\
-         {vendor}\n\
+         {}\n\
+         {}\n\
          ## Restore on the disconnected machine\n\n\
-         ```bash\n\
-         pixi-sandbox restore --branch-location <extracted-branch> \\\n                              --output-path .\n\
+         ```{}\n\
+         {}\n\
          # then, with no network:\n\
-         .pixi/tools/{}/{pixi_file} install --frozen --offline\n\
+         .pixi/tools/{}/{} install --frozen --offline\n\
          source .pixi/sandbox-env.sh\n\
          ```\n\n\
          Every manifest blob is verified before it is written into the working tree.\n",
-        manifest.created_at, manifest.platform, manifest.platform
+        manifest.created_at,
+        commit,
+        manifest.platform,
+        lock,
+        bootstrap,
+        rows,
+        vendor,
+        shell_language,
+        restore_commands,
+        manifest.platform,
+        pixi_file,
     );
     fs::write(out.join("README.md"), readme)
         .with_context(|| format!("writing {}/README.md", out.display()))?;
 
+    let agents_bootstrap = if has_self {
+        format!(
+            "- root bootstrap: `./{}` (or `restore.sh` / `restore.ps1`); the verified manifest copy remains under `.pixi-sandbox/tools/{}/{}`;\n",
+            self_file, manifest.platform, self_file
+        )
+    } else {
+        "- restore with an installed `pixi-sandbox`; this transport does not contain a self-bootstrap binary;\n".to_string()
+    };
     let agents = format!(
         "# AGENTS.md — machine instructions for this bundle\n\n\
          This is an **offline pixi sandbox**, not source code to merge.\n\n\
          - authoritative manifest: `.pixi-sandbox/manifest.json` (schema {});\n\
          - environments: {} (platform {});\n\
-         - restore with `pixi-sandbox restore --branch-location <dir> --output-path <project>`;\n\
+         {}\
          - never download tools at restore time; bundled tools are: {};\n\
-         - after restore, `.pixi/tools/{}/{pixi_file} install --frozen --offline` must be a no-op.\n",
+         - after restore, `.pixi/tools/{}/{}` install --frozen --offline must be a no-op.\n",
         manifest.schema,
         manifest.envs.keys().cloned().collect::<Vec<_>>().join(", "),
         manifest.platform,
+        agents_bootstrap,
         manifest
             .tools
             .keys()
@@ -780,15 +854,63 @@ fn write_branch_docs(
             .collect::<Vec<_>>()
             .join(", "),
         manifest.platform,
+        pixi_file,
     );
     fs::write(out.join("AGENTS.md"), agents)
         .with_context(|| format!("writing {}/AGENTS.md", out.display()))?;
+
+    if has_self {
+        write_restore_scripts(out, &manifest.platform)?;
+    }
+    Ok(())
+}
+
+/// Generate launchers beside the root self-binary. The first argument is the project output
+/// directory; any following arguments are passed to `restore` after the wrapper's default flags.
+/// The nested tool copy remains the integrity-checked payload, while these are convenience files.
+fn write_restore_scripts(out: &Path, platform: &str) -> Result<()> {
+    let executable = executable_filename("pixi-sandbox", platform);
+    let shell = format!(
+        "#!/usr/bin/env bash\n\
+         # Restore this branch with its root pixi-sandbox binary.\n\
+         set -euo pipefail\n\
+         BRANCH_DIR=\"$(cd \"$(dirname \"${{BASH_SOURCE[0]}}\")\" && pwd)\"\n\
+         OUTPUT_PATH=\"${{1:-$PWD}}\"\n\
+         if (( $# > 0 )); then shift; fi\n\
+         exec \"$BRANCH_DIR/{}\" restore --branch-location \"$BRANCH_DIR\" --output-path \"$OUTPUT_PATH\" --force \"$@\"\n",
+        executable
+    );
+    fs::write(out.join("restore.sh"), shell)
+        .with_context(|| format!("writing {}/restore.sh", out.display()))?;
+    support::make_executable(&out.join("restore.sh"))?;
+
+    let powershell = format!(
+        "# Restore this branch with its root pixi-sandbox binary.\n\
+         # On Windows this resolves to .\\pixi-sandbox.exe at the branch root.\n\
+         [CmdletBinding()]\n\
+         param(\n\
+             [Parameter(Position = 0)]\n\
+             [string] $OutputPath = (Get-Location).Path,\n\
+             [Parameter(ValueFromRemainingArguments = $true)]\n\
+             [string[]] $RestoreArgs\n\
+         )\n\
+         $BranchDir = $PSScriptRoot\n\
+         $Binary = Join-Path $BranchDir 'pixi-sandbox.exe'\n\
+         if (-not (Test-Path -LiteralPath $Binary)) {{\n\
+             $Binary = Join-Path $BranchDir '{}'\n\
+         }}\n\
+         & $Binary restore --branch-location $BranchDir --output-path $OutputPath --force @RestoreArgs\n\
+         if ($LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }}\n",
+        executable
+    );
+    fs::write(out.join("restore.ps1"), powershell)
+        .with_context(|| format!("writing {}/restore.ps1", out.display()))?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ToolSource, embed_tool};
+    use super::{ToolSource, embed_tool, write_restore_scripts};
     use std::fs;
 
     #[test]
@@ -813,5 +935,16 @@ mod tests {
 
         assert_eq!(entry.path.as_deref(), Some("tools/win-64/pixi.exe"));
         assert!(directory.path().join("tools/win-64/pixi.exe").is_file());
+    }
+
+    #[test]
+    fn windows_restore_launcher_prefers_the_exe_root_binary() {
+        let directory = tempfile::tempdir().expect("temporary transport");
+        write_restore_scripts(directory.path(), "win-64").expect("write launchers");
+
+        let launcher = fs::read_to_string(directory.path().join("restore.ps1"))
+            .expect("read PowerShell launcher");
+        assert!(launcher.contains("pixi-sandbox.exe"));
+        assert!(launcher.contains("--branch-location $BranchDir"));
     }
 }

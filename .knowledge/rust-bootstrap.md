@@ -31,16 +31,21 @@ normally dynamically linked executable. A release bootstrap therefore needs a wo
 (or static-PIE) Linux build. On macOS and Windows the current linkage classifier reports
 `system`; those targets require a real target-host proof rather than relying on the Linux check.
 
-The packer names the supplied file `pixi-sandbox` in the transport regardless of its source
-filename (and preserves the conventional `.exe` suffix for `win-*`):
+The packer names the supplied file `pixi-sandbox` in the manifest payload regardless of its
+source filename (and preserves the conventional `.exe` suffix for `win-*`). It also copies the
+same bytes to the branch root, where the generated launchers call it:
 
 ```text
+<transport>/pixi-sandbox
+<transport>/restore.sh
+<transport>/restore.ps1
 <transport>/.pixi-sandbox/tools/<platform>/pixi-sandbox
 <transport>/.pixi-sandbox/tools/win-64/pixi-sandbox.exe
 ```
 
-The airlock proof invokes that path with `restore`, so no Python is involved once a Rust release
-binary has been embedded.
+The nested copy remains the manifest-verified payload; the root copy is a convenience extra, and
+Git stores identical copies as one blob. The airlock proof invokes the root path (or
+`restore.sh`) with `restore`, so no Python is involved once a Rust release binary has been embedded.
 
 ## Embed a release binary directly
 

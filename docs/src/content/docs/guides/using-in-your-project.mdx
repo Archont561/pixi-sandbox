@@ -100,6 +100,8 @@ This emits a GitHub Actions matrix — one job per `bundle × platform`.
 
 ```text
 sandbox/developer-linux-64 (orphan branch)
+├── pixi-sandbox                   # root self-bootstrap convenience copy
+├── restore.sh / restore.ps1       # thin wrappers around the root binary
 ├── .pixi-sandbox/
 │   ├── manifest.json              # SHA-256 catalog, source commit, tool versions
 │   ├── envs/dev/pack/             # pixi-pack --directory-only output
@@ -130,15 +132,18 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 Give the airlock operator the one-liner:
 
 ```bash
-# One-liner with PATH aliases (like setup-pixi)
+# Repository-level one-liner with PATH aliases (like setup-pixi)
 bash scripts/restore.sh sandbox/developer-linux-64
 # or
 pixi run sandbox-restore
 
-# Manual
+# Manual: the extracted branch has its executable at the root
 git fetch origin sandbox/developer-linux-64:sandbox/developer-linux-64
 git worktree add /tmp/sb origin/sandbox/developer-linux-64
-/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+/tmp/sb/pixi-sandbox doctor --branch-location /tmp/sb --verify
+/tmp/sb/restore.sh .
+# equivalent explicit form:
+/tmp/sb/pixi-sandbox restore \
   --branch-location /tmp/sb \
   --output-path . --force
 git worktree remove /tmp/sb --force

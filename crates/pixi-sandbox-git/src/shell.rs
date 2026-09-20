@@ -6,7 +6,12 @@ use crate::{
 };
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
-use std::sync::Mutex;
+use std::sync::{
+    Mutex,
+    atomic::{AtomicU64, Ordering},
+};
+
+static SCRATCH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// A command, as data — so tests can assert it without executing it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -319,10 +324,16 @@ impl GitProtocol for ShellGit {
         // include the scratch's own files (e.g. `index.lock`) in the orphan commit.
         // A `.git` directory inside the work tree is ignored by git, but a custom-named
         // GIT_DIR is not — the previous in-transport location therefore leaked
-        // `.pixi-sandbox-publish-<pid>/` into the published branch.
+        // `.pixi-sandbox-publish-<pid>-<counter>/` into the published branch. The counter
+        // matters because cargo's default test runner publishes several snapshots in parallel.
         // Removed by the guard even if a later step fails.
         let scratch_parent = snapshot.dir.parent().unwrap_or(snapshot.dir);
-        let scratch = scratch_parent.join(format!("{}-{}", self.scratch_name, std::process::id()));
+        let scratch = scratch_parent.join(format!(
+            "{}-{}-{}",
+            self.scratch_name,
+            std::process::id(),
+            SCRATCH_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
         let _guard = Scratch::new(scratch.clone());
         let index = scratch.join("index");
 

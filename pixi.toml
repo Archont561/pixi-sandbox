@@ -132,8 +132,9 @@ cargo run -p pixi-sandbox --release -- doctor --branch-location .sandbox-out --v
 echo "=== sandbox-proof: restore via embedded binary ==="
 rm -rf .sandbox-proof
 mkdir -p .sandbox-proof
-# Use the embedded Rust binary from the transport
-EMBED=".sandbox-out/.pixi-sandbox/tools/linux-64/pixi-sandbox"
+# Use the root Rust binary from the transport (legacy branches keep the nested fallback)
+EMBED=".sandbox-out/pixi-sandbox"
+if [ ! -x "$EMBED" ]; then EMBED=".sandbox-out/.pixi-sandbox/tools/linux-64/pixi-sandbox"; fi
 if [ ! -x "$EMBED" ]; then EMBED="target/release/pixi-sandbox"; fi
 "$EMBED" restore --branch-location .sandbox-out --output-path .sandbox-proof --force
 echo "=== sandbox-proof: offline checks ==="
@@ -161,7 +162,8 @@ set -euo pipefail
 echo "=== ci-proof: pack already done, doctor already done, now restore ==="
 rm -rf "$SANDBOX_PROOF_OUT"
 mkdir -p "$SANDBOX_PROOF_OUT"
-EMBED="$SANDBOX_TRANSPORT/.pixi-sandbox/tools/$SANDBOX_PLATFORM/pixi-sandbox"
+EMBED="$SANDBOX_TRANSPORT/pixi-sandbox"
+if [ ! -x "$EMBED" ]; then EMBED="$SANDBOX_TRANSPORT/.pixi-sandbox/tools/$SANDBOX_PLATFORM/pixi-sandbox"; fi
 if [ ! -x "$EMBED" ]; then EMBED="$SANDBOX_SELF_BIN"; fi
 "$EMBED" restore --branch-location "$SANDBOX_TRANSPORT" --output-path "$SANDBOX_PROOF_OUT" --force
 (

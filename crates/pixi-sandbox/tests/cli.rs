@@ -10,6 +10,8 @@ use serde_json::Value;
 #[cfg(unix)]
 use serde_json::json;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
@@ -456,8 +458,12 @@ fn publish_pushes_the_transport_as_a_single_orphan_commit() {
     for expected in [
         ".pixi-sandbox/manifest.json",
         ".pixi-sandbox/envs/demo/pack/channel/noarch/demo-big-0.1.0-0.conda.part000",
+        ".pixi-sandbox/tools/linux-64/pixi-sandbox",
         "AGENTS.md",
         "README.md",
+        "pixi-sandbox",
+        "restore.sh",
+        "restore.ps1",
     ] {
         assert!(
             listed.contains(expected),
@@ -549,7 +555,7 @@ fn publish_dry_run_changes_nothing() {
         .collect();
     assert_eq!(
         entries.len(),
-        3,
+        6,
         "a dry run must not leave a scratch directory behind: {entries:?}"
     );
     assert!(
@@ -742,6 +748,68 @@ fn pack_unpack_and_restore_a_verified_synthetic_environment() {
             .is_file()
     );
     assert!(restored_project.join(".pixi/sandbox-env.sh").is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn pack_copies_the_self_binary_to_the_branch_root_and_writes_launchers() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path().join("project-source");
+    let tools = temp.path().join("fake-tools");
+    let transport = temp.path().join("transport");
+    let self_bin = temp.path().join("self-bin");
+    fs::create_dir_all(&repo).unwrap();
+    fs::write(repo.join("pixi.lock"), "version: 7\n").unwrap();
+    fake_tools(&tools);
+    write_executable(&self_bin, "#!/bin/sh\necho pixi-sandbox self-binary\n");
+
+    bin()
+        .env("PATH", path_with_fake_tools(&tools))
+        .args([
+            "pack",
+            "--repo-root",
+            repo.to_str().unwrap(),
+            "--envs",
+            "demo",
+            "--output-dir",
+            transport.to_str().unwrap(),
+            "--self-bin",
+            self_bin.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let nested = transport.join(".pixi-sandbox/tools/linux-64/pixi-sandbox");
+    let root = transport.join("pixi-sandbox");
+    assert_eq!(fs::read(&root).unwrap(), fs::read(&nested).unwrap());
+    assert!(root.metadata().unwrap().permissions().mode() & 0o111 != 0);
+    assert!(transport.join("restore.sh").is_file());
+    assert!(transport.join("restore.ps1").is_file());
+    let launcher = fs::read_to_string(transport.join("restore.sh")).unwrap();
+    assert!(launcher.contains("$BRANCH_DIR/pixi-sandbox"));
+    assert!(launcher.contains("--branch-location \"$BRANCH_DIR\""));
+    let readme = fs::read_to_string(transport.join("README.md")).unwrap();
+    assert!(readme.contains("./pixi-sandbox restore"));
+    assert!(
+        !readme.contains("\\\\\n"),
+        "generated README must not contain source escapes"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_bare_root_invocation_verifies_the_branch_and_only_prints_a_hint() {
+    let output = bin()
+        .current_dir(fixture_transport())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output).unwrap();
+    assert!(output.contains("every declared byte matches"));
+    assert!(output.contains("next: ./pixi-sandbox restore"));
+    assert!(!output.contains("restore complete"));
 }
 
 #[cfg(unix)]

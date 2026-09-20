@@ -1,8 +1,8 @@
 //! Argument surface. Kept deliberately close to the spec in `.knowledge/design.md` §5.
 
 use anyhow::Result;
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use std::path::PathBuf;
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -243,6 +243,39 @@ pub enum ToolsCommand {
 
 pub fn run() -> Result<()> {
     use crate::commands;
+
+    // A root bootstrap binary is the first thing an operator sees after extracting an orphan
+    // branch. Keep a bare invocation read-only: it verifies the branch and prints the exact
+    // restore command, rather than guessing an output directory and writing into the checkout.
+    if std::env::args_os().nth(1).is_none() {
+        if let Some(branch) = inferred_branch_location() {
+            commands::doctor(DoctorArgs {
+                branch_location: branch.clone(),
+                verify: true,
+                envs: Vec::new(),
+                json: false,
+            })?;
+            let binary = if branch.join("pixi-sandbox.exe").is_file() {
+                ".\\pixi-sandbox.exe"
+            } else {
+                "./pixi-sandbox"
+            };
+            println!(
+                "next: {binary} restore --branch-location \"{}\" --output-path <project> --force",
+                branch.display()
+            );
+            println!(
+                "shortcut: \"{}/restore.sh\" <project> (or restore.ps1 on Windows)",
+                branch.display()
+            );
+            return Ok(());
+        }
+
+        let mut command = Cli::command();
+        command.print_help()?;
+        return Ok(());
+    }
+
     let cli = Cli::parse();
     match cli.command {
         Command::Pack(args) => commands::pack(args),
@@ -253,4 +286,28 @@ pub fn run() -> Result<()> {
         Command::Plan(args) => commands::plan(args),
         Command::Tools(args) => commands::tools(args),
     }
+}
+
+fn inferred_branch_location() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    if has_manifest(&cwd) {
+        return Some(cwd);
+    }
+
+    let executable = std::env::current_exe().ok()?.canonicalize().ok()?;
+    let mut directory = executable.parent();
+    while let Some(candidate) = directory {
+        if has_manifest(candidate) {
+            return Some(candidate.to_path_buf());
+        }
+        directory = candidate.parent();
+    }
+    None
+}
+
+fn has_manifest(directory: &Path) -> bool {
+    directory
+        .join(".pixi-sandbox")
+        .join("manifest.json")
+        .is_file()
 }
