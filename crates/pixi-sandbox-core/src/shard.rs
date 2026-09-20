@@ -18,11 +18,22 @@ pub const DEFAULT_SHARD_LIMIT_BYTES: u64 = 95 * 1024 * 1024;
 
 const COPY_BUFFER: usize = 1 << 20;
 
+fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let bytes = bytes.as_ref();
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
+}
+
 /// Lowercase hex sha256 of a byte slice.
 pub fn sha256_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    hex_digest(hasher.finalize())
 }
 
 /// Lowercase hex sha256 of a file, streamed.
@@ -38,7 +49,7 @@ pub fn sha256_file(path: &Path) -> Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hex_digest(hasher.finalize()))
 }
 
 /// Name of the `index`-th split part of `rel_path` (0-based).
@@ -132,7 +143,7 @@ pub fn split_file(abs: &Path, rel_path: &str, limit: u64) -> Result<Vec<Part>> {
         parts.push(Part {
             path: rel_part,
             size: written,
-            sha256: format!("{:x}", hasher.finalize()),
+            sha256: hex_digest(hasher.finalize()),
         });
         index += 1;
 
@@ -231,7 +242,7 @@ fn assemble(
     out.flush().map_err(|e| Error::io(tmp, e))?;
     drop(out);
 
-    let actual = format!("{:x}", hasher.finalize());
+    let actual = hex_digest(hasher.finalize());
     if actual != expected_sha256 {
         return Err(Error::Integrity {
             path: tmp.display().to_string(),
