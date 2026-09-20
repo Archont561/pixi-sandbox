@@ -27,11 +27,10 @@ sha256-verified pins and works on a machine with nothing installed), or be marke
 
 ## Regenerating
 
-`transport/` is checked in so the tests are hermetic, and it is generated deterministically:
-
-```bash
-python3 .knowledge/research/make_fixture_transport.py   # rewrites tests/fixtures/transport
-```
+`transport/` is checked in so the tests are hermetic. It was originally generated deterministically
+via Python; now it is maintained as a static synthetic payload with real digests (edit files directly,
+or re-pack via Rust CLI and copy manifest structure). The fixture intentionally includes a split blob
+`.partNNN` case.
 
 `demo-project/` is a real project: its `pixi.lock` comes from `pixi lock`, its `Cargo.lock`
 from `cargo generate-lockfile` (both were run once and committed). Nothing in the test suite

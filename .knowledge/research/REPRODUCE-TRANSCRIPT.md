@@ -5,10 +5,12 @@ one line per conda package). Recorded on 2026-09-20, linux-64, pixi 0.81.0,
 pixi-pack/pixi-unpack 0.7.11, cargo/rustc 1.98.1, network severed for the restore phase with
 `unshare -rn`.
 
-Re-run it with:
+Re-run it with (historical transcript, now replaced by pure Rust proof):
 
 ```bash
-bash .knowledge/research/reproduce.sh .sandbox-proof          # or: pixi run -e dev sandbox-proof
+pixi run -e dev sandbox-proof
+# One-liner offline reconstruction from existing branch:
+bash scripts/restore.sh sandbox/linux-64
 ```
 
 The run below is the second consecutive run of the same script (the first, cold one, took
