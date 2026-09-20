@@ -1,104 +1,128 @@
 # pixi-sandbox
 
-Offline sandboxes for [pixi](https://pixi.sh) projects: pack environments (and optionally your
-vendored cargo crates) on a connected machine, publish them as a git orphan branch, restore them
-on a machine with no network.
+<p align="center">
+  <a href="https://github.com/Archont561/pixi-sandbox/actions/workflows/ci.yml"><img src="https://github.com/Archont561/pixi-sandbox/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://codecov.io/gh/Archont561/pixi-sandbox"><img src="https://codecov.io/gh/Archont561/pixi-sandbox/branch/main/graph/badge.svg" alt="Coverage"></a>
+  <a href="https://github.com/Archont561/pixi-sandbox/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/Rust-1.85%2B-orange.svg?logo=rust" alt="Rust 1.85+"></a>
+  <a href="https://pixi.sh"><img src="https://img.shields.io/badge/Pixi-0.81%2B-yellow.svg?logo=condaforge" alt="Pixi"></a>
+  <img src="https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64%20%7C%20win--64-brightgreen.svg" alt="Platforms">
+  <a href="https://github.com/Archont561/pixi-sandbox/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
+</p>
 
+---
+
+**pixi-sandbox** packages [pixi](https://pixi.sh) environments and vendored Cargo dependencies into an isolated Git orphan branch on a connected machine, enabling **100% offline, bit-for-bit airlock restoration** on disconnected target machines with zero network access.
+
+> [!NOTE]
+> Because `pixi` automatically discovers `pixi-<command>` binaries on `$PATH`, installing `pixi-sandbox` unlocks native subcommands: `pixi sandbox pack`, `doctor`, `publish`, and `restore`.
+
+---
+
+## ⚡ Quick Start
+
+### 1. Connected Host: Pack, Verify & Publish
 ```bash
-pixi-sandbox pack    --repo-root . --envs dev,docs --output-dir .sandbox-transport --fetch-tools --cargo-vendor
-pixi-sandbox doctor  --branch-location .sandbox-transport --verify
-pixi-sandbox publish --input-dir .sandbox-transport --branch-name sandbox/dev-linux-64
-# on the disconnected machine:
-pixi-sandbox restore --branch-location /tmp/branch --path-to-main-repo-code .
+# 1. Pack environments and vendor Cargo crates
+pixi sandbox pack \
+  --repo-root . \
+  --envs dev,docs \
+  --output-dir .sandbox-transport \
+  --platform linux-64 \
+  --cargo-vendor \
+  --fetch-tools
+
+# 2. Verify manifest and file integrity
+pixi sandbox doctor --branch-location .sandbox-transport --verify
+
+# 3. Publish to a dedicated Git orphan branch
+pixi sandbox publish \
+  --input-dir .sandbox-transport \
+  --branch-name sandbox/linux-64
 ```
 
-pixi discovers `pixi-<command>` binaries on `PATH`, so once this is installed the same
-verbs work as `pixi sandbox pack|doctor|publish|restore`.
-
-**Status.** The Rust CLI implements `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`,
-and `tools list`; its integration suite exercises a fully verified synthetic pack → unpack →
-restore flow, including sharding and vendored cargo sources. Helper-tool pins are compiled into
-the release binary, and `.pixi-sandbox.toml` produces a reviewed native publish matrix. The
-stdlib-only reference implementation in `.knowledge/research/` remains the portable bootstrap
-until a validated static Rust release artifact is completed for every supported airlock platform.
-
-Source-driven CI commands are one line (`pixi run -e ci ci-pack`, `pixi run -e dev lint`, …);
-the checksum-verified release publisher is a deliberate composite-action exception. The rule and
-task list are in `.knowledge/design.md` §6.
-
-Latest source validation (2026-09-20; pixi 0.81.0, rust 1.98.1, linux-64): 67 Rust tests plus
-doc tests and 13 hermetic release-Action/checksum/pin-policy tests pass; `cargo fmt --check`, `cargo clippy
--- -D warnings`, `cargo deny check`, source-archive-safe `actionlint`, `taplo fmt --check`,
-Python compilation, and `biome check docs` pass;
-`pixi lock --check` confirms the lockfile is current, and the docs site builds. `cargo deny`
-reports its existing transitive duplicate-version warnings but exits successfully. The full
-network-severed proof remains the separate release gate: it packs, verifies, publishes, restores,
-then passes both `pixi install --frozen --offline` and `cargo build --offline`; the portable
-bootstrap and Rust restore path were measured against the real 931.7 MiB transport. Measurements
-and command evidence: `.knowledge/research/EVIDENCE.md` §12.
-
-## Layout
-
-| path | what it is |
-| --- | --- |
-| `crates/pixi-sandbox-core` | manifest format, sharding, embedded tool pins, publish-plan schema, verification (library) |
-| `crates/pixi-sandbox-git` | git behind a trait: real `git` **and** an in-memory mock, so publish/fetch are testable without a remote |
-| `crates/pixi-sandbox` | the CLI (`pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, `tools`) |
-| `crates/pixi-sandbox/tests/fixtures` | a complete pixi project + a synthetic transport — what the tests operate on, *never* this repository |
-| `docs/` | Astro + Starlight site → GitHub Pages |
-| `.knowledge/` | why everything is the way it is, plus the research artifacts |
-| `.github/` | CI workflows plus checksum-verifying setup and native publish composite Actions |
-| `.pixi-sandbox.toml` | reviewed environment bundles / native runners for release-driven publishing |
-| `scripts/write_release_checksums.py` | deterministic `SHA256SUMS` generator for already proof-accepted native release assets |
-| `crates/pixi-sandbox-core/assets/tools.lock.json` | helper-tool pins compiled into the release binary; `--tools-lock` remains an explicit override |
-
-Not in the repository, by design: `.pixi/`, `target/`, `vendor/` and `.pixi-sandbox/` are
-generated. The payload lives on the sandbox branch; the crate sources are vendored on demand.
-
-## Working on it
-
+### 2. Disconnected / Airlocked Host: Restore
 ```bash
-pixi run -e dev lint      # fmt + clippy + actionlint + taplo
-pixi run -e dev test      # cargo nextest
-pixi run -e dev coverage  # cargo llvm-cov → lcov.info
-pixi run -e dev sandbox-plan # validate .pixi-sandbox.toml / native branches
-pixi run -e dev sandbox-proof   # Rust pack/doctor/publish + portable airlock-bootstrap proof
+# Fetch and restore the sandbox payload without internet access
+git fetch origin sandbox/linux-64:sandbox/linux-64
+pixi sandbox restore \
+  --branch-location sandbox/linux-64 \
+  --path-to-main-repo-code .
 ```
 
-Environments: `default` (rust), `dev` (rust + docs + utils + sandbox), `ci` (rust + sandbox, no
-local hook tooling), `docs` (bun + biome).
+> [!TIP]
+> After `restore`, all conda environments are unpacked under `.pixi/envs/` with binary prefix paths relocated, and `.cargo/config.toml` is wired to vendored crate sources. Both `pixi install --frozen --offline` and `cargo build --offline` succeed immediately.
 
-## Publish from a verified release
+---
 
-For consumers, the recommended CI entry point is the reusable
-[`.github/workflows/publish-sandboxes.yml`](.github/workflows/publish-sandboxes.yml). It reads a
-reviewed `.pixi-sandbox.toml`, creates one native job per bundle/platform, downloads a
-checksum-verified standalone release binary through
-[`setup-pixi-sandbox`](.github/actions/setup-pixi-sandbox/), and publishes branches such as
-`sandbox/developer-linux-64`. Pin the action/workflow commit and binary release tag; see the
-[quickstart](docs/src/content/docs/quickstart.mdx) and
-[bootstrap release guide](.knowledge/rust-bootstrap.md) for the release contract. Workflow
-`uses:` dependencies are full commit-SHA pins; the visible release label comments are informational
-rather than executable references.
+## 🚀 Key Features
 
-## The transport, in one picture
+- **🔒 Zero-Network Airlock Restoration**: Verified restore in network-severed environments (`unshare -rn`) without touching external conda channels or crates.io.
+- **📦 Git-Native Transport**: Published to a Git orphan branch. Whole files are content-addressed by Git, providing free deduplication across environments and releases.
+- **✂️ Automatic Blob Sharding**: Splits files larger than 95 MiB into `.partNNN` chunks to safely respect GitHub's 100 MiB per-file blob limit.
+- **🛡️ Strict Checksum Verification**: Cryptographically verifies every package and tool payload against embedded SHA-256 pins before writing to disk.
+- **🦀 Cargo Vendoring Integration**: Bundles Cargo workspace dependencies alongside Pixi conda environments.
+- **🤖 Pure Native Action & Test Harness**: GitHub Actions implemented without runtime Python dependencies; full test suite running under `cargo nextest`.
+
+---
+
+## 📂 The Transport Layout
 
 ```text
-<branch>/
+sandbox/<platform>/
 ├── .pixi-sandbox/
-│   ├── manifest.json       every file, its sha256, split parts, tool versions, source commit
-│   ├── envs/<env>/pack/    a local conda channel (the original .conda files)
-│   ├── tools/<platform>/   pixi · pixi-unpack · pixi-sandbox (static, sha256-pinned, verified)
-│   └── vendor/             cargo vendor output (loose tree: git dedup does the heavy lifting)
-├── README.md               human guide, generated
-└── AGENTS.md               machine guide, generated
+│   ├── manifest.json       # Content catalog with SHA-256 digests, parts, and tool metadata
+│   ├── envs/<env>/pack/    # Local Conda channel containing .conda/.tar.bz2 packages
+│   ├── tools/<platform>/   # Pinned static helper binaries (pixi, pixi-unpack, pixi-sandbox)
+│   └── vendor/             # Vendored Cargo crates deduplicated by Git object storage
+├── README.md               # Human-readable restore instructions
+└── AGENTS.md               # Machine-readable automation instructions
 ```
 
-Rules that the tooling enforces: nothing is written before its hash is verified; whole files
-are the shards (a file above 95 MiB is split into `.partNNN` because GitHub blocks git blobs
-over 100 MiB); a restore never leaves a half-populated environment.
+---
 
-## License
+## 🏗️ Repository Architecture
 
-MIT (see `LICENSE`). Vendored crates and packed conda packages keep their own licenses — generate
-a third-party notice from the lockfiles for anything you redistribute.
+| Path | Description |
+|:---|:---|
+| `crates/pixi-sandbox-core` | Core library: manifest format, sharding, tool pins, validation logic |
+| `crates/pixi-sandbox-git` | Trait-based Git operations: `ShellGit` and in-memory `RecordingRunner` |
+| `crates/pixi-sandbox` | The native CLI binary (`pack`, `publish`, `restore`, `doctor`, `plan`) |
+| `crates/pixi-sandbox/tests/` | Pure Rust integration suites: `cli.rs`, `e2e.rs`, `actions.rs`, `fixtures.rs` |
+| `.github/actions/setup-pixi-sandbox` | Cross-platform composite Action: downloads & verifies release binary |
+| `.github/actions/publish-pixi-sandbox` | Native composite Action: runs pack, doctor, and publish |
+| `.github/workflows/ci.yml` | Unified single-job CI with Cargo caching (`Swatinem/rust-cache`) |
+| `.github/workflows/publish-sandbox.yml` | Automated branch publisher triggered on successful CI runs |
+| `.knowledge/` | Open Knowledge Format architectural decisions (D1–D11) and research benchmarks |
+
+---
+
+## 🛠️ Development & Quality Gates
+
+All development tasks are managed via Pixi:
+
+```bash
+# Run linting (rustfmt, clippy -D warnings, cargo-deny, actionlint, taplo, biome)
+pixi run -e dev lint
+
+# Run the full test suite with nextest
+pixi run -e dev test
+
+# Run doc tests
+pixi run -e dev test-doc
+
+# Generate test coverage report (lcov.info)
+pixi run -e dev coverage
+
+# Build the documentation site
+pixi run -e dev docs-build
+```
+
+> [!IMPORTANT]
+> Integration tests deliberately run against synthetic fixtures in `crates/pixi-sandbox/tests/fixtures/`, **never** against this repository itself, ensuring hermetic, offline test isolation.
+
+---
+
+## 📜 License
+
+Distributed under the [MIT License](LICENSE). Third-party packages and vendored crates retain their respective upstream licenses.

@@ -68,7 +68,94 @@ runs:
         SETUP_PIXI_SANDBOX_INSTALL_DIR: ${{ inputs.install-dir }}
         SETUP_PIXI_SANDBOX_ADD_TO_PATH: ${{ inputs.add-to-path }}
         SETUP_PIXI_SANDBOX_TOKEN: ${{ inputs.token }}
-      run: python3 "$GITHUB_ACTION_PATH/setup.py"
+      run: |
+        set -euo pipefail
+
+        TARGET="${SETUP_PIXI_SANDBOX_TARGET}"
+        if [ "$TARGET" = "auto" ] || [ -z "$TARGET" ]; then
+          OS=$(uname -s)
+          ARCH=$(uname -m)
+          case "$OS-$ARCH" in
+            Linux-x86_64)   TARGET="x86_64-unknown-linux-musl" ;;
+            Linux-aarch64)  TARGET="aarch64-unknown-linux-musl" ;;
+            Darwin-x86_64)  TARGET="x86_64-apple-darwin" ;;
+            Darwin-arm64)   TARGET="aarch64-apple-darwin" ;;
+            *) echo "::error::Unsupported OS/Arch: $OS-$ARCH" >&2; exit 1 ;;
+          esac
+        fi
+
+        EXE=""
+        VERSION="${SETUP_PIXI_SANDBOX_VERSION}"
+        REPO="${SETUP_PIXI_SANDBOX_REPOSITORY}"
+
+        ASSET_NAME="${SETUP_PIXI_SANDBOX_ASSET_TEMPLATE}"
+        ASSET_NAME="${ASSET_NAME//\{target\}/$TARGET}"
+        ASSET_NAME="${ASSET_NAME//\{exe\}/$EXE}"
+        ASSET_NAME="${ASSET_NAME//\{version\}/$VERSION}"
+        ASSET_NAME="${ASSET_NAME//\{tag\}/$VERSION}"
+
+        INSTALL_DIR="${SETUP_PIXI_SANDBOX_INSTALL_DIR}"
+        if [ -z "$INSTALL_DIR" ]; then
+          INSTALL_DIR="${RUNNER_TEMP}/pixi-sandbox"
+        fi
+        mkdir -p "$INSTALL_DIR"
+
+        AUTH_HEADER=()
+        if [ -n "${SETUP_PIXI_SANDBOX_TOKEN}" ]; then
+          AUTH_HEADER=(-H "Authorization: Bearer ${SETUP_PIXI_SANDBOX_TOKEN}")
+        fi
+
+        if [ "$VERSION" = "latest" ]; then
+          echo "::warning::setup-pixi-sandbox resolved a moving latest release; pin a tag in production."
+          VERSION=$(curl -sSL "${AUTH_HEADER[@]}" "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        fi
+
+        BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+
+        BIN_PATH="${INSTALL_DIR}/${ASSET_NAME}"
+        curl -sSL "${AUTH_HEADER[@]}" -o "$BIN_PATH" "${BASE_URL}/${ASSET_NAME}"
+
+        EXPECTED_SHA="${SETUP_PIXI_SANDBOX_SHA256}"
+        if [ -z "$EXPECTED_SHA" ]; then
+          CHECKSUMS_FILE="${RUNNER_TEMP}/SHA256SUMS"
+          curl -sSL "${AUTH_HEADER[@]}" -o "$CHECKSUMS_FILE" "${BASE_URL}/${SETUP_PIXI_SANDBOX_CHECKSUMS_ASSET}"
+          EXPECTED_SHA=$(grep -E "(^|[ /])${ASSET_NAME}$" "$CHECKSUMS_FILE" | awk '{print $1}' | tr -d '\r\n')
+          if [ -z "$EXPECTED_SHA" ]; then
+            EXPECTED_SHA=$(grep -E "\(${ASSET_NAME}\) = " "$CHECKSUMS_FILE" | awk -F'= ' '{print $2}' | tr -d '\r\n')
+          fi
+        fi
+
+        if [ -z "$EXPECTED_SHA" ]; then
+          echo "::error::Could not find checksum for ${ASSET_NAME}" >&2
+          exit 1
+        fi
+
+        if command -v sha256sum >/dev/null 2>&1; then
+          ACTUAL_SHA=$(sha256sum "$BIN_PATH" | awk '{print $1}')
+        else
+          ACTUAL_SHA=$(shasum -a 256 "$BIN_PATH" | awk '{print $1}')
+        fi
+
+        if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+          echo "::error::Checksum mismatch! Expected: ${EXPECTED_SHA}, Actual: ${ACTUAL_SHA}" >&2
+          exit 1
+        fi
+
+        FINAL_BIN="${INSTALL_DIR}/pixi-sandbox"
+        cp "$BIN_PATH" "$FINAL_BIN"
+        chmod +x "$FINAL_BIN"
+
+        if [ "${SETUP_PIXI_SANDBOX_ADD_TO_PATH}" = "true" ]; then
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+        fi
+
+        "$FINAL_BIN" --version
+
+        echo "path=$FINAL_BIN" >> "$GITHUB_OUTPUT"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "sha256=$ACTUAL_SHA" >> "$GITHUB_OUTPUT"
+        echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
     - id: windows
       if: runner.os == 'Windows'
       shell: pwsh
@@ -82,4 +169,81 @@ runs:
         SETUP_PIXI_SANDBOX_INSTALL_DIR: ${{ inputs.install-dir }}
         SETUP_PIXI_SANDBOX_ADD_TO_PATH: ${{ inputs.add-to-path }}
         SETUP_PIXI_SANDBOX_TOKEN: ${{ inputs.token }}
-      run: python "$env:GITHUB_ACTION_PATH/setup.py"
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        $Target = $env:SETUP_PIXI_SANDBOX_TARGET
+        if ([string]::IsNullOrWhiteSpace($Target) -or $Target -eq "auto") {
+            $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+            if ($arch -eq "Arm64") {
+                $Target = "aarch64-pc-windows-msvc"
+            } else {
+                $Target = "x86_64-pc-windows-msvc"
+            }
+        }
+
+        $Exe = ".exe"
+        $Version = $env:SETUP_PIXI_SANDBOX_VERSION
+        $Repo = $env:SETUP_PIXI_SANDBOX_REPOSITORY
+
+        $AssetName = $env:SETUP_PIXI_SANDBOX_ASSET_TEMPLATE
+        $AssetName = $AssetName.Replace("{target}", $Target).Replace("{exe}", $Exe).Replace("{version}", $Version).Replace("{tag}", $Version)
+
+        $InstallDir = $env:SETUP_PIXI_SANDBOX_INSTALL_DIR
+        if ([string]::IsNullOrWhiteSpace($InstallDir)) {
+            $InstallDir = Join-Path $env:RUNNER_TEMP "pixi-sandbox"
+        }
+        New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+
+        $Headers = @{}
+        if (![string]::IsNullOrWhiteSpace($env:SETUP_PIXI_SANDBOX_TOKEN)) {
+            $Headers["Authorization"] = "Bearer $($env:SETUP_PIXI_SANDBOX_TOKEN)"
+        }
+
+        if ($Version -eq "latest") {
+            Write-Warning "setup-pixi-sandbox resolved a moving latest release; pin a tag in production."
+            $releaseJson = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $Headers
+            $Version = $releaseJson.tag_name
+        }
+
+        $BaseUrl = "https://github.com/$Repo/releases/download/$Version"
+        $BinPath = Join-Path $InstallDir $AssetName
+        Invoke-WebRequest -Uri "$BaseUrl/$AssetName" -Headers $Headers -OutFile $BinPath
+
+        $ExpectedSha = $env:SETUP_PIXI_SANDBOX_SHA256
+        if ([string]::IsNullOrWhiteSpace($ExpectedSha)) {
+            $SumsPath = Join-Path $env:RUNNER_TEMP "SHA256SUMS"
+            Invoke-WebRequest -Uri "$BaseUrl/$($env:SETUP_PIXI_SANDBOX_CHECKSUMS_ASSET)" -Headers $Headers -OutFile $SumsPath
+            $match = Select-String -Path $SumsPath -Pattern $AssetName
+            if ($match) {
+                $line = $match.Line.Trim()
+                if ($line -match "([0-9a-fA-F]{64})") {
+                    $ExpectedSha = $matches[1].ToLower()
+                }
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($ExpectedSha)) {
+            Write-Error "Could not find checksum for $AssetName"
+            exit 1
+        }
+
+        $ActualSha = (Get-FileHash -Algorithm SHA256 $BinPath).Hash.ToLower()
+        if ($ActualSha -ne $ExpectedSha.ToLower()) {
+            Write-Error "Checksum mismatch! Expected $ExpectedSha, got $ActualSha"
+            exit 1
+        }
+
+        $FinalBin = Join-Path $InstallDir "pixi-sandbox.exe"
+        Copy-Item $BinPath $FinalBin -Force
+
+        if ($env:SETUP_PIXI_SANDBOX_ADD_TO_PATH -eq "true") {
+            $InstallDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        }
+
+        & $FinalBin --version
+
+        "path=$FinalBin" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "version=$Version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "sha256=$ActualSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "target=$Target" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8

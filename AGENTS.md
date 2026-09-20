@@ -27,7 +27,7 @@ opinion.
 | `.knowledge/research/reproduce.sh` | runs the entire flow on a bare machine and ends with a network-severed build. Use it to check a change to the design assumptions |
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical embedded helper-tool pins; edit as reviewed data and keep the embedded-lock tests green |
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
-| `scripts/lint_actions.py` | runs `actionlint` from a disposable Git mirror when validating this intentional source-only archive |
+| `feature.utils.actionlint` | runs `actionlint` from conda directly when validating workflows in the `dev` environment |
 | `scripts/write_release_checksums.py` | makes deterministic `SHA256SUMS` only for native artifacts that have already passed release proof |
 
 ## Invariants (do not break these)
