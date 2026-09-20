@@ -46,7 +46,7 @@ pixi-sandbox pack \
 | `--fetch-tools` | Fetch pinned tools (sha256-verified) |
 | `--tools-lock` | Override tools.lock.json path |
 | `--tools-cache` | Tools cache dir |
-| `--self-bin` | Release binary to embed as `pixi-sandbox` in branch |
+| `--self-bin` | Release binary to embed under `.pixi-sandbox/tools/<platform>/pixi-sandbox` and copy to the branch root as `./pixi-sandbox` (`.exe` on Windows) |
 
 No override means embedded pins from `tools.lock.json` compiled into binary.
 
@@ -94,19 +94,28 @@ Implementation: `GIT_DIR` points at scratch repo **next to** transport (same FS,
 
 ## restore
 
-Airlock restore — verify then materialize.
+Airlock restore — verify then materialize. A packed branch puts the self-binary at its root,
+so the explicit form is convenient even when no `pixi-sandbox` is installed globally:
 
 ```bash
-pixi-sandbox restore \
-  --branch-location /tmp/sb \
-  --output-path . \
+cd /tmp/sb
+./pixi-sandbox restore \
+  --branch-location . \
+  --output-path /path/to/project \
   --envs dev \
   --verify-only \
   --force \
   --no-vendor \
-  --work-dir .pixi/.restore-work \
+  --work-dir /path/to/project/.pixi/.restore-work \
   --cargo-config auto|write|print|none
 ```
+
+The generated `./restore.sh <project>` wrapper calls that root binary with `--force`; on
+Windows use `.\restore.ps1 <project>` and `.\pixi-sandbox.exe`.
+
+When invoked with no subcommand from a branch checkout, `./pixi-sandbox` does **not** write:
+it runs `doctor --verify` and prints the restore command. This avoids guessing where the project
+should be written.
 
 | Flag | Description |
 |------|-------------|
@@ -165,4 +174,6 @@ bash scripts/restore.sh sandbox/linux-64
 pixi run sandbox-restore
 ```
 
-Does fetch + worktree + doctor + restore + PATH alias wiring (like setup-pixi's `pixi()` function + tools + dev bin).
+For an extracted branch, `./pixi-sandbox` runs the read-only doctor/hint flow and
+`./restore.sh <project>` calls the root binary. The repository-level script does fetch + worktree +
+doctor + restore + PATH alias wiring (like setup-pixi's `pixi()` function + tools + dev bin).

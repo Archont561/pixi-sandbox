@@ -25,7 +25,9 @@ git worktree add /tmp/sb origin/sandbox/dev-linux-64 --force
 
 The branch carries its own tooling under `.pixi-sandbox/tools/<platform>/`, including
 the static Rust `pixi-sandbox` bootstrap executable, so you do not need a system installation to
-start. Production Rust self-binaries are static (musl on Linux, native on macOS/Windows).
+start. The generated branch root also contains `./pixi-sandbox` (or `./pixi-sandbox.exe` on
+Windows), a byte-identical convenience copy, plus `restore.sh` and `restore.ps1` launchers.
+Production Rust self-binaries are static (musl on Linux, native on macOS/Windows).
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin: 1rem 0; padding: 0.75rem; background: var(--sl-color-accent-low); border-radius: 0.5rem;">
   <Icon name="lucide:zap" size={18} />
@@ -36,7 +38,18 @@ start. Production Rust self-binaries are static (musl on Linux, native on macOS/
 bash scripts/restore.sh sandbox/linux-64   # or: pixi run sandbox-restore
 ```
 
-This does fetch + worktree + doctor + restore + `source .pixi/sandbox-env.sh` + `PATH` export.
+For an already extracted branch, use the executable and wrappers at its root:
+
+```bash
+cd /tmp/sb
+./pixi-sandbox                    # doctor --verify, then prints the safe next command
+./restore.sh /path/to/project     # restore using the root binary
+./pixi-sandbox restore --branch-location . --output-path /path/to/project --force
+```
+
+On Windows, use `.\restore.ps1 <project>` or `.\pixi-sandbox.exe restore ...` instead.
+
+The repository-level script does fetch + worktree + doctor + restore + `source .pixi/sandbox-env.sh` + `PATH` export.
 
 ## 2. Look before you leap
 
@@ -46,7 +59,7 @@ This does fetch + worktree + doctor + restore + `source .pixi/sandbox-env.sh` + 
 </div>
 
 ```bash
-/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
+/tmp/sb/pixi-sandbox doctor \
     --branch-location /tmp/sb --verify
 ```
 
@@ -62,9 +75,9 @@ nothing. Treat any failure as a hard stop.
 
 ```bash
 cd /path/to/project
-/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+/tmp/sb/pixi-sandbox restore \
     --branch-location /tmp/sb \
-    --output-path .
+    --output-path . --force
 ```
 
 What it does, in order: verifies the tools, stages a copy of each pack under a work dir on

@@ -103,10 +103,11 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
     bash scripts/restore.sh sandbox/linux-64
     # or: pixi run sandbox-restore
 
-    # Manual restore
-    .pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+    # Manual restore from the extracted branch root
+    /tmp/sb/pixi-sandbox restore \
       --branch-location /tmp/sb \
-      --output-path .
+      --output-path . --force
+    # or: /tmp/sb/restore.sh .
 
     # Prove offline
     source .pixi/sandbox-env.sh

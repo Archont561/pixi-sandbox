@@ -1,0 +1,4 @@
+#!/bin/sh
+# fixture stub for pixi-sandbox 0.1.0 (tests/fixtures/README.md)
+if [ "$1" = "--version" ]; then echo "pixi-sandbox 0.1.0"; exit 0; fi
+echo "pixi-sandbox stub: $*"

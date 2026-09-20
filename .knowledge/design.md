@@ -91,6 +91,8 @@ fetched checkout (AGENTS invariant 2). A restore stages everything in the *proje
 
 ```
 <branch>/
+├── pixi-sandbox[.exe]              root self-bootstrap convenience copy (same blob as nested copy)
+├── restore.sh / restore.ps1        thin wrappers around the root self-binary
 ├── .pixi-sandbox/
 │   ├── manifest.json               schema 1 — the only source of truth
 │   ├── envs/<env>/pack/            output of `pixi-pack --directory-only` (D2)
@@ -102,6 +104,11 @@ fetched checkout (AGENTS invariant 2). A restore stages everything in the *proje
 ├── README.md                       generated from the manifest
 └── AGENTS.md                       generated from the manifest
 ```
+
+When `--self-bin` is supplied, the root executable is a byte-identical convenience copy of the
+manifest tool. `restore.sh` and `restore.ps1` call that root path; the nested copy stays in the
+manifest so `doctor --verify` continues to verify the payload. Git stores identical copies as a
+single content-addressed blob. Without `--self-bin`, no root launcher is generated.
 
 **Packing** is `pixi-pack <project> -e <env> -p <platform> -o <pack-dir> --directory-only` ✅.
 The directory form is what makes the transport addressable at file granularity; the tar form

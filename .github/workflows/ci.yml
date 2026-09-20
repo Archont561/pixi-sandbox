@@ -35,7 +35,13 @@ jobs:
           environments: dev
           cache: true
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: pixi run -e dev lint
+      - run: pixi run -e dev fmt-check
+      - run: pixi run -e dev lint-rust
+      - run: pixi run -e dev deny
+      - run: pixi run -e dev lint-actions
+      - run: pixi run -e dev lint-sandbox-plan
+      - run: pixi run -e dev lint-toml
+      - run: pixi run -e dev lint-docs
       - run: pixi run -e dev test
       - run: pixi run -e dev test-doc
       - run: pixi run -e dev coverage

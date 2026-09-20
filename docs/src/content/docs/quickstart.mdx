@@ -57,6 +57,23 @@ pixi run -e dev sandbox-proof
   </TabItem>
 </Tabs>
 
+## On the airlock
+
+An extracted orphan branch is self-contained. The root `pixi-sandbox` is a convenience copy of
+the manifest-verified binary under `.pixi-sandbox/tools/<platform>/`; Git stores identical copies
+as one blob. A bare invocation is deliberately read-only: it runs `doctor --verify` and prints
+the next restore command.
+
+```bash
+cd /path/to/extracted-branch
+./pixi-sandbox
+./restore.sh /path/to/project
+# equivalent explicit form:
+./pixi-sandbox restore --branch-location . --output-path /path/to/project --force
+```
+
+Windows branches provide the matching `pixi-sandbox.exe` and `restore.ps1`.
+
 ## From CI: reviewed native matrix
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin: 1rem 0;">

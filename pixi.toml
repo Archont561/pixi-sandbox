@@ -115,7 +115,9 @@ package = "pixi publish --path crates/pixi-sandbox --build-dir .publish/build --
 # ---------------------------------------------------------------------------
 sandbox-plan = "cargo run -p pixi-sandbox -- plan --config .pixi-sandbox.toml"
 sandbox-build-self = "cargo build -p pixi-sandbox --release"
-sandbox-pack = { depends-on = ["sandbox-build-self"], cmd = "cargo run -p pixi-sandbox --release -- pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --cargo-vendor --fetch-tools --self-bin target/release/pixi-sandbox" }
+sandbox-pack = { depends-on = [
+  "sandbox-build-self",
+], cmd = "cargo run -p pixi-sandbox --release -- pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --cargo-vendor --fetch-tools --self-bin target/release/pixi-sandbox" }
 sandbox-doctor = "cargo run -p pixi-sandbox --release -- doctor --branch-location .sandbox-out --verify"
 sandbox-publish = "cargo run -p pixi-sandbox --release -- publish --input-dir .sandbox-out --branch-name sandbox/dev-linux-64 --remote origin"
 # One-liner offline reconstruction from orphan branch, with PATH aliases wired
@@ -132,8 +134,9 @@ cargo run -p pixi-sandbox --release -- doctor --branch-location .sandbox-out --v
 echo "=== sandbox-proof: restore via embedded binary ==="
 rm -rf .sandbox-proof
 mkdir -p .sandbox-proof
-# Use the embedded Rust binary from the transport
-EMBED=".sandbox-out/.pixi-sandbox/tools/linux-64/pixi-sandbox"
+# Use the root Rust binary from the transport (legacy branches keep the nested fallback)
+EMBED=".sandbox-out/pixi-sandbox"
+if [ ! -x "$EMBED" ]; then EMBED=".sandbox-out/.pixi-sandbox/tools/linux-64/pixi-sandbox"; fi
 if [ ! -x "$EMBED" ]; then EMBED="target/release/pixi-sandbox"; fi
 "$EMBED" restore --branch-location .sandbox-out --output-path .sandbox-proof --force
 echo "=== sandbox-proof: offline checks ==="
@@ -145,7 +148,7 @@ echo "=== sandbox-proof: offline checks ==="
   cargo build --offline || echo "cargo build --offline failed (expected if no Rust env)"
 )
 echo "=== sandbox-proof: OK ==="
-""", shell = "bash" }
+""" }
 
 # ---------------------------------------------------------------------------
 # The same three Rust CLI steps for CI, taking their paths from the environment so the
@@ -161,7 +164,8 @@ set -euo pipefail
 echo "=== ci-proof: pack already done, doctor already done, now restore ==="
 rm -rf "$SANDBOX_PROOF_OUT"
 mkdir -p "$SANDBOX_PROOF_OUT"
-EMBED="$SANDBOX_TRANSPORT/.pixi-sandbox/tools/$SANDBOX_PLATFORM/pixi-sandbox"
+EMBED="$SANDBOX_TRANSPORT/pixi-sandbox"
+if [ ! -x "$EMBED" ]; then EMBED="$SANDBOX_TRANSPORT/.pixi-sandbox/tools/$SANDBOX_PLATFORM/pixi-sandbox"; fi
 if [ ! -x "$EMBED" ]; then EMBED="$SANDBOX_SELF_BIN"; fi
 "$EMBED" restore --branch-location "$SANDBOX_TRANSPORT" --output-path "$SANDBOX_PROOF_OUT" --force
 (
@@ -171,4 +175,4 @@ if [ ! -x "$EMBED" ]; then EMBED="$SANDBOX_SELF_BIN"; fi
   pixi install --frozen --offline
   echo "ci-proof: offline install OK"
 )
-""", shell = "bash" }
+""" }

@@ -19,9 +19,12 @@ echo "→ worktree $WORKTREE"
 rm -rf "$WORKTREE"
 git worktree add "$WORKTREE" "origin/$BRANCH" --force
 
-# Find self-binary (Rust or Python bootstrap)
+# Prefer the self-contained root bootstrap produced by `pack --self-bin`; retain the
+# nested path for branches generated before the root convenience copy existed.
 BIN=""
 for candidate in \
+  "$WORKTREE/pixi-sandbox" \
+  "$WORKTREE/pixi-sandbox.exe" \
   "$WORKTREE/.pixi-sandbox/tools/linux-64/pixi-sandbox" \
   "$WORKTREE/.pixi-sandbox/tools/linux-64/pixi-sandbox.exe" \
   "$WORKTREE/.pixi-sandbox/tools/win-64/pixi-sandbox.exe"; do
@@ -40,11 +43,16 @@ echo "→ doctor $BIN"
 "$BIN" doctor --branch-location "$WORKTREE" --verify || true
 
 echo "→ restore to $OUTPUT"
-# Try new flag first, fallback to legacy alias for old branches
-if "$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force 2>&1; then
-  :
+if [ -f "$WORKTREE/restore.sh" ]; then
+  # New branches keep the restore policy next to the root binary.
+  bash "$WORKTREE/restore.sh" "$OUTPUT"
 else
-  "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force
+  # Legacy branches may only have the nested self-binary and no launcher.
+  if "$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force 2>&1; then
+    :
+  else
+    "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force
+  fi
 fi
 
 echo "→ cleanup worktree"

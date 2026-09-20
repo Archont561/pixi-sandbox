@@ -46,7 +46,7 @@
 
 ```bash
 bash scripts/restore.sh sandbox/linux-64   # or: pixi run sandbox-restore
-# does: fetch + worktree add /tmp/sb + doctor --verify + restore --output-path . + source .pixi/sandbox-env.sh
+# does: fetch + worktree add /tmp/sb + root ./restore.sh + doctor --verify + restore + source .pixi/sandbox-env.sh
 ```
 
 ---
@@ -102,10 +102,15 @@ pixi sandbox publish \
 git fetch origin sandbox/linux-64:sandbox/linux-64
 git worktree add /tmp/sb origin/sandbox/linux-64 --force
 
-# Restore
-/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+# Restore with the executable at the branch root
+/tmp/sb/pixi-sandbox restore \
   --branch-location /tmp/sb \
   --output-path . --force
+# or use the generated thin wrapper:
+/tmp/sb/restore.sh .
+
+# A bare root binary is read-only: it runs doctor --verify and prints the restore command.
+/tmp/sb/pixi-sandbox
 
 git worktree remove /tmp/sb --force
 source .pixi/sandbox-env.sh
@@ -292,6 +297,8 @@ Docs: https://archont561.github.io/pixi-sandbox/reference/cli/
 
 ```text
 sandbox/<bundle>-<platform>/   # orphan branch
+├── pixi-sandbox                # root self-bootstrap convenience copy
+├── restore.sh / restore.ps1    # thin wrappers around the root binary
 ├── .pixi-sandbox/
 │   ├── manifest.json           # SHA-256 catalog, source commit, tool versions, vendor
 │   ├── envs/<env>/pack/        # pixi-pack --directory-only: channel/*.conda + env.yml + pixi-pack.json
@@ -310,6 +317,10 @@ sandbox/<bundle>-<platform>/   # orphan branch
 | tools | 96 MB |
 | **transport dir** | **262 MB** |
 | **orphan branch after git dedup** | **~110 MB** |
+
+The root `pixi-sandbox` has the same bytes as the manifest's nested self-binary, so Git stores
+only one blob. It is intentionally an extra convenience file; `doctor --verify` still verifies
+the manifest copy. On Windows the names are `pixi-sandbox.exe` and `restore.ps1`.
 
 Tools dominate small bundles — expected, git stores each tool blob once.
 
