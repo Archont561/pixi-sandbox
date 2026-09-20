@@ -162,7 +162,7 @@ jobs:
           echo "Release tag: $TAG"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2.4.1 # v2.4.1
+        uses: softprops/action-gh-release@v3.0.3 # v2.4.1
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           files: |
