@@ -173,7 +173,9 @@ jobs:
         env:
           CONFIG: ${{ inputs.config || '.pixi-sandbox.toml' }}
           SANDBOX_BIN: ${{ steps.sandbox-release.outputs.path }}
-        run: echo "matrix=$(\"$SANDBOX_BIN\" plan --config \"$CONFIG\" --json)" >> "$GITHUB_OUTPUT"
+        run: |
+          matrix=$("$SANDBOX_BIN" plan --config "$CONFIG" --json)
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
 
       - name: Emit simple matrix (release mode + manual override)
         if: ${{ inputs.release-repository != '' && inputs.environments != '' }}
