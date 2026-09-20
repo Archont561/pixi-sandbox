@@ -76,7 +76,7 @@ fmt-check = "cargo fmt --all --check"
 deny = "cargo deny check"
 
 # config / workflows / docs
-lint-actions = "python3 scripts/lint_actions.py"
+lint-actions = "actionlint"
 # Keep the checked-in release matrix valid against this binary's embedded helper-tool catalogue.
 lint-sandbox-plan = "cargo run -q -p pixi-sandbox -- plan --config .pixi-sandbox.toml --json"
 lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pixi-sandbox-core/Cargo.toml crates/pixi-sandbox/Cargo.toml crates/pixi-sandbox/pixi.toml crates/pixi-sandbox-git/Cargo.toml deny.toml"
