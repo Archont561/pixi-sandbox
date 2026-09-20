@@ -60,7 +60,53 @@ runs:
         PUBLISH_PIXI_SANDBOX_REMOTE: ${{ inputs.remote }}
         PUBLISH_PIXI_SANDBOX_OUTPUT_DIR: ${{ inputs.output-dir }}
         PUBLISH_PIXI_SANDBOX_PUSH_TOKEN: ${{ inputs.push-token }}
-      run: python3 "$GITHUB_ACTION_PATH/publish_bundle.py"
+      run: |
+        set -euo pipefail
+
+        IFS=',' read -ra ENVS <<< "${PUBLISH_PIXI_SANDBOX_ENVIRONMENTS}"
+        for env_name in "${ENVS[@]}"; do
+          env_name=$(echo "$env_name" | xargs)
+          echo "Installing pixi environment: $env_name"
+          (cd "${PUBLISH_PIXI_SANDBOX_PROJECT}" && pixi install --frozen -e "$env_name")
+        done
+
+        CARGO_VENDOR_FLAG=""
+        if [ "${PUBLISH_PIXI_SANDBOX_CARGO_VENDOR}" = "true" ]; then
+          CARGO_VENDOR_FLAG="--cargo-vendor"
+        fi
+
+        echo "Packing transport into ${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}..."
+        "${PUBLISH_PIXI_SANDBOX_SELF_BIN}" pack \
+          --repo-root "${PUBLISH_PIXI_SANDBOX_PROJECT}" \
+          --envs "${PUBLISH_PIXI_SANDBOX_ENVIRONMENTS}" \
+          --output-dir "${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}" \
+          --platform "${PUBLISH_PIXI_SANDBOX_PLATFORM}" \
+          --fetch-tools \
+          --self-bin "${PUBLISH_PIXI_SANDBOX_SELF_BIN}" \
+          $CARGO_VENDOR_FLAG
+
+        echo "Running doctor verification..."
+        "${PUBLISH_PIXI_SANDBOX_SELF_BIN}" doctor \
+          --branch-location "${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}" \
+          --verify
+
+        echo "Publishing orphan branch ${PUBLISH_PIXI_SANDBOX_BRANCH}..."
+        if [ -n "${PUBLISH_PIXI_SANDBOX_PUSH_TOKEN}" ]; then
+          BASIC_AUTH=$(echo -n "x-access-token:${PUBLISH_PIXI_SANDBOX_PUSH_TOKEN}" | base64 | tr -d '\r\n')
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${BASIC_AUTH}"
+        fi
+
+        "${PUBLISH_PIXI_SANDBOX_SELF_BIN}" publish \
+          --input-dir "${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}" \
+          --branch-name "${PUBLISH_PIXI_SANDBOX_BRANCH}" \
+          --remote "${PUBLISH_PIXI_SANDBOX_REMOTE}"
+
+        echo "transport=${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}" >> "$GITHUB_OUTPUT"
+        echo "manifest=${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}/.pixi-sandbox/manifest.json" >> "$GITHUB_OUTPUT"
+        echo "branch=${PUBLISH_PIXI_SANDBOX_BRANCH}" >> "$GITHUB_OUTPUT"
+
     - id: windows
       if: runner.os == 'Windows'
       shell: pwsh
@@ -74,4 +120,48 @@ runs:
         PUBLISH_PIXI_SANDBOX_REMOTE: ${{ inputs.remote }}
         PUBLISH_PIXI_SANDBOX_OUTPUT_DIR: ${{ inputs.output-dir }}
         PUBLISH_PIXI_SANDBOX_PUSH_TOKEN: ${{ inputs.push-token }}
-      run: python "$env:GITHUB_ACTION_PATH/publish_bundle.py"
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        $envs = $env:PUBLISH_PIXI_SANDBOX_ENVIRONMENTS -split ','
+        foreach ($e in $envs) {
+            $e = $e.Trim()
+            Push-Location $env:PUBLISH_PIXI_SANDBOX_PROJECT
+            try {
+                & pixi install --frozen -e $e
+            } finally {
+                Pop-Location
+            }
+        }
+
+        $packArgs = @(
+            "pack",
+            "--repo-root", $env:PUBLISH_PIXI_SANDBOX_PROJECT,
+            "--envs", $env:PUBLISH_PIXI_SANDBOX_ENVIRONMENTS,
+            "--output-dir", $env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR,
+            "--platform", $env:PUBLISH_PIXI_SANDBOX_PLATFORM,
+            "--fetch-tools",
+            "--self-bin", $env:PUBLISH_PIXI_SANDBOX_SELF_BIN
+        )
+
+        if ($env:PUBLISH_PIXI_SANDBOX_CARGO_VENDOR -eq "true") {
+            $packArgs += "--cargo-vendor"
+        }
+
+        & $env:PUBLISH_PIXI_SANDBOX_SELF_BIN @packArgs
+
+        & $env:PUBLISH_PIXI_SANDBOX_SELF_BIN doctor --branch-location $env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR --verify
+
+        if (![string]::IsNullOrWhiteSpace($env:PUBLISH_PIXI_SANDBOX_PUSH_TOKEN)) {
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes("x-access-token:$($env:PUBLISH_PIXI_SANDBOX_PUSH_TOKEN)")
+            $basic = [System.Convert]::ToBase64String($bytes)
+            $env:GIT_CONFIG_COUNT = "1"
+            $env:GIT_CONFIG_KEY_0 = "http.extraheader"
+            $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: basic $basic"
+        }
+
+        & $env:PUBLISH_PIXI_SANDBOX_SELF_BIN publish --input-dir $env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR --branch-name $env:PUBLISH_PIXI_SANDBOX_BRANCH --remote $env:PUBLISH_PIXI_SANDBOX_REMOTE
+
+        "transport=$($env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "manifest=$($env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR)/.pixi-sandbox/manifest.json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "branch=$($env:PUBLISH_PIXI_SANDBOX_BRANCH)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8

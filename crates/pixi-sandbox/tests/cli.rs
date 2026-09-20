@@ -6,8 +6,9 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use serde_json::Value;
 #[cfg(unix)]
-use serde_json::{Value, json};
+use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
