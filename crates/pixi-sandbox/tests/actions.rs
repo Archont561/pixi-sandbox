@@ -112,8 +112,7 @@ fn checksum_parsing_handles_gnu_and_bsd_formats() {
         "2222222222222222222222222222222222222222222222222222222222222222"
     );
 
-    let bsd_data =
-        "SHA256 (pixi-sandbox-x86_64-apple-darwin) = 3333333333333333333333333333333333333333333333333333333333333333\n";
+    let bsd_data = "SHA256 (pixi-sandbox-x86_64-apple-darwin) = 3333333333333333333333333333333333333333333333333333333333333333\n";
     let bsd_map = parse_checksums(bsd_data);
     assert_eq!(
         bsd_map["pixi-sandbox-x86_64-apple-darwin"],

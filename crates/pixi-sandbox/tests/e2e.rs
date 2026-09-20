@@ -237,7 +237,10 @@ fn e2e_network_isolated_restore_proof() {
             .status()
             .expect("unshare runs");
 
-        assert!(status.success(), "offline restore must succeed in unshare -rn");
+        assert!(
+            status.success(),
+            "offline restore must succeed in unshare -rn"
+        );
         assert!(
             airlock
                 .join(".pixi/envs/default/conda-meta/pixi_env_prefix")
