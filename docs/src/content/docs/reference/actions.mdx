@@ -1,0 +1,115 @@
+---
+title: Actions API
+description: Setup and publish composite actions — inputs, outputs, security, and short references.
+---
+
+import { Icon } from 'astro-icon/components';
+
+Both actions live in same repo, short refs like `prefix-dev/setup-pixi`.
+
+## Setup: `Archont561/pixi-sandbox` / `setup`
+
+Download, checksum-verify, expose standalone binary.
+
+### Usage
+
+```yaml
+- uses: Archont561/pixi-sandbox@v0.2.0
+  with:
+    version: v0.2.0
+
+- uses: Archont561/pixi-sandbox/setup@v0.2.0
+  id: setup
+  with:
+    version: v0.2.0
+```
+
+Pinned:
+
+```yaml
+- uses: Archont561/pixi-sandbox@<sha>
+- uses: Archont561/pixi-sandbox/setup@<sha>
+- uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<sha>
+```
+
+### Inputs
+
+| Name | Default | Description |
+|------|---------|-------------|
+| `repository` | `Archont561/pixi-sandbox` | Repo with release assets |
+| `version` | `latest` | Tag like `v0.2.0`, `latest` warns |
+| `target` | `auto` | Triple or auto |
+| `asset-template` | `pixi-sandbox-{target}{exe}` | Supports `{target}`, `{exe}`, `{tag}`, `{version}` |
+| `checksums-asset` | `SHA256SUMS` | Checksums file |
+| `sha256` | `""` | Explicit SHA overrides lookup |
+| `install-dir` | `""` | Runner temp default |
+| `add-to-path` | `true` | Add to GITHUB_PATH |
+| `token` | `""` | GitHub token |
+
+### Outputs
+
+- `path`: absolute path exe
+- `version`: resolved tag
+- `sha256`: verified SHA
+- `target`: resolved triple
+
+## Publish: `Archont561/pixi-sandbox/publish`
+
+Pack + doctor + publish one native bundle.
+
+### Usage
+
+```yaml
+- uses: Archont561/pixi-sandbox/publish@v0.2.0
+  with:
+    project: .
+    environments: dev,docs
+    platform: linux-64
+    branch: sandbox/dev-linux-64
+    self-bin: ${{ steps.setup.outputs.path }}
+    remote: https://github.com/OWNER/REPO.git
+    output-dir: /tmp/transport
+```
+
+Pinned:
+
+```yaml
+- uses: Archont561/pixi-sandbox/publish@<sha>
+- uses: Archont561/pixi-sandbox/.github/actions/publish-pixi-sandbox@<sha>
+```
+
+### Inputs
+
+| Name | Required | Default | Description |
+|------|----------|---------|-------------|
+| `project` | yes | | Project root |
+| `environments` | yes | | Comma envs |
+| `platform` | yes | | Native platform |
+| `branch` | yes | | Orphan branch |
+| `self-bin` | yes | | Verified exe |
+| `remote` | yes | | Credential-free remote URL |
+| `output-dir` | yes | | Fresh temp dir |
+| `cargo-vendor` | no | `true` | Vendor cargo |
+| `push-token` | no | `""` | Token via extraheader |
+
+### Outputs
+
+- `transport`, `manifest`, `branch`
+
+## Security
+
+- Checksum verified before `chmod +x`
+- No PATH shadowing — exact `self-bin` path used
+- Token via `http.extraheader` base64 basic auth, never URL
+- Native runner enforcement — rejects if detected platform ≠ planned
+
+## Iconify
+
+Docs use Astro Icon + Iconify. Browse 300k icons: https://icon-sets.iconify.design/
+
+```astro
+import { Icon } from 'astro-icon/components';
+<Icon name="lucide:package" />
+<Icon name="simple-icons:rust" />
+<Icon name="mdi:github" />
+```

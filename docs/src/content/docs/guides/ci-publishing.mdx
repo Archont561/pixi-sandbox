@@ -1,0 +1,193 @@
+---
+title: CI Publishing
+description: Publish sandbox branches from GitHub Actions with verified release binaries and native runners.
+---
+
+import { Icon } from 'astro-icon/components';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Overview
+
+`publish-sandbox.yml` is a unified reusable workflow that:
+
+1. Validates `.pixi-sandbox.toml` via `plan --json`
+2. For each `bundle × platform` with native runner, runs on that runner
+3. Uses `setup-pixi-sandbox` (checksum-verified download) + `publish-pixi-sandbox` (install, pack, doctor, publish)
+
+It supports `workflow_run` (auto after ci.yml), `workflow_dispatch` (manual), and `workflow_call` (from your repo).
+
+## Quick start in your repo
+
+### 1. Add `.pixi-sandbox.toml`
+
+```toml
+schema = 1
+branch_prefix = "sandbox"
+cargo_vendor = true
+
+[runners]
+# Override if you need self-hosted or special labels
+# osx-arm64 = "macos-14"
+# linux-aarch64 = "self-hosted-arm64"  # required — no hosted default
+
+[[bundle]]
+name = "developer"
+environments = ["dev", "docs"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+```
+
+### 2. Create workflow
+
+```yaml
+# .github/workflows/publish-sandbox.yml
+name: publish sandbox
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.2.0
+    with:
+      config: .pixi-sandbox.toml
+      release-repository: Archont561/pixi-sandbox
+      release-version: v0.2.0
+    secrets:
+      SANDBOX_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Pin to SHA for supply-chain security:
+
+```yaml
+jobs:
+  publish:
+    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@<immutable-sha>
+    with:
+      release-repository: Archont561/pixi-sandbox
+      release-version: v0.2.0
+```
+
+### 3. What happens
+
+- `plan --json` emits matrix like `sandbox/developer-linux-64`, `sandbox/developer-osx-arm64`, etc.
+- Each native job:
+  ```text
+  pixi install --frozen -e <envs>
+  → pixi-sandbox pack --fetch-tools --self-bin <verified release>
+  → pixi-sandbox doctor --verify
+  → pixi-sandbox publish --branch-name <branch> --remote <url>
+  ```
+- Branch contains verified Rust binary as self-bootstrap.
+
+## Direct actions (short refs)
+
+Both actions live in same repo:
+
+<Tabs>
+  <TabItem label="Setup + Publish">
+    ```yaml
+    jobs:
+      publish:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v7.0.1
+
+          - uses: prefix-dev/setup-pixi@v0.8.1
+            with:
+              environments: dev
+              cache: true
+
+          - uses: Archont561/pixi-sandbox/setup@v0.2.0
+            id: setup
+            with:
+              version: v0.2.0
+
+          - uses: Archont561/pixi-sandbox/publish@v0.2.0
+            with:
+              project: .
+              environments: dev
+              platform: linux-64
+              branch: sandbox/dev-linux-64
+              self-bin: ${{ steps.setup.outputs.path }}
+              remote: https://github.com/OWNER/REPO.git
+              output-dir: /tmp/transport
+              push-token: ${{ secrets.GITHUB_TOKEN }}
+    ```
+  </TabItem>
+  <TabItem label="Root alias">
+    ```yaml
+    - uses: Archont561/pixi-sandbox@v0.2.0  # root = setup
+      id: setup
+      with:
+        version: v0.2.0
+    - uses: Archont561/pixi-sandbox/publish@v0.2.0
+      with:
+        self-bin: ${{ steps.setup.outputs.path }}
+        # ...
+    ```
+  </TabItem>
+</Tabs>
+
+## Security model
+
+<div style="display: grid; gap: 0.75rem; margin: 1rem 0;">
+  <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:shield" size={20} />
+    <div><strong>Checksum verified before exec</strong> — setup downloads binary + SHA256SUMS, verifies, only then chmod +x and adds to PATH. No PATH shadowing.</div>
+  </div>
+  <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:key" size={20} />
+    <div><strong>Token via extraheader</strong> — push token injected via <code>http.extraheader</code> (base64 basic auth), never in remote URL or args.</div>
+  </div>
+  <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:cpu" size={20} />
+    <div><strong>Native runner enforcement</strong> — publish rejects if detected platform ≠ planned target. No cross-packing unproven transports.</div>
+  </div>
+</div>
+
+## Custom runners
+
+For platforms without hosted default (currently `linux-aarch64`), you must provide `[runners]`:
+
+```toml
+[runners]
+linux-aarch64 = "self-hosted-arm64"
+
+[[bundle]]
+name = "dev"
+environments = ["dev"]
+platforms = ["linux-64", "linux-aarch64"]
+```
+
+`plan` also requires embedded pins for `pixi`, `pixi-pack`, `pixi-unpack` — prevents custom runner from reaching job that can't download verified tools.
+
+## One-liner rule
+
+Source-driven workflow steps are one line: `pixi run -e <env> <task>`. Logic lives in `pixi.toml` tasks, not YAML — so CI command = local command.
+
+```yaml
+- run: pixi run -e ci ci-pack
+- run: pixi run -e ci ci-doctor
+- run: pixi run -e ci ci-publish
+```
+
+Paths come from `SANDBOX_*` env vars set in workflow `env:` block.
+
+## Dependabot
+
+Add `.github/dependabot.yml` to keep actions and cargo deps fresh (convco-compatible prefixes):
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly }
+    commit-message: { prefix: ci }
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule: { interval: weekly }
+    commit-message: { prefix: chore, include: scope }
+```

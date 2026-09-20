@@ -1,0 +1,48 @@
+---
+import { Icon } from 'astro-icon/components';
+
+const features = [
+  {
+    icon: "lucide:shield-check",
+    title: "Zero-Network Restore",
+    desc: "Verified restore in network-severed environments (unshare -rn) without touching external channels.",
+  },
+  {
+    icon: "lucide:git-branch",
+    title: "Git-Native Transport",
+    desc: "Published to orphan branch. Whole files content-addressed by Git, free dedup across envs.",
+  },
+  {
+    icon: "lucide:scissors",
+    title: "Automatic Sharding",
+    desc: "Splits files >95 MiB into .partNNN chunks to respect GitHub's 100 MiB blob limit.",
+  },
+  {
+    icon: "lucide:lock",
+    title: "Strict Verification",
+    desc: "Cryptographically verifies every payload against embedded SHA-256 pins before writing.",
+  },
+  {
+    icon: "simple-icons:rust",
+    title: "Cargo Vendoring",
+    desc: "Bundles Cargo workspace dependencies alongside Pixi conda envs for offline cargo build.",
+  },
+  {
+    icon: "lucide:package-check",
+    title: "Pure Rust CLI",
+    desc: "Static musl binaries, no Python deps. Works as pixi sandbox pack/doctor/publish/restore.",
+  },
+];
+---
+
+<div class="feature-grid">
+  {features.map((f) => (
+    <div class="feature-card">
+      <div class="feature-icon">
+        <Icon name={f.icon} size={20} />
+      </div>
+      <h3>{f.title}</h3>
+      <p>{f.desc}</p>
+    </div>
+  ))}
+</div>

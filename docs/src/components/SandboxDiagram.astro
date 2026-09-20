@@ -1,0 +1,65 @@
+---
+import { Icon } from 'astro-icon/components';
+---
+
+<div class="sandbox-diagram">
+  <div class="sandbox-box pixi">
+    <div class="icon">
+      <Icon name="lucide:package" size={32} />
+    </div>
+    <div class="label">pixi project</div>
+    <div class="desc">.pixi/envs/*<br/>pixi.lock<br/>Cargo.lock</div>
+    <div style="margin-top: 0.75rem; display: flex; gap: 0.25rem; justify-content: center;">
+      <span style="background: #facc15; color: #000; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 600;">dev</span>
+      <span style="background: #e5e7eb; color: #000; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-size: 0.7rem;">docs</span>
+    </div>
+  </div>
+
+  <div class="sandbox-arrow">
+    <div class="arrow-line">
+      <Icon name="lucide:arrow-right" size={20} />
+      <span class="arrow-label">pack</span>
+    </div>
+  </div>
+
+  <div class="sandbox-box branch">
+    <div class="icon">
+      <Icon name="lucide:git-branch" size={32} />
+    </div>
+    <div class="label">orphan branch</div>
+    <div class="desc">sandbox/linux-64<br/>manifest.json<br/>sharded blobs</div>
+    <div style="margin-top: 0.75rem; font-size: 0.7rem; color: var(--sl-color-gray-3);">
+      <div style="display: flex; align-items: center; gap: 0.25rem; justify-content: center;">
+        <Icon name="mdi:file-document-outline" size={12} />
+        <span>262 MB → 110 MB dedup</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sandbox-arrow">
+    <div class="arrow-line">
+      <Icon name="lucide:arrow-right" size={20} />
+      <span class="arrow-label">fetch</span>
+    </div>
+  </div>
+
+  <div class="sandbox-box airlock">
+    <div class="icon">
+      <Icon name="lucide:shield-check" size={32} />
+    </div>
+    <div class="label">airlock</div>
+    <div class="desc">.pixi/envs/*<br/>vendor/<br/>offline verified</div>
+    <div style="margin-top: 0.75rem; display: flex; gap: 0.25rem; justify-content: center; font-size: 0.7rem;">
+      <span style="background: #10b981; color: #fff; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-weight: 600; display: flex; align-items: center; gap: 0.15rem;">
+        <Icon name="lucide:check" size={10} />
+        offline
+      </span>
+    </div>
+  </div>
+</div>
+
+<style>
+  .sandbox-diagram {
+    /* styles from custom.css */
+  }
+</style>

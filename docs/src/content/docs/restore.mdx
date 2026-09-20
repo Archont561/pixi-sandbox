@@ -3,33 +3,51 @@ title: Restore on the airlock
 description: The operator checklist for a machine with no network.
 ---
 
+import { Icon } from 'astro-icon/components';
+
 This page is written for the person (or agent) standing in front of the disconnected
 machine. Nothing here needs network access — if any step tries to reach out, stop and
 report it.
 
 ## 1. Get the branch
 
+<div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
+  <Icon name="lucide:git-branch" size={18} />
+  <strong>Fetch orphan branch</strong>
+</div>
+
 ```bash
 # in your clone of the project (the only thing that has to cross the air gap)
 git fetch origin sandbox/dev-linux-64:sandbox/dev-linux-64
-git archive sandbox/dev-linux-64 | tar -x -C /tmp/sandbox-branch
+git worktree add /tmp/sb origin/sandbox/dev-linux-64 --force
+# or: git archive sandbox/dev-linux-64 | tar -x -C /tmp/sandbox-branch
 ```
 
 The branch carries its own tooling under `.pixi-sandbox/tools/<platform>/`, including
 the static Rust `pixi-sandbox` bootstrap executable, so you do not need a system installation to
 start. Production Rust self-binaries are static (musl on Linux, native on macOS/Windows).
 
-One-liner offline reconstruction (PATH aliases wired like `setup-pixi`):
+<div style="display: flex; gap: 0.5rem; align-items: center; margin: 1rem 0; padding: 0.75rem; background: var(--sl-color-accent-low); border-radius: 0.5rem;">
+  <Icon name="lucide:zap" size={18} />
+  <span><strong>One-liner offline reconstruction</strong> (PATH aliases wired like <code>setup-pixi</code>):</span>
+</div>
 
 ```bash
 bash scripts/restore.sh sandbox/linux-64   # or: pixi run sandbox-restore
 ```
 
+This does fetch + worktree + doctor + restore + `source .pixi/sandbox-env.sh` + `PATH` export.
+
 ## 2. Look before you leap
 
+<div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
+  <Icon name="lucide:shield-check" size={18} />
+  <strong>Verify every byte</strong>
+</div>
+
 ```bash
-/tmp/sandbox-branch/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
-    --branch-location /tmp/sandbox-branch --verify
+/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
+    --branch-location /tmp/sb --verify
 ```
 
 This checks every sha256 in `manifest.json` and reports the payload breakdown. It writes
@@ -37,10 +55,15 @@ nothing. Treat any failure as a hard stop.
 
 ## 3. Restore
 
+<div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
+  <Icon name="lucide:package-check" size={18} />
+  <strong>Materialize environments</strong>
+</div>
+
 ```bash
 cd /path/to/project
-/tmp/sandbox-branch/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
-    --branch-location /tmp/sandbox-branch \
+/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+    --branch-location /tmp/sb \
     --output-path .
 ```
 
@@ -58,6 +81,11 @@ small volume.
 
 ## 4. Prove it is offline-clean
 
+<div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
+  <Icon name="lucide:check-circle" size={18} />
+  <strong>Offline assertions</strong>
+</div>
+
 ```bash
 source .pixi/sandbox-env.sh          # bundled tools on PATH, CARGO_NET_OFFLINE=true
 pixi install --frozen --offline      # must be a no-op, must not touch the network
@@ -69,11 +97,20 @@ not match `pixi.lock` — do not let it continue; re-run the restore instead.
 
 ## What the bundle does not contain
 
-- **The Rust toolchain.** It ships crates, not `rustc`. Either pack `rust` into the
-  environment or make sure the machine has one (a conda-forge `rust` env is ~1.8 GB
-  unpacked, which is why it is a deliberate choice).
-- **Build artifacts.** The airlock compiles from scratch.
-- **Credentials.** Nothing in the bundle authenticates to anything.
+<div style="display: grid; gap: 0.5rem; margin: 1rem 0;">
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="tabler:brand-rust" size={18} />
+    <span><strong>Rust toolchain</strong> — ships crates, not rustc. Pack rust into env or have it on machine (conda-forge rust env ~1.8 GB unpacked).</span>
+  </div>
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:hammer" size={18} />
+    <span><strong>Build artifacts</strong> — airlock compiles from scratch.</span>
+  </div>
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:key" size={18} />
+    <span><strong>Credentials</strong> — nothing authenticates to anything.</span>
+  </div>
+</div>
 
 ## Post-link scripts
 
