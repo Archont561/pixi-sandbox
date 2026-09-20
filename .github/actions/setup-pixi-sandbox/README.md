@@ -4,6 +4,18 @@ A dependency-free composite GitHub Action that downloads a standalone `pixi-sand
 binary, verifies its SHA-256 checksum before execution, and adds it to `PATH`. Implemented in
 pure POSIX shell (Linux/macOS) and PowerShell (Windows) with zero Python dependency.
 
+Like `prefix-dev/setup-pixi`, you can use it from the repo root:
+
+```yaml
+- uses: Archont561/pixi-sandbox@v0.2.0
+  id: sandbox
+  with:
+    version: v0.2.0
+- run: pixi-sandbox --version
+```
+
+Or via explicit path (pin to immutable SHA for supply-chain security):
+
 ```yaml
 - uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<immutable-commit-sha>
   id: sandbox
@@ -13,6 +25,8 @@ pure POSIX shell (Linux/macOS) and PowerShell (Windows) with zero Python depende
 
 - run: pixi-sandbox --version
 ```
+
+`repository` defaults to `Archont561/pixi-sandbox` and `version` defaults to `latest` (warns), so minimal usage is just `uses: Archont561/pixi-sandbox@v0.2.0`.
 
 ## Release Asset Contract
 

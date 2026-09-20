@@ -1,7 +1,6 @@
 name: Setup pixi-sandbox
-description: Download, checksum-verify, and expose a standalone pixi-sandbox release binary.
+description: Download, checksum-verify, and expose a standalone pixi-sandbox release binary — like prefix-dev/setup-pixi but for pixi-sandbox.
 author: pixi-sandbox
-
 branding:
   icon: package
   color: orange
