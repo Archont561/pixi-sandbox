@@ -203,7 +203,7 @@ verbs as `pixi sandbox <verb>`.
 | --- | --- |
 | `pack` | `--repo-root . --envs dev,docs --output-dir DIR [--platform linux-64] [--shard-limit-mib 95] [--cargo-vendor] [--cargo-vendor-mode loose\|tarballs] [--fetch-tools] [--tools-lock PATH] [--tools-cache DIR] [--self-bin PATH]` — no override means embedded pins |
 | `publish` | `--input-dir DIR --branch-name NAME [--remote origin] [--keep N] [--dry-run]` |
-| `restore` | `--branch-location DIR --path-to-main-repo-code DIR [--envs a,b] [--verify-only] [--force] [--no-vendor] [--work-dir DIR] [--cargo-config auto\|write\|print\|none]` |
+| `restore` | `--branch-location DIR --output-path DIR [--envs a,b] [--verify-only] [--force] [--no-vendor] [--work-dir DIR] [--cargo-config auto\|write\|print\|none]` |
 | `unpack` | `--input-dir X --output-dir PREFIX [--env NAME] [--unpacker PATH] [--force] [--work-dir DIR] [--verify-only]` |
 | `doctor` | `--branch-location DIR [--verify] [--envs a,b] [--json]` |
 | `plan` | `--config .pixi-sandbox.toml [--json]` — validate explicit bundle/platform publication and emit native jobs |

@@ -85,7 +85,7 @@ pub fn run(args: PublishArgs) -> Result<()> {
         "  airlock: git fetch {remote} {}:{}",
         args.branch_name, args.branch_name
     );
-    println!("  then:    pixi-sandbox restore --branch-location <dir> --path-to-main-repo-code .");
+    println!("  then:    pixi-sandbox restore --branch-location <dir> --output-path .");
     Ok(())
 }
 

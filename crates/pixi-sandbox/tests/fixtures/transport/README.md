@@ -14,5 +14,5 @@ Built 2026-09-20T00:00:00Z for platform `linux-64`.
 
 ```bash
 .pixi-sandbox/tools/linux-64/pixi-sandbox doctor  --branch-location . --verify
-.pixi-sandbox/tools/linux-64/pixi-sandbox restore --branch-location . --path-to-main-repo-code .
+.pixi-sandbox/tools/linux-64/pixi-sandbox restore --branch-location . --output-path .
 ```

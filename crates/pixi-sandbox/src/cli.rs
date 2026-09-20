@@ -118,9 +118,9 @@ pub struct RestoreArgs {
     #[arg(long)]
     pub branch_location: PathBuf,
 
-    /// Working copy of the project the environments should be installed into.
-    #[arg(long)]
-    pub path_to_main_repo_code: PathBuf,
+    /// Target project directory the environments should be installed into.
+    #[arg(long, alias = "path-to-main-repo-code")]
+    pub output_path: PathBuf,
 
     /// Restore only these envs (default: all).
     #[arg(long, value_delimiter = ',')]

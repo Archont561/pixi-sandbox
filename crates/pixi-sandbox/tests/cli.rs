@@ -203,7 +203,7 @@ fn restore_refuses_a_missing_branch_location_before_writing() {
             "restore",
             "--branch-location",
             "/nope",
-            "--path-to-main-repo-code",
+            "--output-path",
             "/nope",
         ])
         .assert()
@@ -607,7 +607,7 @@ fn restore_verify_only_checks_the_fixture_without_writing_a_project() {
             "restore",
             "--branch-location",
             fixture_transport().to_str().unwrap(),
-            "--path-to-main-repo-code",
+            "--output-path",
             project.to_str().unwrap(),
             "--verify-only",
         ])
@@ -727,7 +727,7 @@ fn pack_unpack_and_restore_a_verified_synthetic_environment() {
             "restore",
             "--branch-location",
             transport.to_str().unwrap(),
-            "--path-to-main-repo-code",
+            "--output-path",
             restored_project.to_str().unwrap(),
         ])
         .assert()
@@ -789,7 +789,7 @@ printf '{}\n' > "$out/$env/conda-meta/fake.json"
             "restore",
             "--branch-location",
             transport.path().to_str().unwrap(),
-            "--path-to-main-repo-code",
+            "--output-path",
             project.to_str().unwrap(),
         ])
         .assert()
@@ -803,4 +803,24 @@ printf '{}\n' > "$out/$env/conda-meta/fake.json"
     );
     let config = fs::read_to_string(project.join(".cargo/config.toml")).unwrap();
     assert!(config.contains("directory = \".pixi-sandbox/vendor\""));
+}
+
+#[test]
+fn restore_accepts_legacy_path_to_main_repo_code_alias() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    bin()
+        .args([
+            "restore",
+            "--branch-location",
+            fixture_transport().to_str().unwrap(),
+            "--path-to-main-repo-code",
+            project.to_str().unwrap(),
+            "--verify-only",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("every declared byte matches"));
 }

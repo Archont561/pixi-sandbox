@@ -107,19 +107,18 @@ package = "pixi publish --path crates/pixi-sandbox --build-dir .publish/build --
 
 # ---------------------------------------------------------------------------
 # The transport pipeline, locally: pack → doctor → publish. These tasks exercise the
-# Rust CLI directly, so local runs and CI share the exact command surface. The checked-in
-# Python program remains the portable self-bootstrap binary for the airlock proof until the
-# release build has a validated static Rust artifact for every target platform.
+# Rust CLI directly, so local runs and CI share the exact command surface.
+# The branch now embeds the static Rust binary itself as self-bootstrap.
 # ---------------------------------------------------------------------------
 sandbox-plan = "cargo run -p pixi-sandbox -- plan --config .pixi-sandbox.toml"
-sandbox-pack = "cargo run -p pixi-sandbox -- pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --cargo-vendor --fetch-tools --self-bin .knowledge/research/pixi_sandbox.py"
-sandbox-doctor = "cargo run -p pixi-sandbox -- doctor --branch-location .sandbox-out --verify"
-sandbox-publish = "cargo run -p pixi-sandbox -- publish --input-dir .sandbox-out --branch-name sandbox/dev-linux-64 --remote origin"
+sandbox-build-self = "cargo build -p pixi-sandbox --release"
+sandbox-pack = { depends-on = ["sandbox-build-self"], cmd = "cargo run -p pixi-sandbox --release -- pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --cargo-vendor --fetch-tools --self-bin target/release/pixi-sandbox" }
+sandbox-doctor = "cargo run -p pixi-sandbox --release -- doctor --branch-location .sandbox-out --verify"
+sandbox-publish = "cargo run -p pixi-sandbox --release -- publish --input-dir .sandbox-out --branch-name sandbox/dev-linux-64 --remote origin"
 # One-liner offline reconstruction from orphan branch, with PATH aliases wired
-# like setup-pixi. Handles both --output-path and legacy --path-to-main-repo-code.
+# like setup-pixi.
 sandbox-restore = "bash scripts/restore.sh"
-# End-to-end airlock proof. It uses the portable bootstrap embedded in the branch while the
-# connected-side pack/doctor/publish CI tasks above are the Rust implementation.
+# End-to-end airlock proof using the Rust self-binary.
 sandbox-proof = "bash .knowledge/research/reproduce.sh .sandbox-proof"
 
 # ---------------------------------------------------------------------------

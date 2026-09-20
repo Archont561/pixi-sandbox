@@ -158,7 +158,7 @@ fn e2e_synthetic_pack_doctor_publish_and_restore() {
             "restore",
             "--branch-location",
             transport.to_str().unwrap(),
-            "--path-to-main-repo-code",
+            "--output-path",
             airlock.to_str().unwrap(),
         ])
         .assert()
@@ -231,7 +231,7 @@ fn e2e_network_isolated_restore_proof() {
                 "restore",
                 "--branch-location",
                 transport.to_str().unwrap(),
-                "--path-to-main-repo-code",
+                "--output-path",
                 airlock.to_str().unwrap(),
             ])
             .status()

@@ -751,7 +751,7 @@ fn write_branch_docs(
          {vendor}\n\
          ## Restore on the disconnected machine\n\n\
          ```bash\n\
-         pixi-sandbox restore --branch-location <extracted-branch> \\\n                              --path-to-main-repo-code .\n\
+         pixi-sandbox restore --branch-location <extracted-branch> \\\n                              --output-path .\n\
          # then, with no network:\n\
          .pixi/tools/{}/{pixi_file} install --frozen --offline\n\
          source .pixi/sandbox-env.sh\n\
@@ -767,7 +767,7 @@ fn write_branch_docs(
          This is an **offline pixi sandbox**, not source code to merge.\n\n\
          - authoritative manifest: `.pixi-sandbox/manifest.json` (schema {});\n\
          - environments: {} (platform {});\n\
-         - restore with `pixi-sandbox restore --branch-location <dir> --path-to-main-repo-code <project>`;\n\
+         - restore with `pixi-sandbox restore --branch-location <dir> --output-path <project>`;\n\
          - never download tools at restore time; bundled tools are: {};\n\
          - after restore, `.pixi/tools/{}/{pixi_file} install --frozen --offline` must be a no-op.\n",
         manifest.schema,

@@ -312,13 +312,17 @@ impl GitProtocol for ShellGit {
         let files = snapshot_files(snapshot.dir)?;
         let from = self.log().len();
 
-        // Objects and the index live in a scratch git dir *inside* the transport (same
-        // filesystem, never /tmp), while the work tree stays exactly where it is: no copy of
-        // the payload, and no `.git` in a directory we do not own. Removed by the guard even
-        // if a later step fails.
-        let scratch = snapshot
-            .dir
-            .join(format!("{}-{}", self.scratch_name, std::process::id()));
+        // Objects and the index live in a scratch git dir placed *next to* the transport
+        // (same filesystem as the transport, never /tmp), while the work tree stays exactly
+        // where it is: no copy of the payload, and no `.git` in a directory we do not own.
+        // The scratch is deliberately outside the transport so `git add -A -f` does not
+        // include the scratch's own files (e.g. `index.lock`) in the orphan commit.
+        // A `.git` directory inside the work tree is ignored by git, but a custom-named
+        // GIT_DIR is not — the previous in-transport location therefore leaked
+        // `.pixi-sandbox-publish-<pid>/` into the published branch.
+        // Removed by the guard even if a later step fails.
+        let scratch_parent = snapshot.dir.parent().unwrap_or(snapshot.dir);
+        let scratch = scratch_parent.join(format!("{}-{}", self.scratch_name, std::process::id()));
         let _guard = Scratch::new(scratch.clone());
         let index = scratch.join("index");
 

@@ -17,7 +17,7 @@ use std::process::Command;
 
 pub fn run(args: RestoreArgs) -> Result<()> {
     let branch = support::existing_dir(&args.branch_location, "--branch-location")?;
-    let project = support::existing_dir(&args.path_to_main_repo_code, "--path-to-main-repo-code")?;
+    let project = support::existing_dir(&args.output_path, "--output-path")?;
     let manifest_path = Manifest::path_in(&branch);
     let manifest = Manifest::load(&manifest_path)
         .with_context(|| format!("loading {}", manifest_path.display()))?;
