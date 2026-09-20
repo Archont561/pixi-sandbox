@@ -83,6 +83,9 @@ lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pi
 lint-docs = "biome check docs"
 # conventional-commit check for the `commit-msg` hook; reads the proposed message from stdin
 lint-commit = "convco check --from-stdin"
+# changelog via convco (conventional commits -> CHANGELOG.md)
+changelog = "convco changelog > CHANGELOG.md"
+changelog-preview = "convco changelog"
 # one line for the whole lint gate (needs the `dev` environment: rust + utils + docs)
 lint = { depends-on = [
   "fmt-check",
