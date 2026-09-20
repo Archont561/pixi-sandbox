@@ -2,17 +2,18 @@
 //!
 //! Replaces external bash/python proof scripts with native Rust tests under `cargo nextest`.
 
+#![cfg(unix)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command as StdCommand;
 
 fn bin() -> Command {
     Command::cargo_bin("pixi-sandbox").expect("binary builds")
 }
 
-#[cfg(unix)]
 fn write_executable(path: &Path, script: &str) {
     use std::os::unix::fs::PermissionsExt;
 
@@ -22,7 +23,6 @@ fn write_executable(path: &Path, script: &str) {
     fs::set_permissions(path, permissions).unwrap();
 }
 
-#[cfg(unix)]
 fn setup_mock_tools(dir: &Path) {
     fs::create_dir_all(dir).unwrap();
     write_executable(
@@ -71,7 +71,6 @@ printf 'unpacked %s\n' "$env" > "$out/$env/conda-meta/fake-package.json"
     );
 }
 
-#[cfg(unix)]
 fn path_with_tools(dir: &Path) -> std::ffi::OsString {
     let mut paths = vec![dir.to_path_buf()];
     paths.extend(std::env::split_paths(
@@ -81,7 +80,6 @@ fn path_with_tools(dir: &Path) -> std::ffi::OsString {
 }
 
 #[test]
-#[cfg(unix)]
 fn e2e_synthetic_pack_doctor_publish_and_restore() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
@@ -134,11 +132,10 @@ fn e2e_synthetic_pack_doctor_publish_and_restore() {
         .stdout(predicate::str::contains("OK"));
 
     // 3. Publish to local bare repo
-    let git_init = StdCommand::new("git")
-        .args(["init", "-q", "--bare", remote_git.to_str().unwrap()])
-        .status()
-        .expect("git init succeeds");
-    assert!(git_init.success());
+    let mut git_init = StdCommand::new("git");
+    git_init.args(["init", "-q", "--bare"]);
+    git_init.arg(&remote_git);
+    assert!(git_init.status().expect("git init succeeds").success());
 
     bin()
         .args([
@@ -185,9 +182,7 @@ fn e2e_synthetic_pack_doctor_publish_and_restore() {
 #[cfg(target_os = "linux")]
 fn e2e_network_isolated_restore_proof() {
     // Check if `unshare -rn` is supported on this system
-    let unshare_check = StdCommand::new("unshare")
-        .args(["-rn", "true"])
-        .status();
+    let unshare_check = StdCommand::new("unshare").args(["-rn", "true"]).status();
 
     if unshare_check.map_or(false, |s| s.success()) {
         let temp = tempfile::tempdir().unwrap();

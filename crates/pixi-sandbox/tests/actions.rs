@@ -3,16 +3,9 @@
 //! Replaces the external Python Action test harness with native Rust tests that run under
 //! `cargo nextest`.
 
-use sha2::{Digest, Sha256};
+use pixi_sandbox_core::shard::sha256_bytes;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
-
-fn compute_sha256(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
-}
 
 /// Parse SHA256SUMS content supporting both GNU (`<digest>  <file>`) and BSD formats.
 fn parse_checksums(content: &str) -> HashMap<String, String> {
@@ -119,7 +112,8 @@ fn checksum_parsing_handles_gnu_and_bsd_formats() {
         "2222222222222222222222222222222222222222222222222222222222222222"
     );
 
-    let bsd_data = "SHA256 (pixi-sandbox-x86_64-apple-darwin) = 3333333333333333333333333333333333333333333333333333333333333333\n";
+    let bsd_data =
+        "SHA256 (pixi-sandbox-x86_64-apple-darwin) = 3333333333333333333333333333333333333333333333333333333333333333\n";
     let bsd_map = parse_checksums(bsd_data);
     assert_eq!(
         bsd_map["pixi-sandbox-x86_64-apple-darwin"],
@@ -130,7 +124,7 @@ fn checksum_parsing_handles_gnu_and_bsd_formats() {
 #[test]
 fn verification_accepts_valid_bytes_and_rejects_tampered() {
     let payload = b"ELF static linux executable payload bytes";
-    let digest = compute_sha256(payload);
+    let digest = sha256_bytes(payload);
 
     let checksum_content = format!("{digest}  pixi-sandbox-x86_64-unknown-linux-musl\n");
     let map = parse_checksums(&checksum_content);
@@ -140,7 +134,7 @@ fn verification_accepts_valid_bytes_and_rejects_tampered() {
 
     // Tampered payload
     let tampered = b"tampered bytes";
-    let tampered_digest = compute_sha256(tampered);
+    let tampered_digest = sha256_bytes(tampered);
     assert_ne!(expected, &tampered_digest);
 }
 
@@ -150,7 +144,7 @@ fn deterministic_sums_file_generation_matches_sha256() {
     let bin_path = dir.path().join("pixi-sandbox-x86_64-unknown-linux-musl");
     fs::write(&bin_path, b"dummy binary content").unwrap();
 
-    let digest = compute_sha256(b"dummy binary content");
+    let digest = sha256_bytes(b"dummy binary content");
     let sums_path = dir.path().join("SHA256SUMS");
     fs::write(
         &sums_path,

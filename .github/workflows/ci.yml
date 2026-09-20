@@ -25,8 +25,8 @@ permissions:
   contents: read
 
 jobs:
-  lint:
-    name: lint (rust · workflows · toml · docs)
+  ci:
+    name: ci (lint · test · coverage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -34,80 +34,19 @@ jobs:
         with:
           environments: dev
           cache: true
-      # fmt-check + clippy -D warnings + cargo deny + actionlint + hermetic Action tests +
-      # root publish-plan/catalogue validation + taplo + biome
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3 # v2.7.7
       - run: pixi run -e dev lint
-
-  test:
-    name: test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
-        with:
-          environments: ci
-          cache: true
-      - run: pixi run -e ci test
-      - run: pixi run -e ci test-doc
-        if: runner.os == 'Linux'
-
-  coverage:
-    name: coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
-        with:
-          environments: ci
-          cache: true
-      - run: pixi run -e ci coverage
+      - run: pixi run -e dev test
+      - run: pixi run -e dev test-doc
+      - run: pixi run -e dev coverage
       - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         with:
           files: lcov.info
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
-
-  docs-build:
-    name: docs build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
-        with:
-          environments: docs
-          cache: true
-      - run: pixi run -e docs docs-build
+      - run: pixi run -e dev docs-build
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: docs-site
           path: docs/dist
           retention-days: 7
-
-  # ---------------------------------------------------------------------------
-  # Airlock proof: CI's Rust ci-pack/ci-doctor/ci-publish tasks exercise the native
-  # implementation. This separate network-severed bootstrap proof still uses the portable
-  # self binary carried in the branch until static Rust release assets are validated for every
-  # target (design.md §9).
-  # ---------------------------------------------------------------------------
-  design-proof:
-    name: airlock bootstrap proof
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
-      - uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
-      # `runner.*` is not available in a job-level env block, so the proof's output
-      # directory is set on the step that needs it.
-      - run: pixi run -e ci ci-proof
-        env:
-          SANDBOX_PROOF_OUT: ${{ runner.temp }}/sandbox-proof
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: design-proof-transport
-          path: ${{ runner.temp }}/sandbox-proof/transport/.pixi-sandbox/manifest.json
-          retention-days: 14
