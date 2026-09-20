@@ -48,8 +48,8 @@ selected asset, for example:
 Ambiguous duplicate entries are rejected rather than resolved by file order.
 
 After native airlock proof has accepted the release assets, generate this file with
-`python3 scripts/write_release_checksums.py --output release/SHA256SUMS release/pixi-sandbox-*`
-and upload both it and the matching binaries to the same release tag.
+`(cd release && sha256sum pixi-sandbox-* > SHA256SUMS)` and upload both it and the matching
+binaries to the same release tag.
 
 Supported automatic target mappings are Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows
 x86_64/aarch64. Pass `target` and/or `asset-template` explicitly for a custom release layout.

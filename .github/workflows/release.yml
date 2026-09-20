@@ -133,12 +133,8 @@ jobs:
         run: |
           set -euo pipefail
           ls -lh dist/
-          # Use the deterministic helper script when available, fallback to sha256sum
-          if [ -f "scripts/write_release_checksums.py" ]; then
-            python3 scripts/write_release_checksums.py --output dist/SHA256SUMS dist/pixi-sandbox-*
-          else
-            (cd dist && sha256sum pixi-sandbox-* > SHA256SUMS)
-          fi
+          # Deterministic SHA256SUMS matching setup-pixi-sandbox contract
+          (cd dist && sha256sum pixi-sandbox-* > SHA256SUMS)
           cat dist/SHA256SUMS
           # Verify that every binary has a checksum line
           for bin in dist/pixi-sandbox-*; do

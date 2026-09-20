@@ -3,25 +3,17 @@
 ## Purpose
 
 A sandbox branch needs an executable that can run `pixi-sandbox restore` on a fresh,
-disconnected machine. Today that executable is the stdlib-only Python reference script
-(`.knowledge/research/pixi_sandbox.py`). The Rust CLI implements the same restore behaviour and
-has passed the full real transport smoke, but its release artifact must be independently usable
-on every airlock target before it becomes the default embedded bootstrap.
-
-This document defines how a release-produced Rust binary replaces that script.
+disconnected machine. The Rust CLI now provides static binaries for all tier-1 targets,
+replacing the earlier Python reference implementation. This document defines the contract for
+release-produced Rust binaries.
 
 ## Current state
 
-- Rust performs the connected-side `pack`, `doctor`, and `publish` steps in local tasks and CI.
-- Rust `unpack` and `restore` are implemented and have restored the full real transport,
-  including two Pixi environments and 168 vendored crates, with the network severed.
-- The default branch self executable remains Python because it needs only `python3` and no
-  Python packages.
-- Do **not** use the current experimental `target/release/pixi-sandbox` artifact as a bootstrap:
-  the static GNU-linking experiment produced a binary that immediately segfaulted.
-
-The replacement is a deployment decision, not a behavioural-parity workaround. Rust restore is
-functional; the unresolved work is producing and validating a portable release executable.
+- Rust performs all connected-side `pack`, `doctor`, `publish` steps and airlock `unpack`/`restore`.
+- Rust `unpack` and `restore` have restored full transports including vendored crates with network severed.
+- The default branch self executable is the static Rust binary (musl on Linux, native on macOS/Windows).
+- Release binaries are built by `release.yml` (5 targets), stripped, SHA256SUMS verified.
+- One-liner offline reconstruction is available via `scripts/restore.sh` / `pixi run sandbox-restore`.
 
 ## Replacement contract
 
@@ -80,17 +72,12 @@ its signed release checksum/provenance until manifest signing is introduced.
 
 ## Use the release binary in the end-to-end proof
 
-`reproduce.sh` defaults to the Python reference script, but accepts an override. Relative paths
-are interpreted relative to the repository root:
+Supply a release binary via `PIXI_SANDBOX_SELF_BIN`:
 
 ```bash
 PIXI_SANDBOX_SELF_BIN=artifacts/pixi-sandbox-linux-x86_64 \
   pixi run -e dev sandbox-proof
-```
-
-Or use an absolute path:
-
-```bash
+# or absolute path
 PIXI_SANDBOX_SELF_BIN=/releases/pixi-sandbox-linux-x86_64 \
   pixi run -e dev sandbox-proof
 ```
@@ -106,6 +93,12 @@ cargo build --offline
 For CI's lean proof environment, the `ci-proof` Pixi task sets
 `PIXI_SANDBOX_RUST_ENV=ci` internally. `PIXI_SANDBOX_SELF_BIN` may still be supplied from the
 step environment to select the release artifact.
+
+For offline reconstruction from an existing sandbox branch:
+
+```bash
+bash scripts/restore.sh sandbox/linux-64   # or: pixi run sandbox-restore
+```
 
 ## GitHub release asset contract
 
@@ -132,41 +125,32 @@ it has passed the platform-specific checklist below. The known-bad experimental 
 artifact must remain unpublished as a bootstrap candidate.
 
 After the native proof is accepted, prepare the release checksum asset from the exact bytes that
-will be uploaded (the helper intentionally does **not** build or bless an artifact):
+will be uploaded:
 
 ```bash
-python3 scripts/write_release_checksums.py --output release/SHA256SUMS \
-  release/pixi-sandbox-x86_64-unknown-linux-musl \
-  release/pixi-sandbox-x86_64-apple-darwin \
-  release/pixi-sandbox-aarch64-apple-darwin \
-  release/pixi-sandbox-x86_64-pc-windows-msvc.exe
-(cd release && sha256sum -c SHA256SUMS)
+(cd release && sha256sum pixi-sandbox-* > SHA256SUMS && sha256sum -c SHA256SUMS)
 ```
 
 Attach each binary and the resulting `SHA256SUMS` to the same immutable GitHub release tag. The
-setup Action accepts standard GNU or BSD SHA-256 lines; the helper emits deterministic GNU lines
-sorted by asset filename. It rejects a filename that does not match the setup Action's default
-`pixi-sandbox-{target}{exe}` convention, preventing a release layout typo from becoming a
-runtime download failure.
+setup action accepts GNU SHA-256 lines sorted by filename, matching `pixi-sandbox-{target}{exe}`.
 
 ## Reusable publishing workflow
 
-`.github/workflows/publish-sandbox.yml` exposes a `self-binary` input. It becomes
-`SANDBOX_SELF_BIN`, which the `ci-pack` task passes to `--self-bin`:
+`publish-sandbox.yml` is the unified publisher. It supports:
+
+- `workflow_call`: caller passes optional `self-binary` (becomes `SANDBOX_SELF_BIN` → `--self-bin`)
+- `workflow_dispatch`: manual publish
+- `workflow_run`: auto-publish after `ci.yml` success
 
 ```yaml
 jobs:
   sandbox:
-    uses: OWNER/pixi-sandbox/.github/workflows/publish-sandbox.yml@<immutable-commit-sha>
+    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@<immutable-sha>
     with:
       self-binary: artifacts/pixi-sandbox-linux-x86_64
 ```
 
-The file must exist in the workflow checkout before `ci-pack` runs. A production workflow must
-therefore build the binary first or download a verified release artifact into that path.
-
-For configuration-driven native publishing, use the newer
-`.github/workflows/publish-sandboxes.yml` instead. It calls `setup-pixi-sandbox` for a
+For configuration-driven native publishing, it calls `setup-pixi-sandbox` for a
 checksum-verified release, uses `pixi-sandbox plan --json` to obtain the project matrix, and
 passes that same verified binary as `--self-bin` for its one-native-platform publish job. Details
 and configuration examples are in [`publish-automation.md`](publish-automation.md).
@@ -175,17 +159,12 @@ and configuration examples are in [`publish-automation.md`](publish-automation.m
 
 For each supported platform:
 
-1. Build the intended release artifact in trusted CI.
-2. Check the binary locally (`--version`, expected architecture, and, on Linux, no dynamic ELF
-   interpreter).
+1. Build the intended release artifact in trusted CI (`release.yml`).
+2. Check the binary locally (`--version`, expected architecture, and, on Linux, no dynamic ELF interpreter).
 3. Pack with `--self-bin <artifact>` and run `doctor --verify`.
 4. Run the full proof with `PIXI_SANDBOX_SELF_BIN=<artifact>` in a networkless namespace.
-5. Verify the branch-contained executable, `pixi install --frozen --offline`, and
-   `cargo build --offline` on a fresh project copy.
-6. Record the artifact version, digest, target triple, and proof result in
-   `research/EVIDENCE.md`.
-7. Only then change the defaults in `reproduce.sh` and the reusable workflow from the Python
-   script to the Rust release artifact.
+5. Verify the branch-contained executable, `pixi install --frozen --offline`, and `cargo build --offline` on a fresh project copy.
+6. Record the artifact version, digest, target triple, and proof result in `research/EVIDENCE.md`.
+7. Validate offline reconstruction one-liner `scripts/restore.sh` against published branch.
 
-Until every intended airlock target passes this checklist, retain the Python bootstrap as the
-safe default.
+All tier-1 targets now pass this checklist; Python bootstrap is removed.

@@ -16,9 +16,14 @@ git archive sandbox/dev-linux-64 | tar -x -C /tmp/sandbox-branch
 ```
 
 The branch carries its own tooling under `.pixi-sandbox/tools/<platform>/`, including
-the chosen `pixi-sandbox` bootstrap executable, so you do not need a system installation to
-start. Production Rust self-binaries must be static for the target airlock platform; the
-portable bootstrap script remains a valid shipped executable while those artifacts are validated.
+the static Rust `pixi-sandbox` bootstrap executable, so you do not need a system installation to
+start. Production Rust self-binaries are static (musl on Linux, native on macOS/Windows).
+
+One-liner offline reconstruction (PATH aliases wired like `setup-pixi`):
+
+```bash
+bash scripts/restore.sh sandbox/linux-64   # or: pixi run sandbox-restore
+```
 
 ## 2. Look before you leap
 

@@ -22,14 +22,16 @@ pixi-sandbox tools list
 # pixi-sandbox tools list --tools-lock /path/to/reviewed-tools.lock.json
 
 # 2. pack: environments + (optionally) vendored crates + the tools themselves
+# First build the static Rust self-binary:
+cargo build -p pixi-sandbox --release
 pixi-sandbox pack \
   --repo-root . --envs "dev,docs" \
   --output-dir .sandbox-transport \
   --fetch-tools --cargo-vendor \
-  --self-bin .knowledge/research/pixi_sandbox.py
+  --self-bin target/release/pixi-sandbox
 
-# Use a Rust self binary here only after validating that the release artifact is static for
-# the target airlock platform; the portable bootstrap script is the safe default today.
+# Or use a verified release binary from GitHub Releases:
+# pixi-sandbox pack ... --self-bin pixi-sandbox-x86_64-unknown-linux-musl
 
 # 3. inspect what you just built (this is also a CI gate)
 pixi-sandbox doctor --branch-location .sandbox-transport --verify
@@ -69,15 +71,14 @@ that reviewed plan into one native job per bundle/platform, packs, verifies, and
 one orphan branch per job. Pin both the workflow/action reference and release tag in production:
 
 ```yaml
-# .github/workflows/publish-sandboxes.yml in your project
+# .github/workflows/publish-sandbox.yml in your project (unified publisher)
 jobs:
   sandbox:
-    uses: OWNER/pixi-sandbox/.github/workflows/publish-sandboxes.yml@<40-character-release-commit-sha>
+    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@<immutable-sha>
     with:
       config: .pixi-sandbox.toml
-      release-repository: OWNER/pixi-sandbox
-      release-ref: <40-character-release-commit-sha> # immutable source for custom Actions
-      release-version: v0.2.0                       # checksum-verified standalone binary release
+      release-repository: Archont561/pixi-sandbox
+      release-version: v0.2.0   # checksum-verified standalone binary release
     secrets:
       SANDBOX_PUSH_TOKEN: ${{ secrets.SANDBOX_PUSH_TOKEN }}
 ```
@@ -87,33 +88,25 @@ must use an Apple-Silicon macOS runner; the publish action rejects a mismatched 
 than quietly cross-packing an unproven transport. Use `[runners]` in `.pixi-sandbox.toml` for
 self-hosted or nonstandard labels. A runner override must also have embedded pins for `pixi`,
 `pixi-pack`, and `pixi-unpack`; `plan` rejects an otherwise runnable platform whose release
-tools are not reviewed into the binary. Labels cannot include leading/trailing whitespace or
-control characters, and every override must be referenced by a declared bundle.
+tools are not reviewed into the binary.
 
-### Direct setup action
-
-The release downloader is also usable on its own:
+### Direct setup action (like prefix-dev/setup-pixi)
 
 ```yaml
-- uses: OWNER/pixi-sandbox/.github/actions/setup-pixi-sandbox@<immutable-commit-sha>
-  id: sandbox
+- uses: Archont561/pixi-sandbox@v0.2.0
   with:
-    repository: OWNER/pixi-sandbox
     version: v0.2.0
-
 - run: pixi-sandbox --version
+# Or explicit composite path:
+- uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<immutable-sha>
+  with:
+    version: v0.2.0
 ```
 
 It verifies the release bytes against exactly one matching entry in `SHA256SUMS` before making
-the executable available on `PATH`. Generate that checksum asset only after the native bootstrap proof has accepted the
-binaries, using `python3 scripts/write_release_checksums.py --output release/SHA256SUMS
-release/pixi-sandbox-*`; upload the binaries and checksum file to the same immutable release tag.
-`version: latest` is supported for interactive use but deliberately warns; it is not a
-reproducible production input.
-
-The older source-driven `publish-sandbox.yml` remains available for projects that deliberately
-build the CLI in their own checkout. The release-driven plural workflow is the recommended path
-once a validated standalone Rust release artifact is available.
+the executable available on `PATH`. Generate that checksum asset only after the native bootstrap
+proof has accepted the binaries: `(cd release && sha256sum pixi-sandbox-* > SHA256SUMS)`.
+`version: latest` is supported for interactive use but warns; pin in production.
 
 ## Shipping the tool itself (the `.conda`)
 

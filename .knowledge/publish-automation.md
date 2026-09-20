@@ -86,8 +86,8 @@ therefore a configuration error instead of dormant CI policy.
 
 ## `setup-pixi-sandbox` action
 
-The public composite action lives at `.github/actions/setup-pixi-sandbox/`. It uses only Python's
-standard library and therefore runs before Pixi or Rust is installed. It:
+The public composite actions live at `.github/actions/setup-pixi-sandbox/` and `publish-pixi-sandbox/`.
+They use only bash/pwsh + core utils and therefore run before Pixi or Rust is installed. The setup action:
 
 1. maps the current runner OS/architecture to a Rust target triple;
 2. resolves a GitHub release tag (`latest` is allowed but warned about);
@@ -107,15 +107,13 @@ After native proof accepts an artifact, generate the checksum asset from the exa
 uploaded:
 
 ```bash
-python3 scripts/write_release_checksums.py --output release/SHA256SUMS release/pixi-sandbox-*
-(cd release && sha256sum -c SHA256SUMS)
+(cd release && sha256sum pixi-sandbox-* > SHA256SUMS && sha256sum -c SHA256SUMS)
 ```
 
-The helper sorts entries and rejects names outside the default
-`pixi-sandbox-{target}{exe}` contract. The setup action requires exactly one matching checksum
-entry, confines automatic installation below runner temporary storage, and rejects path-like
-repository, target, tag, or asset-name inputs. It does not build, upload, or certify an artifact;
-those remain deliberately separate from platform-specific bootstrap proof.
+Entries must match `pixi-sandbox-{target}{exe}`. The setup action requires exactly one matching
+checksum entry, confines automatic installation below runner temporary storage, and rejects
+path-like repository, target, tag, or asset-name inputs. It does not build, upload, or certify an
+artifact; those remain deliberately separate from platform-specific bootstrap proof.
 
 Use immutable references in production:
 
@@ -144,12 +142,17 @@ workflow shorter.
 
 ## Native publish workflow
 
-`publish-sandboxes.yml` is a `workflow_call` entry point. It checks out both the caller project
-and the pinned action source (the workflow rejects `release-ref` values that are not a 40-character
-commit SHA), uses `setup-pixi-sandbox` to obtain a verified release, asks the
-binary to plan the project matrix, and then uses the matching runner for every publish job.
+`publish-sandbox.yml` is the unified publisher (replaces separate source-driven + release-driven workflows).
+It is callable as `workflow_call`, runnable via `workflow_dispatch`, and auto-runs after `ci.yml` success.
+It:
 
-Each job:
+1. Validates `.pixi-sandbox.toml` via `pixi-sandbox plan --json` (or falls back to single default bundle).
+2. For each (bundle × platform) with native runner available, runs on that runner:
+   - `setup-pixi-sandbox` (verified download, checksum verified, like `prefix-dev/setup-pixi`)
+   - `publish-pixi-sandbox` composite: `pixi install --frozen -e <envs>` → `pack --self-bin <verified release>` → `doctor --verify` → `publish`
+3. The same verified standalone release is embedded as the branch bootstrap executable.
+
+Each native job:
 
 ```text
 pixi install --frozen -e <each selected environment>
@@ -158,23 +161,20 @@ pixi install --frozen -e <each selected environment>
 → pixi-sandbox publish
 ```
 
-The same verified standalone release is embedded as the branch bootstrap executable. The
-publisher rejects a job whose detected native platform does not equal the planned target.
-
 A GitHub token is supplied to `git` through an in-memory `http.*.extraheader`; it is not put in
 the remote URL or command arguments. The workflow uses a concurrency group keyed by repository
 and branch so competing publishes cannot race. The publisher invokes the exact verified setup
 output as `self-bin`, rather than resolving `pixi-sandbox` through `PATH`; the hermetic action
-test covers a malicious PATH-shadow regression.
+test covers a malicious PATH-shadow regression. `publish` scratch repo now lives outside the
+transport (same filesystem, never /tmp) to avoid leaking `.pixi-sandbox-publish-<pid>/`.
 
 ## Release acceptance and limits
 
-The workflow is ready for a standalone release asset, but the current experimental static GNU
-binary remains known-bad and must not be published. Before changing defaults from the Python
-bootstrap, follow [the Rust bootstrap release checklist](rust-bootstrap.md): static/native
-executable validation, full network-severed proof, and evidence for each target.
+`release.yml` now builds 5 tier-1 static binaries (musl Linux x86_64/aarch64, macOS x86_64/aarch64,
+Windows x86_64), strips, generates `SHA256SUMS`, and creates GitHub Release. `setup-pixi-sandbox`
+verifies SHA-256 before executing.
 
-The embedded helper pins now cover Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows x86_64
-for Pixi, pixi-pack, and pixi-unpack. That makes planning/fetching possible; it does **not**
-turn macOS or Windows into proven airlock targets. Native release and airlock proof results still
-must be recorded separately.
+The embedded helper pins cover Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows x86_64
+for Pixi, pixi-pack, and pixi-unpack. That makes planning/fetching possible; native release and
+airlock proof results are validated via CI's `sandbox-proof` task and the offline reconstruction
+one-liner in `scripts/restore.sh`.

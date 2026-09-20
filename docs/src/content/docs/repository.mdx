@@ -38,8 +38,7 @@ pixi-sandbox/
 The split is deliberate: `core` is the part that must be *right* (it decides what reaches a
 user's disk), `git` is the part that touches a remote (the part you cannot unit-test against
 reality), and the CLI orchestrates verified staging plus external helper tools. The prototype
-in `.knowledge/research/pixi_sandbox.py` remains the behavioural and portable-bootstrap
-reference for the implemented Rust verbs.
+in pure Rust with static release binaries as the portable bootstrap (former Python prototype removed).
 
 **Adding a crate** is three steps: `cargo new --lib crates/<name>`, add it to
 `members` in the root `Cargo.toml`, and give it `description` plus `license.workspace = true`
@@ -76,8 +75,7 @@ multi-GiB local install (485 blobs / 100.6 MiB / 2.2 s).
 
 Source-driven commands in `.github/workflows/` are `pixi run -e <env> <task>`. If one needs
 more than one line, it becomes a task in `pixi.toml` — not inline bash. The release-driven
-publisher is the deliberate exception: the security-sensitive download, checksum, native-runner,
-and token flow lives in auditable stdlib-only composite-action Python:
+publisher uses auditable composite actions in bash/pwsh with checksum verification:
 
 - the command CI runs is the command you run locally, so a red gate reproduces in one paste;
 - logic is diffable and shell-independent (the Windows runner defaults to `pwsh`);
@@ -92,11 +90,10 @@ and token flow lives in auditable stdlib-only composite-action Python:
       - run: pixi run -e ci ci-publish   # one orphan commit, force-pushed
 ```
 
-The configuration-driven `publish-sandboxes.yml` workflow instead checks out an action source
-whose `release-ref` must be a 40-character commit SHA, calls `setup-pixi-sandbox` to verify a
-release, and invokes the native per-target publisher. All third-party workflow dependencies are
-also full-SHA pins; release-label comments are informational only. Its project policy is
-`.pixi-sandbox.toml`; validate it with `pixi-sandbox plan`.
+The unified `publish-sandbox.yml` workflow (replaces `publish-sandbox` + `publish-sandboxes`) validates
+`.pixi-sandbox.toml` via `plan --json`, then for each native bundle/platform calls `setup-pixi-sandbox`
+to verify a release and `publish-pixi-sandbox` composite to pack/doctor/publish. All third-party
+workflow dependencies are full-SHA pins; release-label comments are informational only.
 
 Paths come from the environment: pixi tasks expand `$VAR` but do **not** support
 `${VAR:-default}`, so the local tasks carry literal defaults and the `ci-*` tasks read
