@@ -1,0 +1,111 @@
+---
+title: Repository layout
+description: Where everything lives, what ships, and how to add a crate or a gate without breaking the invariants.
+---
+
+Three crates, two fixture trees, and one rule about GitHub Actions. This page is the map for
+someone who has just cloned the repository and wants to change something.
+
+## Top level
+
+```text
+pixi-sandbox/
+├── crates/
+│   ├── pixi-sandbox-core/     the library: wire format, sharding, verification
+│   ├── pixi-sandbox-git/      git behind a trait: real git + an in-memory mock
+│   └── pixi-sandbox/          the CLI — and, under tests/fixtures/, the test fixtures
+├── docs/                      this site (Astro + Starlight → GitHub Pages)
+├── .knowledge/                why everything is the way it is
+│   ├── design.md              the study and the design (§1–§13)
+│   ├── decisions.md           the ten load-bearing decisions (D1–D10)
+│   ├── research-results.md    the conclusions without the workflow
+│   └── research/              evidence, the reference prototype, the reproduce script
+├── .github/                   workflows plus verified release/setup/publish Actions
+├── .pixi-sandbox.toml         reviewed bundle/platform plan for release-driven publishing
+├── .convoco/                  why convoco is deliberately absent
+├── pixi.toml                  environments and every task a human, hook or CI job runs
+└── Cargo.toml                 workspace: members, shared dependency versions
+```
+
+## The three crates
+
+| crate | responsibility | depends on |
+| --- | --- | --- |
+| `pixi-sandbox-core` | `manifest.json` (schema 1) and its validation, sharding (`record_file`, `materialise`, atomic `join_parts`), embedded helper-tool pins, publish-plan schema, verification incl. the ELF linkage check | serde, sha2, thiserror, walkdir, toml |
+| `pixi-sandbox-git` | `GitProtocol`: `publish`, `fetch_into`, `branch_exists`, `remote_size`. `ShellGit` (real git, swappable `Runner`) and `FakeGit` (in-memory mock) | thiserror |
+| `pixi-sandbox` | the CLI (`pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, `tools`) and the test fixtures | core, git, clap, anyhow |
+
+The split is deliberate: `core` is the part that must be *right* (it decides what reaches a
+user's disk), `git` is the part that touches a remote (the part you cannot unit-test against
+reality), and the CLI orchestrates verified staging plus external helper tools. The prototype
+in `.knowledge/research/pixi_sandbox.py` remains the behavioural and portable-bootstrap
+reference for the implemented Rust verbs.
+
+**Adding a crate** is three steps: `cargo new --lib crates/<name>`, add it to
+`members` in the root `Cargo.toml`, and give it `description` plus `license.workspace = true`
+— `cargo deny check` fails on a crate without a licence, and it rejects a bare path dependency
+(crates that depend on a sibling must state `version` next to `path`). If the crate is part of
+the published package, add it to `crates/pixi-sandbox/Cargo.toml` as well; the conda package
+(`cargo install`) builds from the workspace, so a missing member shows up as a package that
+builds but does not run.
+
+## The fixtures: tests never point at this repository
+
+```text
+crates/pixi-sandbox/tests/fixtures/
+├── demo-project/     a complete pixi project definition — the *input* to pack
+└── transport/        a synthetic, already-packed payload — the *input* to doctor/publish/restore
+```
+
+This repository is the tool's own development environment: its `dev` environment contains
+`pixi-pack`, and its lockfile resolves hundreds of MiB. A test pointed at the repository root
+would therefore test the developer's machine — passing where a fresh clone fails, slow, and
+blind to the bugs that only appear on a plain project. So:
+
+- `demo-project/` has **no** `pixi-pack`/`pixi-unpack` dependency, and a test asserts that;
+- `transport/` is a committed 15 KB payload with real digests, including a blob split into
+  `.partNNN` parts, so the verification path runs without pixi, a packer or a network;
+- tests copy a fixture into a temp directory before writing to it;
+- a test that walks out of its crate from `CARGO_MANIFEST_DIR` fails the suite.
+
+Measured bonus: the fixture project is **packable without installing its environment** —
+`pixi-pack` resolves from `pixi.lock` — so pack-integration tests need network but not a
+multi-GiB local install (485 blobs / 100.6 MiB / 2.2 s).
+
+## GitHub Actions: source-driven commands stay one line
+
+Source-driven commands in `.github/workflows/` are `pixi run -e <env> <task>`. If one needs
+more than one line, it becomes a task in `pixi.toml` — not inline bash. The release-driven
+publisher is the deliberate exception: the security-sensitive download, checksum, native-runner,
+and token flow lives in auditable stdlib-only composite-action Python:
+
+- the command CI runs is the command you run locally, so a red gate reproduces in one paste;
+- logic is diffable and shell-independent (the Windows runner defaults to `pwsh`);
+- the workflow reads like the list of gates it is.
+
+```yaml
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
+        with: { environments: ci, cache: true }
+      - run: pixi run -e ci ci-pack      # pack + vendor + embed the pinned tools
+      - run: pixi run -e ci ci-doctor    # verify every blob, write nothing
+      - run: pixi run -e ci ci-publish   # one orphan commit, force-pushed
+```
+
+The configuration-driven `publish-sandboxes.yml` workflow instead checks out an action source
+whose `release-ref` must be a 40-character commit SHA, calls `setup-pixi-sandbox` to verify a
+release, and invokes the native per-target publisher. All third-party workflow dependencies are
+also full-SHA pins; release-label comments are informational only. Its project policy is
+`.pixi-sandbox.toml`; validate it with `pixi-sandbox plan`.
+
+Paths come from the environment: pixi tasks expand `$VAR` but do **not** support
+`${VAR:-default}`, so the local tasks carry literal defaults and the `ci-*` tasks read
+`SANDBOX_PROJECT`, `SANDBOX_ENVS`, `SANDBOX_TRANSPORT`, `SANDBOX_PLATFORM`, `SANDBOX_BRANCH`,
+`SANDBOX_REMOTE`, `SANDBOX_SELF_BIN`, `SANDBOX_CARGO_VENDOR` and `SANDBOX_PROOF_OUT` — all set
+in the workflow's `env:` block.
+
+## What is never committed
+
+`.pixi/`, `target/`, `vendor/`, `.pixi-sandbox/`, `docs/node_modules/`, `docs/dist/` and
+`.sandbox-*`. The payload lives on the sandbox branch; the crate sources are vendored on
+demand; a fixture that grows past a quarter of a MiB fails a test.

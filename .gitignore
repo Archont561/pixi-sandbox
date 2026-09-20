@@ -1,0 +1,34 @@
+# --- generated / heavy: never commit ---------------------------------------
+# pixi
+.pixi/
+.pixi-sandbox/          # the transport payload (lives on the sandbox branch, not here)
+# rust
+target/
+# cargo vendoring (materialised by `pixi-sandbox restore`, never committed)
+vendor/
+# docs
+docs/node_modules/
+docs/dist/
+docs/.astro/
+# python scratch (the reference prototype is run directly, never imported)
+__pycache__/
+*.pyc
+# coverage / reports
+coverage/
+lcov.info
+*.profraw
+# editors / os
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# --- scratch / local runs --------------------------------------------------
+/repro/
+/repro*/
+/.sandbox-out/
+/.sandbox-proof/
+/.sandbox-transport/
+/.sandbox-packages/
+*.tar.zst
+*.part[0-9][0-9][0-9]

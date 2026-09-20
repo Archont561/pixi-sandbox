@@ -1,0 +1,11 @@
+# Reviewed publish plan consumed by `pixi-sandbox plan` and the release-binary reusable workflow.
+# Add a target only after its native runner and standalone Rust bootstrap artifact have passed
+# the airlock proof. linux-64 is the presently validated target for this repository.
+schema = 1
+branch_prefix = "sandbox"
+cargo_vendor = true
+
+[[bundle]]
+name = "developer"
+environments = ["dev", "docs"]
+platforms = ["linux-64"]

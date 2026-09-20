@@ -1,0 +1,15 @@
+[package]
+name = "pixi-sandbox-git"
+description = "Git access behind a trait: a real shell implementation and an in-memory mock, so publish/fetch are testable without a remote"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

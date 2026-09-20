@@ -1,0 +1,45 @@
+---
+title: Design
+description: The reasoning, and the numbers behind it.
+---
+
+Every design choice in this project came from a measurement rather than a preference. The
+full study, the raw lab output and a one-command reproduction live in the repository:
+
+| document | what it covers |
+| --- | --- |
+| [`.knowledge/design.md`](https://github.com/OWNER/pixi-sandbox/blob/main/.knowledge/design.md) | the study: verdict, measurements, transport/CLI/CI design, risks |
+| [`.knowledge/decisions.md`](https://github.com/OWNER/pixi-sandbox/blob/main/.knowledge/decisions.md) | the ten decisions, one line of rationale each |
+| [`.knowledge/research/EVIDENCE.md`](https://github.com/OWNER/pixi-sandbox/blob/main/.knowledge/research/EVIDENCE.md) | the raw numbers behind every claim |
+| [`.knowledge/research/REPRODUCE-TRANSCRIPT.md`](https://github.com/OWNER/pixi-sandbox/blob/main/.knowledge/research/REPRODUCE-TRANSCRIPT.md) | a cold-start 62-second run, verbatim |
+
+The ten decisions in one glance:
+
+1. **Pack packages, not prefixes** — a `cp -a` of an installed environment leaves 213 files
+   pointing at the build machine; pack + unpack rewrites them all.
+2. **Shard whole files** — git dedup makes incremental publishes cost the changed bytes
+   only (+0.07 MiB for a one-crate bump).
+3. **One orphan branch per (platform, env-set)**, force-pushed, `manifest.json` authoritative.
+4. **CI fetches pinned tools; the branch embeds a static unpacker** — the `~/.pixi/bin`
+   shim is a trampoline, not a binary.
+5. **Restore ends with a no-op `pixi install --frozen --offline`** — proven with an empty
+   cache and no network.
+6. **Cargo crates go to `.pixi-sandbox/vendor/`**, a sibling of `envs/` and `tools/` — keyed
+   by `Cargo.lock`, shared by all environments.
+7. **Verify before writing, work on the project's filesystem** — never a small `$TMPDIR`.
+8. **Pages for docs, a package channel for the package** — never large binaries on Pages.
+9. **Git only behind a trait** (`GitProtocol`) — so publish and fetch are tested against an
+   in-memory remote, and `--dry-run` is the same code path with a runner that does not run.
+10. **Tests use fixtures, never this repository** — the repository's own `dev` environment
+    contains the packer, which would hide exactly the bugs worth catching.
+
+## Where the code lives
+
+| crate | what it owns |
+| --- | --- |
+| `pixi-sandbox-core` | `manifest.json`, sharding, tool pins, verification |
+| `pixi-sandbox-git` | `GitProtocol` + `ShellGit` + `FakeGit` |
+| `pixi-sandbox` | the CLI, and the fixtures the tests run against |
+
+GitHub Actions is deliberately boring in this project: every step is one `pixi run -e <env>
+<task>`, and anything longer lives in `pixi.toml`. See [Repository](/pixi-sandbox/repository/).

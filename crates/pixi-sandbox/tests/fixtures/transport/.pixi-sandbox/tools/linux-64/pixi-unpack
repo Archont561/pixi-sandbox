@@ -1,0 +1,4 @@
+#!/bin/sh
+# fixture stub for pixi-unpack 0.7.11 (tests/fixtures/README.md)
+if [ "$1" = "--version" ]; then echo "pixi-unpack 0.7.11"; exit 0; fi
+echo "pixi-unpack stub: $*"

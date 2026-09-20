@@ -1,0 +1,6 @@
+name: demo
+channels:
+- ./.pixi-sandbox/envs/demo/pack/channel
+- conda-forge
+dependencies:
+- demo-tool 0.1.0

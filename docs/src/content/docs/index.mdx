@@ -1,0 +1,41 @@
+---
+title: pixi-sandbox
+description: Ship pixi environments and cargo crates to machines that have no network.
+---
+
+`pixi-sandbox` packs one or more [pixi](https://pixi.sh) environments (plus, if you want,
+your vendored cargo dependencies) into a directory, publishes it as an **orphan branch**,
+and restores it on a machine that cannot reach the internet.
+
+```text
+   connected build machine                      disconnected machine
+   ───────────────────────                      ────────────────────
+   pixi sandbox pack  ─┐
+                       ├─►  orphan branch  ───►  git fetch <branch>
+   pixi sandbox publish┘         │              pixi sandbox restore
+                                 │                      │
+                          .pixi-sandbox/            .pixi/envs/<env>
+                          ├── manifest.json         .pixi-sandbox/vendor
+                          ├── envs/<env>/pack/      .pixi/tools/<platform>/
+                          ├── tools/<platform>/     → pixi run / cargo build --offline
+                          └── vendor/
+```
+
+## Why it works this way
+
+- **Packages, not prefixes.** The payload is the original `.conda` files (a local channel),
+  so install-time prefix rewriting, entry points and post-link scripts still happen on the
+  target. A tarred prefix leaks the build machine's path into hundreds of files.
+- **Whole-file shards.** Git content-addresses blobs, so unchanged packages are free across
+  environments and across publishes. Only a file larger than 95 MiB is split (GitHub blocks
+  any blob above 100 MiB).
+- **Verify before writing.** Every byte is checked against `manifest.json` before it reaches
+  your working tree.
+
+## Where to next
+
+- [Quickstart](/pixi-sandbox/quickstart/) — build a bundle and publish it from CI.
+- [Restore on the airlock](/pixi-sandbox/restore/) — the operator checklist.
+- [Design](/pixi-sandbox/design/) — the measured reasoning behind every choice.
+- [Repository](/pixi-sandbox/repository/) — the three crates, the fixtures, and why every CI
+  step is one line.

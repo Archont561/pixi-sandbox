@@ -1,0 +1,77 @@
+name: Publish Pixi sandbox bundle
+description: Install requested Pixi environments, pack them with a verified release binary, verify every blob, and publish one orphan branch.
+author: pixi-sandbox
+
+inputs:
+  project:
+    description: Checked-out project root to sandbox.
+    required: true
+  environments:
+    description: Comma-separated Pixi environments selected by the reviewed plan.
+    required: true
+  platform:
+    description: Native Pixi platform being packed.
+    required: true
+  branch:
+    description: Orphan branch to force-push.
+    required: true
+  cargo-vendor:
+    description: Whether this bundle should vendor Cargo dependencies.
+    required: false
+    default: "true"
+  self-bin:
+    description: Verified standalone pixi-sandbox executable to embed in the branch.
+    required: true
+  remote:
+    description: Credential-free Git remote URL to publish to.
+    required: true
+  output-dir:
+    description: Fresh runner-temporary directory for the transport.
+    required: true
+  push-token:
+    description: Optional token injected into Git configuration, never into the remote URL.
+    required: false
+    default: ""
+
+outputs:
+  transport:
+    description: Transport directory that was packed and published.
+    value: ${{ steps.unix.outputs.transport || steps.windows.outputs.transport }}
+  manifest:
+    description: Manifest path inside the published transport.
+    value: ${{ steps.unix.outputs.manifest || steps.windows.outputs.manifest }}
+  branch:
+    description: Published branch name.
+    value: ${{ steps.unix.outputs.branch || steps.windows.outputs.branch }}
+
+runs:
+  using: composite
+  steps:
+    - id: unix
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        PUBLISH_PIXI_SANDBOX_PROJECT: ${{ inputs.project }}
+        PUBLISH_PIXI_SANDBOX_ENVIRONMENTS: ${{ inputs.environments }}
+        PUBLISH_PIXI_SANDBOX_PLATFORM: ${{ inputs.platform }}
+        PUBLISH_PIXI_SANDBOX_BRANCH: ${{ inputs.branch }}
+        PUBLISH_PIXI_SANDBOX_CARGO_VENDOR: ${{ inputs.cargo-vendor }}
+        PUBLISH_PIXI_SANDBOX_SELF_BIN: ${{ inputs.self-bin }}
+        PUBLISH_PIXI_SANDBOX_REMOTE: ${{ inputs.remote }}
+        PUBLISH_PIXI_SANDBOX_OUTPUT_DIR: ${{ inputs.output-dir }}
+        PUBLISH_PIXI_SANDBOX_PUSH_TOKEN: ${{ inputs.push-token }}
+      run: python3 "$GITHUB_ACTION_PATH/publish_bundle.py"
+    - id: windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        PUBLISH_PIXI_SANDBOX_PROJECT: ${{ inputs.project }}
+        PUBLISH_PIXI_SANDBOX_ENVIRONMENTS: ${{ inputs.environments }}
+        PUBLISH_PIXI_SANDBOX_PLATFORM: ${{ inputs.platform }}
+        PUBLISH_PIXI_SANDBOX_BRANCH: ${{ inputs.branch }}
+        PUBLISH_PIXI_SANDBOX_CARGO_VENDOR: ${{ inputs.cargo-vendor }}
+        PUBLISH_PIXI_SANDBOX_SELF_BIN: ${{ inputs.self-bin }}
+        PUBLISH_PIXI_SANDBOX_REMOTE: ${{ inputs.remote }}
+        PUBLISH_PIXI_SANDBOX_OUTPUT_DIR: ${{ inputs.output-dir }}
+        PUBLISH_PIXI_SANDBOX_PUSH_TOKEN: ${{ inputs.push-token }}
+      run: python "$env:GITHUB_ACTION_PATH/publish_bundle.py"

@@ -1,0 +1,149 @@
+---
+title: Quickstart
+description: Build a sandbox bundle and publish it from CI.
+---
+
+## On your machine
+
+```bash
+git clone https://github.com/OWNER/pixi-sandbox && cd pixi-sandbox
+pixi run -e dev test          # or: pixi run -e dev lint
+
+# the end-to-end proof of the design, from a bare checkout (allow a few minutes):
+pixi run -e dev sandbox-proof
+```
+
+In *your* project (the one whose environments you want to ship):
+
+```bash
+# 1. inspect the helper-tool pins compiled into this release
+pixi-sandbox tools list
+# An organisation mirror can be selected deliberately:
+# pixi-sandbox tools list --tools-lock /path/to/reviewed-tools.lock.json
+
+# 2. pack: environments + (optionally) vendored crates + the tools themselves
+pixi-sandbox pack \
+  --repo-root . --envs "dev,docs" \
+  --output-dir .sandbox-transport \
+  --fetch-tools --cargo-vendor \
+  --self-bin .knowledge/research/pixi_sandbox.py
+
+# Use a Rust self binary here only after validating that the release artifact is static for
+# the target airlock platform; the portable bootstrap script is the safe default today.
+
+# 3. inspect what you just built (this is also a CI gate)
+pixi-sandbox doctor --branch-location .sandbox-transport --verify
+
+# 4. publish it as an orphan branch
+pixi-sandbox publish --input-dir .sandbox-transport --branch-name sandbox/dev-linux-64
+```
+
+## From CI: reviewed native matrix
+
+Declare exactly what the project is allowed to publish. Do not infer every environment from
+`pixi.toml`: projects often contain experimental or CI-only environments that should never be
+made into an airlock branch.
+
+```toml
+# .pixi-sandbox.toml
+schema = 1
+branch_prefix = "sandbox"
+cargo_vendor = true
+
+[[bundle]]
+name = "developer"
+environments = ["dev", "docs"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+```
+
+Validate the resulting native jobs locally:
+
+```bash
+pixi-sandbox plan --config .pixi-sandbox.toml
+# or machine-readable GitHub Actions matrix JSON:
+pixi-sandbox plan --config .pixi-sandbox.toml --json
+```
+
+The reusable workflow downloads a checksum-verified standalone `pixi-sandbox` release, expands
+that reviewed plan into one native job per bundle/platform, packs, verifies, and force-pushes
+one orphan branch per job. Pin both the workflow/action reference and release tag in production:
+
+```yaml
+# .github/workflows/publish-sandboxes.yml in your project
+jobs:
+  sandbox:
+    uses: OWNER/pixi-sandbox/.github/workflows/publish-sandboxes.yml@<40-character-release-commit-sha>
+    with:
+      config: .pixi-sandbox.toml
+      release-repository: OWNER/pixi-sandbox
+      release-ref: <40-character-release-commit-sha> # immutable source for custom Actions
+      release-version: v0.2.0                       # checksum-verified standalone binary release
+    secrets:
+      SANDBOX_PUSH_TOKEN: ${{ secrets.SANDBOX_PUSH_TOKEN }}
+```
+
+A matrix job only publishes its matching native platform. For example, an `osx-arm64` bundle
+must use an Apple-Silicon macOS runner; the publish action rejects a mismatched runner rather
+than quietly cross-packing an unproven transport. Use `[runners]` in `.pixi-sandbox.toml` for
+self-hosted or nonstandard labels. A runner override must also have embedded pins for `pixi`,
+`pixi-pack`, and `pixi-unpack`; `plan` rejects an otherwise runnable platform whose release
+tools are not reviewed into the binary. Labels cannot include leading/trailing whitespace or
+control characters, and every override must be referenced by a declared bundle.
+
+### Direct setup action
+
+The release downloader is also usable on its own:
+
+```yaml
+- uses: OWNER/pixi-sandbox/.github/actions/setup-pixi-sandbox@<immutable-commit-sha>
+  id: sandbox
+  with:
+    repository: OWNER/pixi-sandbox
+    version: v0.2.0
+
+- run: pixi-sandbox --version
+```
+
+It verifies the release bytes against exactly one matching entry in `SHA256SUMS` before making
+the executable available on `PATH`. Generate that checksum asset only after the native bootstrap proof has accepted the
+binaries, using `python3 scripts/write_release_checksums.py --output release/SHA256SUMS
+release/pixi-sandbox-*`; upload the binaries and checksum file to the same immutable release tag.
+`version: latest` is supported for interactive use but deliberately warns; it is not a
+reproducible production input.
+
+The older source-driven `publish-sandbox.yml` remains available for projects that deliberately
+build the CLI in their own checkout. The release-driven plural workflow is the recommended path
+once a validated standalone Rust release artifact is available.
+
+## Shipping the tool itself (the `.conda`)
+
+```bash
+# build the package straight from the crate manifest (pixi-build-rust)
+pixi publish --path crates/pixi-sandbox --build-dir .pixi/bld --target-dir dist
+
+# or write an indexed channel you can host anywhere (this is all Pages needs)
+pixi publish --path crates/pixi-sandbox --build-dir .pixi/bld --target-channel file:///srv/channel
+
+pixi global install -c file:///srv/channel -c conda-forge pixi-sandbox
+pixi sandbox doctor --branch-location .sandbox-transport     # pixi extension verb
+```
+
+Measured: 34 s to build a 594 KB package (1.26 MiB stripped binary), and the channel write
+produces `repodata.json` + `.zst` + sharded repodata — so a plain static file host (GitHub
+Pages, S3) is a working channel. A channel that is not a conda-forge mirror must be combined
+with `-c conda-forge`.
+
+## Sizes to expect
+
+Measured on a small real project (2 environments, 33 crates, linux-64):
+
+| part | payload |
+| --- | --- |
+| conda environments (`.conda` channel) | 133 MB |
+| cargo vendor tree (loose) | 33 MB |
+| bundled tools (`pixi`, `pixi-unpack`, `pixi-sandbox`) | 96 MB |
+| **transport directory** | **262 MB** |
+| **orphan branch after git dedup** | **~110 MB** |
+
+The tools dominate small bundles — that is expected, and git stores each tool blob once no
+matter how many platform/environment branches carry it.

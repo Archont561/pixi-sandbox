@@ -1,0 +1,49 @@
+# lefthook — local git hooks. Every hook calls a pixi task so hooks and CI cannot drift.
+# https://lefthook.dev
+#
+# Only *staged* files are considered: the `glob` filters, and `stage_fixed: true`
+# re-stages whatever a formatter rewrote.
+
+min_version: "2.0.0"
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: rust-fmt
+      glob: "*.rs"
+      run: pixi run -e dev fmt
+      stage_fixed: true
+
+    - name: rust-clippy
+      glob: "{**/*.rs,Cargo.toml,crates/**/Cargo.toml}"
+      run: pixi run -e dev lint-rust
+
+    - name: toml-fmt
+      glob: "*.toml"
+      run: pixi run -e dev -- taplo fmt {staged_files}
+      stage_fixed: true
+
+    - name: docs-biome
+      glob: "docs/**/*.{js,ts,mjs,cjs,json,jsonc,astro}"
+      run: pixi run -e dev -- biome check --write {staged_files}
+      stage_fixed: true
+
+    - name: workflows
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: pixi run -e dev lint-actions
+
+    - name: manifest-schema
+      # the manifest shape is a wire format: changing it needs a schema bump + a fixture update
+      glob: "{crates/pixi-sandbox-core/src/manifest.rs,crates/pixi-sandbox-core/tests/manifest.rs}"
+      run: pixi run -e dev cargo test -p pixi-sandbox-core --test manifest
+
+commit-msg:
+  jobs:
+    - name: convco
+      # `{1}` is the file holding the proposed message (git commit-msg hook argument)
+      run: pixi run -e dev lint-commit < {1}
+
+pre-push:
+  jobs:
+    - name: tests
+      run: pixi run -e dev test

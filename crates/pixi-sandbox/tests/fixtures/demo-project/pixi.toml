@@ -1,0 +1,21 @@
+# A complete, self-contained pixi project — the fixture every project-level test uses instead
+# of this repository (see tests/fixtures/README.md and .knowledge/design.md §12).
+#
+# Deliberately NOT here: `pixi-pack` and `pixi-unpack`. The fixture is a *project to be
+# sandboxed*, not this tool's development environment. A test that needs a packer must ask for
+# one explicitly (`--fetch-tools` uses the CLI's embedded pins), so it can never quietly depend
+# on whatever happens to be installed on the machine running the tests.
+
+[workspace]
+name = "demo-project"
+description = "A tiny project used as the pack/restore fixture"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+# one small, dependency-free tool: enough to make the environment real, small enough to stay
+# out of the way of the test suite
+ripgrep = ">=14,<15"
+
+[tasks]
+hello = "echo hello from the demo project"

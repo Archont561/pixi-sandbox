@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "generated_at": "2026-09-20T15:11:14Z",
+  "tools": {
+    "pixi": {
+      "version": "0.81.0",
+      "url_template": "https://github.com/prefix-dev/pixi/releases/download/v{version}/pixi-{target}",
+      "platforms": {
+        "linux-64": {
+          "target": "x86_64-unknown-linux-musl",
+          "sha256": "248510f5f75460a2ae4ec62d761e15c0191dc35db3b1da6f82d9f17c6017051d",
+          "linkage": "static"
+        },
+        "linux-aarch64": {
+          "target": "aarch64-unknown-linux-musl",
+          "sha256": "7fcd20f7c18339f13552a6767ab146ce6b439ce29db46cc03ece005ca9696bb1",
+          "linkage": "static"
+        },
+        "osx-64": {
+          "target": "x86_64-apple-darwin",
+          "sha256": "80b60db15a769c4144a5fae4bbc0afa1b3ede9a608ec0396377f9ab6c0594da0",
+          "linkage": "system"
+        },
+        "osx-arm64": {
+          "target": "aarch64-apple-darwin",
+          "sha256": "f389557fc5de929cc33a042f6ae5abbaeb087ffa1affd55aa6ab8da3222d1122",
+          "linkage": "system"
+        },
+        "win-64": {
+          "target": "x86_64-pc-windows-msvc.exe",
+          "sha256": "1b989b152ea13e881a641a112c7ea59c51818fd5ba84924c763b40b9b157dab9",
+          "linkage": "system"
+        }
+      }
+    },
+    "pixi-pack": {
+      "version": "0.7.11",
+      "url_template": "https://github.com/Quantco/pixi-pack/releases/download/v{version}/pixi-pack-{target}",
+      "platforms": {
+        "linux-64": {
+          "target": "x86_64-unknown-linux-musl",
+          "sha256": "4f2e6b70433c846974b9bd1356456335028afbe23f1fdf856ffa022ed691fc22",
+          "linkage": "static"
+        },
+        "linux-aarch64": {
+          "target": "aarch64-unknown-linux-musl",
+          "sha256": "399afbb99387ed996ab30281622962dd2306ab348121f4333299665632add2d9",
+          "linkage": "static"
+        },
+        "osx-64": {
+          "target": "x86_64-apple-darwin",
+          "sha256": "18368f1519b96372e5b857f1824e1c9ffe1830e5b2905f53f5692f49c1ad9939",
+          "linkage": "system"
+        },
+        "osx-arm64": {
+          "target": "aarch64-apple-darwin",
+          "sha256": "a94baddab7a1de736f73aebd958cb57aed23f88e5fdb57e7698d4dc4e0ef212b",
+          "linkage": "system"
+        },
+        "win-64": {
+          "target": "x86_64-pc-windows-msvc.exe",
+          "sha256": "12dde5b363fb7c5fb6215e0747638b0486a0bd3f47ef653b23ce020bc1936263",
+          "linkage": "system"
+        }
+      }
+    },
+    "pixi-unpack": {
+      "version": "0.7.11",
+      "url_template": "https://github.com/Quantco/pixi-pack/releases/download/v{version}/pixi-unpack-{target}",
+      "platforms": {
+        "linux-64": {
+          "target": "x86_64-unknown-linux-musl",
+          "sha256": "8191f586b734e634e2f1644e553dcb8e07718d0bafbfefb65c5e6e22b4d484b7",
+          "linkage": "static"
+        },
+        "linux-aarch64": {
+          "target": "aarch64-unknown-linux-musl",
+          "sha256": "7cf766c38436406fedc5f4eb9143b5433487e20358d8d1080c8b44b40c43d454",
+          "linkage": "static"
+        },
+        "osx-64": {
+          "target": "x86_64-apple-darwin",
+          "sha256": "0f6cb56cfb976283b3dca9b5e52c66c9209d177f8810e95effab3d2178e80752",
+          "linkage": "system"
+        },
+        "osx-arm64": {
+          "target": "aarch64-apple-darwin",
+          "sha256": "0cf9302090b8f5c29945b9d3fbaad7aa10774fa8ac97047f4b16002fbf5de4d0",
+          "linkage": "system"
+        },
+        "win-64": {
+          "target": "x86_64-pc-windows-msvc.exe",
+          "sha256": "4b27cae647100dae4a321954461fe5863d25aa3eb9a919fb302f20509090bc72",
+          "linkage": "system"
+        }
+      }
+    }
+  }
+}

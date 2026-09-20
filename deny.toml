@@ -1,0 +1,53 @@
+# cargo-deny configuration (run by `pixi run -e ci deny`, i.e. in CI).
+# Checked with cargo-deny 0.20.x.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "warn"
+ignore = []
+
+[licenses]
+version = 2
+# Permissive only. If a dependency needs an exception, add it here *with a reason*
+# rather than loosening the list — this crate ships into places that have to pass a
+# license review (see .knowledge/decisions.md D8).
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+  "MPL-2.0",
+  "CC0-1.0",
+  # `ureq` embeds webpki-roots for verified HTTPS release downloads. This is the
+  # permissive data licence for Mozilla's trust-store distribution, not product code.
+  "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+# The list is deliberately broader than today's dependency tree: a new dependency that
+# happens to be MPL-2.0 should not require editing CI config to get through review.
+# (`cargo deny check` otherwise warns "license was not encountered" for each unused entry.)
+unused-allowed-license = "allow"
+
+[bans]
+# `syn 2` arrives via tracing-attributes while `syn 3` arrives via clap/serde/thiserror.
+# Duplication in a CLI is annoying, not a bug — warn, don't fail.
+multiple-versions = "warn"
+wildcards = "deny"
+# `pixi-sandbox` is a CLI; duplicating a transitive version is annoying but not a bug.
+deny = []
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Vendored trees (`.pixi-sandbox/vendor/`) are not a network source; they are declared
+# as a directory replacement in `.cargo/config.toml` and are not seen by cargo-deny.
+allow-git = []

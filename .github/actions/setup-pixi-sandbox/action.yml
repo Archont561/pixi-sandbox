@@ -1,0 +1,85 @@
+name: Setup pixi-sandbox
+description: Download, checksum-verify, and expose a standalone pixi-sandbox release binary.
+author: pixi-sandbox
+
+inputs:
+  repository:
+    description: GitHub repository containing the pixi-sandbox release assets (OWNER/REPO).
+    required: true
+  version:
+    description: Immutable release tag to download. Set `latest` explicitly only for a deliberately non-reproducible workflow.
+    required: true
+  target:
+    description: Rust target triple to download, or `auto` for the current hosted runner.
+    required: false
+    default: auto
+  asset-template:
+    description: Release asset template; supports {target}, {exe}, {tag}, and {version}.
+    required: false
+    default: pixi-sandbox-{target}{exe}
+  checksums-asset:
+    description: Release asset containing standard SHA-256 checksum lines. Ignored when sha256 is supplied.
+    required: false
+    default: SHA256SUMS
+  sha256:
+    description: Optional explicit SHA-256 for the selected binary asset; overrides checksums-asset lookup.
+    required: false
+    default: ""
+  install-dir:
+    description: Directory for the verified executable. Empty chooses a runner-temporary directory.
+    required: false
+    default: ""
+  add-to-path:
+    description: Add the executable directory to GITHUB_PATH.
+    required: false
+    default: "true"
+  token:
+    description: Optional GitHub token for release API access and private release downloads.
+    required: false
+    default: ""
+
+outputs:
+  path:
+    description: Absolute path of the verified pixi-sandbox executable.
+    value: ${{ steps.unix.outputs.path || steps.windows.outputs.path }}
+  version:
+    description: Resolved immutable GitHub release tag.
+    value: ${{ steps.unix.outputs.version || steps.windows.outputs.version }}
+  sha256:
+    description: Verified SHA-256 of the executable.
+    value: ${{ steps.unix.outputs.sha256 || steps.windows.outputs.sha256 }}
+  target:
+    description: Resolved Rust target triple.
+    value: ${{ steps.unix.outputs.target || steps.windows.outputs.target }}
+
+runs:
+  using: composite
+  steps:
+    - id: unix
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        SETUP_PIXI_SANDBOX_REPOSITORY: ${{ inputs.repository }}
+        SETUP_PIXI_SANDBOX_VERSION: ${{ inputs.version }}
+        SETUP_PIXI_SANDBOX_TARGET: ${{ inputs.target }}
+        SETUP_PIXI_SANDBOX_ASSET_TEMPLATE: ${{ inputs.asset-template }}
+        SETUP_PIXI_SANDBOX_CHECKSUMS_ASSET: ${{ inputs.checksums-asset }}
+        SETUP_PIXI_SANDBOX_SHA256: ${{ inputs.sha256 }}
+        SETUP_PIXI_SANDBOX_INSTALL_DIR: ${{ inputs.install-dir }}
+        SETUP_PIXI_SANDBOX_ADD_TO_PATH: ${{ inputs.add-to-path }}
+        SETUP_PIXI_SANDBOX_TOKEN: ${{ inputs.token }}
+      run: python3 "$GITHUB_ACTION_PATH/setup.py"
+    - id: windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        SETUP_PIXI_SANDBOX_REPOSITORY: ${{ inputs.repository }}
+        SETUP_PIXI_SANDBOX_VERSION: ${{ inputs.version }}
+        SETUP_PIXI_SANDBOX_TARGET: ${{ inputs.target }}
+        SETUP_PIXI_SANDBOX_ASSET_TEMPLATE: ${{ inputs.asset-template }}
+        SETUP_PIXI_SANDBOX_CHECKSUMS_ASSET: ${{ inputs.checksums-asset }}
+        SETUP_PIXI_SANDBOX_SHA256: ${{ inputs.sha256 }}
+        SETUP_PIXI_SANDBOX_INSTALL_DIR: ${{ inputs.install-dir }}
+        SETUP_PIXI_SANDBOX_ADD_TO_PATH: ${{ inputs.add-to-path }}
+        SETUP_PIXI_SANDBOX_TOKEN: ${{ inputs.token }}
+      run: python "$env:GITHUB_ACTION_PATH/setup.py"

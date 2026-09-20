@@ -1,0 +1,78 @@
+---
+title: Restore on the airlock
+description: The operator checklist for a machine with no network.
+---
+
+This page is written for the person (or agent) standing in front of the disconnected
+machine. Nothing here needs network access — if any step tries to reach out, stop and
+report it.
+
+## 1. Get the branch
+
+```bash
+# in your clone of the project (the only thing that has to cross the air gap)
+git fetch origin sandbox/dev-linux-64:sandbox/dev-linux-64
+git archive sandbox/dev-linux-64 | tar -x -C /tmp/sandbox-branch
+```
+
+The branch carries its own tooling under `.pixi-sandbox/tools/<platform>/`, including
+the chosen `pixi-sandbox` bootstrap executable, so you do not need a system installation to
+start. Production Rust self-binaries must be static for the target airlock platform; the
+portable bootstrap script remains a valid shipped executable while those artifacts are validated.
+
+## 2. Look before you leap
+
+```bash
+/tmp/sandbox-branch/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
+    --branch-location /tmp/sandbox-branch --verify
+```
+
+This checks every sha256 in `manifest.json` and reports the payload breakdown. It writes
+nothing. Treat any failure as a hard stop.
+
+## 3. Restore
+
+```bash
+cd /path/to/project
+/tmp/sandbox-branch/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+    --branch-location /tmp/sandbox-branch \
+    --path-to-main-repo-code .
+```
+
+What it does, in order: verifies the tools, stages a copy of each pack under a work dir on
+the project's filesystem, unpacks with the bundled `pixi-unpack`, moves each environment to
+`.pixi/envs/<env>`, writes pixi's `conda-meta` markers, then materialises the vendored crates
+and wires `.cargo/config.toml` to them with a **relative** path.
+
+:::caution[Never use a small `/tmp` as the work dir]
+`pixi-unpack` stages the pack into `$TMPDIR` before extracting. A tmpfs `/tmp` that is too
+small fails mid-restore with a confusing package-cache error. The default work dir is
+`<project>/.pixi/.restore-work`; override it with `--work-dir` if the project lives on a
+small volume.
+:::
+
+## 4. Prove it is offline-clean
+
+```bash
+source .pixi/sandbox-env.sh          # bundled tools on PATH, CARGO_NET_OFFLINE=true
+pixi install --frozen --offline      # must be a no-op, must not touch the network
+cargo build --offline                # uses the vendored crates only
+```
+
+If `pixi install --frozen --offline` starts doing real work, the environment on disk does
+not match `pixi.lock` — do not let it continue; re-run the restore instead.
+
+## What the bundle does not contain
+
+- **The Rust toolchain.** It ships crates, not `rustc`. Either pack `rust` into the
+  environment or make sure the machine has one (a conda-forge `rust` env is ~1.8 GB
+  unpacked, which is why it is a deliberate choice).
+- **Build artifacts.** The airlock compiles from scratch.
+- **Credentials.** Nothing in the bundle authenticates to anything.
+
+## Post-link scripts
+
+Unpacking runs package post-link scripts, i.e. code from the bundle executes on your
+machine. That is inherent to conda environments — the bundle is signed/verified content and
+the branch should be protected accordingly. Ask for `--verify-only` runs and signed
+manifests if your site requires it.

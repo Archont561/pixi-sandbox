@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "tool": {
+    "name": "pixi-sandbox",
+    "version": "0.1.0"
+  },
+  "created_at": "2026-09-20T00:00:00Z",
+  "platform": "linux-64",
+  "shard_limit_bytes": 4096,
+  "source": {
+    "commit": "0000000",
+    "lock_sha256": "75ac1f455258a0f6510fbbcf8c17bac1e8056ed3e8050911d1d6a315b9bd9d68"
+  },
+  "tools": {
+    "pixi": {
+      "version": "0.81.0",
+      "url": null,
+      "pinned_sha256": null,
+      "linkage": "script",
+      "size_bytes": 152,
+      "path": "tools/linux-64/pixi"
+    },
+    "pixi-unpack": {
+      "version": "0.7.11",
+      "url": null,
+      "pinned_sha256": null,
+      "linkage": "script",
+      "size_bytes": 173,
+      "path": "tools/linux-64/pixi-unpack"
+    },
+    "pixi-sandbox": {
+      "version": "0.1.0",
+      "url": null,
+      "pinned_sha256": null,
+      "linkage": "script",
+      "size_bytes": 174,
+      "path": "tools/linux-64/pixi-sandbox"
+    }
+  },
+  "envs": {
+    "demo": {
+      "platform": "linux-64",
+      "pack_path": ".pixi-sandbox/envs/demo/pack",
+      "packed_size_bytes": 10089,
+      "unpacked_size_bytes": 40356,
+      "pixi_environment_fingerprint": "0123456789abcdef",
+      "blobs": [
+        {
+          "path": "envs/demo/pack/channel/linux-64/demo-tool-0.1.0-0.conda",
+          "size": 581,
+          "sha256": "279ebbb2baa6023070ae82520756b90b0bd498f3841901c612280468a27b502f"
+        },
+        {
+          "path": "envs/demo/pack/channel/noarch/demo-pure-0.1.0-0.conda",
+          "size": 69,
+          "sha256": "37e8c7e930144507000fad56945774e4fc70741348667b0897cc3ebac35d3d53"
+        },
+        {
+          "path": "envs/demo/pack/channel/noarch/demo-big-0.1.0-0.conda",
+          "size": 9251,
+          "sha256": "b364faa2a4192cd2a3e581d290bfbb7aaed6b6c6b7aba59924a262595e85214f",
+          "parts": [
+            {
+              "path": "envs/demo/pack/channel/noarch/demo-big-0.1.0-0.conda.part000",
+              "size": 4096,
+              "sha256": "801f335c95da27b43d9dce7866597bfe19a1edfea97d5e788bb8cc2b5115b37c"
+            },
+            {
+              "path": "envs/demo/pack/channel/noarch/demo-big-0.1.0-0.conda.part001",
+              "size": 4096,
+              "sha256": "e7169447bc4ef5b4ee835cd7746964ecd8dce906cb3d21dc3a3d43eb3219287e"
+            },
+            {
+              "path": "envs/demo/pack/channel/noarch/demo-big-0.1.0-0.conda.part002",
+              "size": 1059,
+              "sha256": "0bccfab2b04c6117707db60335438ba7d6c12623ff1776470510b7ce285fbe50"
+            }
+          ]
+        },
+        {
+          "path": "envs/demo/pack/environment.yml",
+          "size": 108,
+          "sha256": "f90ca5f19493d12cd4da3b564a1aa7734276979d7d637b1bcec7276159785dbc"
+        },
+        {
+          "path": "envs/demo/pack/pixi-pack.json",
+          "size": 80,
+          "sha256": "f156551dbe2b1fdbcf7d053a3700593ae4a9a3ed263ab659fbc0c4328b9fb3c6"
+        }
+      ]
+    }
+  },
+  "vendor": {
+    "mode": "loose",
+    "crates": 1,
+    "size_bytes": 98,
+    "cargo_lock_sha256": "f894d0c873a3c2c1931883a72a051a1c865612e626f80944c73fca898ada3c2f",
+    "directory": ".pixi-sandbox/vendor",
+    "blobs": [
+      {
+        "path": "vendor/demo-dep-1.0.0/Cargo.toml",
+        "size": 46,
+        "sha256": "2ac306238678c4cc629e1451055009acf83aefb7694c04ed154c40e9b993e22e"
+      },
+      {
+        "path": "vendor/demo-dep-1.0.0/src/lib.rs",
+        "size": 52,
+        "sha256": "6b2f7272fa9dbace0e82cc2e69520555b1bfdaef9be2113e92c936ca893cef12"
+      }
+    ]
+  }
+}

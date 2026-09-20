@@ -1,0 +1,37 @@
+# Conda-package settings for the binary crate.
+#
+# Verified with pixi 0.81.0: `pixi build` is deprecated in favour of
+#   pixi publish --path crates/pixi-sandbox --build-dir <dir> --target-dir <dir>
+# (the *packaging* command; not to be confused with `pixi-sandbox publish`, which pushes
+# the transport to an orphan branch).
+#
+# `[workspace] preview = ["pixi-build"]` is required by the backend — pixi-build is still
+# a preview feature (prefix-dev/pixi-build-backends). Building this manifest standalone is
+# what produces the `.conda` that `pixi global install -c <channel> pixi-sandbox` consumes.
+
+[workspace]
+name = "pixi-sandbox-build"
+preview = ["pixi-build"]
+channels = ["https://prefix.dev/conda-forge"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+
+[package]
+name = "pixi-sandbox"
+version = "0.1.0"
+
+[package.build]
+# Rust build backend (prefix-dev/pixi-build-backends). Pin the major version.
+backend = { name = "pixi-build-rust", version = "0.*" }
+channels = ["https://prefix.dev/conda-forge"]
+
+[package.build.config]
+# No `extra-args` here: the pixi-build-rust backend already invokes
+# `cargo install --locked --root $PREFIX --path <crate>` for us, and passing `--locked`
+# again makes cargo abort with "the argument '--locked' cannot be used multiple times".
+# Measured with pixi 0.81.0 / pixi-build-rust 0.x.
+
+[package.run-dependencies]
+# NOTE: deliberately empty. `pixi-pack`/`pixi-unpack` are *not* run-dependencies of the
+# packaged binary — CI fetches them from the binary's embedded tool pins and the airlock gets
+# them from the branch (D4). If you prefer conda-managed pinning for connected users, add:
+#   pixi-pack = "*", pixi-unpack = "*"   # then `pixi global install` pulls them together

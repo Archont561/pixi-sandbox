@@ -1,0 +1,75 @@
+name: publish-sandbox
+
+# Reusable workflow: pack environments, prove the payload with `doctor --verify`, then push
+# it to an orphan branch. Every step is one `pixi run` line, and all its paths come from the
+# `SANDBOX_*` variables configured in the `env:` block below (design.md §6).
+#
+# Callers:  release.yml → on a tag;  nightly.yml → on a schedule or manually.
+#
+# Packing and publishing run on the *same* runner on purpose: the payload (hundreds of MiB)
+# then never has to travel as a build artifact, and the branch is the only place it lands.
+
+on:
+  workflow_call:
+    inputs:
+      environments:
+        description: Comma-separated pixi environments to pack
+        type: string
+        default: "dev"
+      platform:
+        description: Target platform for the packed environments
+        type: string
+        default: "linux-64"
+      branch-prefix:
+        description: Branch becomes "<prefix>/<platform>" — one branch per platform
+        type: string
+        default: "sandbox"
+      self-binary:
+        description: Executable embedded in the branch so it can bootstrap itself
+        type: string
+        # Rust handles pack/doctor/publish. Keep the portable script until static Rust
+        # bootstrap assets are validated for every target (design.md §9).
+        default: ".knowledge/research/pixi_sandbox.py"
+      cargo-vendor:
+        description: Also vendor the workspace's cargo dependencies
+        type: boolean
+        default: true
+    secrets:
+      SANDBOX_PUSH_TOKEN:
+        description: Token allowed to force-push the sandbox branches (defaults to GITHUB_TOKEN)
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  SANDBOX_PROJECT: ${{ github.workspace }}
+  SANDBOX_ENVS: ${{ inputs.environments }}
+  SANDBOX_PLATFORM: ${{ inputs.platform }}
+  SANDBOX_TRANSPORT: ${{ github.workspace }}/.sandbox-transport
+  SANDBOX_BRANCH: ${{ inputs.branch-prefix }}/${{ inputs.platform }}
+  SANDBOX_SELF_BIN: ${{ inputs.self-binary }}
+  SANDBOX_CARGO_VENDOR: ${{ inputs.cargo-vendor && '--cargo-vendor' || '' }}
+  SANDBOX_REMOTE: https://x-access-token:${{ secrets.SANDBOX_PUSH_TOKEN || github.token }}@github.com/${{ github.repository }}.git
+
+jobs:
+  publish:
+    name: pack, verify, publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+      - uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
+        with:
+          cache: true
+      - run: pixi run -e ci ci-pack
+      - run: pixi run -e ci ci-doctor
+      - run: pixi run -e ci ci-publish
+
+# Notes that must not be forgotten when this workflow is wired up for real:
+#   * a default GITHUB_TOKEN push does not trigger further workflows — decide explicitly;
+#   * branch rulesets can block force-pushes; the sandbox branch should live outside
+#     protection, and the token should be scoped to contents:write only;
+#   * the repo grows on every publish (old force-pushed objects linger, design.md §2 / D1),
+#     so pair this with a rotation/retention policy before it reaches ~1 GB.
