@@ -8,15 +8,12 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## Overview
 
-`publish-sandbox.yml` is a unified reusable workflow that:
+Your workflow just uses the two actions in the same repo — like `prefix-dev/setup-pixi`. No `release-repository` / `release-version` needed, your `uses: @v0.2.0` pin *is* the version.
 
-1. Validates `.pixi-sandbox.toml` via `plan --json`
-2. For each `bundle × platform` with native runner, runs on that runner
-3. Uses `setup-pixi-sandbox` (checksum-verified download) + `publish-pixi-sandbox` (install, pack, doctor, publish)
+1. `plan --json` validates `.pixi-sandbox.toml` and emits a native `runner` per `bundle × platform`
+2. For each matrix entry, on that native runner: `setup` (verified download) → `publish` (install → pack `--fetch-tools --self-bin` → `doctor --verify` → orphan branch push)
 
-It supports `workflow_run` (auto after ci.yml), `workflow_dispatch` (manual), and `workflow_call` (from your repo).
-
-## Quick start in your repo
+## Quick start in your repo — just two actions
 
 ### 1. Add `.pixi-sandbox.toml`
 
@@ -36,17 +33,100 @@ environments = ["dev", "docs"]
 platforms = ["linux-64", "osx-arm64", "win-64"]
 ```
 
-### 2. Create workflow
+### 2. Create workflow (recommended)
+
+Multi-platform matrix — validates config then publishes one native branch per job:
 
 ```yaml
-# .github/workflows/publish-sandbox.yml
+# .github/workflows/publish-sandbox.yml — your project
 name: publish sandbox
-
 on:
-  push:
-    branches: [main]
+  push: { branches: [main] }
   workflow_dispatch:
 
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs: { matrix: ${{ steps.plan.outputs.matrix }} }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Archont561/pixi-sandbox/setup@v0.2.0
+        id: setup
+        with: { version: v0.2.0 }
+      - id: plan
+        run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
+
+  publish:
+    needs: plan
+    strategy: { matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}, fail-fast: false }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: prefix-dev/setup-pixi@v0.10.2
+      - uses: Archont561/pixi-sandbox/setup@v0.2.0
+        id: setup
+        with: { version: v0.2.0 }
+      - uses: Archont561/pixi-sandbox/publish@v0.2.0
+        with:
+          project: .
+          environments: ${{ matrix.environments }}
+          platform: ${{ matrix.platform }}
+          branch: ${{ matrix.branch }}
+          self-bin: ${{ steps.setup.outputs.path }}
+          remote: https://github.com/${{ github.repository }}.git
+          output-dir: /tmp/transport
+          push-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Pin to SHA for supply-chain security:
+
+```yaml
+- uses: Archont561/pixi-sandbox/setup@<immutable-sha>
+  with: { version: v0.2.0 }
+- uses: Archont561/pixi-sandbox/publish@<immutable-sha>
+```
+
+Single platform without `plan`:
+
+```yaml
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: prefix-dev/setup-pixi@v0.10.2
+      - uses: Archont561/pixi-sandbox/setup@v0.2.0
+        id: setup
+        with: { version: v0.2.0 }
+      - uses: Archont561/pixi-sandbox/publish@v0.2.0
+        with:
+          project: .
+          environments: dev,docs
+          platform: linux-64
+          branch: sandbox/developer-linux-64
+          self-bin: ${{ steps.setup.outputs.path }}
+          remote: https://github.com/${{ github.repository }}.git
+          output-dir: /tmp/transport
+          push-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### 3. What happens
+
+- `plan --json` emits matrix like `sandbox/developer-linux-64`, `sandbox/developer-osx-arm64`, etc.
+- Each native `publish` job:
+  ```text
+  pixi install --frozen -e <envs>
+  → pixi-sandbox pack --fetch-tools --self-bin <verified release from setup>
+  → pixi-sandbox doctor --verify
+  → pixi-sandbox publish --branch-name <branch> --remote <url>
+  ```
+- Branch contains verified Rust binary as self-bootstrap.
+
+## Alternative: reusable workflow
+
+If you prefer one line instead of `plan` + matrix:
+
+```yaml
 jobs:
   publish:
     uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.2.0
@@ -58,77 +138,11 @@ jobs:
       SANDBOX_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Pin to SHA for supply-chain security:
+That workflow internally does the same `setup` + `publish` steps but needs the duplicate `release-*` inputs because `uses: @v0.2.0` is not auto-forwarded as a binary version. Prefer the two-action workflow above to avoid duplication.
 
-```yaml
-jobs:
-  publish:
-    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@<immutable-sha>
-    with:
-      release-repository: Archont561/pixi-sandbox
-      release-version: v0.2.0
-```
-
-### 3. What happens
-
-- `plan --json` emits matrix like `sandbox/developer-linux-64`, `sandbox/developer-osx-arm64`, etc.
-- Each native job:
-  ```text
-  pixi install --frozen -e <envs>
-  → pixi-sandbox pack --fetch-tools --self-bin <verified release>
-  → pixi-sandbox doctor --verify
-  → pixi-sandbox publish --branch-name <branch> --remote <url>
-  ```
-- Branch contains verified Rust binary as self-bootstrap.
-
-## Direct actions (short refs)
+## Direct actions reference (short refs)
 
 Both actions live in same repo:
-
-<Tabs>
-  <TabItem label="Setup + Publish">
-    ```yaml
-    jobs:
-      publish:
-        runs-on: ubuntu-latest
-        steps:
-          - uses: actions/checkout@v7.0.1
-
-          - uses: prefix-dev/setup-pixi@v0.8.1
-            with:
-              environments: dev
-              cache: true
-
-          - uses: Archont561/pixi-sandbox/setup@v0.2.0
-            id: setup
-            with:
-              version: v0.2.0
-
-          - uses: Archont561/pixi-sandbox/publish@v0.2.0
-            with:
-              project: .
-              environments: dev
-              platform: linux-64
-              branch: sandbox/dev-linux-64
-              self-bin: ${{ steps.setup.outputs.path }}
-              remote: https://github.com/OWNER/REPO.git
-              output-dir: /tmp/transport
-              push-token: ${{ secrets.GITHUB_TOKEN }}
-    ```
-  </TabItem>
-  <TabItem label="Root alias">
-    ```yaml
-    - uses: Archont561/pixi-sandbox@v0.2.0  # root = setup
-      id: setup
-      with:
-        version: v0.2.0
-    - uses: Archont561/pixi-sandbox/publish@v0.2.0
-      with:
-        self-bin: ${{ steps.setup.outputs.path }}
-        # ...
-    ```
-  </TabItem>
-</Tabs>
 
 ## Security model
 

@@ -102,30 +102,52 @@ pixi-sandbox plan --config .pixi-sandbox.toml
 pixi-sandbox plan --config .pixi-sandbox.toml --json  # GitHub Actions matrix
 ```
 
-The reusable workflow downloads checksum-verified standalone release, expands plan into one native job per bundle/platform, packs, verifies, force-pushes one branch per job.
+Your workflow just uses the two actions — your `uses: @v0.2.0` pin is the version, no `release-repository` needed.
 
 <Tabs>
-  <TabItem label="Reusable workflow">
+  <TabItem label="Two actions (recommended)">
     ```yaml
     # .github/workflows/publish-sandbox.yml in your project
+    name: publish sandbox
+    on: { push: { branches: [main] }, workflow_dispatch: {} }
     jobs:
-      sandbox:
-        uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@<sha>
-        with:
-          config: .pixi-sandbox.toml
-          release-repository: Archont561/pixi-sandbox
-          release-version: v0.2.0
-        secrets:
-          SANDBOX_PUSH_TOKEN: ${{ secrets.SANDBOX_PUSH_TOKEN }}
+      plan:
+        runs-on: ubuntu-latest
+        outputs: { matrix: ${{ steps.plan.outputs.matrix }} }
+        steps:
+          - uses: actions/checkout@v7.0.1
+          - uses: Archont561/pixi-sandbox/setup@v0.2.0
+            id: setup
+            with: { version: v0.2.0 }
+          - id: plan
+            run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
+      publish:
+        needs: plan
+        strategy: { matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}, fail-fast: false }
+        runs-on: ${{ matrix.runner }}
+        steps:
+          - uses: actions/checkout@v7.0.1
+          - uses: prefix-dev/setup-pixi@v0.10.2
+          - uses: Archont561/pixi-sandbox/setup@v0.2.0
+            id: setup
+            with: { version: v0.2.0 }
+          - uses: Archont561/pixi-sandbox/publish@v0.2.0
+            with:
+              project: .
+              environments: ${{ matrix.environments }}
+              platform: ${{ matrix.platform }}
+              branch: ${{ matrix.branch }}
+              self-bin: ${{ steps.setup.outputs.path }}
+              remote: https://github.com/${{ github.repository }}.git
+              output-dir: /tmp/transport
+              push-token: ${{ secrets.GITHUB_TOKEN }}
     ```
   </TabItem>
-  <TabItem label="Short refs">
+  <TabItem label="Single platform">
     ```yaml
-    # Setup + publish via short refs (same repo)
     - uses: Archont561/pixi-sandbox/setup@v0.2.0
       id: setup
-      with:
-        version: v0.2.0
+      with: { version: v0.2.0 }
     - uses: Archont561/pixi-sandbox/publish@v0.2.0
       with:
         project: .
@@ -138,6 +160,25 @@ The reusable workflow downloads checksum-verified standalone release, expands pl
     ```
   </TabItem>
 </Tabs>
+
+<details>
+<summary>Alternative: reusable workflow</summary>
+
+```yaml
+jobs:
+  sandbox:
+    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@<sha>
+    with:
+      config: .pixi-sandbox.toml
+      release-repository: Archont561/pixi-sandbox
+      release-version: v0.2.0
+    secrets:
+      SANDBOX_PUSH_TOKEN: ${{ secrets.SANDBOX_PUSH_TOKEN }}
+```
+
+Needs duplicate `release-*` inputs — prefer two actions above.
+
+</details>
 
 <div style="display: flex; gap: 0.5rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; margin: 1rem 0;">
   <Icon name="lucide:info" size={18} />
