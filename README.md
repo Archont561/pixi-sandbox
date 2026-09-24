@@ -218,10 +218,77 @@ Pinned SHA (supply-chain secure):
     push-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### Reusable workflow (multi-platform matrix)
+### Full workflow — just two actions (recommended)
+
+No `release-repository`/`release-version` inputs. Your `uses: @v0.2.0` pin *is* the version.
 
 ```yaml
 # .github/workflows/publish-sandbox.yml in your project
+name: publish sandbox
+on:
+  push: { branches: [main] }
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs: { matrix: ${{ steps.plan.outputs.matrix }} }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Archont561/pixi-sandbox/setup@v0.2.0
+        id: setup
+        with: { version: v0.2.0 }
+      - id: plan
+        run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
+
+  publish:
+    needs: plan
+    strategy: { matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}, fail-fast: false }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: prefix-dev/setup-pixi@v0.10.2
+      - uses: Archont561/pixi-sandbox/setup@v0.2.0
+        id: setup
+        with: { version: v0.2.0 }
+      - uses: Archont561/pixi-sandbox/publish@v0.2.0
+        with:
+          project: .
+          environments: ${{ matrix.environments }}
+          platform: ${{ matrix.platform }}
+          branch: ${{ matrix.branch }}
+          self-bin: ${{ steps.setup.outputs.path }}
+          remote: https://github.com/${{ github.repository }}.git
+          output-dir: /tmp/transport
+          push-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Single-platform without `plan`:
+
+```yaml
+- uses: Archont561/pixi-sandbox/setup@v0.2.0
+  id: setup
+  with: { version: v0.2.0 }
+- uses: Archont561/pixi-sandbox/publish@v0.2.0
+  with:
+    project: .
+    environments: dev,docs
+    platform: linux-64
+    branch: sandbox/developer-linux-64
+    self-bin: ${{ steps.setup.outputs.path }}
+    remote: https://github.com/${{ github.repository }}.git
+    output-dir: /tmp/transport
+    push-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+- `plan --json` validates `.pixi-sandbox.toml` and gives native `runner` per `bundle × platform`
+- `setup` verifies `SHA256SUMS` before `chmod +x`; `publish` verifies `doctor --verify` before push
+- Token via `http.extraheader` (never URL), rejects cross-packing
+
+<details>
+<summary>Alternative: reusable workflow</summary>
+
+```yaml
 jobs:
   publish:
     uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.2.0
@@ -233,10 +300,7 @@ jobs:
       SANDBOX_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-- Validates `.pixi-sandbox.toml` via `plan --json`
-- One native job per `bundle × platform` on native runner
-- Uses `setup-pixi-sandbox` (checksum-verified) + `publish-pixi-sandbox`
-- Token via `http.extraheader` (never URL), rejects cross-packing, verifies SHA before exec
+</details>
 
 Docs: https://archont561.github.io/pixi-sandbox/guides/ci-publishing/ and https://archont561.github.io/pixi-sandbox/guides/actions/
 

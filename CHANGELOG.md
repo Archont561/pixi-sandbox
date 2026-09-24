@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-21
+
 ### Features
 
 - **setup & publish short refs in same repo** — both GitHub Actions now usable with short references:
@@ -22,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - **setup action like `prefix-dev/setup-pixi`** — root `action.yml` proxy with optional `repository`/`version` defaults, so minimal usage is `uses: Archont561/pixi-sandbox@v0.2.0`.
 
 - **pure Rust self-bootstrap** — `sandbox-pack` now builds Rust binary via `sandbox-build-self` (`cargo build -p pixi-sandbox --release`) and embeds `target/release/pixi-sandbox` as `--self-bin` instead of Python reference implementation.
+
+- **two-action user workflow** — recommended publishing is now just `Archont561/pixi-sandbox/setup@vX` + `Archont561/pixi-sandbox/publish@vX` with `plan --json` matrix; no `release-repository`/`release-version` duplication. Reusable workflow `publish-sandbox.yml` kept as alternative.
 
 ### Fixes
 
@@ -40,6 +44,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - Removed Python refs from `.knowledge/README.md`, `AGENTS.md`, `design.md`, `publish-automation.md`, `rust-bootstrap.md`, `repository.mdx`, `quickstart.mdx`, `restore.mdx`, `fixtures/README.md`, `transport/README.md`, `EVIDENCE.md`, `REPRODUCE-TRANSCRIPT.md`.
 - Updated `quickstart.mdx` to use Rust self-bin and unified publisher.
 - Added `setup/README.md` and `publish/README.md` short-alias docs.
+- Removed `.knowledge` links from user-facing docs (`design.mdx`, `repository.mdx`) — docs now standalone.
+- Updated `README.md`, `quickstart.mdx`, `guides/ci-publishing.mdx`, `guides/actions.mdx` to make two-action workflow the primary example; reusable workflow moved to alternative.
 
 ### CI
 

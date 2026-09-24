@@ -14,10 +14,10 @@ path = "src/main.rs"
 [dependencies]
 # `version` next to `path`: cargo-deny rejects a bare path dependency as a wildcard, and the
 # published `.conda` should state which core it was built against.
-pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.1.0" }
+pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.2.0" }
 # git goes through a trait (crates/pixi-sandbox-git): the real binary uses `ShellGit`, tests
 # use `FakeGit`, and neither the CLI nor the tests ever touch the developer's own repository.
-pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.1.0" }
+pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.2.0" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 serde_json = { workspace = true }
@@ -31,8 +31,8 @@ ureq = { workspace = true }
 # Integration tests link against the crate's dependencies only if they are repeated here, and
 # `tests/fixtures.rs` deliberately verifies the fixture with the real core (not a copy of the
 # logic it is supposed to exercise).
-pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.1.0" }
-pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.1.0" }
+pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.2.0" }
+pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.2.0" }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
 tempfile = { workspace = true }
