@@ -1,26 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json",
   "name": "pixi-sandbox",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": ".."
-  },
-  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-  "remoteUser": "root",
-  "updateRemoteUserUID": false,
-  "mounts": [
-    "source=pixi-sandbox-cache,target=/root/.cache/rattler,type=volume"
-  ],
-  "containerEnv": {
-    "PIXI_COLOR": "always"
-  },
-  "postCreateCommand": "pixi install --locked --all",
-  "customizations": {
-    "vscode": {
-      "extensions": [
-        "rust-lang.rust-analyzer",
-        "tamasfe.even-better-toml"
-      ]
-    }
-  }
+  "image": "ghcr.io/prefix-dev/pixi:0.81.0",
+  "postCreateCommand": "pixi install --locked --all"
 }
