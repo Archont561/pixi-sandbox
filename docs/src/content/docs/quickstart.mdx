@@ -6,7 +6,26 @@ description: Build a sandbox bundle and publish it from CI — with icons from I
 import { Icon } from 'astro-icon/components';
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-## On your machine
+## Use pixi-sandbox in two commands
+
+Connected project root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Archont561/pixi-sandbox/v0.3.0/scripts/init.sh | sh
+```
+
+After committing the generated files, letting GitHub publish the sandbox branch, and transferring
+that branch into the airlock:
+
+```bash
+./restore.sh
+```
+
+The first command downloads the proper release binary for the host, verifies `SHA256SUMS`, and
+scaffolds configuration, CI, and both restore launchers. The second performs a local `git archive`
+and restores without network access.
+
+## Develop pixi-sandbox itself
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
   <Icon name="lucide:terminal" size={18} />
@@ -63,7 +82,7 @@ Git bundle containing the sandbox branch crosses the air gap, restoration is one
 
 ```bash
 cd /path/to/project
-./restore
+./restore.sh
 # Windows: .\\restore.ps1
 ```
 

@@ -874,7 +874,7 @@ fn init_github_generates_minimal_project_launchers_and_workflow() {
             "generated GitHub sandbox workflow",
         ));
 
-    let shell = fs::read_to_string(project.join("restore")).unwrap();
+    let shell = fs::read_to_string(project.join("restore.sh")).unwrap();
     assert!(shell.contains("git -C \"$ROOT\" archive"));
     assert!(shell.contains("sandbox/developer-linux-64"));
     assert!(shell.contains(".pixi-sandbox/tools/$PLATFORM/pixi-sandbox"));
@@ -1049,7 +1049,7 @@ fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary(
     git(&["checkout", "-q", "main"]);
 
     let status = StdCommand::new("sh")
-        .arg("restore")
+        .arg("restore.sh")
         .current_dir(&project)
         .status()
         .unwrap();

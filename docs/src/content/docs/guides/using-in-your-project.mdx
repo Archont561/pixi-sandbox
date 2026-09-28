@@ -8,18 +8,58 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 This guide is for **project owners** who want to ship their pixi environments to airlocked machines.
 
+## The two product commands
+
+Run the first command from the root of your Pixi project on the **connected side**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Archont561/pixi-sandbox/v0.3.0/scripts/init.sh | sh
+```
+
+The script detects Linux/macOS and CPU architecture, downloads the matching v0.3.0 release asset,
+verifies it against the release's `SHA256SUMS`, and runs `pixi-sandbox init github`. It creates:
+
+```text
+.pixi-sandbox.toml
+.github/workflows/publish-sandbox.yml
+restore.sh
+restore.ps1
+```
+
+Review and commit those files. Pushing the project runs the generated workflow and publishes the
+configured `sandbox/<bundle>-<platform>` branches. Transfer Git history containing the project and
+sandbox branch into the disconnected network. On the **airlock**, the second product command is:
+
+```bash
+./restore.sh
+```
+
+That script only uses local Git objects: it archives the platform's sandbox branch, locates the
+verified nested binary, and restores everything offline. It never contacts GitHub. Windows users
+run `.\\restore.ps1` instead.
+
+> The Git push, workflow completion, and transfer across the air gap are deployment operations,
+> not additional pixi-sandbox commands. The airlock clone must contain the sandbox branch.
+
+### Select a release or mirror
+
+The connected-side script accepts environment overrides:
+
+```bash
+PIXI_SANDBOX_VERSION=v0.3.0 \
+PIXI_SANDBOX_REPOSITORY=Archont561/pixi-sandbox \
+PIXI_SANDBOX_PROJECT_ROOT=. \
+  sh -c "$(curl -fsSL https://raw.githubusercontent.com/Archont561/pixi-sandbox/v0.3.0/scripts/init.sh)"
+```
+
 ## 1. Prerequisites
 
 - Your project has `pixi.toml` + `pixi.lock`
 - Optional: `Cargo.toml` + `Cargo.lock` if you want vendored crates
-- `pixi-sandbox` installed (see [Installation](/pixi-sandbox/installation/))
+- On the connected host: `curl`, Git, and either `sha256sum` or `shasum`
+- On the airlock: Git and `tar`; Pixi and `pixi-sandbox` do not need to be installed
 
-Check:
-
-```bash
-pixi-sandbox tools list
-# Should show pixi, pixi-pack, pixi-unpack pins for linux-64, osx-arm64, etc.
-```
+The one-line initializer downloads `pixi-sandbox` temporarily and checksum-verifies it.
 
 ## 2. Decide what to ship
 
@@ -127,29 +167,21 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 
 ## 5. Restore on airlock
 
-Give the airlock operator the one-liner:
+After the project and its sandbox branch have crossed the air gap:
 
 ```bash
-# Repository-level one-liner with PATH aliases (like setup-pixi)
-bash scripts/restore.sh sandbox/developer-linux-64
-# or
-pixi run sandbox-restore
-
-# Manual: the extracted branch has its executable at the root
-git fetch origin sandbox/developer-linux-64:sandbox/developer-linux-64
-git worktree add /tmp/sb origin/sandbox/developer-linux-64
-/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor --branch-location /tmp/sb --verify
-# equivalent explicit form:
-/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
-  --branch-location /tmp/sb \
-  --output-path . --force
-git worktree remove /tmp/sb --force
-source .pixi/sandbox-env.sh
-pixi install --frozen --offline   # must be no-op
-cargo build --offline             # uses vendored crates
+./restore.sh
 ```
 
-See [Airlock Restore](/pixi-sandbox/restore/) for full operator checklist.
+The generated script selects the native platform branch, uses `git archive` into
+`.pixi/.restore-transport`, and delegates verification and restoration to the branch's
+`.pixi-sandbox/tools/<platform>/pixi-sandbox`. Override branch selection only when needed:
+
+```bash
+PIXI_SANDBOX_BRANCH=sandbox/developer-linux-64 ./restore.sh
+```
+
+See [Airlock Restore](/pixi-sandbox/restore/) for transfer options and the operator checklist.
 
 ## 6. Without cargo vendoring
 

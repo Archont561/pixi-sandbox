@@ -231,7 +231,7 @@ pub struct InitArgs {
     pub config: PathBuf,
 
     /// POSIX airlock launcher path, relative to the project root.
-    #[arg(long, default_value = "restore")]
+    #[arg(long, default_value = "restore.sh")]
     pub restore_script: PathBuf,
 
     /// PowerShell airlock launcher path, relative to the project root.
