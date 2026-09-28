@@ -243,7 +243,12 @@ jobs:
 
   publish:
     needs: plan
-    strategy: { matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}, fail-fast: false }
+    # `.include` only — feeding the whole `plan --json` object yields zero jobs,
+    # because its scalar `schema` is read as a matrix dimension (see PublishPlan).
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
+      fail-fast: false
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7.0.1

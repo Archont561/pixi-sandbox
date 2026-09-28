@@ -295,6 +295,59 @@ platforms = ["linux-64", "win-64"]
     assert_eq!(plan["include"][0]["environments"], "dev,docs");
 }
 
+/// Locks the top-level shape of `plan --json`.
+///
+/// Actions treats every key other than `include`/`exclude` as a matrix
+/// dimension and requires an array, so any *scalar* sibling of `include`
+/// silently expands the matrix to zero jobs. `schema` is a deliberately
+/// excluded scalar, and consumers must therefore build the matrix from
+/// `.include` alone. Adding a further top-level field means revisiting that.
+#[test]
+fn plan_json_top_level_keys_stay_matrix_safe() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join(".pixi-sandbox.toml");
+    fs::write(
+        &config,
+        r#"
+schema = 1
+branch_prefix = "sandbox"
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+"#,
+    )
+    .unwrap();
+
+    let output = bin()
+        .args(["plan", "--config", config.to_str().unwrap(), "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let plan: Value = serde_json::from_slice(&output).unwrap();
+    let object = plan.as_object().unwrap();
+
+    let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        ["include", "schema"],
+        "unexpected plan --json top level"
+    );
+
+    for key in &keys {
+        let is_matrix_key = matches!(*key, "include" | "exclude");
+        let is_known_scalar = *key == "schema";
+        assert!(
+            is_matrix_key || is_known_scalar,
+            "{key} would be read as a matrix dimension and must be an array"
+        );
+    }
+}
+
 #[test]
 fn plan_rejects_unreviewed_implicit_platform_runner_selection() {
     let dir = tempfile::tempdir().unwrap();

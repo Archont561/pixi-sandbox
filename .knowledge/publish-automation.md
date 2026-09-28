@@ -15,7 +15,7 @@ The implementation consists of four pieces:
 | --- | --- |
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical helper-tool pins compiled into every Rust binary |
 | `.pixi-sandbox.toml` | project-owned declaration of publishable bundles, platforms, and optional runner overrides |
-| `pixi-sandbox plan --json` | validates that declaration and emits an Actions-compatible matrix |
+| `pixi-sandbox plan --json` | validates that declaration and emits an Actions-compatible matrix (consume `.include`; the scalar `schema` is not a matrix dimension) |
 | `setup-pixi-sandbox` + `publish-sandboxes.yml` | download/verify a release binary, then pack/verify/publish one native branch per matrix entry |
 
 ## Embedded helper-tool pins

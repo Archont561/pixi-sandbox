@@ -24,7 +24,12 @@ jobs:
         run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
   publish:
     needs: plan
-    strategy: { matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}, fail-fast: false }
+    strategy:
+      # `.include` only — `plan --json` also carries a scalar `schema`, which
+      # Actions reads as a matrix dimension and therefore expands to zero jobs.
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
+      fail-fast: false
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7.0.1

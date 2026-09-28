@@ -50,7 +50,12 @@ pub struct Bundle {
     pub cargo_vendor: Option<bool>,
 }
 
-/// JSON shape emitted by `pixi-sandbox plan --json`, directly consumable as an Actions matrix.
+/// JSON shape emitted by `pixi-sandbox plan --json`.
+///
+/// Consumers must build their matrix from `.include` alone, never from this
+/// object wholesale. Actions reads every top-level key other than
+/// `include`/`exclude` as a matrix dimension and requires an array, so the
+/// scalar `schema` makes `matrix: ${{ fromJSON(plan) }}` expand to zero jobs.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PublishPlan {
     pub schema: u32,

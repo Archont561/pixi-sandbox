@@ -220,6 +220,9 @@ jobs:
       - name: Rust cache (local mode)
         if: ${{ inputs.release-repository == '' }}
         uses: Swatinem/rust-cache@v2.9.2 # v2.9.2
+        with:
+          # The Cargo workspace is in project/, not the job root.
+          workspaces: project
 
       - name: Emit reviewed native matrix (local mode)
         if: ${{ inputs.release-repository == '' && inputs.environments == '' }}
@@ -290,7 +293,11 @@ jobs:
       cancel-in-progress: false
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+      # Only `.include` is a matrix. `plan --json` also emits a scalar `schema`
+      # version, and Actions reads every other key as a dimension that must be an
+      # array, so handing it the whole object silently yields zero jobs.
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
     steps:
       - name: Checkout project
         uses: actions/checkout@v7.0.1 # v7.0.1
@@ -369,6 +376,9 @@ jobs:
       - name: Rust cache (local)
         if: ${{ inputs.release-repository == '' }}
         uses: Swatinem/rust-cache@v2.9.2 # v2.9.2
+        with:
+          # The Cargo workspace is in project/, not the job root.
+          workspaces: project
 
       - name: Build pixi-sandbox binary (local)
         if: ${{ inputs.release-repository == '' }}
