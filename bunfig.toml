@@ -1,0 +1,18 @@
+# The workspace root install. Kept next to package.json because it applies to every
+# member, and the value below is load-bearing rather than cosmetic.
+#
+# Declaring `workspaces` switches bun to its *isolated* linker: transitive packages land
+# in node_modules/.bun and are visible only from their dependents' own node_modules. Astro
+# 7's markdown pipeline (`@astrojs/markdown-satteri` → `satteri`) is an exception — it
+# bundles the platform-agnostic shim into `docs/dist/.prerender` and `require()`s the
+# native package by name at runtime, from the bundle's own directory. Under the isolated
+# layout nothing named `@bruits/satteri-linux-x64-gnu` is reachable from the repo root, so
+# every prerendered page fails with "Cannot find native binding".
+#
+# `hoisted` is what a single-project install already did (the site used to be its own
+# project, with its own lockfile), so this restores the working layout rather than
+# introducing a new one. The cost is npm/yarn's flat node_modules: a version conflict
+# between two workspace members needs an explicit `overrides` entry. One member today, so
+# that is a future problem, and a real one to weigh before the second member arrives.
+[install]
+linker = "hoisted"

@@ -2,5 +2,5 @@
   "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json",
   "name": "pixi-sandbox",
   "image": "ghcr.io/prefix-dev/pixi:0.81.0",
-  "postCreateCommand": "pixi global install git gh && pixi install --locked --all && pixi run setup-opencode"
+  "postCreateCommand": "pixi global install git gh && pixi install --locked --all && pixi run docs-install && pixi run setup-opencode"
 }

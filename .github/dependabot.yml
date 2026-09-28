@@ -46,11 +46,14 @@ updates:
           - minor
           - patch
 
-  # Docs site (Astro + Starlight) — must be `bun`, not `npm`: the build installs with
-  # `bun install --frozen-lockfile` against docs/bun.lock. The npm ecosystem cannot read a
-  # bun lockfile, so it updated package.json without bun.lock and broke every frozen install.
+  # Bun workspace (Astro + Starlight docs, plus the repo-wide `backlog.md` / `skills`
+  # devDependencies) — must be `bun`, not `npm`: the build installs with
+  # `bun install --frozen-lockfile` against the root bun.lock. The npm ecosystem cannot
+  # read a bun lockfile, so it updated package.json without bun.lock and broke every
+  # frozen install. The directory is `/` because the lockfile is at the root now; the
+  # docs site is a workspace member, so its dependencies are covered by the same entry.
   - package-ecosystem: bun
-    directory: "/docs"
+    directory: "/"
     schedule:
       interval: weekly
       day: monday

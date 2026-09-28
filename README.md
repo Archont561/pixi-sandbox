@@ -419,6 +419,7 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals, opencode via `setup-opencode` |
 | `lefthook.yml` | Git hooks — every hook calls a pixi task so hooks and CI cannot drift |
 | `docs/` | Starlight + astro-icon + Iconify docs (12 pages) |
+| `package.json` + `bun.lock` | Root bun workspace: `docs` member + repo-wide `backlog.md` / `skills` devDependencies |
 | `.knowledge/` | Open Knowledge Format: decisions D1–D11, design, benchmarks |
 | `CHANGELOG.md` | Changelog via convco |
 
@@ -441,8 +442,10 @@ pixi run coverage
 pixi run docs-dev
 pixi run docs-build
 
-# Agent CLI (global bun install + model catalogue refresh)
+# Agent CLI + repo tooling
 pixi run setup-opencode
+pixi run backlog           # markdown backlog, from the root bun workspace
+pixi run skills            # agent skills CLI, same workspace
 
 # Transport pipeline (pure Rust self-bin)
 pixi run sandbox-plan
@@ -468,19 +471,36 @@ pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
 `.devcontainer/devcontainer.json` is four keys and no Dockerfile — it runs the official
 `ghcr.io/prefix-dev/pixi` image as-is. That image is Ubuntu plus the pixi binary, so the
 post-create step installs the two host tools this repo's Git-native workflow needs, then
-materialises the project environment, then installs the agent CLI:
+materialises the project environment, installs the bun workspace, and installs the agent CLI:
 
 ```jsonc
-"postCreateCommand": "pixi global install git gh && pixi install --locked --all && pixi run setup-opencode"
+"postCreateCommand": "pixi global install git gh && pixi install --locked --all && pixi run docs-install && pixi run setup-opencode"
 ```
 
 `pixi global` installs into `/root/.pixi/bin`, which the official image already has on `PATH`.
+
+The last two steps go through `pixi run` rather than a bare `bun install`: `bun` lives in the
+materialised environment, which is on `PATH` inside a pixi task and nowhere else.
 
 `pixi run setup-opencode` runs last, because it needs `bun` from the materialised
 environment. It installs opencode globally with bun, links the binary into `/usr/local/bin`
 (bun's own global bin dir is on nobody's `PATH`), so `opencode` is a command in every shell
 of the container, and then refreshes the model catalogue (`~/.cache/opencode/models.json`),
 which a binary upgrade does not invalidate.
+
+### Bun workspace
+
+`package.json` at the root makes this one bun workspace with `docs` as a member, so
+`pixi run docs-install` runs at the root and hoists into the root `node_modules`; `docs/` has
+no lockfile of its own any more. `bunfig.toml` pins the install to bun's `hoisted` linker
+because the workspace default (`isolated`) hides transitive platform packages that Astro
+prerenders by name — see that file for the failure it prevents. The root also carries the
+repo-wide dev tooling — `backlog.md` and `skills` — reachable as `pixi run backlog` /
+`pixi run skills` after one `pixi run docs-install`. Both tasks are `bun x` (the conda `bun`
+package ships no `bunx` shim), which prefers the workspace install over the registry, so the
+lockfile still decides what they run; they run under `bun` rather than through their `node`
+shebang, because `default` carries no `node` and adding one would put ~50 MB of developer
+tooling into the published sandbox branch.
 
 ---
 

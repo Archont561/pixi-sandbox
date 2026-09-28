@@ -6,7 +6,7 @@ name: docs
 on:
   push:
     branches: [main]
-    paths: ["docs/**", "crates/**", ".knowledge/**", "pixi.toml", "pixi.lock"]
+    paths: ["docs/**", "crates/**", ".knowledge/**", "package.json", "bun.lock", "pixi.toml", "pixi.lock"]
   workflow_dispatch:
 
 concurrency:

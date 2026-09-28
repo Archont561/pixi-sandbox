@@ -96,7 +96,10 @@ lint = { depends-on = [
 ] }
 
 # docs
-docs-install = { cmd = "bun install --frozen-lockfile", cwd = "docs" }
+# One bun workspace at the repo root (package.json workspaces: ["docs"]), so the
+# install runs there and hoists into the root node_modules; `docs/` has no lockfile
+# of its own any more.
+docs-install = "bun install --frozen-lockfile"
 docs-dev = { cmd = "bun run dev", cwd = "docs" }
 docs-build = { depends-on = [
   "docs-install",
@@ -129,6 +132,23 @@ opencode-install = 'BUN_BIN="$(bun pm bin -g)" && bun add -g opencode-ai@latest 
 setup-opencode = { depends-on = [
   "opencode-install",
 ], cmd = "\"$(bun pm bin -g)/opencode\" models --refresh" }
+
+# ---------------------------------------------------------------------------
+# Repo-wide dev tooling from the root bun workspace (`backlog.md`, `skills`).
+# `bun x`, not the `bunx` spelling: the conda `bun` package ships no `bunx` shim, so in
+# this environment the subcommand is the only form that resolves (it is what `bunx`
+# execs). `bun x` prefers the workspace install over the registry — `bun x astro
+# --version` reports the locked 7.3.5, not the newest published — so the committed
+# lockfile still pins what these tasks run.
+#
+# They have to run under bun at all: both bins carry a `#!/usr/bin/env node` shebang and
+# `default` carries no node. Adding one would put ~50 MB of developer tooling into the
+# published sandbox branch to carry nothing an airlock restores, so a bare
+# `node_modules/.bin/backlog` in a shell fails with "env: node: No such file or
+# directory" — go through the task.
+# ---------------------------------------------------------------------------
+backlog = "bun x backlog"
+skills = "bun x skills"
 
 # ---------------------------------------------------------------------------
 # The transport pipeline, locally: pack → doctor → publish. These tasks exercise the

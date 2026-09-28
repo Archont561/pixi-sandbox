@@ -14,10 +14,11 @@ pixi-sandbox/
 │   ├── pixi-sandbox-core/     the library: wire format, sharding, verification
 │   ├── pixi-sandbox-git/      git behind a trait: real git + an in-memory mock
 │   └── pixi-sandbox/          the CLI — and, under tests/fixtures/, the test fixtures
-├── docs/                      this site (Astro + Starlight → GitHub Pages)
+├── docs/                      this site (Astro + Starlight → GitHub Pages), a bun workspace member
 ├── .github/                   workflows plus verified release/setup/publish Actions
 ├── .pixi-sandbox.toml         reviewed bundle/platform plan for release-driven publishing
 ├── .convoco/                  why convoco is deliberately absent
+├── package.json               the bun workspace: docs plus repo-wide devDependencies
 ├── pixi.toml                  environments and every task a human, hook or CI job runs
 └── Cargo.toml                 workspace: members, shared dependency versions
 ```
@@ -98,6 +99,6 @@ in the workflow's `env:` block.
 
 ## What is never committed
 
-`.pixi/`, `target/`, `vendor/`, `.pixi-sandbox/`, `docs/node_modules/`, `docs/dist/` and
+`.pixi/`, `target/`, `vendor/`, `.pixi-sandbox/`, `node_modules/`, `docs/dist/` and
 `.sandbox-*`. The payload lives on the sandbox branch; the crate sources are vendored on
 demand; a fixture that grows past a quarter of a MiB fails a test.

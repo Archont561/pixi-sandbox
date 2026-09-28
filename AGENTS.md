@@ -27,6 +27,7 @@ opinion.
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
 | `feature.utils.actionlint` | runs `actionlint` from conda directly when validating workflows in the `default` environment |
 | `scripts/restore.sh` | one-liner offline reconstruction from orphan branch with PATH aliases; derives the branch from `.pixi-sandbox.toml` for the host platform |
+| `package.json` + `bun.lock` | the root bun workspace — `docs` is a member, so `docs-install` runs at the root — plus the repo-wide `backlog.md` / `skills` devDependencies (`pixi run backlog`, `pixi run skills`) |
 
 ## Invariants (do not break these)
 
@@ -39,7 +40,7 @@ opinion.
    would destroy git dedup (measured: +0.07 MiB vs +3.96 MiB per crate bump).
 5. **Nothing is downloaded at restore time.** The bundle is self-contained; CI fetches tools, the
    airlock never does.
-6. **Do not commit generated weight**: `.pixi/`, `target/`, `vendor/`, `.pixi-sandbox/`, `docs/dist/`.
+6. **Do not commit generated weight**: `.pixi/`, `target/`, `vendor/`, `node_modules/`, `.pixi-sandbox/`, `docs/dist/`.
 7. **A dynamically linked tool is a bug**, not a warning to ignore (`verify.rs` flags it).
 8. **Git only through `GitProtocol`** — never a bare `Command::new("git")` outside
    `pixi-sandbox-git` (D9). Tests use `FakeGit`; `--dry-run` uses a runner, not a second code path.
@@ -59,6 +60,9 @@ pixi run lint           # fmt-check + clippy -D warnings + deny + actionlint + t
 pixi run test           # nextest workspace, including fixture-backed offline lifecycle tests
 pixi run coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
 pixi run docs-dev       # Astro dev server for docs/
+pixi run docs-install   # bun install --frozen-lockfile at the root of the bun workspace
+pixi run backlog        # repo backlog (needs one docs-install)
+pixi run skills         # agent skills CLI (needs one docs-install)
 pixi run sandbox-plan   # validate .pixi-sandbox.toml and show native publish jobs
 pixi run lint-sandbox-plan # CI form: validate root plan plus embedded tool coverage
 pixi run sandbox-pack   # pack the transport (Rust CLI; embeds the chosen self-bootstrap binary)
