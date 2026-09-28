@@ -36,77 +36,39 @@ case "$(uname -s)-$(uname -m)" in
     ;;
 esac
 
-# Minimal reader for the subset of TOML `.pixi-sandbox.toml` is allowed to use (flat root keys
-# plus [[bundle]] tables — see crates/pixi-sandbox-core/src/sandbox_config.rs). It exists because
-# the restore path must stay bootstrap-only: the binary that could print the real plan is the
-# very thing this script is about to unpack, and no Python/pixi is assumed on an airlocked host.
-read_config() {
-  awk '
-    function trim(s) { sub(/^[ \t\r]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
-    function unquote(s,   q) {
-      s = trim(s)
-      q = substr(s, 1, 1)
-      if ((q == "\"" || q == "'\''") && substr(s, length(s), 1) == q) {
-        s = substr(s, 2, length(s) - 2)
-      }
-      return s
-    }
-    # Drop `#` comments, but only outside quoted strings.
-    function strip_comment(line,   out, i, c, quote) {
-      out = ""; quote = ""
-      for (i = 1; i <= length(line); i++) {
-        c = substr(line, i, 1)
-        if (quote != "") { out = out c; if (c == quote) quote = ""; continue }
-        if (c == "\"" || c == "'\''") { quote = c; out = out c; continue }
-        if (c == "#") break
-        out = out c
-      }
-      return out
-    }
-    function flush(   i, n, parts) {
-      if (table != "bundle" || name == "") return
-      n = split(platforms, parts, ",")
-      for (i = 1; i <= n; i++) {
-        if (parts[i] != "") print "target\t" name "\t" parts[i] "\t" prefix "/" name "-" parts[i]
-      }
-    }
-    function parse_array(value,   i, n, parts, out) {
-      sub(/^[ \t]*\[/, "", value); sub(/\][ \t]*$/, "", value)
-      n = split(value, parts, ",")
-      out = ""
-      for (i = 1; i <= n; i++) {
-        parts[i] = unquote(parts[i])
-        if (parts[i] != "") out = (out == "" ? parts[i] : out "," parts[i])
-      }
-      return out
-    }
-    function handle(line,   key, value, eq) {
-      if (line ~ /^\[\[[ \t]*bundle[ \t]*\]\]$/) { flush(); table = "bundle"; name = ""; platforms = ""; return }
-      if (line ~ /^\[/) { flush(); table = "other"; name = ""; platforms = ""; return }
-      eq = index(line, "=")
-      if (eq == 0) return
-      key = trim(substr(line, 1, eq - 1))
-      value = trim(substr(line, eq + 1))
-      if (table == "") {
-        if (key == "schema") schema = unquote(value)
-        else if (key == "branch_prefix") prefix = unquote(value)
-      } else if (table == "bundle") {
-        if (key == "name") name = unquote(value)
-        else if (key == "platforms") platforms = parse_array(value)
-      }
-    }
-    BEGIN { prefix = "sandbox"; schema = ""; table = ""; buffer = ""; pending = 0 }
-    {
-      line = trim(strip_comment($0))
-      if (line == "" && !pending) next
-      buffer = (buffer == "" ? line : buffer " " line)
-      # Arrays may span lines; hold the logical line until the bracket closes.
-      if (pending) { if (index(line, "]")) pending = 0; else next }
-      else if (buffer ~ /=[ \t]*\[/ && index(buffer, "]") == 0) { pending = 1; next }
-      handle(buffer); buffer = ""
-    }
-    END { if (buffer != "") handle(buffer); flush(); print "schema\t" schema }
-  ' "$1"
+# The config is read with plain regexes, not a TOML parser: the restore path is bootstrap-only,
+# so the binary that could print the real plan is the very thing this script is about to unpack,
+# and an airlocked host is not assumed to have Python or pixi — only sh/sed/grep. That is enough
+# here because `.pixi-sandbox.toml` is a flat, reviewed file (see
+# crates/pixi-sandbox-core/src/sandbox_config.rs) whose names are restricted to [a-z0-9-].
+# Every pattern anchors on the quotes around a value, so trailing `#` comments need no handling.
+QUOTE='["'"'"']'
+
+config_value() {
+  # config_value <key> — first root-level scalar declared for that key.
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*$QUOTE\([^\"']*\).*/\1/p" "$CONFIG" | sed 1q
+}
+
+config_targets() {
+  # Every declared target as `<bundle>\t<platform>\t<branch>`. Arrays may span lines, so the file
+  # is flattened first and then cut into one record per [[bundle]] table; from there two regexes
+  # read the bundle name and its platforms array.
+  tr '\n' ' ' <"$CONFIG" |
+    sed 's/\[\[[[:space:]]*bundle[[:space:]]*\]\]/\
+/g' |
+    while IFS= read -r record || [ -n "$record" ]; do # `||` keeps the unterminated last record
+      name="$(printf '%s' "$record" | sed -n "s/.*name[[:space:]]*=[[:space:]]*$QUOTE\([^\"']*\).*/\1/p")"
+      platforms="$(printf '%s' "$record" |
+        sed -n "s/.*platforms[[:space:]]*=[[:space:]]*\[\([^]]*\)\].*/\1/p" | tr -d "\"' " | tr ',' ' ')"
+      [ -n "$name" ] && [ -n "$platforms" ] || continue
+      for platform in $platforms; do
+        printf '%s\t%s\t%s/%s-%s\n' "$name" "$platform" "$PREFIX" "$name" "$platform"
+      done
+    done
+}
+
+declared_branches() {
+  printf '%s\n' "$TARGETS" | cut -f3 | paste -sd' ' -
 }
 
 derive_branch() {
@@ -115,43 +77,42 @@ derive_branch() {
     exit 2
   fi
 
-  local parsed schema targets matches bundles
-  parsed="$(read_config "$CONFIG")"
-  schema="$(printf '%s\n' "$parsed" | awk -F'\t' '$1 == "schema" { print $2 }')"
+  local schema matches count
+  schema="$(sed -n 's/^[[:space:]]*schema[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CONFIG" | sed 1q)"
   if [ "$schema" != "1" ]; then
     echo "::error::$CONFIG declares schema ${schema:-<missing>}; this script only knows schema 1 branch naming — pass the branch explicitly" >&2
     exit 2
   fi
 
-  targets="$(printf '%s\n' "$parsed" | awk -F'\t' '$1 == "target" { print $2 "\t" $3 "\t" $4 }')"
-  if [ -z "$targets" ]; then
+  PREFIX="$(config_value branch_prefix)"
+  PREFIX="${PREFIX:-sandbox}"
+  TARGETS="$(config_targets)"
+  if [ -z "$TARGETS" ]; then
     echo "::error::$CONFIG declares no [[bundle]] targets" >&2
     exit 2
   fi
 
-  matches="$(printf '%s\n' "$targets" | awk -F'\t' -v platform="$PLATFORM" '$2 == platform')"
+  matches="$(printf '%s\n' "$TARGETS" | awk -F'\t' -v platform="$PLATFORM" '$2 == platform')"
   if [ -n "${PIXI_SANDBOX_BUNDLE:-}" ]; then
     matches="$(printf '%s\n' "$matches" | awk -F'\t' -v bundle="$PIXI_SANDBOX_BUNDLE" '$1 == bundle')"
     if [ -z "$matches" ]; then
       echo "::error::$CONFIG has no bundle '$PIXI_SANDBOX_BUNDLE' for platform $PLATFORM" >&2
-      printf '  declared: %s\n' "$(printf '%s\n' "$targets" | cut -f3 | paste -sd' ' -)" >&2
+      printf '  declared: %s\n' "$(declared_branches)" >&2
       exit 2
     fi
   fi
 
-  local count
   count="$(printf '%s\n' "$matches" | awk 'NF { total++ } END { print total + 0 }')"
   case "$count" in
     0)
       echo "::error::$CONFIG publishes nothing for this host ($PLATFORM)" >&2
-      printf '  declared branches: %s\n' "$(printf '%s\n' "$targets" | cut -f3 | paste -sd' ' -)" >&2
+      printf '  declared branches: %s\n' "$(declared_branches)" >&2
       echo "  add $PLATFORM to a [[bundle]], or pass a branch explicitly" >&2
       exit 2
       ;;
     1) ;;
     *)
-      bundles="$(printf '%s\n' "$matches" | cut -f1 | paste -sd' ' -)"
-      echo "::error::$CONFIG declares several bundles for $PLATFORM: $bundles" >&2
+      echo "::error::$CONFIG declares several bundles for $PLATFORM: $(printf '%s\n' "$matches" | cut -f1 | paste -sd' ' -)" >&2
       echo "  choose one: PIXI_SANDBOX_BUNDLE=<name> bash scripts/restore.sh" >&2
       exit 2
       ;;

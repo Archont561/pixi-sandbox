@@ -322,7 +322,7 @@ schema bump requires a fixture update in `tests/manifest.rs`.
 | `.github/actions/` | `setup-pixi-sandbox` (like `setup-pixi`) + `publish-pixi-sandbox` composites (D11) |
 | `action.yml` | root composite alias so `uses: Archont561/pixi-sandbox@vX` works like `setup-pixi` |
 | `pixi.toml` | tasks: `lint`, `test`, `coverage`, `docs-build`, `sandbox-*` |
-| `scripts/restore.sh` | one-liner offline reconstruction with PATH aliases |
+| `scripts/restore.sh` | one-liner offline reconstruction with PATH aliases; branch read from `.pixi-sandbox.toml` |
 
 Conventions that keep it maintainable: the CLI stays a thin shell over `pixi-sandbox-core`;
 comments point at a decision ID or a measurement rather than restating code; generated weight

@@ -37,8 +37,11 @@ cd project
 # .\\restore.ps1         # Windows
 ```
 
-The launcher calls local `git archive`, extracts into project-local scratch, and invokes the
-verified nested binary. It never fetches or downloads.
+The launcher resolves its branch from `.pixi-sandbox.toml`
+(`<branch_prefix>/<bundle>-<platform>` for the host), calls local `git archive`, extracts into
+project-local scratch, and invokes the verified nested binary. It never fetches or downloads.
+Set `PIXI_SANDBOX_BRANCH` to pin an exact branch, or `PIXI_SANDBOX_BUNDLE` to choose between
+bundles that cover the same platform.
 
 ## 2. Look before you leap
 

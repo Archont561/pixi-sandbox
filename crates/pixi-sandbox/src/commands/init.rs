@@ -159,9 +159,49 @@ jobs:
 }
 
 fn posix_restore(branch: &str) -> String {
-    format!(
-        "#!/bin/sh\nset -eu\nROOT=$(git rev-parse --show-toplevel)\ncase $(uname -s)-$(uname -m) in\n  Linux-x86_64) PLATFORM=linux-64 ;;\n  Linux-aarch64|Linux-arm64) PLATFORM=linux-aarch64 ;;\n  Darwin-arm64) PLATFORM=osx-arm64 ;;\n  Darwin-x86_64) PLATFORM=osx-64 ;;\n  *) echo \"unsupported airlock platform: $(uname -s)-$(uname -m)\" >&2; exit 2 ;;\nesac\nDEFAULT_BRANCH={branch}\ncase $DEFAULT_BRANCH in *linux-64) DEFAULT_BRANCH=${{DEFAULT_BRANCH%linux-64}}$PLATFORM ;; esac\nBRANCH=${{PIXI_SANDBOX_BRANCH:-$DEFAULT_BRANCH}}\nif ! git -C \"$ROOT\" rev-parse --verify \"$BRANCH^{{commit}}\" >/dev/null 2>&1; then BRANCH=origin/$BRANCH; fi\nTRANSPORT=\"$ROOT/.pixi/.restore-transport\"\nrm -rf \"$TRANSPORT\"\nmkdir -p \"$TRANSPORT\"\ngit -C \"$ROOT\" archive \"$BRANCH\" | tar -x -C \"$TRANSPORT\"\nBIN=\"$TRANSPORT/.pixi-sandbox/tools/$PLATFORM/pixi-sandbox\"\nexec \"$BIN\" restore --branch-location \"$TRANSPORT\" --output-path \"$ROOT\" --force \"$@\"\n"
-    )
+    // The launcher stays a bootstrap: POSIX sh, no downloads, and no dependency on the tool it
+    // is about to unpack. It prefers the branch declared in `.pixi-sandbox.toml` so a config
+    // change (new bundle, renamed prefix) reaches every checkout without regenerating this file,
+    // and falls back to the branch reviewed at init time when the config cannot decide.
+    let template = r#"#!/bin/sh
+set -eu
+ROOT=$(git rev-parse --show-toplevel)
+case $(uname -s)-$(uname -m) in
+  Linux-x86_64) PLATFORM=linux-64 ;;
+  Linux-aarch64|Linux-arm64) PLATFORM=linux-aarch64 ;;
+  Darwin-arm64) PLATFORM=osx-arm64 ;;
+  Darwin-x86_64) PLATFORM=osx-64 ;;
+  *) echo "unsupported airlock platform: $(uname -s)-$(uname -m)" >&2; exit 2 ;;
+esac
+DEFAULT_BRANCH=__BRANCH__
+case $DEFAULT_BRANCH in *linux-64) DEFAULT_BRANCH=${DEFAULT_BRANCH%linux-64}$PLATFORM ;; esac
+BRANCH=${PIXI_SANDBOX_BRANCH:-}
+CONFIG=$ROOT/.pixi-sandbox.toml
+if [ -z "$BRANCH" ] && [ -r "$CONFIG" ]; then
+  # <branch_prefix>/<bundle>-<platform>, read off the same reviewed plan the publisher uses.
+  PREFIX=$(sed -n "s/^[[:space:]]*branch_prefix[[:space:]]*=[[:space:]]*[\"']\([^\"']*\).*/\1/p" "$CONFIG" | sed 1q)
+  BUNDLES=$(tr '\n' ' ' <"$CONFIG" | sed 's/\[\[[[:space:]]*bundle[[:space:]]*\]\]/\
+/g' | grep -E "platforms[^]]*[\"']$PLATFORM[\"']" |
+    sed -n "s/.*name[[:space:]]*=[[:space:]]*[\"']\([^\"']*\).*/\1/p" || true)
+  if [ -n "${PIXI_SANDBOX_BUNDLE:-}" ]; then
+    BUNDLES=$(printf '%s\n' "$BUNDLES" | grep -Fx "$PIXI_SANDBOX_BUNDLE" || true)
+  fi
+  if [ "$(printf '%s' "$BUNDLES" | grep -c . || true)" = 1 ]; then
+    BRANCH=${PREFIX:-sandbox}/$BUNDLES-$PLATFORM
+  elif [ -n "$BUNDLES" ]; then
+    echo "several bundles publish $PLATFORM; set PIXI_SANDBOX_BUNDLE to choose" >&2
+  fi
+fi
+BRANCH=${BRANCH:-$DEFAULT_BRANCH}
+if ! git -C "$ROOT" rev-parse --verify "$BRANCH^{commit}" >/dev/null 2>&1; then BRANCH=origin/$BRANCH; fi
+TRANSPORT="$ROOT/.pixi/.restore-transport"
+rm -rf "$TRANSPORT"
+mkdir -p "$TRANSPORT"
+git -C "$ROOT" archive "$BRANCH" | tar -x -C "$TRANSPORT"
+BIN="$TRANSPORT/.pixi-sandbox/tools/$PLATFORM/pixi-sandbox"
+exec "$BIN" restore --branch-location "$TRANSPORT" --output-path "$ROOT" --force "$@"
+"#;
+    template.replace("__BRANCH__", branch)
 }
 
 fn windows_branch(branch: &str) -> String {
@@ -171,9 +211,43 @@ fn windows_branch(branch: &str) -> String {
 }
 
 fn powershell_restore(branch: &str) -> String {
-    format!(
-        "$ErrorActionPreference = 'Stop'\n$Root = (git rev-parse --show-toplevel).Trim()\n$Branch = if ($env:PIXI_SANDBOX_BRANCH) {{ $env:PIXI_SANDBOX_BRANCH }} else {{ '{branch}' }}\ngit -C $Root rev-parse --verify \"$Branch^{{commit}}\" 2>$null | Out-Null\nif ($LASTEXITCODE -ne 0) {{ $Branch = \"origin/$Branch\" }}\n$Transport = Join-Path $Root '.pixi/.restore-transport'\n$Archive = Join-Path $Root '.pixi/.restore-transport.tar'\nRemove-Item -Recurse -Force $Transport,$Archive -ErrorAction SilentlyContinue\nNew-Item -ItemType Directory -Force $Transport | Out-Null\ngit -C $Root archive --format=tar --output=$Archive $Branch\nif ($LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }}\ntar -xf $Archive -C $Transport\n$Binary = Join-Path $Transport '.pixi-sandbox/tools/win-64/pixi-sandbox.exe'\n& $Binary restore --branch-location $Transport --output-path $Root --force @args\nexit $LASTEXITCODE\n"
-    )
+    let template = r#"$ErrorActionPreference = 'Stop'
+$Root = (git rev-parse --show-toplevel).Trim()
+$DefaultBranch = '__BRANCH__'
+$Branch = $env:PIXI_SANDBOX_BRANCH
+$Config = Join-Path $Root '.pixi-sandbox.toml'
+if (-not $Branch -and (Test-Path $Config)) {
+    # <branch_prefix>/<bundle>-win-64, read off the same reviewed plan the publisher uses.
+    $Text = Get-Content -Raw $Config
+    $Prefix = if ($Text -match '(?m)^\s*branch_prefix\s*=\s*["'']([^"'']*)') { $Matches[1] } else { 'sandbox' }
+    $Bundles = @()
+    foreach ($Chunk in ($Text -split '\[\[\s*bundle\s*\]\]')) {
+        if ($Chunk -match 'platforms[^\]]*["'']win-64["'']' -and $Chunk -match 'name\s*=\s*["'']([^"'']*)') {
+            $Bundles += $Matches[1]
+        }
+    }
+    if ($env:PIXI_SANDBOX_BUNDLE) { $Bundles = @($Bundles | Where-Object { $_ -eq $env:PIXI_SANDBOX_BUNDLE }) }
+    if ($Bundles.Count -eq 1) {
+        $Branch = "$Prefix/$($Bundles[0])-win-64"
+    } elseif ($Bundles.Count -gt 1) {
+        Write-Error -Message 'several bundles publish win-64; set PIXI_SANDBOX_BUNDLE to choose' -ErrorAction Continue
+    }
+}
+if (-not $Branch) { $Branch = $DefaultBranch }
+git -C $Root rev-parse --verify "$Branch^{commit}" 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $Branch = "origin/$Branch" }
+$Transport = Join-Path $Root '.pixi/.restore-transport'
+$Archive = Join-Path $Root '.pixi/.restore-transport.tar'
+Remove-Item -Recurse -Force $Transport,$Archive -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force $Transport | Out-Null
+git -C $Root archive --format=tar --output=$Archive $Branch
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+tar -xf $Archive -C $Transport
+$Binary = Join-Path $Transport '.pixi-sandbox/tools/win-64/pixi-sandbox.exe'
+& $Binary restore --branch-location $Transport --output-path $Root --force @args
+exit $LASTEXITCODE
+"#;
+    template.replace("__BRANCH__", branch)
 }
 
 #[cfg(test)]
@@ -196,5 +270,34 @@ mod tests {
             windows_branch("sandbox/developer-linux-64"),
             "sandbox/developer-win-64"
         );
+    }
+
+    #[test]
+    fn launchers_read_the_branch_off_the_reviewed_plan() {
+        let shell = posix_restore("sandbox/developer-linux-64");
+        // Branch identity comes from the config so it cannot drift from the publisher, while the
+        // reviewed init-time branch stays as the fallback.
+        assert!(shell.contains("CONFIG=$ROOT/.pixi-sandbox.toml"));
+        assert!(shell.contains("branch_prefix"));
+        assert!(shell.contains("BRANCH=${PREFIX:-sandbox}/$BUNDLES-$PLATFORM"));
+        assert!(shell.contains("BRANCH=${BRANCH:-$DEFAULT_BRANCH}"));
+        assert!(shell.contains("DEFAULT_BRANCH=sandbox/developer-linux-64"));
+
+        let powershell = powershell_restore("sandbox/developer-win-64");
+        assert!(powershell.contains(".pixi-sandbox.toml"));
+        assert!(powershell.contains("branch_prefix"));
+        assert!(powershell.contains("$Branch = \"$Prefix/$($Bundles[0])-win-64\""));
+        assert!(powershell.contains("if (-not $Branch) { $Branch = $DefaultBranch }"));
+        assert!(powershell.contains("$DefaultBranch = 'sandbox/developer-win-64'"));
+    }
+
+    #[test]
+    fn an_explicit_branch_still_wins_over_the_config() {
+        let shell = posix_restore("sandbox/developer-linux-64");
+        // PIXI_SANDBOX_BRANCH is read before the config is consulted.
+        let override_at = shell.find("BRANCH=${PIXI_SANDBOX_BRANCH:-}").unwrap();
+        let derive_at = shell.find("CONFIG=$ROOT/.pixi-sandbox.toml").unwrap();
+        assert!(override_at < derive_at);
+        assert!(shell.contains("if [ -z \"$BRANCH\" ] && [ -r \"$CONFIG\" ]; then"));
     }
 }
