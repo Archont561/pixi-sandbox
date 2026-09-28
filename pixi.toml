@@ -24,7 +24,6 @@ cargo-deny = "=0.20.2"
 
 [feature.docs.dependencies]
 biome = "=2.5.14"
-nodejs = "=25.2.1" # Astro still shells out to node in places
 # `bun` has no win-64 build on conda-forge (verified with `pixi lock`: "No candidates were
 # found for bun *"). That used to force a per-target dependency block; now that win-64 is out
 # of `[workspace] platforms`, bun resolves for every platform we build on and can stay here.
