@@ -117,7 +117,9 @@ sandbox-pack = { depends-on = [
   "sandbox-build-self",
 ], cmd = "cargo run -p pixi-sandbox --release -- pack --repo-root . --envs default --output-dir .sandbox-out --platform linux-64 --cargo-vendor --fetch-tools --self-bin target/release/pixi-sandbox" }
 sandbox-doctor = "cargo run -p pixi-sandbox --release -- doctor --branch-location .sandbox-out --verify"
-sandbox-publish = "cargo run -p pixi-sandbox --release -- publish --input-dir .sandbox-out --branch-name sandbox/linux-64 --remote origin"
+# The branch name must match the reviewed plan (`pixi run sandbox-plan`), or this publishes a
+# transport that `scripts/restore.sh` will never look for.
+sandbox-publish = "cargo run -p pixi-sandbox --release -- publish --input-dir .sandbox-out --branch-name sandbox/developer-linux-64 --remote origin"
 # One-liner offline reconstruction from orphan branch, with PATH aliases wired
 # like setup-pixi.
 sandbox-restore = "bash scripts/restore.sh"

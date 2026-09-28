@@ -25,21 +25,20 @@
 ## 📦 Sandbox Visualization
 
 ```text
-  connected build machine               orphan branch (Git)              airlocked machine
-  ───────────────────────               ─────────────────                ──────────────────
+  connected build machine           orphan branch (Git)                       airlocked machine
+  ───────────────────────           ───────────────────                       ─────────────────
 
-  ┌─────────────────┐      pack        ┌──────────────────┐     fetch     ┌─────────────────┐
-  │  pixi project   │  ───────────►    │ sandbox/linux-64 │  ──────────►  │    airlock      │
-  │                 │                 │                  │               │                 │
-  │  pixi.toml      │                 │  manifest.json   │               │  .pixi/envs/*  │
-  │  pixi.lock      │                 │  envs/*/pack/    │               │  vendor/        │
-  │  Cargo.lock     │                 │  tools/*/        │               │  .pixi/tools/   │
-  │  [dev, docs]    │                 │  vendor/         │               │  offline ✔      │
-  └─────────────────┘                 └──────────────────┘               └─────────────────┘
-         │                                      │                                │
-         │ pixi sandbox pack                    │ git content-addressed          │ pixi install --frozen --offline
-         │ --cargo-vendor --fetch-tools         │ 262 MB → 110 MB dedup          │ cargo build --offline
-         │ --self-bin <static>                  │ verify before write            │ source .pixi/sandbox-env.sh
+  ┌─────────────────────┐           ┌─────────────────────────────┐           ┌────────────────────────┐
+  │ pixi project        │   pack    │ sandbox/developer-linux-64  │   fetch   │ airlock                │
+  │                     │ ────────► │                             │ ────────► │                        │
+  │ pixi.toml           │           │ .pixi-sandbox/manifest.json │           │ .pixi/envs/<env>/      │
+  │ pixi.lock           │           │   envs/<env>/pack/          │           │ .pixi/tools/<platform>/│
+  │ Cargo.lock          │           │   tools/<platform>/         │           │ .pixi-sandbox/vendor/  │
+  │ .pixi-sandbox.toml  │           │   vendor/                   │           │ offline ✔              │
+  └─────────────────────┘           └─────────────────────────────┘           └────────────────────────┘
+  pack    pixi sandbox pack --cargo-vendor --fetch-tools --self-bin <static>
+  fetch   plain git — whole files content-addressed, 262 MB transport → ~110 MB after dedup
+  local   ./restore.sh → verify every byte → source .pixi/sandbox-env.sh → build offline
 ```
 
 **Generate publishing and one-command airlock restoration:**
@@ -92,10 +91,10 @@ pixi sandbox pack \
 # 2. Verify (writes nothing)
 pixi sandbox doctor --branch-location .sandbox-transport --verify
 
-# 3. Publish as orphan branch
+# 3. Publish as orphan branch (<branch_prefix>/<bundle>-<platform>, as `plan` reports it)
 pixi sandbox publish \
   --input-dir .sandbox-transport \
-  --branch-name sandbox/linux-64
+  --branch-name sandbox/developer-linux-64
 ```
 
 ### 2. Disconnected / Airlocked Host: Restore
@@ -112,8 +111,16 @@ pixi install --frozen --offline   # must be no-op
 cargo build --offline             # uses vendored crates
 ```
 
-The launcher uses local `git archive`; it never fetches. It extracts the branch under
-`.pixi/.restore-transport` and invokes `.pixi-sandbox/tools/<platform>/pixi-sandbox`.
+The launcher reads `.pixi-sandbox.toml` and resolves `<branch_prefix>/<bundle>-<platform>` for
+the host — the same branch `pixi-sandbox plan` gives the publisher — so renaming a bundle or
+prefix needs no regenerated launcher. It then uses local `git archive`; it never fetches. It
+extracts the branch under `.pixi/.restore-transport` and invokes
+`.pixi-sandbox/tools/<platform>/pixi-sandbox`.
+
+```bash
+PIXI_SANDBOX_BRANCH=sandbox/developer-linux-64 ./restore.sh  # pin an exact branch
+PIXI_SANDBOX_BUNDLE=developer ./restore.sh                   # several bundles cover this platform
+```
 
 > [!TIP]
 > After restore, `.pixi/envs/*` has relocated prefixes, `.cargo/config.toml` wired to vendored sources with relative path, `CARGO_NET_OFFLINE=true`.
@@ -334,7 +341,7 @@ Docs: https://archont561.github.io/pixi-sandbox/guides/ci-publishing/ and https:
 |----------|---------|-------|
 | `linux-64` | `ubuntu-latest` | Hosted |
 | `linux-aarch64` | **none** | Must provide `[runners]` self-hosted |
-| `osx-64` | `macos-15-intel` | Hosted Intel |
+| `osx-64` | `macos-13` | Hosted Intel |
 | `osx-arm64` | `macos-14` | Apple Silicon |
 | `win-64` | `windows-latest` | Hosted |
 
@@ -373,8 +380,9 @@ sandbox/<bundle>-<platform>/   # orphan branch
 ```
 
 Only Markdown files live at the branch root. `pixi-sandbox init github` generates the minimal
-`restore` and `restore.ps1` launchers on the normal project branch; they archive the local sandbox
-branch and invoke its manifest-owned binary without network access.
+`restore.sh` and `restore.ps1` launchers on the normal project branch; they resolve their branch
+from `.pixi-sandbox.toml`, archive the local sandbox branch, and invoke its manifest-owned binary
+without network access.
 
 **Sizes (small project, 2 envs, 33 crates, linux-64):**
 
@@ -405,8 +413,12 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + SHA256SUMS + GitHub Release |
 | `.github/workflows/docs.yml` | Docs → GitHub Pages |
 | `.github/dependabot.yml` | Dependabot: cargo, gha, npm (convco prefixes) |
+| `scripts/init.sh` | Checksum-verified release download + `pixi-sandbox init github` scaffold |
 | `scripts/restore.sh` | One-liner offline reconstruction with PATH aliases; branch derived from `.pixi-sandbox.toml` |
-| `docs/` | Starlight + astro-icon + Iconify docs (13 pages) |
+| `.pixi-sandbox.toml` | Reviewed publish plan: bundles, platforms, branch prefix, runner overrides |
+| `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals |
+| `lefthook.yml` | Git hooks — every hook calls a pixi task so hooks and CI cannot drift |
+| `docs/` | Starlight + astro-icon + Iconify docs (12 pages) |
 | `.knowledge/` | Open Knowledge Format: decisions D1–D11, design, benchmarks |
 | `CHANGELOG.md` | Changelog via convco |
 
@@ -447,6 +459,19 @@ pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
 
 > [!IMPORTANT]
 > Integration tests run against synthetic fixtures in `crates/pixi-sandbox/tests/fixtures/`, **never** against this repo itself, ensuring hermetic offline isolation. Two tests enforce it: fixture must not depend on pixi-pack, and no test may walk out via `..`/`.parent()`.
+
+### Dev container
+
+`.devcontainer/devcontainer.json` is four keys and no Dockerfile — it runs the official
+`ghcr.io/prefix-dev/pixi` image as-is. That image is Ubuntu plus the pixi binary, so the
+post-create step installs the two host tools this repo's Git-native workflow needs before
+materialising the project environment:
+
+```jsonc
+"postCreateCommand": "pixi global install git gh && pixi install --locked --all"
+```
+
+`pixi global` installs into `/root/.pixi/bin`, which the official image already has on `PATH`.
 
 ---
 
