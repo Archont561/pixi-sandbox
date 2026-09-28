@@ -179,12 +179,12 @@ platforms = ["linux-64", "linux-aarch64"]
 
 ## One-liner rule
 
-Source-driven workflow steps are one line: `pixi run -e <env> <task>`. Logic lives in `pixi.toml` tasks, not YAML — so CI command = local command.
+Source-driven workflow steps are one line: `pixi run <task>`. Logic lives in `pixi.toml` tasks, not YAML — so CI command = local command.
 
 ```yaml
-- run: pixi run -e ci ci-pack
-- run: pixi run -e ci ci-doctor
-- run: pixi run -e ci ci-publish
+- run: pixi run ci-pack
+- run: pixi run ci-doctor
+- run: pixi run ci-publish
 ```
 
 Paths come from `SANDBOX_*` env vars set in workflow `env:` block.

@@ -15,10 +15,10 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 ```bash
 git clone https://github.com/Archont561/pixi-sandbox && cd pixi-sandbox
-pixi run -e dev test          # or: pixi run -e dev lint
+pixi run test          # or: pixi run lint
 
 # End-to-end proof (bare checkout, allow few minutes):
-pixi run -e dev sandbox-proof
+pixi run sandbox-proof
 ```
 
 ## In your project
@@ -212,8 +212,12 @@ Both live in same repo:
     output-dir: /tmp/transport
 
 # Long-form (pin SHA for supply-chain)
-- uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<sha>
-- uses: Archont561/pixi-sandbox/.github/actions/publish-pixi-sandbox@<sha>
+- uses: Archont561/pixi-sandbox@<sha>
+  with:
+    subpath: setup
+- uses: Archont561/pixi-sandbox@<sha>
+  with:
+    subpath: publish
 ```
 
 Verifies bytes against `SHA256SUMS` before making executable available on PATH. Generate checksums after native proof: `(cd release && sha256sum pixi-sandbox-* > SHA256SUMS)`. `latest` warns; pin in prod.

@@ -29,7 +29,9 @@ Pinned:
 ```yaml
 - uses: Archont561/pixi-sandbox@<sha>
 - uses: Archont561/pixi-sandbox/setup@<sha>
-- uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<sha>
+- uses: Archont561/pixi-sandbox@<sha>
+  with:
+    subpath: setup
 ```
 
 ### Inputs
@@ -75,7 +77,9 @@ Pinned:
 
 ```yaml
 - uses: Archont561/pixi-sandbox/publish@<sha>
-- uses: Archont561/pixi-sandbox/.github/actions/publish-pixi-sandbox@<sha>
+- uses: Archont561/pixi-sandbox@<sha>
+  with:
+    subpath: publish
 ```
 
 ### Inputs

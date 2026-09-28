@@ -3,7 +3,7 @@
 # Usage: bash scripts/restore.sh [branch] [output-path]
 #   branch defaults to sandbox/linux-64
 #   output-path defaults to .
-# After restore, sources .pixi/sandbox-env.sh and adds dev env to PATH.
+# After restore, sources .pixi/sandbox-env.sh and adds the default env to PATH.
 
 set -euo pipefail
 
@@ -63,10 +63,10 @@ if [ -f "$OUTPUT/.pixi/sandbox-env.sh" ]; then
   echo "→ sourcing $OUTPUT/.pixi/sandbox-env.sh"
   # shellcheck disable=SC1090
   source "$OUTPUT/.pixi/sandbox-env.sh"
-  export PATH="$PWD/.pixi/envs/dev/bin:$PATH"
+  export PATH="$PWD/.pixi/envs/default/bin:$PATH"
   echo "PATH now includes:"
   echo "  $PWD/.pixi/tools/linux-64"
-  echo "  $PWD/.pixi/envs/dev/bin"
+  echo "  $PWD/.pixi/envs/default/bin"
   echo "  pixi() function → bundled pixi"
   echo "Try: pixi --version; cargo --version; cargo check --offline"
 else

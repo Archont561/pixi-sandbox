@@ -1,10 +1,12 @@
 name: Setup pixi-sandbox
-description: Short alias — download, checksum-verify, and expose a standalone pixi-sandbox release binary. Use as Archont561/pixi-sandbox/setup@vX (or root Archont561/pixi-sandbox@vX).
+description: Download, checksum-verify, and expose a standalone pixi-sandbox release binary. Use as Archont561/pixi-sandbox/setup@vX (or root Archont561/pixi-sandbox@vX).
 author: pixi-sandbox
 branding:
   icon: package
   color: orange
 
+# Thin shim. The implementation is the repository-root `action.yml`; this file exists only so
+# that `owner/repo/setup@ref` resolves, and it is what selects setup behaviour via `subpath`.
 inputs:
   repository:
     description: GitHub repository containing the pixi-sandbox release assets (OWNER/REPO).
@@ -61,8 +63,9 @@ runs:
   using: composite
   steps:
     - id: setup
-      uses: ../.github/actions/setup-pixi-sandbox
+      uses: ../action.yml
       with:
+        subpath: setup
         repository: ${{ inputs.repository }}
         version: ${{ inputs.version }}
         target: ${{ inputs.target }}

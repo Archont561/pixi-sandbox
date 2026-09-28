@@ -86,7 +86,7 @@ therefore a configuration error instead of dormant CI policy.
 
 ## `setup-pixi-sandbox` action
 
-The public composite actions live at `.github/actions/setup-pixi-sandbox/` and `publish-pixi-sandbox/`.
+Both composite behaviours live in the repository-root `action.yml`, selected by its `subpath` input. `setup/action.yml` and `publish/action.yml` are thin shims that pin `subpath: setup` / `subpath: publish` and exist so `owner/repo/{setup,publish}@ref` resolves.
 They use only bash/pwsh + core utils and therefore run before Pixi or Rust is installed. The setup action:
 
 1. maps the current runner OS/architecture to a Rust target triple;
@@ -118,7 +118,9 @@ artifact; those remain deliberately separate from platform-specific bootstrap pr
 Use immutable references in production:
 
 ```yaml
-- uses: OWNER/pixi-sandbox/.github/actions/setup-pixi-sandbox@<commit-sha>
+- uses: OWNER/pixi-sandbox@<commit-sha>
+  with:
+    subpath: setup
   with:
     repository: OWNER/pixi-sandbox
     version: v0.2.0

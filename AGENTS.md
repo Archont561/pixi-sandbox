@@ -25,7 +25,7 @@ opinion.
 | `crates/pixi-sandbox/tests/fixtures/` | the fixture project and the synthetic transport. **Tests must not point at this repository** — see `.knowledge/decisions.md` D10 |
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical embedded helper-tool pins; edit as reviewed data and keep the embedded-lock tests green |
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
-| `feature.utils.actionlint` | runs `actionlint` from conda directly when validating workflows in the `dev` environment |
+| `feature.utils.actionlint` | runs `actionlint` from conda directly when validating workflows in the `default` environment |
 | `scripts/restore.sh` | one-liner offline reconstruction from orphan branch with PATH aliases |
 
 ## Invariants (do not break these)
@@ -54,20 +54,20 @@ The checksum-verified release publisher is implemented as reviewed composite-act
 (POSIX + PowerShell), not Python.
 
 ```bash
-pixi run -e dev lint           # fmt-check + clippy -D warnings + deny + actionlint + taplo + biome
-pixi run -e dev test           # cargo nextest run --workspace
-pixi run -e dev test-actions   # hermetic release Action checksum / PATH-shadow tests
-pixi run -e dev coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
-pixi run -e dev docs-dev       # Astro dev server for docs/
-pixi run -e dev sandbox-plan   # validate .pixi-sandbox.toml and show native publish jobs
-pixi run -e dev lint-sandbox-plan # CI form: validate root plan plus embedded tool coverage
-pixi run -e dev sandbox-pack   # pack the transport (Rust CLI; embeds the chosen self-bootstrap binary)
-pixi run -e dev sandbox-doctor # verify a transport: every sha256, nothing written
-pixi run -e dev sandbox-publish# force-push it as an orphan branch
-pixi run -e dev sandbox-proof  # the full cold-start proof
+# one environment, so every task is `pixi run <task>` with no -e flag
+pixi run lint           # fmt-check + clippy -D warnings + deny + actionlint + taplo + biome
+pixi run test           # cargo nextest run --workspace (includes the Action checksum tests)
+pixi run coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
+pixi run docs-dev       # Astro dev server for docs/
+pixi run sandbox-plan   # validate .pixi-sandbox.toml and show native publish jobs
+pixi run lint-sandbox-plan # CI form: validate root plan plus embedded tool coverage
+pixi run sandbox-pack   # pack the transport (Rust CLI; embeds the chosen self-bootstrap binary)
+pixi run sandbox-doctor # verify a transport: every sha256, nothing written
+pixi run sandbox-publish# force-push it as an orphan branch
+pixi run sandbox-proof  # the full cold-start proof
 
 # the same steps as CI runs them (paths come from the SANDBOX_* environment variables)
-pixi run -e ci ci-pack && pixi run -e ci ci-doctor && pixi run -e ci ci-publish
+pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
 ```
 
 Tests that must exist for any change to sharding or the manifest: a round-trip property test

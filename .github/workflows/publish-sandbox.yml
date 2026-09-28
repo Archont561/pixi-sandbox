@@ -158,8 +158,9 @@ jobs:
       - name: Install verified pixi-sandbox release (release mode)
         if: ${{ inputs.release-repository != '' }}
         id: sandbox-release
-        uses: ./pixi-sandbox-action/.github/actions/setup-pixi-sandbox
+        uses: ./pixi-sandbox-action/action.yml
         with:
+          subpath: setup
           repository: ${{ inputs.release-repository }}
           version: ${{ inputs.release-version || 'latest' }}
           checksums-asset: ${{ inputs.checksums-asset }}
@@ -210,7 +211,7 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
         with:
           cache: true
-          environments: dev
+          environments: default
 
       - name: Rust cache (local mode)
         if: ${{ inputs.release-repository == '' }}
@@ -323,8 +324,9 @@ jobs:
       - name: Install verified pixi-sandbox release
         if: ${{ inputs.release-repository != '' }}
         id: sandbox-release
-        uses: ./pixi-sandbox-action/.github/actions/setup-pixi-sandbox
+        uses: ./pixi-sandbox-action/action.yml
         with:
+          subpath: setup
           repository: ${{ inputs.release-repository }}
           version: ${{ inputs.release-version || 'latest' }}
           checksums-asset: ${{ inputs.checksums-asset }}
@@ -333,8 +335,9 @@ jobs:
       - name: Pack, verify, and publish one native sandbox branch (release)
         if: ${{ inputs.release-repository != '' }}
         id: publish-release
-        uses: ./pixi-sandbox-action/.github/actions/publish-pixi-sandbox
+        uses: ./pixi-sandbox-action/action.yml
         with:
+          subpath: publish
           project: project
           environments: ${{ matrix.environments }}
           platform: ${{ matrix.platform }}
@@ -353,7 +356,7 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
         with:
           cache: true
-          environments: dev
+          environments: default
 
       - name: Rust cache (local)
         if: ${{ inputs.release-repository == '' }}
@@ -393,8 +396,9 @@ jobs:
       - name: Pack, verify, and publish one native sandbox branch (local)
         if: ${{ inputs.release-repository == '' }}
         id: publish-local
-        uses: ./project/.github/actions/publish-pixi-sandbox
+        uses: ./project/action.yml
         with:
+          subpath: publish
           project: project
           environments: ${{ matrix.environments }}
           platform: ${{ matrix.platform }}

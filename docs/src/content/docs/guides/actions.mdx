@@ -78,7 +78,9 @@ Downloads verified release binary, checksum-verified, adds to PATH.
       with:
         version: v0.2.0
 
-    - uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<sha>
+    - uses: Archont561/pixi-sandbox@<sha>
+      with:
+        subpath: setup
       with:
         version: v0.2.0
     ```
@@ -149,7 +151,9 @@ Packs one `bundle × platform`, verifies, publishes orphan branch.
   </TabItem>
   <TabItem label="Long form">
     ```yaml
-    - uses: Archont561/pixi-sandbox/.github/actions/publish-pixi-sandbox@<sha>
+    - uses: Archont561/pixi-sandbox@<sha>
+      with:
+        subpath: publish
       with:
         project: .
         environments: dev

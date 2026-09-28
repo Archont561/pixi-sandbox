@@ -32,7 +32,7 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 ## 🔄 CI & Automation Pipeline
 
 - **Unified Single-Job CI (`.github/workflows/ci.yml`)**:
-  - Runs on `ubuntu-latest` in the `dev` pixi environment.
+  - Runs on `ubuntu-latest` in the `default` pixi environment.
   - Leverages `Swatinem/rust-cache` to cache `~/.cargo/` and `./target` across commits.
   - Sequentially runs `lint` (fmt, clippy, deny, actionlint, taplo, biome), `test` (nextest), `test-doc`, `coverage` (llvm-cov), and `docs-build`.
 - **Publish Workflow (`.github/workflows/publish-sandbox.yml`)**:

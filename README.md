@@ -199,7 +199,7 @@ Pinned SHA (supply-chain secure):
 ```yaml
 - uses: Archont561/pixi-sandbox@<sha>
 - uses: Archont561/pixi-sandbox/setup@<sha>
-- uses: Archont561/pixi-sandbox/.github/actions/setup-pixi-sandbox@<sha>
+- uses: Archont561/pixi-sandbox@<sha>
 ```
 
 ### Publish (pack + doctor + publish one native bundle)
@@ -398,8 +398,8 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `crates/pixi-sandbox-git` | Trait-based Git: `ShellGit` + `FakeGit`/`RecordingRunner` |
 | `crates/pixi-sandbox` | CLI binary + fixtures |
 | `crates/pixi-sandbox/tests/fixtures/` | Synthetic transport (15 KB, split blob) — tests never point at repo root |
-| `action.yml` + `setup/action.yml` + `.github/actions/setup-pixi-sandbox` | Setup action (short refs `owner/repo@vX`, `owner/repo/setup@vX`) |
-| `publish/action.yml` + `.github/actions/publish-pixi-sandbox` | Publish action (short ref `owner/repo/publish@vX`) |
+| `action.yml` + `setup/action.yml` | Setup action (short refs `owner/repo@vX`, `owner/repo/setup@vX`) |
+| `publish/action.yml` | Publish action (short ref `owner/repo/publish@vX`) |
 | `.github/workflows/ci.yml` | CI: lint + test + coverage + docs-build |
 | `.github/workflows/publish-sandbox.yml` | Unified publisher: workflow_run + dispatch + call, native runners |
 | `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + SHA256SUMS + GitHub Release |
@@ -416,33 +416,33 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 
 ```bash
 # Lint (rustfmt, clippy -D warnings, cargo-deny, actionlint, taplo, biome)
-pixi run -e dev lint
+pixi run lint
 
 # Test (nextest, fixtures, no network)
-pixi run -e dev test
-pixi run -e dev test-doc
+pixi run test
+pixi run test-doc
 
 # Coverage
-pixi run -e dev coverage
+pixi run coverage
 
 # Docs (Astro + Starlight + astro-icon)
-pixi run -e dev docs-dev
-pixi run -e dev docs-build
+pixi run docs-dev
+pixi run docs-build
 
 # Transport pipeline (pure Rust self-bin)
-pixi run -e dev sandbox-plan
-pixi run -e dev sandbox-pack      # pack + vendor + fetch-tools + self-bin target/release/pixi-sandbox
-pixi run -e dev sandbox-doctor
-pixi run -e dev sandbox-publish
-pixi run -e dev sandbox-restore   # one-liner from orphan branch
-pixi run -e dev sandbox-proof     # full cold proof
+pixi run sandbox-plan
+pixi run sandbox-pack      # pack + vendor + fetch-tools + self-bin target/release/pixi-sandbox
+pixi run sandbox-doctor
+pixi run sandbox-publish
+pixi run sandbox-restore   # one-liner from orphan branch
+pixi run sandbox-proof     # full cold proof
 
 # Changelog via convco
-pixi run -e dev changelog-preview
-pixi run -e dev changelog
+pixi run changelog-preview
+pixi run changelog
 
 # CI variants (env vars: SANDBOX_PROJECT, ENVS, TRANSPORT, PLATFORM, BRANCH, REMOTE, SELF_BIN)
-pixi run -e ci ci-pack && pixi run -e ci ci-doctor && pixi run -e ci ci-publish
+pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
 ```
 
 > [!IMPORTANT]
@@ -452,7 +452,7 @@ pixi run -e ci ci-pack && pixi run -e ci ci-doctor && pixi run -e ci ci-publish
 
 ## 🔖 Changelog & Release
 
-- **Changelog**: `CHANGELOG.md` generated via `convco changelog` from conventional commits. Tasks: `pixi run -e dev changelog`.
+- **Changelog**: `CHANGELOG.md` generated via `convco changelog` from conventional commits. Tasks: `pixi run changelog`.
 - **Release**: Tag `v*.*.*` → `release.yml` builds 5 static binaries, `SHA256SUMS`, creates GitHub Release with `generate_release_notes: true`.
   ```bash
   git tag v0.2.0 -m "v0.2.0"

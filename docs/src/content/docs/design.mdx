@@ -22,7 +22,7 @@ The ten decisions in one glance:
 8. **Pages for docs, a package channel for the package** — never large binaries on Pages.
 9. **Git only behind a trait** (`GitProtocol`) — so publish and fetch are tested against an
    in-memory remote, and `--dry-run` is the same code path with a runner that does not run.
-10. **Tests use fixtures, never this repository** — the repository's own `dev` environment
+10. **Tests use fixtures, never this repository** — the repository's own `default` environment
     contains the packer, which would hide exactly the bugs worth catching.
 
 ## Where the code lives
@@ -33,5 +33,5 @@ The ten decisions in one glance:
 | `pixi-sandbox-git` | `GitProtocol` + `ShellGit` + `FakeGit` |
 | `pixi-sandbox` | the CLI, and the fixtures the tests run against |
 
-GitHub Actions is deliberately boring in this project: every step is one `pixi run -e <env>
+GitHub Actions is deliberately boring in this project: every step is one `pixi run
 <task>`, and anything longer lives in `pixi.toml`. See [Repository](/pixi-sandbox/repository/).

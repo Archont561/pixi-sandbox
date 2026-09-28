@@ -1,6 +1,6 @@
 name: ci
 
-# Every step in this file is ONE line: `pixi run -e <env> <task>`.
+# Every step in this file is ONE line: `pixi run <task>`.
 #
 # The rule (design.md §6): a step that needs more than one line is a task in `pixi.toml`
 # (or a script under `.knowledge/research/`) — never inline bash here. That keeps the
@@ -32,25 +32,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
-          environments: dev
+          environments: default
           cache: true
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: pixi run -e dev fmt-check
-      - run: pixi run -e dev lint-rust
-      - run: pixi run -e dev deny
-      - run: pixi run -e dev lint-actions
-      - run: pixi run -e dev lint-sandbox-plan
-      - run: pixi run -e dev lint-toml
-      - run: pixi run -e dev lint-docs
-      - run: pixi run -e dev test
-      - run: pixi run -e dev test-doc
-      - run: pixi run -e dev coverage
+      - run: pixi run fmt-check
+      - run: pixi run lint-rust
+      - run: pixi run deny
+      - run: pixi run lint-actions
+      - run: pixi run lint-sandbox-plan
+      - run: pixi run lint-toml
+      - run: pixi run lint-docs
+      - run: pixi run test
+      - run: pixi run test-doc
+      - run: pixi run coverage
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: lcov.info
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
-      - run: pixi run -e dev docs-build
+      - run: pixi run docs-build
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: docs-site

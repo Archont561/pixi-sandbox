@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to this project are documented in this file. It is generated via [convco](https://github.com/convco/convco) from conventional commits (`pixi run -e dev changelog`).
+All notable changes to this project are documented in this file. It is generated via [convco](https://github.com/convco/convco) from conventional commits (`pixi run changelog`).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and adheres to [Conventional Commits](https://www.conventionalcommits.org/).
 
@@ -73,4 +73,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ---
 
-Generated with `pixi run -e dev changelog-preview` (convco). To update: `pixi run -e dev changelog`.
+Generated with `pixi run changelog-preview` (convco). To update: `pixi run changelog`.

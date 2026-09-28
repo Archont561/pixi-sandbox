@@ -7,5 +7,5 @@ cargo_vendor = true
 
 [[bundle]]
 name = "developer"
-environments = ["dev", "docs"]
+environments = ["default"]
 platforms = ["linux-64"]

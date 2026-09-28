@@ -1,10 +1,14 @@
 name: Publish Pixi sandbox bundle
-description: Short alias — install requested Pixi environments, pack with a verified release binary, verify, and publish one orphan branch. Use as Archont561/pixi-sandbox/publish@vX.
+description: Install requested Pixi environments, pack with a verified release binary, verify, and publish one orphan branch. Use as Archont561/pixi-sandbox/publish@vX.
 author: pixi-sandbox
 branding:
   icon: upload-cloud
   color: blue
 
+# Thin shim. The implementation is the repository-root `action.yml`; this file exists only so
+# that `owner/repo/publish@ref` resolves, and it is what selects publish behaviour via
+# `subpath`. Inputs stay `required: true` here — the shim can enforce it because setup callers
+# never load this file.
 inputs:
   project:
     description: Checked-out project root to sandbox.
@@ -51,8 +55,9 @@ runs:
   using: composite
   steps:
     - id: publish
-      uses: ../.github/actions/publish-pixi-sandbox
+      uses: ../action.yml
       with:
+        subpath: publish
         project: ${{ inputs.project }}
         environments: ${{ inputs.environments }}
         platform: ${{ inputs.platform }}

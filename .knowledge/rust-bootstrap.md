@@ -81,10 +81,10 @@ Supply a release binary via `PIXI_SANDBOX_SELF_BIN`:
 
 ```bash
 PIXI_SANDBOX_SELF_BIN=artifacts/pixi-sandbox-linux-x86_64 \
-  pixi run -e dev sandbox-proof
+  pixi run sandbox-proof
 # or absolute path
 PIXI_SANDBOX_SELF_BIN=/releases/pixi-sandbox-linux-x86_64 \
-  pixi run -e dev sandbox-proof
+  pixi run sandbox-proof
 ```
 
 A successful run proves that the branch embeds the Rust executable and that it performs the

@@ -1,4 +1,4 @@
-# cargo-deny configuration (run by `pixi run -e ci deny`, i.e. in CI).
+# cargo-deny configuration (run by `pixi run deny`, i.e. in CI).
 # Checked with cargo-deny 0.20.x.
 
 [graph]

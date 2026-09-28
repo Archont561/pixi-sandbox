@@ -48,7 +48,7 @@ keep dedup working, while fixed-size chunking or prefix tarballs destroy it.
    the restore.
 2. **Cargo-vendor proof**: branch 110 MB (envs 51 % / tools 36 % / vendor 13 %); a
    severed-network debug build from the vendored tree in 17.99 s; tamper ⇒ integrity mismatch.
-3. **Current Rust-port proof**: `pixi run -e dev sandbox-proof` → 177 s, all green,
+3. **Current Rust-port proof**: `pixi run sandbox-proof` → 177 s, all green,
    931.7 MiB / 10,621 verified blobs. Rust performs pack, verify, and publish; the embedded
    portable bootstrap performs the airlock restore. A separate network-severed Rust `restore`
    run against that same branch also passed its Pixi and Cargo offline assertions [EVIDENCE §12].
@@ -66,7 +66,7 @@ keep dedup working, while fixed-size chunking or prefix tarballs destroy it.
   project and a committed synthetic transport, never on this repository — whose `dev`
   environment contains `pixi-pack` and would hide exactly the bugs worth catching. Measured
   bonus: the fixture packs without installing an environment (485 blobs / 100.6 MiB / 2.2 s).
-* **GitHub Actions as one-liners** (design.md §6): every step is `pixi run -e <env> <task>`;
+* **GitHub Actions as one-liners** (design.md §6): every step is `pixi run <task>`;
   logic lives in `pixi.toml`. Paths come from the environment because pixi tasks have no
   `${VAR:-default}`.
 

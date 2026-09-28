@@ -51,7 +51,7 @@ crates/pixi-sandbox/tests/fixtures/
 └── transport/        a synthetic, already-packed payload — the *input* to doctor/publish/restore
 ```
 
-This repository is the tool's own development environment: its `dev` environment contains
+This repository is the tool's own development environment: its `default` environment contains
 `pixi-pack`, and its lockfile resolves hundreds of MiB. A test pointed at the repository root
 would therefore test the developer's machine — passing where a fresh clone fails, slow, and
 blind to the bugs that only appear on a plain project. So:
@@ -68,7 +68,7 @@ multi-GiB local install (485 blobs / 100.6 MiB / 2.2 s).
 
 ## GitHub Actions: source-driven commands stay one line
 
-Source-driven commands in `.github/workflows/` are `pixi run -e <env> <task>`. If one needs
+Source-driven commands in `.github/workflows/` are `pixi run <task>`. If one needs
 more than one line, it becomes a task in `pixi.toml` — not inline bash. The release-driven
 publisher uses auditable composite actions in bash/pwsh with checksum verification:
 
@@ -79,10 +79,10 @@ publisher uses auditable composite actions in bash/pwsh with checksum verificati
 ```yaml
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
-        with: { environments: ci, cache: true }
-      - run: pixi run -e ci ci-pack      # pack + vendor + embed the pinned tools
-      - run: pixi run -e ci ci-doctor    # verify every blob, write nothing
-      - run: pixi run -e ci ci-publish   # one orphan commit, force-pushed
+        with: { environments: default, cache: true }
+      - run: pixi run ci-pack      # pack + vendor + embed the pinned tools
+      - run: pixi run ci-doctor    # verify every blob, write nothing
+      - run: pixi run ci-publish   # one orphan commit, force-pushed
 ```
 
 The unified `publish-sandbox.yml` workflow (replaces `publish-sandbox` + `publish-sandboxes`) validates

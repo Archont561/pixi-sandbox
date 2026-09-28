@@ -11,39 +11,39 @@ pre-commit:
   jobs:
     - name: rust-fmt
       glob: "*.rs"
-      run: pixi run -e dev fmt
+      run: pixi run fmt
       stage_fixed: true
 
     - name: rust-clippy
       glob: "{**/*.rs,Cargo.toml,crates/**/Cargo.toml}"
-      run: pixi run -e dev lint-rust
+      run: pixi run lint-rust
 
     - name: toml-fmt
       glob: "*.toml"
-      run: pixi run -e dev -- taplo fmt {staged_files}
+      run: pixi run -- taplo fmt {staged_files}
       stage_fixed: true
 
     - name: docs-biome
       glob: "docs/**/*.{js,ts,mjs,cjs,json,jsonc,astro}"
-      run: pixi run -e dev -- biome check --write {staged_files}
+      run: pixi run -- biome check --write {staged_files}
       stage_fixed: true
 
     - name: workflows
       glob: ".github/workflows/*.{yml,yaml}"
-      run: pixi run -e dev lint-actions
+      run: pixi run lint-actions
 
     - name: manifest-schema
       # the manifest shape is a wire format: changing it needs a schema bump + a fixture update
       glob: "{crates/pixi-sandbox-core/src/manifest.rs,crates/pixi-sandbox-core/tests/manifest.rs}"
-      run: pixi run -e dev cargo test -p pixi-sandbox-core --test manifest
+      run: pixi run cargo test -p pixi-sandbox-core --test manifest
 
 commit-msg:
   jobs:
     - name: convco
       # `{1}` is the file holding the proposed message (git commit-msg hook argument)
-      run: pixi run -e dev lint-commit < {1}
+      run: pixi run lint-commit < {1}
 
 pre-push:
   jobs:
     - name: tests
-      run: pixi run -e dev test
+      run: pixi run test

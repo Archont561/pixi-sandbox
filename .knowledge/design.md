@@ -243,7 +243,7 @@ machine-readable form for scripts and CI.
 * **`release.yml`** — builds 5 tier-1 static binaries (musl Linux x86_64/aarch64, macOS x86_64/aarch64, Windows x86_64), strips, generates `SHA256SUMS`, creates GitHub Release. Contract matches `setup-pixi-sandbox` README.
 ### The one-liner rule (how the workflows are written)
 
-**Source-driven GitHub Actions commands are one line: `pixi run -e <env> <task>`.** If a
+**Source-driven GitHub Actions commands are one line: `pixi run <task>`.** If a
 source-driven step needs more than one line, it is a task in `pixi.toml` (or a script in
 `.knowledge/research/`) — not inline bash in YAML. The release-driven publisher uses dependency-free composite-action shell (bash + pwsh) with checksum verification, native-runner, and token handling, not caller-inline shell. This is not
 style for its own sake:
@@ -263,10 +263,10 @@ read `SANDBOX_PROJECT`, `SANDBOX_ENVS`, `SANDBOX_TRANSPORT`, `SANDBOX_PLATFORM`,
 ```yaml
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
-        with: { environments: ci, cache: true }
-      - run: pixi run -e ci ci-pack      # pack + vendor + embed the pinned tools
-      - run: pixi run -e ci ci-doctor    # verify every blob, write nothing
-      - run: pixi run -e ci ci-publish   # one orphan commit, force-pushed
+        with: { environments: default, cache: true }
+      - run: pixi run ci-pack      # pack + vendor + embed the pinned tools
+      - run: pixi run ci-doctor    # verify every blob, write nothing
+      - run: pixi run ci-publish   # one orphan commit, force-pushed
 ```
 * **The tool's own distribution** is a conda package (D8): `pixi publish --path
   crates/pixi-sandbox --target-channel file://…` produces a `.conda` and an indexed channel ✅
@@ -429,7 +429,7 @@ notably `cargo vendor` hard-fails when the same crate+version is reachable from 
 (crates.io and a git dependency) ⚠️ known upstream.
 
 Vendoring carries **no toolchain and no build artifacts**: `rustc`/`cargo` must come from the
-restored environment (which is why `dev`/`ci` environments include rust) and the airlock pays
+restored environment (which is why the published environment includes rust) and the airlock pays
 the compile time (measured: a small project's debug build, severed network, 13–18 s ✅).
 
 ---
@@ -502,7 +502,7 @@ crates/pixi-sandbox/tests/fixtures/
 ```
 
 **The rule: tests must not sandbox this repository.** This repository *is* the tool's
-development environment: its `dev` environment contains `pixi-pack`, and its lockfile resolves
+development environment: its `default` environment contains `pixi-pack`, and its lockfile resolves
 hundreds of MiB. A test pointed at the repository root therefore tests the developer's
 machine: it silently passes where a fresh clone would fail, it is slow, it mutates state, and
 a bug that only appears on a *plain* project — one whose environment has no packer in it —

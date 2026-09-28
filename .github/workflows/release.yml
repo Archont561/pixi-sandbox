@@ -2,7 +2,7 @@ name: release
 
 # Build standalone static binaries across tier-1 platforms and publish a
 # GitHub Release with SHA256SUMS. The asset contract matches
-# `.github/actions/setup-pixi-sandbox/README.md`:
+# `setup/README.md`:
 #   pixi-sandbox-{target}{exe}
 #   SHA256SUMS (standard `sha256sum` lines)
 

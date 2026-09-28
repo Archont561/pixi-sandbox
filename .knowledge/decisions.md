@@ -226,7 +226,7 @@ on `tests/fixtures/transport` (a committed synthetic transport with real digests
 split blob). Two tests enforce the rule: the fixture must not depend on `pixi-pack`/`pixi-unpack`,
 and no test may walk out of its crate from `CARGO_MANIFEST_DIR`.
 
-**Why.** This repository is the tool's own development environment — `dev` contains the
+**Why.** This repository is the tool's own development environment — `default` contains the
 packer, the lockfile resolves hundreds of MiB — so a test pointed at the repository root tests
 the machine, not the code: it passes where a fresh clone would fail, it is slow, it mutates
 state, and a bug that only appears on a plain project would never surface. The payload fixture
