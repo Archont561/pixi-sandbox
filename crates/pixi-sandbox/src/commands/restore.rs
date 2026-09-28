@@ -76,25 +76,51 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         )?;
     }
 
+    let mut vendored = false;
     if let Some(vendor) = &manifest.vendor {
         if !args.no_vendor {
             println!("restore vendored cargo dependencies");
             install_vendor(&branch, vendor, &project, &work, args.force)?;
             write_cargo_config(&project, args.cargo_config)?;
+            vendored = true;
         }
     }
 
     write_sandbox_env(&project, &manifest)?;
-    // pixi-unpack's temporary files are disposable. Keep the staged packs by default: when a
-    // large airlock restore fails after extraction they are useful evidence, but never leave
-    // the tool's own TMPDIR payload around.
-    support::remove_path(&work.join("tmp"))?;
+    // Everything under the work dir is scratch this command created, and on a success nothing
+    // needs it: the installed environment holds its own directory entries and shares inodes
+    // with the staged blobs, so removing the stage cannot orphan a byte. Issue #18 measured
+    // 5.5 GiB of `.restore-work` surviving a restore that reported `restore complete`. A failed
+    // restore returns above and keeps the staged packs as evidence, which is why the cleanup
+    // lives here and not in a drop guard.
+    clean_work_dir(&work, &environments, vendored)?;
 
     println!("restore complete");
     println!("  source {}/.pixi/sandbox-env.sh", project.display());
     println!("  pixi install --frozen --offline   # must be a no-op");
     if manifest.vendor.is_some() && !args.no_vendor {
         println!("  cargo build --offline             # must use the restored vendor tree");
+    }
+    Ok(())
+}
+
+/// Remove this restore's scratch: the unpacker's TMPDIR, one materialised pack and one stage per
+/// environment, and the vendor stage. The directory itself goes only when we emptied it, so an
+/// explicit `--work-dir` that was holding something else survives the restore that borrowed it.
+fn clean_work_dir(work: &Path, environments: &[String], vendored: bool) -> Result<()> {
+    support::remove_path(&work.join("tmp"))?;
+    for environment in environments {
+        support::remove_path(&work.join(format!("pack-{environment}")))?;
+        support::remove_path(&work.join(format!("stage-{environment}")))?;
+    }
+    if vendored {
+        support::remove_path(&work.join("vendor-stage"))?;
+    }
+    if work
+        .read_dir()
+        .is_ok_and(|mut entries| entries.next().is_none())
+    {
+        fs::remove_dir(work).with_context(|| format!("removing {}", work.display()))?;
     }
     Ok(())
 }
@@ -572,8 +598,18 @@ fn ensure_same_filesystem(work: &Path, project: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::relocate_text_prefixes;
+    use super::{clean_work_dir, relocate_text_prefixes};
     use std::fs;
+    use std::path::Path;
+
+    /// The staged prefix as an absolute string, the way a subprocess would have been handed it.
+    fn staged_prefix(staged: &Path) -> String {
+        staged
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    }
 
     #[test]
     fn relocation_changes_text_and_preserves_binary_prefixes() {
@@ -581,11 +617,7 @@ mod tests {
         let staged = temp.path().join("stage.with dots/env");
         let final_prefix = temp.path().join("final path/env");
         fs::create_dir_all(&staged).unwrap();
-        let old = staged
-            .canonicalize()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
+        let old = staged_prefix(&staged);
         fs::write(staged.join("metadata.pc"), format!("prefix={old}\n")).unwrap();
         let binary = [b"\0binary:".as_slice(), old.as_bytes()].concat();
         fs::write(staged.join("binary"), &binary).unwrap();
@@ -596,5 +628,88 @@ mod tests {
             format!("prefix={}\n", final_prefix.display())
         );
         assert_eq!(fs::read(staged.join("binary")).unwrap(), binary);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn relocation_handles_read_only_repeated_and_non_utf8_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let staged = temp.path().join("env");
+        fs::create_dir_all(&staged).unwrap();
+        let old = staged_prefix(&staged);
+        let final_prefix = temp.path().join("final");
+        let new = final_prefix.to_string_lossy().into_owned();
+
+        // A read-only header, as shipped by some conda packages: the write needs the bit flipped
+        // and the mode handed back, or a later `pixi install --offline` cannot own the file.
+        let read_only = staged.join("config.h");
+        fs::write(&read_only, format!("#define PREFIX \"{old}\"\n")).unwrap();
+        fs::set_permissions(&read_only, fs::Permissions::from_mode(0o444)).unwrap();
+
+        // One file, several occurrences: a libtool `.la` names the prefix per section.
+        let repeated = staged.join("libfoo.la");
+        fs::write(&repeated, format!("prefix='{old}' {old}")).unwrap();
+
+        // Valid bytes, invalid UTF-8: a latin-1 comment in a `.pc` file must survive intact.
+        let latin1 = staged.join("latin1.pc");
+        let latin1_bytes = [b"# caf\xe9 {".as_slice(), old.as_bytes(), b"}".as_slice()].concat();
+        fs::write(&latin1, &latin1_bytes).unwrap();
+
+        assert_eq!(relocate_text_prefixes(&staged, &final_prefix).unwrap(), 2);
+        assert_eq!(
+            fs::read_to_string(&read_only).unwrap(),
+            format!("#define PREFIX \"{new}\"\n")
+        );
+        assert_eq!(
+            fs::metadata(&read_only).unwrap().permissions().mode() & 0o777,
+            0o444
+        );
+        assert_eq!(
+            fs::read_to_string(&repeated).unwrap(),
+            format!("prefix='{new}' {new}")
+        );
+        assert_eq!(fs::read(&latin1).unwrap(), latin1_bytes);
+    }
+
+    #[test]
+    fn cleanup_removes_this_restores_scratch_and_only_its_own() {
+        let temp = tempfile::tempdir().unwrap();
+        let work = temp.path().join(".pixi/.restore-work");
+        for scratch in [
+            "tmp",
+            "pack-default",
+            "stage-default",
+            "stage-docs",
+            "vendor-stage",
+        ] {
+            fs::create_dir_all(work.join(scratch)).unwrap();
+        }
+
+        // Without a vendor stage there is nothing to remove, and the borrowed directory is
+        // otherwise empty, so it goes too.
+        clean_work_dir(&work, &["default".to_string(), "docs".to_string()], false).unwrap();
+        assert!(!work.join("tmp").exists());
+        assert!(!work.join("pack-default").exists());
+        assert!(!work.join("stage-default").exists());
+        assert!(!work.join("stage-docs").exists());
+        assert!(work.join("vendor-stage").exists());
+        assert!(work.exists());
+
+        clean_work_dir(&work, &[], true).unwrap();
+        assert!(!work.exists());
+    }
+
+    #[test]
+    fn cleanup_leaves_a_work_dir_that_holds_something_else() {
+        let temp = tempfile::tempdir().unwrap();
+        let work = temp.path().join(".restore-work");
+        fs::create_dir_all(work.join("pack-default")).unwrap();
+        fs::write(work.join("operator-notes.txt"), "keep me\n").unwrap();
+
+        clean_work_dir(&work, &["default".to_string()], false).unwrap();
+        assert!(!work.join("pack-default").exists());
+        assert!(work.join("operator-notes.txt").is_file());
     }
 }

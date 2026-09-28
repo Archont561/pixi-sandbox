@@ -77,6 +77,12 @@ the project's filesystem, unpacks with the bundled `pixi-unpack`, moves each env
 `.pixi/envs/<env>`, writes pixi's `conda-meta` markers, then materialises the vendored crates
 and wires `.cargo/config.toml` to them with a **relative** path.
 
+Two things follow from that staging. Before each environment is moved into place, every text file
+in it has the staging path rewritten to the final one, so nothing in `.pixi/envs/<env>` points
+into scratch — a `.pc` file, a CMake config or an activation script keeps working at the airlock
+path. And on success the work dir is removed: a completed restore leaves no scratch behind. A
+**failed** restore keeps it, because that is where the partial materialisation is worth looking at.
+
 :::caution[Never use a small `/tmp` as the work dir]
 `pixi-unpack` stages the pack into `$TMPDIR` before extracting. A tmpfs `/tmp` that is too
 small fails mid-restore with a confusing package-cache error. The default work dir is

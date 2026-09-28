@@ -170,6 +170,10 @@ where the bytes went; the same numbers appear in the generated `README.md`.
    * `pixi-unpack` stages into `$TMPDIR` ✅ — the work dir defaults to
      `<project>/.pixi/.restore-work` and `TMPDIR`/`TMP`/`TEMP` are redirected for the child.
      A small `/tmp` (993 MB here) fails mid-unpack; this is not theoretical ✅.
+   * **Relocate before the rename** (#18): every valid-UTF-8, NUL-free file under
+     `<stage>/<env>` has the canonicalised staging path replaced by the final prefix, so no
+     installed `.pc` / CMake config / activation script points into scratch. Binaries are
+     skipped (a NUL byte means fixed-width payloads; rewriting one corrupts it) ✅.
 6. **Write the pixi markers** (D5): `<prefix>/conda-meta/pixi_env_prefix` and, when the
    manifest recorded one, `<prefix>/conda-meta/.pixi-environment-fingerprint`. A raw prefix
    without them is rejected by pixi's fast path and `pixi install --frozen --offline` tries to
@@ -177,7 +181,11 @@ where the bytes went; the same numbers appear in the generated `README.md`.
 7. **Materialise the vendored crates** into `<project>/.pixi-sandbox/vendor/` (same verified
    blob path as everything else) and wire `.cargo/config.toml` with a **relative** directory
    (D6, §11). `--cargo-config auto|write|print|none`.
-8. **Finish with the two assertions the flow exists for:**
+8. **Remove the scratch we created** (`tmp`, `pack-<env>`, `stage-<env>`, `vendor-stage`) once
+   every environment is in place, and drop the work dir itself only if that emptied it — an
+   explicit `--work-dir` holding anything else survives. A *failed* restore keeps everything:
+   the partial materialisation is the evidence ✅.
+9. **Finish with the two assertions the flow exists for:**
    `pixi install --frozen --offline` must be a no-op, and `cargo build --offline` must
    succeed on a severed network ✅.
 
