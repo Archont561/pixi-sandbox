@@ -469,15 +469,25 @@ pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
 ### Dev container
 
 `.devcontainer/devcontainer.json` is four keys and no Dockerfile — it runs the official
-`ghcr.io/prefix-dev/pixi` image as-is. That image is Ubuntu plus the pixi binary, so the
-post-create step installs the two host tools this repo's Git-native workflow needs, then
-materialises the project environment, installs the bun workspace, and installs the agent CLI:
+`ghcr.io/prefix-dev/pixi` image as-is. That image is Ubuntu plus the pixi binary: no `git`,
+and no C compiler, so the post-create step provisions the host tools, materialises the
+project environment, installs the bun workspace, and installs the agent CLI:
 
 ```jsonc
-"postCreateCommand": "pixi global install git gh && pixi install --locked --all && pixi run docs-install && pixi run setup-opencode"
+"postCreateCommand": "pixi global install git gh && pixi global install --expose cc --expose gcc --expose ar=x86_64-conda-linux-gnu-ar c-compiler && pixi install --locked --all && pixi run docs-install && pixi run setup-opencode"
 ```
 
-`pixi global` installs into `/root/.pixi/bin`, which the official image already has on `PATH`.
+`pixi global` installs into `/root/.pixi/bin`, which the official image already has on `PATH`,
+so `git`/`gh` are available to Source Control, the lefthook hooks, `scripts/restore.sh` and
+the sandbox tasks.
+
+The compiler is the non-obvious one. `ring` (a transitive dependency of the workspace) shells
+out to `cc` and `ar` from its build script, so without a C toolchain `pixi run lint` and
+`pixi run test` cannot even compile — and CI never sees this, because a hosted runner has a
+system `cc`. It is a *global* pixi install on purpose: a `c-compiler` dependency in a feature
+would put a ~200 MB toolchain into the packed sandbox branch, to build nothing an airlock
+restores. `ar` needs the mapping (`ar=x86_64-conda-linux-gnu-ar`) because conda-forge ships
+no unprefixed `ar`; `pixi global list` is the check that `cc`, `gcc` and `ar` are exposed.
 
 The last two steps go through `pixi run` rather than a bare `bun install`: `bun` lives in the
 materialised environment, which is on `PATH` inside a pixi task and nowhere else.
