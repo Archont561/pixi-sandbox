@@ -416,7 +416,7 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `scripts/init.sh` | Checksum-verified release download + `pixi-sandbox init github` scaffold |
 | `scripts/restore.sh` | One-liner offline reconstruction with PATH aliases; branch derived from `.pixi-sandbox.toml` |
 | `.pixi-sandbox.toml` | Reviewed publish plan: bundles, platforms, branch prefix, runner overrides |
-| `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals |
+| `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals, opencode via `setup-opencode` |
 | `lefthook.yml` | Git hooks — every hook calls a pixi task so hooks and CI cannot drift |
 | `docs/` | Starlight + astro-icon + Iconify docs (12 pages) |
 | `.knowledge/` | Open Knowledge Format: decisions D1–D11, design, benchmarks |
@@ -441,6 +441,9 @@ pixi run coverage
 pixi run docs-dev
 pixi run docs-build
 
+# Agent CLI (global bun install + model catalogue refresh)
+pixi run setup-opencode
+
 # Transport pipeline (pure Rust self-bin)
 pixi run sandbox-plan
 pixi run sandbox-pack      # pack + vendor + fetch-tools + self-bin target/release/pixi-sandbox
@@ -464,14 +467,20 @@ pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
 
 `.devcontainer/devcontainer.json` is four keys and no Dockerfile — it runs the official
 `ghcr.io/prefix-dev/pixi` image as-is. That image is Ubuntu plus the pixi binary, so the
-post-create step installs the two host tools this repo's Git-native workflow needs before
-materialising the project environment:
+post-create step installs the two host tools this repo's Git-native workflow needs, then
+materialises the project environment, then installs the agent CLI:
 
 ```jsonc
-"postCreateCommand": "pixi global install git gh && pixi install --locked --all"
+"postCreateCommand": "pixi global install git gh && pixi install --locked --all && pixi run setup-opencode"
 ```
 
 `pixi global` installs into `/root/.pixi/bin`, which the official image already has on `PATH`.
+
+`pixi run setup-opencode` runs last, because it needs `bun` from the materialised
+environment. It installs opencode globally with bun, links the binary into `/usr/local/bin`
+(bun's own global bin dir is on nobody's `PATH`), so `opencode` is a command in every shell
+of the container, and then refreshes the model catalogue (`~/.cache/opencode/models.json`),
+which a binary upgrade does not invalidate.
 
 ---
 

@@ -107,6 +107,30 @@ docs-build = { depends-on = [
 package = "pixi publish --path crates/pixi-sandbox --build-dir .publish/build --target-dir .publish/out"
 
 # ---------------------------------------------------------------------------
+# opencode: the agent binary. Installed globally with bun, not as a conda
+# dependency, so it is on PATH outside a task too and the sandbox branch
+# stays free of a 185 MB blob it would only carry for a developer tool.
+#
+# bun's global bin dir (`bun pm bin -g`, which follows $BUN_INSTALL rather than a
+# hardcoded $HOME/.bun/bin) is on nobody's PATH — not the pixi task shell, not a
+# fresh terminal in the dev container — so a plain `bun add -g` would leave a
+# binary nobody can invoke. Linking it into a directory that already is makes it a
+# global command. /usr/local/bin is tried first (the container is root),
+# ~/.local/bin second for a machine where the first needs sudo; when neither is
+# writable the install itself still succeeded, so report where it landed rather
+# than failing the container over a $PATH detail.
+# ---------------------------------------------------------------------------
+opencode-install = 'BUN_BIN="$(bun pm bin -g)" && bun add -g opencode-ai@latest && (ln -sfn "$BUN_BIN/opencode" /usr/local/bin/opencode 2> /dev/null || (mkdir -p "$HOME/.local/bin" 2> /dev/null && ln -sfn "$BUN_BIN/opencode" "$HOME/.local/bin/opencode" 2> /dev/null) || echo "opencode installed to $BUN_BIN, which is not on PATH: neither /usr/local/bin nor ~/.local/bin is writable")'
+# The model catalogue is a separate cache (`~/.cache/opencode/models.json`, rebuilt
+# from models.dev) and a binary upgrade does not invalidate it, so refreshing is a
+# separate step — otherwise a new release lists stale models. The absolute path
+# stands: the task shell resolves `opencode` only if the link above landed on a
+# PATH entry the shell has, and this one must work without it.
+setup-opencode = { depends-on = [
+  "opencode-install",
+], cmd = "\"$(bun pm bin -g)/opencode\" models --refresh" }
+
+# ---------------------------------------------------------------------------
 # The transport pipeline, locally: pack → doctor → publish. These tasks exercise the
 # Rust CLI directly, so local runs and CI share the exact command surface.
 # The branch now embeds the static Rust binary itself as self-bootstrap.
