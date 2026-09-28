@@ -380,11 +380,32 @@ jobs:
           # The Cargo workspace is in project/, not the job root.
           workspaces: project
 
+      - name: Install static Linux build target (local)
+        if: ${{ inputs.release-repository == '' && runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+
       - name: Build pixi-sandbox binary (local)
         if: ${{ inputs.release-repository == '' }}
         shell: bash
         working-directory: project
-        run: cargo build -p pixi-sandbox --release
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          set -euo pipefail
+          case "$PLATFORM" in
+            linux-64)
+              cargo build -p pixi-sandbox --release --target x86_64-unknown-linux-musl
+              ;;
+            *)
+              cargo build -p pixi-sandbox --release
+              ;;
+          esac
 
       - name: Resolve self-binary path (local)
         if: ${{ inputs.release-repository == '' }}
@@ -404,7 +425,9 @@ jobs:
               echo "path=$PROJECT_DIR/$SELF_BINARY_INPUT" >> "$GITHUB_OUTPUT"
             fi
           else
-            if [ "${{ runner.os }}" = "Windows" ]; then
+            if [ "${{ matrix.platform }}" = "linux-64" ]; then
+              echo "path=$PROJECT_DIR/target/x86_64-unknown-linux-musl/release/pixi-sandbox" >> "$GITHUB_OUTPUT"
+            elif [ "${{ runner.os }}" = "Windows" ]; then
               echo "path=$PROJECT_DIR/target/release/pixi-sandbox.exe" >> "$GITHUB_OUTPUT"
             else
               echo "path=$PROJECT_DIR/target/release/pixi-sandbox" >> "$GITHUB_OUTPUT"
