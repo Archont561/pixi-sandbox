@@ -286,6 +286,14 @@ fn install_environment(
             prefix.display()
         );
     }
+
+    // The archive bytes were verified before extraction. Relocate textual conda metadata while
+    // the replacement prefix is still staged, so no installed file points into restore scratch.
+    let relocated = relocate_text_prefixes(&prefix, &target)?;
+    if relocated > 0 {
+        println!("  {environment}: relocated {relocated} text file(s) to the final prefix");
+    }
+
     if target.exists() {
         // `--force` was checked before any source bytes were materialised; deletion happens
         // only after the replacement prefix is complete in its stage directory.
@@ -309,6 +317,54 @@ fn install_environment(
         support::mib(entry.unpacked_size_bytes)
     );
     Ok(())
+}
+
+/// Replace a staging prefix in text while leaving fixed-width binary payloads untouched.
+fn relocate_text_prefixes(staged_prefix: &Path, final_prefix: &Path) -> Result<usize> {
+    let staged = staged_prefix
+        .canonicalize()
+        .with_context(|| format!("canonicalising staged prefix {}", staged_prefix.display()))?;
+    let old = staged
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("staged environment path is not valid UTF-8"))?;
+    let new = final_prefix
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("final environment path is not valid UTF-8"))?;
+    let mut changed = 0;
+
+    for path in shard::files_under(&staged)? {
+        let bytes = fs::read(&path)
+            .with_context(|| format!("reading {} for relocation", path.display()))?;
+        if bytes.contains(&0) {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            continue;
+        };
+        if !text.contains(old) {
+            continue;
+        }
+
+        let permissions = fs::metadata(&path)?.permissions();
+        let mut writable = permissions.clone();
+        if writable.readonly() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                writable.set_mode(writable.mode() | 0o200);
+            }
+            #[cfg(not(unix))]
+            writable.set_readonly(false);
+            fs::set_permissions(&path, writable)?;
+        }
+        let write = fs::write(&path, text.replace(old, new));
+        let restore_permissions = fs::set_permissions(&path, permissions);
+        write.with_context(|| format!("relocating prefix in {}", path.display()))?;
+        restore_permissions
+            .with_context(|| format!("restoring permissions on {}", path.display()))?;
+        changed += 1;
+    }
+    Ok(changed)
 }
 
 fn write_markers(prefix: &Path, entry: &Env) -> Result<()> {
@@ -512,4 +568,33 @@ fn ensure_same_filesystem(work: &Path, project: &Path) -> Result<()> {
         let _ = (work, project);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::relocate_text_prefixes;
+    use std::fs;
+
+    #[test]
+    fn relocation_changes_text_and_preserves_binary_prefixes() {
+        let temp = tempfile::tempdir().unwrap();
+        let staged = temp.path().join("stage.with dots/env");
+        let final_prefix = temp.path().join("final path/env");
+        fs::create_dir_all(&staged).unwrap();
+        let old = staged
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        fs::write(staged.join("metadata.pc"), format!("prefix={old}\n")).unwrap();
+        let binary = [b"\0binary:".as_slice(), old.as_bytes()].concat();
+        fs::write(staged.join("binary"), &binary).unwrap();
+
+        assert_eq!(relocate_text_prefixes(&staged, &final_prefix).unwrap(), 1);
+        assert_eq!(
+            fs::read_to_string(staged.join("metadata.pc")).unwrap(),
+            format!("prefix={}\n", final_prefix.display())
+        );
+        assert_eq!(fs::read(staged.join("binary")).unwrap(), binary);
+    }
 }
