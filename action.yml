@@ -94,6 +94,10 @@ inputs:
     description: Optional token injected into Git configuration, never into the remote URL.
     required: false
     default: ""
+  dry-run:
+    description: When "true", pack and verify with `doctor` but skip the force-push. The orphan branch is left untouched; all other work runs so a branch can validate the publish path without mutating any branch.
+    required: false
+    default: "false"
 
 outputs:
   path:
@@ -350,6 +354,7 @@ runs:
         PUBLISH_PIXI_SANDBOX_REMOTE: ${{ inputs.remote }}
         PUBLISH_PIXI_SANDBOX_OUTPUT_DIR: ${{ inputs.output-dir }}
         PUBLISH_PIXI_SANDBOX_PUSH_TOKEN: ${{ inputs.push-token }}
+        PUBLISH_PIXI_SANDBOX_DRY_RUN: ${{ inputs.dry-run }}
       run: |
         set -euo pipefail
 
@@ -398,18 +403,22 @@ runs:
           --branch-location "${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}" \
           --verify
 
-        echo "Publishing orphan branch ${PUBLISH_PIXI_SANDBOX_BRANCH}..."
-        if [ -n "${PUBLISH_PIXI_SANDBOX_PUSH_TOKEN}" ]; then
-          BASIC_AUTH=$(echo -n "x-access-token:${PUBLISH_PIXI_SANDBOX_PUSH_TOKEN}" | base64 | tr -d '\r\n')
-          export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0="http.extraheader"
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${BASIC_AUTH}"
-        fi
+        if [ "${PUBLISH_PIXI_SANDBOX_DRY_RUN}" = "true" ]; then
+          echo "::notice::dry-run: packed and verified '${PUBLISH_PIXI_SANDBOX_BRANCH}' but skipped the force-push; the orphan branch is unchanged."
+        else
+          echo "Publishing orphan branch ${PUBLISH_PIXI_SANDBOX_BRANCH}..."
+          if [ -n "${PUBLISH_PIXI_SANDBOX_PUSH_TOKEN}" ]; then
+            BASIC_AUTH=$(echo -n "x-access-token:${PUBLISH_PIXI_SANDBOX_PUSH_TOKEN}" | base64 | tr -d '\r\n')
+            export GIT_CONFIG_COUNT=1
+            export GIT_CONFIG_KEY_0="http.extraheader"
+            export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${BASIC_AUTH}"
+          fi
 
-        "${PUBLISH_PIXI_SANDBOX_SELF_BIN}" publish \
-          --input-dir "${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}" \
-          --branch-name "${PUBLISH_PIXI_SANDBOX_BRANCH}" \
-          --remote "${PUBLISH_PIXI_SANDBOX_REMOTE}"
+          "${PUBLISH_PIXI_SANDBOX_SELF_BIN}" publish \
+            --input-dir "${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}" \
+            --branch-name "${PUBLISH_PIXI_SANDBOX_BRANCH}" \
+            --remote "${PUBLISH_PIXI_SANDBOX_REMOTE}"
+        fi
 
         echo "transport=${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}" >> "$GITHUB_OUTPUT"
         echo "manifest=${PUBLISH_PIXI_SANDBOX_OUTPUT_DIR}/.pixi-sandbox/manifest.json" >> "$GITHUB_OUTPUT"
@@ -428,6 +437,7 @@ runs:
         PUBLISH_PIXI_SANDBOX_REMOTE: ${{ inputs.remote }}
         PUBLISH_PIXI_SANDBOX_OUTPUT_DIR: ${{ inputs.output-dir }}
         PUBLISH_PIXI_SANDBOX_PUSH_TOKEN: ${{ inputs.push-token }}
+        PUBLISH_PIXI_SANDBOX_DRY_RUN: ${{ inputs.dry-run }}
       run: |
         $ErrorActionPreference = "Stop"
 
@@ -477,15 +487,19 @@ runs:
 
         & $env:PUBLISH_PIXI_SANDBOX_SELF_BIN doctor --branch-location $env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR --verify
 
-        if (![string]::IsNullOrWhiteSpace($env:PUBLISH_PIXI_SANDBOX_PUSH_TOKEN)) {
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes("x-access-token:$($env:PUBLISH_PIXI_SANDBOX_PUSH_TOKEN)")
-            $basic = [System.Convert]::ToBase64String($bytes)
-            $env:GIT_CONFIG_COUNT = "1"
-            $env:GIT_CONFIG_KEY_0 = "http.extraheader"
-            $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: basic $basic"
-        }
+        if ($env:PUBLISH_PIXI_SANDBOX_DRY_RUN -eq "true") {
+            Write-Output "::notice::dry-run: packed and verified '$($env:PUBLISH_PIXI_SANDBOX_BRANCH)' but skipped the force-push; the orphan branch is unchanged."
+        } else {
+            if (![string]::IsNullOrWhiteSpace($env:PUBLISH_PIXI_SANDBOX_PUSH_TOKEN)) {
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes("x-access-token:$($env:PUBLISH_PIXI_SANDBOX_PUSH_TOKEN)")
+                $basic = [System.Convert]::ToBase64String($bytes)
+                $env:GIT_CONFIG_COUNT = "1"
+                $env:GIT_CONFIG_KEY_0 = "http.extraheader"
+                $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: basic $basic"
+            }
 
-        & $env:PUBLISH_PIXI_SANDBOX_SELF_BIN publish --input-dir $env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR --branch-name $env:PUBLISH_PIXI_SANDBOX_BRANCH --remote $env:PUBLISH_PIXI_SANDBOX_REMOTE
+            & $env:PUBLISH_PIXI_SANDBOX_SELF_BIN publish --input-dir $env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR --branch-name $env:PUBLISH_PIXI_SANDBOX_BRANCH --remote $env:PUBLISH_PIXI_SANDBOX_REMOTE
+        }
 
         "transport=$($env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         "manifest=$($env:PUBLISH_PIXI_SANDBOX_OUTPUT_DIR)/.pixi-sandbox/manifest.json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
