@@ -124,6 +124,18 @@ fn the_fixture_transport_verifies_and_covers_the_split_case() {
 }
 
 #[test]
+fn the_fixture_transport_uses_the_documentation_only_root_layout() {
+    let mut root_files = std::fs::read_dir(transport())
+        .unwrap()
+        .flatten()
+        .filter(|entry| entry.file_type().unwrap().is_file())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    root_files.sort();
+    assert_eq!(root_files, ["AGENTS.md", "README.md"]);
+}
+
+#[test]
 fn the_fixture_transport_is_small_enough_to_commit() {
     // A fixture that grows into a real payload would defeat the point (it is meant to be a
     // 16 KB stand-in for a 262 MB transport). Keep it under a quarter of a MiB.
