@@ -59,20 +59,17 @@ pixi run sandbox-proof
 
 ## On the airlock
 
-An extracted orphan branch is self-contained. The root `pixi-sandbox` is a convenience copy of
-the manifest-verified binary under `.pixi-sandbox/tools/<platform>/`; Git stores identical copies
-as one blob. A bare invocation is deliberately read-only: it runs `doctor --verify` and prints
-the next restore command.
+The normal project branch contains the launchers generated on the connected host. Once a clone or
+Git bundle containing the sandbox branch crosses the air gap, restoration is one local command:
 
 ```bash
-cd /path/to/extracted-branch
-./pixi-sandbox
-./restore.sh /path/to/project
-# equivalent explicit form:
-./pixi-sandbox restore --branch-location . --output-path /path/to/project --force
+cd /path/to/project
+./restore
+# Windows: .\\restore.ps1
 ```
 
-Windows branches provide the matching `pixi-sandbox.exe` and `restore.ps1`.
+The launcher archives the local platform branch and invokes its manifest-verified binary under
+`.pixi-sandbox/tools/<platform>/`. The orphan branch itself has only Markdown at its root.
 
 ## From CI: reviewed native matrix
 

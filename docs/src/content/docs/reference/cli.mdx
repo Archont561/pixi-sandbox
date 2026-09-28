@@ -46,7 +46,7 @@ pixi-sandbox pack \
 | `--fetch-tools` | Fetch pinned tools (sha256-verified) |
 | `--tools-lock` | Override tools.lock.json path |
 | `--tools-cache` | Tools cache dir |
-| `--self-bin` | Release binary to embed under `.pixi-sandbox/tools/<platform>/pixi-sandbox` and copy to the branch root as `./pixi-sandbox` (`.exe` on Windows) |
+| `--self-bin` | Release binary to embed only under `.pixi-sandbox/tools/<platform>/pixi-sandbox` (`.exe` on Windows) |
 
 No override means embedded pins from `tools.lock.json` compiled into binary.
 
@@ -94,13 +94,13 @@ Implementation: `GIT_DIR` points at scratch repo **next to** transport (same FS,
 
 ## restore
 
-Airlock restore — verify then materialize. A packed branch puts the self-binary at its root,
-so the explicit form is convenient even when no `pixi-sandbox` is installed globally:
+Airlock restore — verify then materialize. `pixi-sandbox init github` generates project-side
+`restore` and `restore.ps1` launchers that archive the local sandbox branch and call this explicit
+form using its nested binary:
 
 ```bash
-cd /tmp/sb
-./pixi-sandbox restore \
-  --branch-location . \
+/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+  --branch-location /tmp/sb \
   --output-path /path/to/project \
   --envs dev \
   --verify-only \
@@ -110,12 +110,8 @@ cd /tmp/sb
   --cargo-config auto|write|print|none
 ```
 
-The generated `./restore.sh <project>` wrapper calls that root binary with `--force`; on
-Windows use `.\restore.ps1 <project>` and `.\pixi-sandbox.exe`.
-
-When invoked with no subcommand from a branch checkout, `./pixi-sandbox` does **not** write:
-it runs `doctor --verify` and prints the restore command. This avoids guessing where the project
-should be written.
+When invoked with no subcommand from inside an extracted branch, the nested binary remains
+read-only: it runs `doctor --verify` and prints the explicit restore command.
 
 | Flag | Description |
 |------|-------------|
@@ -148,6 +144,19 @@ pixi-sandbox unpack \
 
 Accepts transport dir, `.pixi-sandbox/envs/<env>/pack` dir, or bare pack dir. Leaves pixi markers to restore.
 
+## init
+
+Generate the reviewed project configuration, a reusable GitHub Actions publisher, and minimal
+POSIX/PowerShell launchers on the normal source branch:
+
+```bash
+pixi-sandbox init github
+pixi-sandbox init github --branch sandbox/developer-linux-64 --force
+```
+
+The generated launchers use only local `git archive`, `tar`, and the verified binary stored under
+`.pixi-sandbox/tools/<platform>/` in the sandbox branch. They never download during restoration.
+
 ## plan
 
 Validate `.pixi-sandbox.toml` and emit matrix.
@@ -167,13 +176,12 @@ pixi-sandbox tools list --tools-lock /path/to/tools.lock.json
 pixi-sandbox tools update   # not yet implemented (reports deferred)
 ```
 
-## One-liner reconstruction
+## One-command reconstruction
 
 ```bash
-bash scripts/restore.sh sandbox/linux-64
-pixi run sandbox-restore
+pixi-sandbox init github   # connected host; commit the generated files
+./restore                  # disconnected host; local Git objects only
 ```
 
-For an extracted branch, `./pixi-sandbox` runs the read-only doctor/hint flow and
-`./restore.sh <project>` calls the root binary. The repository-level script does fetch + worktree +
-doctor + restore + PATH alias wiring (like setup-pixi's `pixi()` function + tools + dev bin).
+The generated POSIX and PowerShell launchers contain no installation logic. They archive the
+configured local sandbox branch and delegate verification and restoration to its nested binary.

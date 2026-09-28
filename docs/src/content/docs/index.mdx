@@ -96,18 +96,9 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
   </TabItem>
   <TabItem label="Airlock">
     ```bash
-    # Fetch
-    git fetch origin sandbox/linux-64:sandbox/linux-64
-
-    # One-liner offline reconstruction (PATH aliases wired like setup-pixi)
-    bash scripts/restore.sh sandbox/linux-64
-    # or: pixi run sandbox-restore
-
-    # Manual restore from the extracted branch root
-    /tmp/sb/pixi-sandbox restore \
-      --branch-location /tmp/sb \
-      --output-path . --force
-    # or: /tmp/sb/restore.sh .
+    # The transferred Git repository already contains the sandbox branch.
+    # This local git archive bootstrap performs no network access.
+    ./restore
 
     # Prove offline
     source .pixi/sandbox-env.sh

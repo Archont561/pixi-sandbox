@@ -180,7 +180,7 @@ fn documents_every_verb() {
     let out = bin().arg("--help").assert().success();
     let text = String::from_utf8(out.get_output().stdout.clone()).unwrap();
     for verb in [
-        "pack", "publish", "restore", "unpack", "doctor", "plan", "tools",
+        "pack", "publish", "restore", "unpack", "doctor", "init", "plan", "tools",
     ] {
         assert!(text.contains(verb), "`{verb}` missing from --help");
     }
@@ -805,7 +805,7 @@ fn pack_unpack_and_restore_a_verified_synthetic_environment() {
 
 #[cfg(unix)]
 #[test]
-fn pack_copies_the_self_binary_to_the_branch_root_and_writes_launchers() {
+fn pack_keeps_the_self_binary_only_in_tools_and_the_branch_root_documentation_only() {
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("project-source");
     let tools = temp.path().join("fake-tools");
@@ -833,20 +833,59 @@ fn pack_copies_the_self_binary_to_the_branch_root_and_writes_launchers() {
         .success();
 
     let nested = transport.join(".pixi-sandbox/tools/linux-64/pixi-sandbox");
-    let root = transport.join("pixi-sandbox");
-    assert_eq!(fs::read(&root).unwrap(), fs::read(&nested).unwrap());
-    assert!(root.metadata().unwrap().permissions().mode() & 0o111 != 0);
-    assert!(transport.join("restore.sh").is_file());
-    assert!(transport.join("restore.ps1").is_file());
-    let launcher = fs::read_to_string(transport.join("restore.sh")).unwrap();
-    assert!(launcher.contains("$BRANCH_DIR/pixi-sandbox"));
-    assert!(launcher.contains("--branch-location \"$BRANCH_DIR\""));
-    let readme = fs::read_to_string(transport.join("README.md")).unwrap();
-    assert!(readme.contains("./pixi-sandbox restore"));
-    assert!(
-        !readme.contains("\\\\\n"),
-        "generated README must not contain source escapes"
-    );
+    assert_eq!(fs::read(&self_bin).unwrap(), fs::read(&nested).unwrap());
+    assert!(nested.metadata().unwrap().permissions().mode() & 0o111 != 0);
+    assert!(!transport.join("pixi-sandbox").exists());
+    assert!(!transport.join("restore.sh").exists());
+    assert!(!transport.join("restore.ps1").exists());
+
+    let mut root_files = fs::read_dir(&transport)
+        .unwrap()
+        .flatten()
+        .filter(|entry| entry.file_type().unwrap().is_file())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    root_files.sort();
+    assert_eq!(root_files, ["AGENTS.md", "README.md"]);
+}
+
+#[test]
+fn init_github_generates_minimal_project_launchers_and_workflow() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    bin()
+        .args([
+            "init",
+            "github",
+            "--project-root",
+            project.to_str().unwrap(),
+            "--branch",
+            "sandbox/developer-linux-64",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "generated GitHub sandbox workflow",
+        ));
+
+    let shell = fs::read_to_string(project.join("restore")).unwrap();
+    assert!(shell.contains("git -C \"$ROOT\" archive"));
+    assert!(shell.contains("sandbox/developer-linux-64"));
+    assert!(shell.contains(".pixi-sandbox/tools/$PLATFORM/pixi-sandbox"));
+    assert!(!shell.contains("curl"));
+
+    let powershell = fs::read_to_string(project.join("restore.ps1")).unwrap();
+    assert!(powershell.contains("git -C $Root archive"));
+    assert!(powershell.contains(".pixi-sandbox/tools/win-64/pixi-sandbox.exe"));
+    assert!(!powershell.contains("Invoke-WebRequest"));
+
+    let workflow =
+        fs::read_to_string(project.join(".github/workflows/publish-sandbox.yml")).unwrap();
+    assert!(workflow.contains("Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@"));
+    assert!(workflow.contains("config: .pixi-sandbox.toml"));
+    assert!(project.join(".pixi-sandbox.toml").is_file());
 }
 
 #[cfg(unix)]
@@ -861,7 +900,8 @@ fn a_bare_root_invocation_verifies_the_branch_and_only_prints_a_hint() {
         .clone();
     let output = String::from_utf8(output).unwrap();
     assert!(output.contains("every declared byte matches"));
-    assert!(output.contains("next: ./pixi-sandbox restore"));
+    assert!(output.contains(".pixi-sandbox/tools/linux-64/pixi-sandbox"));
+    assert!(output.contains(" restore --branch-location"));
     assert!(!output.contains("restore complete"));
 }
 
@@ -944,4 +984,71 @@ fn restore_accepts_legacy_path_to_main_repo_code_alias() {
         .assert()
         .success()
         .stdout(predicate::str::contains("every declared byte matches"));
+}
+
+#[cfg(unix)]
+#[test]
+fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    bin()
+        .args([
+            "init",
+            "github",
+            "--project-root",
+            project.to_str().unwrap(),
+            "--branch",
+            "sandbox/developer-linux-64",
+        ])
+        .assert()
+        .success();
+
+    let git = |args: &[&str]| {
+        let status = StdCommand::new("git")
+            .args(args)
+            .current_dir(&project)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["add", "."]);
+    git(&[
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-qm",
+        "main",
+    ]);
+    git(&["checkout", "-q", "--orphan", "sandbox/developer-linux-64"]);
+    git(&["rm", "-qrf", "."]);
+    let nested = project.join(".pixi-sandbox/tools/linux-64/pixi-sandbox");
+    fs::create_dir_all(nested.parent().unwrap()).unwrap();
+    write_executable(
+        &nested,
+        "#!/bin/sh\nset -eu\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = --output-path ]; then shift; touch \"$1/restored-by-bootstrap\"; exit 0; fi\n  shift\ndone\nexit 3\n",
+    );
+    git(&["add", "."]);
+    git(&[
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-qm",
+        "sandbox",
+    ]);
+    git(&["checkout", "-q", "main"]);
+
+    let status = StdCommand::new("sh")
+        .arg("restore")
+        .current_dir(&project)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert!(project.join("restored-by-bootstrap").is_file());
 }
