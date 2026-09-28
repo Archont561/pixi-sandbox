@@ -1,7 +1,12 @@
 # --- generated / heavy: never commit ---------------------------------------
 # pixi
 .pixi/
-.pixi-sandbox/          # the transport payload (lives on the sandbox branch, not here)
+# the transport payload (lives on the sandbox branch, not here)
+# NB: keep this comment on its own line — git does not strip trailing comments,
+# so `.pixi-sandbox/ # ...` would be parsed as a literal pattern and ignore nothing.
+.pixi-sandbox/
+# cargo config written by `pixi-sandbox restore` (points at the vendor tree)
+/.cargo/
 # rust
 target/
 # cargo vendoring (materialised by `pixi-sandbox restore`, never committed)

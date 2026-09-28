@@ -405,7 +405,7 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + SHA256SUMS + GitHub Release |
 | `.github/workflows/docs.yml` | Docs → GitHub Pages |
 | `.github/dependabot.yml` | Dependabot: cargo, gha, npm (convco prefixes) |
-| `scripts/restore.sh` | One-liner offline reconstruction with PATH aliases |
+| `scripts/restore.sh` | One-liner offline reconstruction with PATH aliases; branch derived from `.pixi-sandbox.toml` |
 | `docs/` | Starlight + astro-icon + Iconify docs (13 pages) |
 | `.knowledge/` | Open Knowledge Format: decisions D1–D11, design, benchmarks |
 | `CHANGELOG.md` | Changelog via convco |
