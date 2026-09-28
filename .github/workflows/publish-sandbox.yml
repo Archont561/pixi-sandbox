@@ -9,6 +9,11 @@ name: publish-sandbox
 # - workflow_run: after `ci` succeeds on main (automated)
 # - workflow_dispatch: manual with optional overrides
 # - workflow_call: reusable from other repos or self, with optional verified release mode
+#
+# Dry-run: pass `dry-run: true` (dispatch or call) to exercise the whole matrix —
+# install, pack, and `doctor --verify` — on every native runner while skipping the
+# final force-push. Nothing on any orphan branch changes, so the fragile publish
+# path can be validated from a feature branch without publishing for real.
 
 on:
   workflow_run:
@@ -57,6 +62,10 @@ on:
         description: Release asset with standard SHA-256 checksum lines
         type: string
         default: SHA256SUMS
+      dry-run:
+        description: Pack and verify every target but skip the force-push (leaves orphan branches untouched)
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       config:
@@ -109,6 +118,11 @@ on:
         required: false
         type: string
         default: SHA256SUMS
+      dry-run:
+        description: Pack and verify every target but skip the force-push (leaves orphan branches untouched)
+        required: false
+        type: boolean
+        default: false
     secrets:
       SANDBOX_PUSH_TOKEN:
         description: Token allowed to force-push sandbox branches (defaults to GITHUB_TOKEN)
@@ -284,7 +298,7 @@ jobs:
           echo "Produced matrix: $MATRIX"
 
   publish:
-    name: ${{ matrix.bundle }} · ${{ matrix.platform }}
+    name: "${{ inputs.dry-run && 'dry-run — ' || '' }}${{ matrix.bundle }} · ${{ matrix.platform }}"
     needs: plan
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -360,6 +374,7 @@ jobs:
           remote: ${{ github.server_url }}/${{ github.repository }}.git
           output-dir: ${{ runner.temp }}/pixi-sandbox/${{ matrix.bundle }}-${{ matrix.platform }}
           push-token: ${{ secrets.SANDBOX_PUSH_TOKEN || github.token }}
+          dry-run: ${{ inputs.dry-run && 'true' || 'false' }}
 
       # ------------------------------------------------------------------
       # Local mode
@@ -451,6 +466,7 @@ jobs:
           remote: ${{ github.server_url }}/${{ github.repository }}.git
           output-dir: ${{ runner.temp }}/pixi-sandbox/${{ matrix.bundle }}-${{ matrix.platform }}
           push-token: ${{ secrets.SANDBOX_PUSH_TOKEN || github.token }}
+          dry-run: ${{ inputs.dry-run && 'true' || 'false' }}
 
       - name: Upload published manifest
         if: success()

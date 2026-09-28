@@ -39,6 +39,10 @@ inputs:
     description: Optional token injected into Git configuration, never into the remote URL.
     required: false
     default: ""
+  dry-run:
+    description: When "true", pack and verify with `doctor` but skip the force-push, leaving the orphan branch untouched.
+    required: false
+    default: "false"
 
 outputs:
   transport:
@@ -67,3 +71,4 @@ runs:
         remote: ${{ inputs.remote }}
         output-dir: ${{ inputs.output-dir }}
         push-token: ${{ inputs.push-token }}
+        dry-run: ${{ inputs.dry-run }}
