@@ -46,8 +46,10 @@ updates:
           - minor
           - patch
 
-  # Docs site (Astro + Starlight) — npm ecosystem reads docs/package.json + bun.lock
-  - package-ecosystem: npm
+  # Docs site (Astro + Starlight) — must be `bun`, not `npm`: the build installs with
+  # `bun install --frozen-lockfile` against docs/bun.lock. The npm ecosystem cannot read a
+  # bun lockfile, so it updated package.json without bun.lock and broke every frozen install.
+  - package-ecosystem: bun
     directory: "/docs"
     schedule:
       interval: weekly
