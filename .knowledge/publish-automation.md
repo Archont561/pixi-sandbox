@@ -178,5 +178,5 @@ verifies SHA-256 before executing.
 
 The embedded helper pins cover Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows x86_64
 for Pixi, pixi-pack, and pixi-unpack. That makes planning/fetching possible; native release and
-airlock proof results are validated via CI's `sandbox-proof` task and the offline reconstruction
-one-liner in `scripts/restore.sh`.
+airlock behavior is validated by the fixture-backed Rust integration tests in
+`crates/pixi-sandbox/tests/e2e.rs`, including restore in a severed network namespace.

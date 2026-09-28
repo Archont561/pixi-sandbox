@@ -2,10 +2,9 @@
 
 This branch is an **offline pixi sandbox** (the pixi-sandbox test fixture), not source code.
 
-- manifest: `.pixi-sandbox/manifest.json` (schema 1) — every file, digest, split part and tool.
-- envs: demo (platform linux-64). One blob is split into `.partNNN` pieces on purpose, so
-  the split path is covered without a 95 MiB payload.
-- The root `pixi-sandbox` is a convenience copy of the verified nested self-binary.
-- To restore: `./pixi-sandbox restore --branch-location . --output-path <project> --force`,
-  or `./restore.sh <project>` / `restore.ps1 <project>`.
-- The tools here are shell stubs: they report their version and nothing else.
+- manifest: `.pixi-sandbox/manifest.json` (schema 1) — every file, digest, split part and tool;
+- envs: demo (platform linux-64). One blob is split into `.partNNN` pieces on purpose;
+- branch root: Markdown documentation only;
+- verified bootstrap: `.pixi-sandbox/tools/linux-64/pixi-sandbox`;
+- restore through the project-side launcher or invoke the nested bootstrap explicitly;
+- tools are shell fixtures; `pixi-unpack` materialises a tiny prefix for integration tests.

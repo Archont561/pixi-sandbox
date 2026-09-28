@@ -29,6 +29,8 @@ pub enum Command {
     Unpack(UnpackArgs),
     /// Inspect a transport directory or branch: manifest, hashes, tool linkage, sizes.
     Doctor(DoctorArgs),
+    /// Generate project-side GitHub publishing and offline restore files.
+    Init(InitArgs),
     /// Validate `.pixi-sandbox.toml` and emit native publish jobs.
     Plan(PlanArgs),
     /// Manage the pinned helper tools (`pixi-pack`, `pixi-unpack`, `pixi`).
@@ -211,6 +213,46 @@ pub struct DoctorArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct InitArgs {
+    /// Generator to run. Currently GitHub Actions is the supported connected-side publisher.
+    #[arg(value_enum)]
+    pub provider: InitProvider,
+
+    /// Project root where generated files are written.
+    #[arg(long, default_value = ".")]
+    pub project_root: PathBuf,
+
+    /// GitHub Actions workflow path, relative to the project root.
+    #[arg(long, default_value = ".github/workflows/publish-sandbox.yml")]
+    pub workflow: PathBuf,
+
+    /// Reviewed sandbox plan path, relative to the project root.
+    #[arg(long, default_value = ".pixi-sandbox.toml")]
+    pub config: PathBuf,
+
+    /// POSIX airlock launcher path, relative to the project root.
+    #[arg(long, default_value = "restore.sh")]
+    pub restore_script: PathBuf,
+
+    /// PowerShell airlock launcher path, relative to the project root.
+    #[arg(long, default_value = "restore.ps1")]
+    pub powershell_script: PathBuf,
+
+    /// Default local sandbox branch archived by the launchers.
+    #[arg(long, default_value = "sandbox/developer-linux-64")]
+    pub branch: String,
+
+    /// Replace files previously generated at the selected paths.
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum InitProvider {
+    Github,
+}
+
+#[derive(Debug, Args)]
 pub struct PlanArgs {
     /// Project declaration listing the environment bundles and native platforms to publish.
     #[arg(long, default_value = ".pixi-sandbox.toml")]
@@ -255,17 +297,21 @@ pub fn run() -> Result<()> {
                 envs: Vec::new(),
                 json: false,
             })?;
-            let binary = if branch.join("pixi-sandbox.exe").is_file() {
-                ".\\pixi-sandbox.exe"
-            } else {
-                "./pixi-sandbox"
-            };
-            println!(
-                "next: {binary} restore --branch-location \"{}\" --output-path <project> --force",
-                branch.display()
+            let manifest = pixi_sandbox_core::manifest::Manifest::load(
+                &pixi_sandbox_core::manifest::Manifest::path_in(&branch),
+            )?;
+            let executable = pixi_sandbox_core::tools_lock::executable_filename(
+                "pixi-sandbox",
+                &manifest.platform,
             );
+            let binary = branch
+                .join(".pixi-sandbox")
+                .join("tools")
+                .join(&manifest.platform)
+                .join(executable);
             println!(
-                "shortcut: \"{}/restore.sh\" <project> (or restore.ps1 on Windows)",
+                "next: \"{}\" restore --branch-location \"{}\" --output-path <project> --force",
+                binary.display(),
                 branch.display()
             );
             return Ok(());
@@ -283,6 +329,7 @@ pub fn run() -> Result<()> {
         Command::Restore(args) => commands::restore(args),
         Command::Unpack(args) => commands::unpack(args),
         Command::Doctor(args) => commands::doctor(args),
+        Command::Init(args) => commands::init(args),
         Command::Plan(args) => commands::plan(args),
         Command::Tools(args) => commands::tools(args),
     }

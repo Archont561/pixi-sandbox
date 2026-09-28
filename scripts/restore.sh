@@ -19,14 +19,13 @@ echo "→ worktree $WORKTREE"
 rm -rf "$WORKTREE"
 git worktree add "$WORKTREE" "origin/$BRANCH" --force
 
-# Prefer the self-contained root bootstrap produced by `pack --self-bin`; retain the
-# nested path for branches generated before the root convenience copy existed.
+# Schema-1 branches keep their verified bootstrap in the manifest-owned tools tree.
 BIN=""
 for candidate in \
-  "$WORKTREE/pixi-sandbox" \
-  "$WORKTREE/pixi-sandbox.exe" \
   "$WORKTREE/.pixi-sandbox/tools/linux-64/pixi-sandbox" \
-  "$WORKTREE/.pixi-sandbox/tools/linux-64/pixi-sandbox.exe" \
+  "$WORKTREE/.pixi-sandbox/tools/linux-aarch64/pixi-sandbox" \
+  "$WORKTREE/.pixi-sandbox/tools/osx-arm64/pixi-sandbox" \
+  "$WORKTREE/.pixi-sandbox/tools/osx-64/pixi-sandbox" \
   "$WORKTREE/.pixi-sandbox/tools/win-64/pixi-sandbox.exe"; do
   if [ -x "$candidate" ] || [ -f "$candidate" ]; then
     BIN="$candidate"
@@ -43,16 +42,10 @@ echo "→ doctor $BIN"
 "$BIN" doctor --branch-location "$WORKTREE" --verify || true
 
 echo "→ restore to $OUTPUT"
-if [ -f "$WORKTREE/restore.sh" ]; then
-  # New branches keep the restore policy next to the root binary.
-  bash "$WORKTREE/restore.sh" "$OUTPUT"
+if "$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force 2>&1; then
+  :
 else
-  # Legacy branches may only have the nested self-binary and no launcher.
-  if "$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force 2>&1; then
-    :
-  else
-    "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force
-  fi
+  "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force
 fi
 
 echo "→ cleanup worktree"

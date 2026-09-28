@@ -6,7 +6,26 @@ description: Build a sandbox bundle and publish it from CI — with icons from I
 import { Icon } from 'astro-icon/components';
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-## On your machine
+## Use pixi-sandbox in two commands
+
+Connected project root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Archont561/pixi-sandbox/v0.3.0/scripts/init.sh | sh
+```
+
+After committing the generated files, letting GitHub publish the sandbox branch, and transferring
+that branch into the airlock:
+
+```bash
+./restore.sh
+```
+
+The first command downloads the proper release binary for the host, verifies `SHA256SUMS`, and
+scaffolds configuration, CI, and both restore launchers. The second performs a local `git archive`
+and restores without network access.
+
+## Develop pixi-sandbox itself
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
   <Icon name="lucide:terminal" size={18} />
@@ -15,10 +34,9 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 ```bash
 git clone https://github.com/Archont561/pixi-sandbox && cd pixi-sandbox
-pixi run test          # or: pixi run lint
-
-# End-to-end proof (bare checkout, allow few minutes):
-pixi run sandbox-proof
+# Includes the fixture-backed doctor → publish → network-isolated restore lifecycle.
+pixi run test
+pixi run lint
 ```
 
 ## In your project
@@ -59,20 +77,17 @@ pixi run sandbox-proof
 
 ## On the airlock
 
-An extracted orphan branch is self-contained. The root `pixi-sandbox` is a convenience copy of
-the manifest-verified binary under `.pixi-sandbox/tools/<platform>/`; Git stores identical copies
-as one blob. A bare invocation is deliberately read-only: it runs `doctor --verify` and prints
-the next restore command.
+The normal project branch contains the launchers generated on the connected host. Once a clone or
+Git bundle containing the sandbox branch crosses the air gap, restoration is one local command:
 
 ```bash
-cd /path/to/extracted-branch
-./pixi-sandbox
-./restore.sh /path/to/project
-# equivalent explicit form:
-./pixi-sandbox restore --branch-location . --output-path /path/to/project --force
+cd /path/to/project
+./restore.sh
+# Windows: .\\restore.ps1
 ```
 
-Windows branches provide the matching `pixi-sandbox.exe` and `restore.ps1`.
+The launcher archives the local platform branch and invokes its manifest-verified binary under
+`.pixi-sandbox/tools/<platform>/`. The orphan branch itself has only Markdown at its root.
 
 ## From CI: reviewed native matrix
 

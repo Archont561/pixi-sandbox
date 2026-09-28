@@ -7,6 +7,7 @@
 //! `publish --keep` and `tools update` are intentionally the only deferred CLI operations.
 
 mod doctor;
+mod init;
 mod pack;
 mod plan;
 mod publish;
@@ -16,6 +17,7 @@ mod tools;
 mod unpack;
 
 pub use doctor::run as doctor;
+pub use init::run as init;
 pub use pack::run as pack;
 pub use plan::run as plan;
 pub use publish::run as publish;

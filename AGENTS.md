@@ -20,7 +20,7 @@ opinion.
 | `crates/pixi-sandbox-core/src/shard.rs` | the only two file operations: `record_file` (split if oversized) and `materialise`/`join_parts` (verify, then write) |
 | `crates/pixi-sandbox-core/src/tools_lock.rs` | compiles the canonical helper-tool pins into the binary; `--tools-lock` is an explicit override |
 | `crates/pixi-sandbox-core/src/verify.rs` | collects *all* failures instead of stopping at the first — an airlock operator wants the full list |
-| `crates/pixi-sandbox/src/commands/*` | `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, and `tools list` — pure Rust, no Python |
+| `crates/pixi-sandbox/src/commands/*` | `init`, `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, and `tools list` — pure Rust, no Python |
 | `crates/pixi-sandbox-git` | **all** git access: `GitProtocol` + `ShellGit` (real git, with a swappable `Runner`) + `FakeGit` (in-memory mock). Never run `git` from anywhere else |
 | `crates/pixi-sandbox/tests/fixtures/` | the fixture project and the synthetic transport. **Tests must not point at this repository** — see `.knowledge/decisions.md` D10 |
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical embedded helper-tool pins; edit as reviewed data and keep the embedded-lock tests green |
@@ -56,7 +56,7 @@ The checksum-verified release publisher is implemented as reviewed composite-act
 ```bash
 # one environment, so every task is `pixi run <task>` with no -e flag
 pixi run lint           # fmt-check + clippy -D warnings + deny + actionlint + taplo + biome
-pixi run test           # cargo nextest run --workspace (includes the Action checksum tests)
+pixi run test           # nextest workspace, including fixture-backed offline lifecycle tests
 pixi run coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
 pixi run docs-dev       # Astro dev server for docs/
 pixi run sandbox-plan   # validate .pixi-sandbox.toml and show native publish jobs
@@ -64,7 +64,6 @@ pixi run lint-sandbox-plan # CI form: validate root plan plus embedded tool cove
 pixi run sandbox-pack   # pack the transport (Rust CLI; embeds the chosen self-bootstrap binary)
 pixi run sandbox-doctor # verify a transport: every sha256, nothing written
 pixi run sandbox-publish# force-push it as an orphan branch
-pixi run sandbox-proof  # the full cold-start proof
 
 # the same steps as CI runs them (paths come from the SANDBOX_* environment variables)
 pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
