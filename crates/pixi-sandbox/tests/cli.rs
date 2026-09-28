@@ -859,7 +859,9 @@ fn init_github_generates_minimal_project_launchers_and_workflow() {
     let project = temp.path().join("project");
     fs::create_dir_all(&project).unwrap();
 
+    let action_sha = "0123456789abcdef0123456789abcdef01234567";
     bin()
+        .env("PIXI_SANDBOX_ACTION_SHA", action_sha)
         .args([
             "init",
             "github",
@@ -887,8 +889,12 @@ fn init_github_generates_minimal_project_launchers_and_workflow() {
 
     let workflow =
         fs::read_to_string(project.join(".github/workflows/publish-sandbox.yml")).unwrap();
-    assert!(workflow.contains("Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@"));
-    assert!(workflow.contains("config: .pixi-sandbox.toml"));
+    assert!(workflow.contains(&format!("uses: Archont561/pixi-sandbox/setup@{action_sha}")));
+    assert!(workflow.contains(&format!(
+        "uses: Archont561/pixi-sandbox/publish@{action_sha}"
+    )));
+    assert!(workflow.contains(&format!("version: v{}", env!("CARGO_PKG_VERSION"))));
+    assert!(!workflow.contains(".github/workflows/publish-sandbox.yml@"));
     assert!(project.join(".pixi-sandbox.toml").is_file());
 }
 
@@ -998,6 +1004,10 @@ fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary(
     fs::create_dir_all(&project).unwrap();
 
     bin()
+        .env(
+            "PIXI_SANDBOX_ACTION_SHA",
+            "0123456789abcdef0123456789abcdef01234567",
+        )
         .args([
             "init",
             "github",

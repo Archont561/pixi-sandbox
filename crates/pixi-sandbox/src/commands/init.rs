@@ -26,7 +26,8 @@ pub fn run(args: InitArgs) -> Result<()> {
     }
 
     let version = env!("CARGO_PKG_VERSION");
-    write(&workflow, &github_workflow(version))?;
+    let action_sha = latest_action_sha()?;
+    write(&workflow, &github_workflow(version, &action_sha))?;
     if !config.exists() {
         write(&config, &default_config())?;
     }
@@ -67,10 +68,94 @@ fn default_config() -> String {
     "schema = 1\nbranch_prefix = \"sandbox\"\ncargo_vendor = true\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n".to_string()
 }
 
-fn github_workflow(version: &str) -> String {
-    format!(
-        "name: publish sandbox\n\non:\n  workflow_dispatch:\n  push:\n    branches: [main]\n\npermissions:\n  contents: write\n\njobs:\n  publish:\n    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v{version}\n    with:\n      config: .pixi-sandbox.toml\n      release-repository: Archont561/pixi-sandbox\n      release-version: v{version}\n    secrets: inherit\n"
-    )
+fn latest_action_sha() -> Result<String> {
+    if let Ok(sha) = std::env::var("PIXI_SANDBOX_ACTION_SHA") {
+        return validate_sha(&sha);
+    }
+
+    let body = ureq::get("https://api.github.com/repos/Archont561/pixi-sandbox/commits/main")
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "pixi-sandbox-init")
+        .call()
+        .context("resolving the latest pixi-sandbox action commit")?
+        .body_mut()
+        .read_to_string()
+        .context("reading the latest pixi-sandbox action commit")?;
+    let response: serde_json::Value =
+        serde_json::from_str(&body).context("parsing the latest pixi-sandbox action commit")?;
+    let sha = response["sha"]
+        .as_str()
+        .context("GitHub's latest-commit response has no sha")?;
+    validate_sha(sha)
+}
+
+fn validate_sha(sha: &str) -> Result<String> {
+    if sha.len() == 40 && sha.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(sha.to_ascii_lowercase())
+    } else {
+        bail!("pixi-sandbox action SHA must be a full 40-character commit SHA")
+    }
+}
+
+fn github_workflow(version: &str, action_sha: &str) -> String {
+    let template = r#"name: publish sandbox
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - id: sandbox
+        uses: Archont561/pixi-sandbox/setup@__ACTION_SHA__
+        with:
+          version: v__VERSION__
+      - id: plan
+        shell: bash
+        run: echo "matrix=$(pixi-sandbox plan --config .pixi-sandbox.toml --json)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix).include }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          cache: true
+          environments: ${{ matrix.environments }}
+      - id: sandbox
+        uses: Archont561/pixi-sandbox/setup@__ACTION_SHA__
+        with:
+          version: v__VERSION__
+      - uses: Archont561/pixi-sandbox/publish@__ACTION_SHA__
+        with:
+          project: .
+          environments: ${{ matrix.environments }}
+          platform: ${{ matrix.platform }}
+          branch: ${{ matrix.branch }}
+          cargo-vendor: ${{ matrix.cargo_vendor }}
+          self-bin: ${{ steps.sandbox.outputs.path }}
+          remote: ${{ github.server_url }}/${{ github.repository }}.git
+          output-dir: ${{ runner.temp }}/pixi-sandbox-transport
+          push-token: ${{ github.token }}
+"#;
+    template
+        .replace("__VERSION__", version)
+        .replace("__ACTION_SHA__", action_sha)
 }
 
 fn posix_restore(branch: &str) -> String {
