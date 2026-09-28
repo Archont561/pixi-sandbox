@@ -881,11 +881,17 @@ fn init_github_generates_minimal_project_launchers_and_workflow() {
     assert!(shell.contains("sandbox/developer-linux-64"));
     assert!(shell.contains(".pixi-sandbox/tools/$PLATFORM/pixi-sandbox"));
     assert!(!shell.contains("curl"));
+    // The launcher resolves the branch from the generated plan instead of trusting only the
+    // branch baked in at init time.
+    assert!(shell.contains("CONFIG=$ROOT/.pixi-sandbox.toml"));
+    assert!(shell.contains("branch_prefix"));
 
     let powershell = fs::read_to_string(project.join("restore.ps1")).unwrap();
     assert!(powershell.contains("git -C $Root archive"));
     assert!(powershell.contains(".pixi-sandbox/tools/win-64/pixi-sandbox.exe"));
     assert!(!powershell.contains("Invoke-WebRequest"));
+    assert!(powershell.contains(".pixi-sandbox.toml"));
+    assert!(powershell.contains("branch_prefix"));
 
     let workflow =
         fs::read_to_string(project.join(".github/workflows/publish-sandbox.yml")).unwrap();
@@ -996,6 +1002,19 @@ fn restore_accepts_legacy_path_to_main_repo_code_alias() {
         .stdout(predicate::str::contains("every declared byte matches"));
 }
 
+/// The Pixi platform name the generated launchers resolve to on this host. Tests that create a
+/// sandbox branch must name it the same way, or they only pass on x86_64 Linux.
+#[cfg(unix)]
+fn host_platform() -> &'static str {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => "linux-64",
+        ("linux", "aarch64") => "linux-aarch64",
+        ("macos", "aarch64") => "osx-arm64",
+        ("macos", "x86_64") => "osx-64",
+        other => panic!("unsupported test host {other:?}"),
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary() {
@@ -1038,9 +1057,13 @@ fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary(
         "-qm",
         "main",
     ]);
-    git(&["checkout", "-q", "--orphan", "sandbox/developer-linux-64"]);
+    let branch = format!("sandbox/developer-{}", host_platform());
+    git(&["checkout", "-q", "--orphan", &branch]);
     git(&["rm", "-qrf", "."]);
-    let nested = project.join(".pixi-sandbox/tools/linux-64/pixi-sandbox");
+    let nested = project.join(format!(
+        ".pixi-sandbox/tools/{}/pixi-sandbox",
+        host_platform()
+    ));
     fs::create_dir_all(nested.parent().unwrap()).unwrap();
     write_executable(
         &nested,
@@ -1065,4 +1088,98 @@ fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary(
         .unwrap();
     assert!(status.success());
     assert!(project.join("restored-by-bootstrap").is_file());
+}
+
+/// A project can rename its bundle or branch prefix without regenerating `restore.sh`: the
+/// launcher reads `.pixi-sandbox.toml` at run time. Here the branch baked in at init time does
+/// not exist, so only a launcher that consults the config can find the transport.
+#[cfg(unix)]
+#[test]
+fn generated_restore_prefers_the_branch_declared_in_the_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    bin()
+        .env(
+            "PIXI_SANDBOX_ACTION_SHA",
+            "0123456789abcdef0123456789abcdef01234567",
+        )
+        .args([
+            "init",
+            "github",
+            "--project-root",
+            project.to_str().unwrap(),
+            "--branch",
+            "sandbox/never-published-linux-64",
+        ])
+        .assert()
+        .success();
+
+    let platform = host_platform();
+    fs::write(
+        project.join(".pixi-sandbox.toml"),
+        format!(
+            "schema = 1\nbranch_prefix = \"envs\"\ncargo_vendor = true\n\n\
+             [[bundle]]\nname = \"tools\"\nenvironments = [\"default\"]\nplatforms = [\"{platform}\"]\n"
+        ),
+    )
+    .unwrap();
+
+    let git = |args: &[&str]| {
+        let status = StdCommand::new("git")
+            .args(args)
+            .current_dir(&project)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["add", "."]);
+    git(&[
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-qm",
+        "main",
+    ]);
+
+    // The transport lives on the branch the config names, never on the init-time default.
+    git(&[
+        "checkout",
+        "-q",
+        "--orphan",
+        &format!("envs/tools-{platform}"),
+    ]);
+    git(&["rm", "-qrf", "."]);
+    let nested = project.join(format!(".pixi-sandbox/tools/{platform}/pixi-sandbox"));
+    fs::create_dir_all(nested.parent().unwrap()).unwrap();
+    write_executable(
+        &nested,
+        "#!/bin/sh\nset -eu\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = --output-path ]; then shift; touch \"$1/restored-by-config\"; exit 0; fi\n  shift\ndone\nexit 3\n",
+    );
+    git(&["add", "."]);
+    git(&[
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-qm",
+        "sandbox",
+    ]);
+    git(&["checkout", "-q", "main"]);
+
+    let status = StdCommand::new("sh")
+        .arg("restore.sh")
+        .current_dir(&project)
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "the launcher must resolve envs/tools-{platform} from .pixi-sandbox.toml"
+    );
+    assert!(project.join("restored-by-config").is_file());
 }

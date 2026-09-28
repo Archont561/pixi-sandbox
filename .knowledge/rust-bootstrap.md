@@ -14,6 +14,9 @@ release-produced Rust binaries.
 - The default branch self executable is the static Rust binary (musl on Linux, native on macOS/Windows).
 - Release binaries are built by `release.yml` (5 targets), stripped, SHA256SUMS verified.
 - One-liner offline reconstruction is available via `scripts/restore.sh` / `pixi run sandbox-restore`.
+- Branch identity is never hard-coded: `scripts/restore.sh` and the `init`-generated
+  `restore.sh` / `restore.ps1` both read `<branch_prefix>/<bundle>-<platform>` out of
+  `.pixi-sandbox.toml`, so a config change reaches every consumer without a regenerated launcher.
 
 ## Replacement contract
 
@@ -87,7 +90,17 @@ reporting the workspace tests as green.
 For offline reconstruction from an existing sandbox branch:
 
 ```bash
-bash scripts/restore.sh sandbox/linux-64   # or: pixi run sandbox-restore
+bash scripts/restore.sh                    # or: pixi run sandbox-restore
+```
+
+The branch is derived from `.pixi-sandbox.toml` (`<branch_prefix>/<bundle>-<platform>`, the same
+naming `pixi-sandbox plan` emits) for the host platform, so it never drifts from the publisher.
+Override it when needed:
+
+```bash
+bash scripts/restore.sh --print-branch              # resolve only, no network
+bash scripts/restore.sh sandbox/developer-linux-64  # explicit branch
+PIXI_SANDBOX_BUNDLE=developer bash scripts/restore.sh  # pick among several bundles
 ```
 
 ## GitHub release asset contract

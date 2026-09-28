@@ -91,7 +91,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
     # Publish
     pixi sandbox publish \
       --input-dir .sandbox-transport \
-      --branch-name sandbox/linux-64
+      --branch-name sandbox/developer-linux-64
     ```
   </TabItem>
   <TabItem label="Airlock">
@@ -128,7 +128,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
         project: .
         environments: dev
         platform: linux-64
-        branch: sandbox/linux-64
+        branch: sandbox/developer-linux-64
         self-bin: ${{ steps.setup.outputs.path }}
         remote: https://github.com/OWNER/REPO.git
         output-dir: /tmp/transport

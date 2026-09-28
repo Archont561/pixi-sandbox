@@ -10,7 +10,7 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 
 1. **Pack**: Captures conda environments and Cargo vendored dependencies into an immutable, hashed transport payload.
 2. **Verify**: Asserts all file sizes, split parts, and SHA-256 digests.
-3. **Publish**: Pushes the transport to an isolated Git orphan branch (e.g. `sandbox/linux-64`).
+3. **Publish**: Pushes the transport to an isolated Git orphan branch (e.g. `sandbox/developer-linux-64`).
 4. **Restore**: Unpacks environments offline, applies binary prefix relocations, configures Cargo vendor paths, and verifies filesystem markers without internet access.
 
 ---
