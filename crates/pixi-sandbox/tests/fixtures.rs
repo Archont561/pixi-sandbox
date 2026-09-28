@@ -105,7 +105,7 @@ fn the_fixture_transport_verifies_and_covers_the_split_case() {
     // the manifest describes, down to the split parts.
     let report = verify::verify(&manifest, &dir, None);
     assert!(report.ok(), "fixture must verify: {:?}", report.failures);
-    assert_eq!(report.files, 10, "8 env+vendor blobs and 3 tools");
+    assert_eq!(report.files, 11, "9 env+vendor blobs and 3 tools");
     assert!(
         manifest
             .envs
@@ -113,6 +113,14 @@ fn the_fixture_transport_verifies_and_covers_the_split_case() {
             .flat_map(|env| env.blobs.iter())
             .any(|blob| !blob.parts.is_empty()),
         "the fixture must contain a split blob, or the `.partNNN` path is never covered"
+    );
+    assert!(
+        manifest
+            .envs
+            .values()
+            .flat_map(|env| env.blobs.iter())
+            .any(|blob| blob.path.ends_with("prefix/prefix.tar.gz")),
+        "the fixture must carry a real conda prefix, or prefix relocation is never covered"
     );
     assert!(
         manifest
@@ -138,7 +146,8 @@ fn the_fixture_transport_uses_the_documentation_only_root_layout() {
 #[test]
 fn the_fixture_transport_is_small_enough_to_commit() {
     // A fixture that grows into a real payload would defeat the point (it is meant to be a
-    // 16 KB stand-in for a 262 MB transport). Keep it under a quarter of a MiB.
+    // ~95 KB stand-in for a 262 MB transport, real conda prefix and all). Keep it under a
+    // quarter of a MiB.
     let bytes: u64 = walk(&transport()).iter().map(|(_, size)| size).sum();
     assert!(
         bytes < 256 * 1024,

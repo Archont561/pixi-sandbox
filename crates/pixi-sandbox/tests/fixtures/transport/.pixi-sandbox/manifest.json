@@ -25,7 +25,7 @@
       "url": null,
       "pinned_sha256": null,
       "linkage": "script",
-      "size_bytes": 595,
+      "size_bytes": 1117,
       "path": "tools/linux-64/pixi-unpack"
     },
     "pixi-sandbox": {
@@ -41,8 +41,8 @@
     "demo": {
       "platform": "linux-64",
       "pack_path": ".pixi-sandbox/envs/demo/pack",
-      "packed_size_bytes": 10089,
-      "unpacked_size_bytes": 40356,
+      "packed_size_bytes": 87302,
+      "unpacked_size_bytes": 178044,
       "pixi_environment_fingerprint": "0123456789abcdef",
       "blobs": [
         {
@@ -86,6 +86,11 @@
           "path": "envs/demo/pack/pixi-pack.json",
           "size": 80,
           "sha256": "f156551dbe2b1fdbcf7d053a3700593ae4a9a3ed263ab659fbc0c4328b9fb3c6"
+        },
+        {
+          "path": "envs/demo/pack/prefix/prefix.tar.gz",
+          "size": 77213,
+          "sha256": "ba13427ca806a93e678f38a4bd0ecedd02446ad03ac406cfd76757427792c1e9"
         }
       ]
     }

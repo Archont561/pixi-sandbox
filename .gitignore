@@ -39,3 +39,6 @@ lcov.info
 *.tar.zst
 *.part[0-9][0-9][0-9]
 !crates/pixi-sandbox/tests/fixtures/**/*.part[0-9][0-9][0-9]
+# the transport fixture *is* committed branch content; without this negation git cannot re-include
+# anything under an ignored directory, so a new fixture blob would be silently untrackable
+!crates/pixi-sandbox/tests/fixtures/**/.pixi-sandbox/

@@ -28,14 +28,18 @@ sha256-verified pins and works on a machine with nothing installed), or be marke
 ## Regenerating
 
 `transport/` is checked in so the tests are hermetic. It was originally generated deterministically
-via Python; now it is maintained as a static synthetic payload with real digests (edit files directly,
+via Python; now it is maintained as a static payload with real digests (edit files directly,
 or re-pack via Rust CLI and copy manifest structure). The fixture intentionally includes a split blob
 `.partNNN` case and one verified `pixi-sandbox` stub under `.pixi-sandbox/tools/linux-64/`.
 Its root contains only `README.md` and `AGENTS.md`, matching the v0.3 transport layout.
 
+One part of it is **not** synthetic: `.pixi-sandbox/envs/demo/pack/prefix/prefix.tar.gz` is a real
+conda prefix, captured from a `conda-forge` environment and reduced to the files that matter for
+prefix relocation. `transport/README.md` has the recipe.
+
 `demo-project/` is a real project: its `pixi.lock` comes from `pixi lock`, its `Cargo.lock`
 from `cargo generate-lockfile` (both were run once and committed). Nothing in the test suite
-runs a solver or a download.
+runs a solver or a download — except the `#[ignore]`d live test, which packs it for real.
 
 ## Rules for new tests
 

@@ -1,18 +1,30 @@
 #!/bin/sh
-# Functional fixture unpacker: creates a tiny prefix without pixi, conda, or network access.
+# Functional fixture unpacker: stages a real conda prefix with no pixi, conda, or network access.
 set -eu
 if [ "${1:-}" = "--version" ]; then echo "pixi-unpack 0.7.11"; exit 0; fi
+pack=''
 out=''
 env=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
     -e) env="$2"; shift 2 ;;
-    *) shift ;;
+    *)
+      # the pack directory is the only positional argument, and pixi-unpack passes it first
+      if [ -z "$pack" ]; then pack="$1"; fi
+      shift
+      ;;
   esac
 done
-test -n "$out" && test -n "$env"
+test -n "$pack" && test -n "$out" && test -n "$env"
 prefix="$out/$env"
-mkdir -p "$prefix/conda-meta" "$prefix/lib/pkgconfig"
-printf '{"name":"fixture"}\n' > "$prefix/conda-meta/fake-package.json"
-printf 'prefix=%s\nlibdir=%s/lib\n' "$prefix" "$prefix" > "$prefix/lib/pkgconfig/fixture.pc"
+mkdir -p "$prefix"
+tar -xzf "$pack/prefix/prefix.tar.gz" -C "$prefix" --strip-components=1
+# A real pack carries conda's build-path placeholder, and a real unpacker substitutes the output
+# prefix for it. `grep -I` keeps a shared library that merely contains the token bytes out of the
+# rewrite, which is the same rule `restore.rs` applies when it relocates the staged prefix.
+escaped=$(printf '%s' "$prefix" | sed 's/[&|\\]/\\&/g')
+grep -rlI '@PREFIX@' "$prefix" | while read -r file; do
+  sed -i.bak "s|@PREFIX@|$escaped|g" "$file"
+  rm -f "$file.bak"
+done

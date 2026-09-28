@@ -416,7 +416,8 @@ fn doctor_summarises_the_fixture_transport() {
 
 #[test]
 fn doctor_verify_checks_every_blob_of_the_fixture() {
-    // 10 blobs: the env (with one split blob), the three tool stubs, the vendored crate
+    // 11 blobs: the env (one split blob plus the real prefix archive), the three tool stubs, the
+    // vendored crate
     bin()
         .args([
             "doctor",
@@ -428,7 +429,7 @@ fn doctor_verify_checks_every_blob_of_the_fixture() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"ok\": true"))
-        .stdout(predicate::str::contains("\"files\": 10"));
+        .stdout(predicate::str::contains("\"files\": 11"));
 }
 
 #[test]

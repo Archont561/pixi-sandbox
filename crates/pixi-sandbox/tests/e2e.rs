@@ -19,6 +19,12 @@ fn fixture_transport() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transport")
 }
 
+/// The complete pixi project definition tests pack (never this repository, see
+/// `tests/fixtures/README.md`).
+fn demo_project() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo-project")
+}
+
 fn copy_tree(source: &Path, destination: &Path) {
     fs::create_dir_all(destination).unwrap();
     for entry in fs::read_dir(source).unwrap().flatten() {
@@ -30,6 +36,21 @@ fn copy_tree(source: &Path, destination: &Path) {
         } else {
             fs::copy(&source_path, &destination_path).unwrap();
             fs::set_permissions(&destination_path, metadata.permissions()).unwrap();
+        }
+    }
+}
+
+/// The relocation rule `restore.rs` promises, applied here as an independent check: valid UTF-8
+/// text without NUL bytes is rewritten, and everything else is left exactly as it was staged.
+fn text_files_under(root: &Path, out: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(root).unwrap().flatten() {
+        let path = entry.path();
+        if entry.file_type().unwrap().is_dir() {
+            text_files_under(&path, out);
+        } else if let Ok(bytes) = fs::read(&path) {
+            if !bytes.contains(&0) && std::str::from_utf8(&bytes).is_ok() {
+                out.push(path);
+            }
         }
     }
 }
@@ -86,15 +107,66 @@ fn fixture_doctor_publish_and_restore_is_the_complete_offline_proof() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("relocated 1 text file(s)"))
+        // pkg-config, a CMake config, a gdb script, a `bin` script and a linker script: the five
+        // kinds a real conda prefix ships with its install prefix baked in.
+        .stdout(predicate::str::contains("relocated 8 text file(s)"))
         .stdout(predicate::str::contains("restore complete"));
 
     let prefix = airlock.join(".pixi/envs/demo");
-    assert!(prefix.join("conda-meta/fake-package.json").is_file());
+    let final_prefix = prefix.to_str().unwrap();
     assert!(prefix.join("conda-meta/pixi_env_prefix").is_file());
-    let pkg_config = fs::read_to_string(prefix.join("lib/pkgconfig/fixture.pc")).unwrap();
-    assert!(pkg_config.contains(prefix.to_str().unwrap()));
-    assert!(!pkg_config.contains(".restore-work/stage-demo"));
+    assert!(
+        fs::read_to_string(prefix.join("conda-meta/pixi_env_prefix"))
+            .unwrap()
+            .contains(final_prefix)
+    );
+    // Real conda metadata, real activation script, and a real shared library, all from the
+    // committed prefix archive rather than a hand-written payload.
+    assert!(
+        prefix
+            .join("conda-meta/zlib-1.3.2-h25fd6f3_3.json")
+            .is_file()
+    );
+    assert!(
+        prefix
+            .join("etc/conda/activate.d/activate-gxx_linux-64.sh")
+            .is_file()
+    );
+    assert!(prefix.join("lib/libz.so.1.3.2").is_file());
+    assert!(fs::read_link(prefix.join("lib/libz.so")).is_ok());
+
+    let pkg_config = fs::read_to_string(prefix.join("lib/pkgconfig/zlib.pc")).unwrap();
+    assert!(pkg_config.contains(final_prefix));
+
+    // A binary that embeds its build prefix keeps that path: rewriting it would corrupt a
+    // 26 KiB executable, and the length proves the staging prefix was never spliced in.
+    let lzmainfo = prefix.join("bin/lzmainfo");
+    let lzmainfo_bytes = fs::read(&lzmainfo).unwrap();
+    assert_eq!(lzmainfo_bytes.len(), 26336);
+    assert!(
+        String::from_utf8_lossy(&lzmainfo_bytes)
+            .contains("/opt/conda/envs/demo-build-fixture-00000"),
+        "a NUL-containing file must not be relocated"
+    );
+
+    // The blanket invariant behind #18: no text file in the restored environment may point into
+    // restore scratch or at an unsubstituted pack placeholder.
+    let mut text = Vec::new();
+    text_files_under(&prefix, &mut text);
+    assert!(text.len() > 8, "the fixture must stage a realistic prefix");
+    for path in &text {
+        let body = fs::read_to_string(path).unwrap();
+        for forbidden in [".restore-work/stage-demo", "@PREFIX@"] {
+            assert!(
+                !body.contains(forbidden),
+                "{} still points at {forbidden}",
+                path.display()
+            );
+        }
+    }
+
+    // Restore scratch is not a deliverable: a completed airlock has no `.restore-work` left.
+    assert!(!airlock.join(".pixi/.restore-work").exists());
     assert!(
         airlock
             .join(".pixi-sandbox/vendor/demo-dep-1.0.0/Cargo.toml")
@@ -143,4 +215,74 @@ fn fixture_restore_succeeds_in_a_severed_network_namespace() {
             .join(".pixi/envs/demo/conda-meta/pixi_env_prefix")
             .is_file()
     );
+}
+
+/// The cold proof for #18 needs a *real* prefix: `pixi-pack` records conda's build-path
+/// placeholders and the real `pixi-unpack` substitutes the staging prefix into them, so this is
+/// the only test that sees what the tools actually produce. Ignored because it needs the network
+/// for both the solver and the pinned helper tools.
+#[test]
+#[ignore = "needs the network: solves an environment and downloads the pinned helper tools"]
+fn a_real_packed_environment_restores_with_nothing_pointing_into_restore_scratch() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("demo-project");
+    let transport = temp.path().join("transport");
+    let airlock = temp.path().join("airlock-project");
+    copy_tree(&demo_project(), &project);
+    fs::create_dir_all(&airlock).unwrap();
+
+    bin()
+        .args([
+            "pack",
+            "--repo-root",
+            project.to_str().unwrap(),
+            "--envs",
+            "default",
+            "--output-dir",
+            transport.to_str().unwrap(),
+            "--platform",
+            "linux-64",
+            "--fetch-tools",
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--verify",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("OK — every declared byte matches"));
+
+    bin()
+        .args([
+            "restore",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--output-path",
+            airlock.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("restore complete"));
+
+    let prefix = airlock.join(".pixi/envs/default");
+    let pkg_config = fs::read_to_string(prefix.join("lib/pkgconfig/zlib.pc")).unwrap();
+    assert!(pkg_config.contains(prefix.to_str().unwrap()));
+
+    let mut text = Vec::new();
+    text_files_under(&prefix, &mut text);
+    for path in &text {
+        let body = fs::read_to_string(path).unwrap();
+        assert!(
+            !body.contains(".restore-work/stage-default"),
+            "{} still points into restore scratch",
+            path.display()
+        );
+    }
+    assert!(!airlock.join(".pixi/.restore-work").exists());
 }
