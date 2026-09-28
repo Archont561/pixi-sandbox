@@ -158,7 +158,7 @@ jobs:
       - name: Install verified pixi-sandbox release (release mode)
         if: ${{ inputs.release-repository != '' }}
         id: sandbox-release
-        uses: ./pixi-sandbox-action/action.yml
+        uses: ./pixi-sandbox-action
         with:
           subpath: setup
           repository: ${{ inputs.release-repository }}
@@ -337,7 +337,7 @@ jobs:
       - name: Install verified pixi-sandbox release
         if: ${{ inputs.release-repository != '' }}
         id: sandbox-release
-        uses: ./pixi-sandbox-action/action.yml
+        uses: ./pixi-sandbox-action
         with:
           subpath: setup
           repository: ${{ inputs.release-repository }}
@@ -348,7 +348,7 @@ jobs:
       - name: Pack, verify, and publish one native sandbox branch (release)
         if: ${{ inputs.release-repository != '' }}
         id: publish-release
-        uses: ./pixi-sandbox-action/action.yml
+        uses: ./pixi-sandbox-action
         with:
           subpath: publish
           project: project
@@ -414,7 +414,9 @@ jobs:
       - name: Pack, verify, and publish one native sandbox branch (local)
         if: ${{ inputs.release-repository == '' }}
         id: publish-local
-        uses: ./project/action.yml
+        # Local `uses:` must name the directory holding action.yml; pointing at
+        # the file itself makes the runner search *inside* project/action.{yml,yaml}.
+        uses: ./project
         with:
           subpath: publish
           project: project
