@@ -2,14 +2,13 @@
 
 This is the **test fixture** for pixi-sandbox: a structurally complete transport, committed
 so the tool's tests run with no pixi, no packer and no network. It is a static synthetic
-payload with real digests (historically generated via Python, now maintained directly).
+payload with real digests, maintained directly.
 
 Built 2026-09-20T00:00:00Z for platform `linux-64`.
 
-The root `pixi-sandbox` is a convenience copy of the manifest's
-`.pixi-sandbox/tools/linux-64/pixi-sandbox`. `restore.sh` and `restore.ps1` are thin launchers
-that call the root binary; the root copy is intentionally outside the manifest because the
-nested copy remains the integrity-checked payload.
+The branch root contains Markdown only. Its verified bootstrap lives exclusively at
+`.pixi-sandbox/tools/linux-64/pixi-sandbox`, matching the v0.3 transport layout. Project-side
+launchers archive this branch and invoke that nested binary.
 
 | env | platform | packed | files |
 | --- | --- | --- | --- |
@@ -18,7 +17,7 @@ nested copy remains the integrity-checked payload.
 ## Restore
 
 ```bash
-./pixi-sandbox doctor --branch-location . --verify
-./pixi-sandbox restore --branch-location . --output-path <project> --force
-# or: ./restore.sh <project>
+./.pixi-sandbox/tools/linux-64/pixi-sandbox doctor --branch-location . --verify
+./.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+  --branch-location . --output-path <project> --force
 ```

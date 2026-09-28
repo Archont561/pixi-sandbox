@@ -514,13 +514,16 @@ fn publish_pushes_the_transport_as_a_single_orphan_commit() {
         ".pixi-sandbox/tools/linux-64/pixi-sandbox",
         "AGENTS.md",
         "README.md",
-        "pixi-sandbox",
-        "restore.sh",
-        "restore.ps1",
     ] {
         assert!(
             listed.contains(expected),
             "{expected} missing from the branch:\n{listed}"
+        );
+    }
+    for forbidden in ["pixi-sandbox", "restore.sh", "restore.ps1"] {
+        assert!(
+            !listed.lines().any(|path| path == forbidden),
+            "legacy root file {forbidden:?} must not be published:\n{listed}"
         );
     }
 
@@ -602,14 +605,15 @@ fn publish_dry_run_changes_nothing() {
         before,
         "a dry run must leave the transport exactly as it found it"
     );
-    let entries: Vec<String> = fs::read_dir(transport.path())
+    let mut entries: Vec<String> = fs::read_dir(transport.path())
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
+    entries.sort();
     assert_eq!(
-        entries.len(),
-        6,
-        "a dry run must not leave a scratch directory behind: {entries:?}"
+        entries,
+        [".pixi-sandbox", "AGENTS.md", "README.md"],
+        "a dry run must not alter the v0.3 transport root: {entries:?}"
     );
     assert!(
         !transport.path().join(".git").exists(),

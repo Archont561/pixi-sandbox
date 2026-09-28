@@ -30,8 +30,8 @@ sha256-verified pins and works on a machine with nothing installed), or be marke
 `transport/` is checked in so the tests are hermetic. It was originally generated deterministically
 via Python; now it is maintained as a static synthetic payload with real digests (edit files directly,
 or re-pack via Rust CLI and copy manifest structure). The fixture intentionally includes a split blob
-`.partNNN` case, a root `pixi-sandbox` stub, and `restore.sh`/`restore.ps1` launchers that call it.
-The root stub is intentionally outside the manifest; the nested tool stub remains the verified payload.
+`.partNNN` case and one verified `pixi-sandbox` stub under `.pixi-sandbox/tools/linux-64/`.
+Its root contains only `README.md` and `AGENTS.md`, matching the v0.3 transport layout.
 
 `demo-project/` is a real project: its `pixi.lock` comes from `pixi lock`, its `Cargo.lock`
 from `cargo generate-lockfile` (both were run once and committed). Nothing in the test suite
