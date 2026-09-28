@@ -1,0 +1,58 @@
+# Convco configuration. Keep release notes stable instead of depending on tool defaults.
+# https://convco.github.io/configuration/
+header: |
+  # Changelog
+
+  All notable changes to this project are documented in this file.
+
+  The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+  and this project adheres to
+  [Conventional Commits](https://www.conventionalcommits.org/).
+
+types:
+  - type: feat
+    section: Features
+    hidden: false
+  - type: fix
+    section: Fixes
+    hidden: false
+  - type: perf
+    section: Performance
+    hidden: false
+  - type: refactor
+    section: Refactoring
+    hidden: false
+  - type: docs
+    section: Documentation
+    hidden: false
+  - type: build
+    section: Build System
+    hidden: false
+  - type: ci
+    section: CI
+    hidden: false
+  - type: test
+    section: Tests
+    hidden: true
+  - type: chore
+    section: Maintenance
+    hidden: true
+  - type: style
+    section: Styling
+    hidden: true
+
+# Before 1.0, a breaking change advances the minor version (for example 0.2 -> 0.3).
+preMajor: true
+releaseCommitMessageFormat: "chore(release): {{currentTag}}"
+issuePrefixes:
+  - "#"
+host: https://github.com
+owner: Archont561
+repository: pixi-sandbox
+scopeRegex: "[[:alnum:]]+(?:[-_/][[:alnum:]]+)*"
+lineLength: 100
+wrapDisabled: false
+linkCompare: true
+linkReferences: true
+merges: false
+firstParent: false
