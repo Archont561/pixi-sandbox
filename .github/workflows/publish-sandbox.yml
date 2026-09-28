@@ -210,6 +210,10 @@ jobs:
         if: ${{ inputs.release-repository == '' }}
         uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
         with:
+          # The project is checked out into project/, not the job root. This is
+          # setup-pixi's own input: the step-level `working-directory` key is only
+          # valid on `run:` steps and actionlint rejects it on an action step (#16).
+          working-directory: project
           cache: true
           environments: default
 
@@ -319,6 +323,8 @@ jobs:
         if: ${{ inputs.release-repository != '' }}
         uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
         with:
+          # See the `plan` job: the project lives in project/, not the job root (#16).
+          working-directory: project
           cache: true
 
       - name: Install verified pixi-sandbox release
@@ -355,6 +361,8 @@ jobs:
         if: ${{ inputs.release-repository == '' }}
         uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
         with:
+          # See the `plan` job: the project lives in project/, not the job root (#16).
+          working-directory: project
           cache: true
           environments: default
 
