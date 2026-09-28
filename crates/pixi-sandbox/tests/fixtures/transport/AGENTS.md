@@ -7,4 +7,4 @@ This branch is an **offline pixi sandbox** (the pixi-sandbox test fixture), not 
 - branch root: Markdown documentation only;
 - verified bootstrap: `.pixi-sandbox/tools/linux-64/pixi-sandbox`;
 - restore through the project-side launcher or invoke the nested bootstrap explicitly;
-- tools in this fixture are shell stubs: they report their version and nothing else.
+- tools are shell fixtures; `pixi-unpack` materialises a tiny prefix for integration tests.

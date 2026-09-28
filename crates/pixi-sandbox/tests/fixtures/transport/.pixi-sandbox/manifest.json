@@ -25,7 +25,7 @@
       "url": null,
       "pinned_sha256": null,
       "linkage": "script",
-      "size_bytes": 173,
+      "size_bytes": 595,
       "path": "tools/linux-64/pixi-unpack"
     },
     "pixi-sandbox": {

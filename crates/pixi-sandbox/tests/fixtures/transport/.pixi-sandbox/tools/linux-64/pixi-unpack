@@ -1,4 +1,18 @@
 #!/bin/sh
-# fixture stub for pixi-unpack 0.7.11 (tests/fixtures/README.md)
-if [ "$1" = "--version" ]; then echo "pixi-unpack 0.7.11"; exit 0; fi
-echo "pixi-unpack stub: $*"
+# Functional fixture unpacker: creates a tiny prefix without pixi, conda, or network access.
+set -eu
+if [ "${1:-}" = "--version" ]; then echo "pixi-unpack 0.7.11"; exit 0; fi
+out=''
+env=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -e) env="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+test -n "$out" && test -n "$env"
+prefix="$out/$env"
+mkdir -p "$prefix/conda-meta" "$prefix/lib/pkgconfig"
+printf '{"name":"fixture"}\n' > "$prefix/conda-meta/fake-package.json"
+printf 'prefix=%s\nlibdir=%s/lib\n' "$prefix" "$prefix" > "$prefix/lib/pkgconfig/fixture.pc"

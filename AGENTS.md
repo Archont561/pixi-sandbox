@@ -56,7 +56,7 @@ The checksum-verified release publisher is implemented as reviewed composite-act
 ```bash
 # one environment, so every task is `pixi run <task>` with no -e flag
 pixi run lint           # fmt-check + clippy -D warnings + deny + actionlint + taplo + biome
-pixi run test           # cargo nextest run --workspace (includes the Action checksum tests)
+pixi run test           # nextest workspace, including fixture-backed offline lifecycle tests
 pixi run coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
 pixi run docs-dev       # Astro dev server for docs/
 pixi run sandbox-plan   # validate .pixi-sandbox.toml and show native publish jobs
@@ -64,7 +64,6 @@ pixi run lint-sandbox-plan # CI form: validate root plan plus embedded tool cove
 pixi run sandbox-pack   # pack the transport (Rust CLI; embeds the chosen self-bootstrap binary)
 pixi run sandbox-doctor # verify a transport: every sha256, nothing written
 pixi run sandbox-publish# force-push it as an orphan branch
-pixi run sandbox-proof  # the full cold-start proof
 
 # the same steps as CI runs them (paths come from the SANDBOX_* environment variables)
 pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish

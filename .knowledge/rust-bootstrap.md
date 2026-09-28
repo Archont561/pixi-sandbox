@@ -71,29 +71,18 @@ embedded tool catalogue. Consequently its manifest entry has no external `pinned
 verification checks presence, size, and linkage. Produce it in trusted release CI and retain
 its signed release checksum/provenance until manifest signing is introduced.
 
-## Use the release binary in the end-to-end proof
+## End-to-end verification
 
-Supply a release binary via `PIXI_SANDBOX_SELF_BIN`:
+The cold proof is a Rust integration test, not a Pixi task. `tests/e2e.rs` consumes the checked-in
+transport fixture and drives the real CLI through doctor, local orphan-branch publication, prefix
+relocation, vendor restoration, and network-severed restore. Run it with the normal test gate:
 
 ```bash
-PIXI_SANDBOX_SELF_BIN=artifacts/pixi-sandbox-linux-x86_64 \
-  pixi run sandbox-proof
-# or absolute path
-PIXI_SANDBOX_SELF_BIN=/releases/pixi-sandbox-linux-x86_64 \
-  pixi run sandbox-proof
+pixi run test
 ```
 
-A successful run proves that the branch embeds the Rust executable and that it performs the
-network-severed restore, followed by both acceptance assertions:
-
-```text
-pixi install --frozen --offline
-cargo build --offline
-```
-
-For CI's lean proof environment, the `ci-proof` Pixi task sets
-`PIXI_SANDBOX_RUST_ENV=ci` internally. `PIXI_SANDBOX_SELF_BIN` may still be supplied from the
-step environment to select the release artifact.
+Keeping this proof in the crate test suite means CI cannot accidentally skip it while still
+reporting the workspace tests as green.
 
 For offline reconstruction from an existing sandbox branch:
 

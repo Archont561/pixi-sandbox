@@ -27,7 +27,6 @@ lcov.info
 /repro/
 /repro*/
 /.sandbox-out/
-/.sandbox-proof/
 /.sandbox-transport/
 /.sandbox-packages/
 *.tar.zst

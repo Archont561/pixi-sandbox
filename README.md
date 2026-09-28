@@ -435,7 +435,7 @@ pixi run sandbox-pack      # pack + vendor + fetch-tools + self-bin target/relea
 pixi run sandbox-doctor
 pixi run sandbox-publish
 pixi run sandbox-restore   # one-liner from orphan branch
-pixi run sandbox-proof     # full cold proof
+pixi run test              # fixture-backed doctor → publish → offline restore lifecycle
 
 # Changelog via convco
 pixi run changelog-preview

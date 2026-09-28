@@ -15,10 +15,9 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 ```bash
 git clone https://github.com/Archont561/pixi-sandbox && cd pixi-sandbox
-pixi run test          # or: pixi run lint
-
-# End-to-end proof (bare checkout, allow few minutes):
-pixi run sandbox-proof
+# Includes the fixture-backed doctor → publish → network-isolated restore lifecycle.
+pixi run test
+pixi run lint
 ```
 
 ## In your project
