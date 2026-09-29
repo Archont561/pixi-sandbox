@@ -6,7 +6,7 @@ name: publish-sandbox
 # by that plan and force-pushes one platform/bundle branch.
 #
 # Triggers:
-# - workflow_run: after `ci` succeeds on main (automated)
+# - workflow_run: after `ci` succeeds on the repository's default branch (automated)
 # - workflow_dispatch: manual with optional overrides
 # - workflow_call: reusable from other repos or self, with optional verified release mode
 #
@@ -147,7 +147,12 @@ jobs:
   plan:
     name: validate sandbox publish plan
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      ${{
+        github.event_name != 'workflow_run' ||
+        (github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == github.event.repository.default_branch)
+      }}
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
