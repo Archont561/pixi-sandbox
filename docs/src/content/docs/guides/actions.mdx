@@ -49,7 +49,10 @@ jobs:
           push-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Both actions live in **same repo** with short references.
+Both actions live in the **same repo** with short references. `setup/action.yml` and `publish/action.yml` are
+complete composite actions generated from the repository-root `action.yml`, so a `uses: OWNER/REPO/setup@<sha>`
+runs entirely from the ref you pinned — they are not shims that call another action (a relative `uses:` inside a
+remote action resolves against *your* checkout, which is what broke these refs in v0.3.1).
 
 ## Setup Action
 
@@ -86,7 +89,6 @@ Downloads verified release binary, checksum-verified, adds to PATH.
     - uses: Archont561/pixi-sandbox@<sha>
       with:
         subpath: setup
-      with:
         version: v0.3.1
     ```
   </TabItem>
@@ -159,7 +161,6 @@ Packs one `bundle × platform`, verifies, publishes orphan branch.
     - uses: Archont561/pixi-sandbox@<sha>
       with:
         subpath: publish
-      with:
         project: .
         environments: dev
         platform: linux-64

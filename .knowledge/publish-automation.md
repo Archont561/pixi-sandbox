@@ -86,7 +86,9 @@ therefore a configuration error instead of dormant CI policy.
 
 ## `setup-pixi-sandbox` action
 
-Both composite behaviours live in the repository-root `action.yml`, selected by its `subpath` input. `setup/action.yml` and `publish/action.yml` are thin shims that pin `subpath: setup` / `subpath: publish` and exist so `owner/repo/{setup,publish}@ref` resolves.
+Both composite behaviours live in the repository-root `action.yml`, selected by its `subpath` input. `setup/action.yml` and `publish/action.yml` exist so `owner/repo/{setup,publish}@ref` resolves, and each is a **complete copy** of that root action with its own marketplace header and `subpath` default, rendered by `scripts/render-action-shims.sh` and re-rendered by check 7 of `scripts/lint-repo-consistency.sh`.
+
+They are copies because a shim cannot reference its own repository. Until v0.3.1 each contained a single step, `uses: ../action.yml`; a relative `uses:` inside a *remote* composite action is resolved against the workflow run's workspace rather than the repository that defines the action, and a `../` prefix is rejected by the reference parser outright (`Expected format {org}/{repo}[/path]@ref. Actual '../action.yml'`), so every remote `setup@ref` caller failed during job setup (issue #37, task-12). `./action.yml` is not a fix — it resolves in the consumer's checkout, so it fails or silently runs the consumer's own same-named file. The proposed `$/` same-repo syntax has not shipped, and hardcoding `Archont561/pixi-sandbox@<sha>` inside the shim would override the ref the caller pinned. Duplication, generated and lint-verified, is the only option that keeps a pinned SHA meaning one thing.
 They use only bash/pwsh + core utils and therefore run before Pixi or Rust is installed. The setup action:
 
 1. maps the current runner OS/architecture to a Rust target triple;
@@ -121,7 +123,6 @@ Use immutable references in production:
 - uses: OWNER/pixi-sandbox@<commit-sha>
   with:
     subpath: setup
-  with:
     repository: OWNER/pixi-sandbox
     version: v0.2.0
 ```
