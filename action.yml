@@ -207,7 +207,20 @@ runs:
 
         if [ "$VERSION" = "latest" ]; then
           echo "::warning::setup-pixi-sandbox resolved a moving latest release; pin a tag in production."
-          VERSION=$(curl -sSL ${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"} "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          # Split from the parse below on purpose. This used to be one pipeline, so under
+          # `pipefail` *any* response the grep could not find a tag in — an API rate-limit body is
+          # the common one, unauthenticated calls are 60/hour per IP and hosted runners share
+          # egress — exited the whole step with a bare 1 and no explanation. Both failure modes
+          # now name themselves.
+          if ! LATEST_JSON=$(curl -sSL --fail ${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"} "https://api.github.com/repos/${REPO}/releases/latest"); then
+            echo "::error::could not reach the releases API for ${REPO}; pass the token input or pin version to an immutable tag" >&2
+            exit 1
+          fi
+          VERSION=$(printf '%s' "$LATEST_JSON" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || true)
+          if [ -z "$VERSION" ]; then
+            echo "::error::the releases API answered for ${REPO} but carried no tag_name (rate limited?); pass the token input or pin version" >&2
+            exit 1
+          fi
         fi
 
         BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"

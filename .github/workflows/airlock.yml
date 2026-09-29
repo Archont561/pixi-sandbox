@@ -206,9 +206,17 @@ jobs:
         uses: ./project
         with:
           subpath: setup
-          version: ${{ vars.SANDBOX_RELEASE_VERSION || 'latest' }}
+          # `latest` costs an unauthenticated api.github.com call, and hosted runners share
+          # egress IPs, so that call can come back rate-limited — which is how the first
+          # osx-arm64 proof died, in the resolution step rather than in anything about macOS.
+          # A pinned tag is also what an airlock actually starts from, so the proof now models
+          # that; SANDBOX_RELEASE_VERSION overrides it when a newer release should be exercised.
+          version: ${{ vars.SANDBOX_RELEASE_VERSION || 'v0.3.0' }}
           target: auto
           add-to-path: false
+          # Belt and braces: the job token lifts the API rate limit for any path that still
+          # resolves a tag, and costs nothing here — `contents: read` is all this needs.
+          token: ${{ github.token }}
 
       - name: Report the platform contract
         run: |

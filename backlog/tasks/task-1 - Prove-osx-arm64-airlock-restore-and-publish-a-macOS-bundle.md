@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@agent'
 created_date: '2026-09-28 22:05'
-updated_date: '2026-09-29 14:40'
+updated_date: '2026-09-29 14:46'
 labels:
   - platform
   - sandbox
@@ -44,4 +44,6 @@ Prerequisites verified offline before opening the proof PR: pixi.lock already so
 AC1 and AC3 are deliberately left unchecked: they are the verdict of the native macos-14 airlock job, which only GitHub can run. A direct gh workflow run dispatch is not available from the sandbox, HTTP 403 Resource not accessible by integration, so the proof is scheduled through the pull_request trigger instead.
 
 First proof run 36583359794: plan job green, airlock linux-64 green, airlock osx-arm64 RED at step 4, Install the released pixi-sandbox, before any packing. Logs are not downloadable from the airlock, the results-receiver host is blocked, so the cause was read off the step list and annotations: the step failed with a bare exit code 1 and none of the scripts own error annotations fired, which rules out the checksum-missing and checksum-mismatch paths. Cause is bash 3.2: macOS runners still ship /bin/bash 3.2.57, and before bash 4.4 expanding an empty array under set -u is a fatal unbound-variable error. With no token input the AUTH_HEADER array in action.yml is empty, so the first curl killed the step. Linux runners carry bash 5 and never saw it. Fixed by expanding it as a plus-form conditional so an empty array yields no arguments; verified locally that argc is 0 when empty and 2 with a token whose value contains spaces.
+
+Second proof run 36584461694: same step, same bare exit 1, but this time the moving-latest warning is in the annotations, which places the death after that echo and rules the bash 3.2 array out as the remaining cause. The next statement resolved the latest tag by piping an unauthenticated api.github.com call into grep tag_name, and under pipefail any body without a tag, a rate-limit message being the usual one, took the step down with no output. Hosted runners share egress addresses and the unauthenticated limit is 60 per hour per address, which is why only the scarcer macOS pool hit it. Fixed in two places: the proof now pins the released tag instead of resolving latest, and passes the job token; and the action splits the fetch from the parse so an unreachable API and a tagless body each name themselves. Rehearsed offline against a stub curl: pinned path exits 0 with no API call, latest path exits 0, rate-limited body now exits 1 with a named error instead of silence.
 <!-- SECTION:NOTES:END -->
