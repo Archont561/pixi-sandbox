@@ -16,8 +16,9 @@
 #      would happily "install" from the network;
 #   4. with --transport: the restored tree *is the tree the manifest describes* — every file,
 #      symlink target, executable bit and the fingerprint marker, checked against the per-file
-#      digests the packer recorded (doctor --verify-restored, D13). Without it, or against a
-#      schema-1 transport, this script honestly stays a shape check;
+#      digests the packer recorded (doctor --verify-restored, D13). Without it, against a
+#      schema-1 transport, or while the bundled pixi-sandbox predates the oracle, this script
+#      honestly stays a shape check and says so;
 #   5. `pixi install --frozen --offline` needs no byte it did not already have;
 #   6. `cargo check --offline` builds against the vendored tree.
 #
@@ -177,15 +178,30 @@ fi
 # Integrity, not shape: the restored prefix is compared file-by-file against the digests the
 # packer recorded after its own verification unpack (D13). The binary doing the checking is
 # the one the transport carried — restored and verified like every other tool — so the oracle
-# and the checker travel together. Without --transport this section is skipped and the gate
-# says so, because a shape check dressed up as an integrity check is worse than none.
+# and the checker travel together. Two honest degradations, each said out loud rather than
+# papered over:
+#   * no --transport: shape and self-sufficiency are checked, integrity is not;
+#   * a bundled pixi-sandbox that predates the per-file oracle (a transport packed by an
+#     older release): there is no oracle in that manifest to check against, and failing the
+#     airlock for the release transition would teach operators to ignore this gate.
 if [ -n "$TRANSPORT" ]; then
   SANDBOX_BIN="$TOOLS_BIN/pixi-sandbox"
   [ -x "$SANDBOX_BIN" ] || [ -f "$SANDBOX_BIN" ] ||
     fail "the bundled pixi-sandbox is missing at $SANDBOX_BIN; the integrity check cannot run"
-  echo "doctor --verify-restored against $TRANSPORT"
-  "$SANDBOX_BIN" doctor --branch-location "$TRANSPORT" --verify-restored "$PROJECT" --envs "$ENVS" ||
-    fail "the restored project does not match the manifest in $TRANSPORT — see the failures above"
+  # `doctor --help` is the capability probe: only a binary that knows --verify-restored can
+  # run the check. Help text goes through a variable rather than a pipe so `set -o pipefail`
+  # cannot turn an early-exiting grep into a phantom verdict.
+  help_text="$("$SANDBOX_BIN" doctor --help 2>/dev/null || true)"
+  case "$help_text" in
+    *--verify-restored*)
+      echo "doctor --verify-restored against $TRANSPORT"
+      "$SANDBOX_BIN" doctor --branch-location "$TRANSPORT" --verify-restored "$PROJECT" --envs "$ENVS" ||
+        fail "the restored project does not match the manifest in $TRANSPORT — see the failures above"
+      ;;
+    *)
+      echo "::notice::the bundled pixi-sandbox predates the per-file oracle (D13); restored-tree integrity cannot be checked for this transport"
+      ;;
+  esac
 else
   echo "::notice::no --transport given: prefix shape and self-sufficiency are checked, integrity is not (D13)"
 fi

@@ -400,13 +400,7 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
         .assert()
         .success();
 
-    // The fixture's pixi-sandbox is a script stub that cannot run doctor. Restore verified it
-    // as shipped; now swap in the real binary the test build produced, which is what the gate
-    // executes. (Restore itself would refuse a dynamically linked tool — this happens after.)
-    let tool = airlock.join(".pixi/tools/linux-64/pixi-sandbox");
-    fs::copy(env!("CARGO_BIN_EXE_pixi-sandbox"), &tool).unwrap();
-    make_executable(&tool);
-
+    // The gate command, shared by every run below.
     let run_gate = || {
         let mut command = StdCommand::new("bash");
         command
@@ -418,6 +412,28 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
             .arg(transport.canonicalize().unwrap());
         command
     };
+
+    // Degraded mode first, while the fixture stub still plays the bundled binary: a transport
+    // packed by an older release embeds a pixi-sandbox without --verify-restored, and the gate
+    // must pass with a loud notice — failing the release transition would teach operators to
+    // ignore the gate. The stub's `doctor --help` echoes its arguments, never naming the flag.
+    let degraded = run_gate().output().unwrap();
+    let degraded_log = String::from_utf8_lossy(&degraded.stdout);
+    assert!(
+        degraded.status.success(),
+        "the gate must pass while the bundled binary predates the oracle:\n{degraded_log}"
+    );
+    assert!(
+        degraded_log.contains("predates the per-file oracle"),
+        "the degradation must be said out loud, not passed silently:\n{degraded_log}"
+    );
+
+    // The fixture's pixi-sandbox is a script stub that cannot run doctor. Restore verified it
+    // as shipped; now swap in the real binary the test build produced, which is what the gate
+    // executes. (Restore itself would refuse a dynamically linked tool — this happens after.)
+    let tool = airlock.join(".pixi/tools/linux-64/pixi-sandbox");
+    fs::copy(env!("CARGO_BIN_EXE_pixi-sandbox"), &tool).unwrap();
+    make_executable(&tool);
 
     // A faithful restore passes the whole gate, integrity section included.
     let status = run_gate().status().unwrap();

@@ -124,11 +124,19 @@ jobs:
       # *released* binary, because a real airlock starts from a released asset.
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
+          # The project is checked out into project/, not the job root. This is
+          # setup-pixi's own input: the step-level `working-directory` key is only
+          # valid on `run:` steps and actionlint rejects it on an action step (#16).
+          working-directory: project
           environments: default
           cache: true
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # The Cargo workspace is in project/, not the job root.
+          workspaces: project
 
       - name: Build the plan binary
+        working-directory: project
         run: pixi run -e default cargo build --release -q -p pixi-sandbox
 
       - name: Emit the native matrix
@@ -142,7 +150,7 @@ jobs:
           BRANCH_PREFIX: ${{ inputs.branch-prefix || '' }}
           CARGO_VENDOR: ${{ inputs.cargo-vendor || '' }}
         run: |
-          BIN=../target/release/pixi-sandbox
+          BIN=target/release/pixi-sandbox
           if [ -n "$PLATFORM" ]; then
             # Override mode: same binary, same runner table, same validation as a config plan.
             # This is the only place a platform->runner mapping is written down, and it is not
@@ -184,7 +192,7 @@ jobs:
       # proof uses — both to drive the pack and as the self-bootstrap embedded in the transport.
       - name: Install the released pixi-sandbox (checksum-verified)
         id: sandbox
-        uses: ./setup
+        uses: ./project/setup
         with:
           version: ${{ vars.SANDBOX_RELEASE_VERSION || 'latest' }}
           target: auto
@@ -207,7 +215,7 @@ jobs:
 
       - name: Publish the transport to the throwaway remote
         id: publish
-        uses: ./publish
+        uses: ./project/publish
         with:
           project: project
           environments: ${{ matrix.environments }}

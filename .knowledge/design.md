@@ -324,7 +324,10 @@ failures, not the first ✅ — for the branch and, since task-10, for the resto
    against it — content, symlink targets, executable bits, and the fingerprint marker, with
    conda-meta records presence-only (their own bodies embed digests of files relocation
    rewrote). It collects every mismatch and writes nothing. A schema-1 env is reported
-   *unverifiable*, not failed: an old branch cannot be retrofitted.
+   *unverifiable*, not failed: an old branch cannot be retrofitted. The same honesty applies
+   to the release transition — while the transport's embedded pixi-sandbox predates the
+   oracle, the gate prints a notice and stays a shape check rather than failing every airlock
+   on the way to the first oracle-carrying release.
 3. **Self-sufficiency** — *does the restored sandbox need anything from the network?* Owned
    by the airlock gate (`scripts/airlock-gate.sh`): `pixi install --frozen --offline` must be
    a no-op and `cargo check --offline` must build against the vendored tree. The gate's
