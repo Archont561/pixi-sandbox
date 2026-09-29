@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@agent'
 created_date: '2026-09-28 22:05'
-updated_date: '2026-09-29 14:57'
+updated_date: '2026-09-29 15:06'
 labels:
   - platform
   - sandbox
@@ -50,4 +50,6 @@ Second proof run 36584461694: same step, same bare exit 1, but this time the mov
 Third proof run 36585225178: airlock osx-arm64 GREEN end to end on macos-14 - released binary installed and checksum-verified, transport packed, published to the throwaway remote, fetched, every declared byte verified, restored, and the gate passed. linux-64 green alongside it. But reading the step list rather than the badge turned up that step 12, Tier A with egress denied, was skipped on both platforms, and nothing else in the repo calls this workflow with block-network. The inputs context is null on pull_request and schedule, and null == false is true in GitHub expressions, so BLOCK_NETWORK resolved to false on exactly the two triggers that fire: the authoritative tier has never run. Made it opt-out rather than opt-in, so absent input means blocked and only an explicit false from a dispatch or a caller turns it off. AC1 stays unchecked until a run is green with Tier A actually executed.
 
 Fourth run 36585905417: green on both platforms with Tier A executed. airlock osx-arm64 passed the egress-denied gate on macos-14, sandbox-exec with network-outbound denied, which is the tier that can fail for the reason the project cares about; airlock linux-64 passed the same way for the first time. ci lint, test and coverage green on the same commit. AC1 checked on that evidence. AC3 stays open until sandbox/developer-osx-arm64 actually exists on origin, which publish-sandbox.yml does by itself once this merges, since it plans from the same .pixi-sandbox.toml.
+
+Fifth run 36586594920 exposed a flake in the gate itself, not in macOS: airlock osx-arm64 passed again with Tier A, but airlock linux-64 failed Tier B with an identical file list, 5363 files on both sides, and du drifting 2023048 to 2023052 KiB, one 4 KiB block. The no-op check compared files and on-disk size for exact equality, so pixi rewriting its own bookkeeping across a block boundary reported a healthy transport as broken. Replaced the count with an exact comparison of the sorted file list, which is the load-bearing half since anything fetched arrives as new files, and gave the size a 64 KiB budget that is always printed. Verified against the real restored transport in the sandbox: a new file injected between the two installs is caught, 200 KiB of growth with an unchanged file list is caught, and an untouched run passes with 0 KiB drift.
 <!-- SECTION:NOTES:END -->
