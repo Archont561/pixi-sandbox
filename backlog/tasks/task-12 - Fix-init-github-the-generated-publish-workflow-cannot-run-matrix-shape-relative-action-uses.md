@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@agent'
 created_date: '2026-09-29 22:15'
-updated_date: '2026-09-29 22:30'
+updated_date: '2026-09-29 22:35'
 labels:
   - ci
   - init
@@ -59,6 +59,8 @@ Proof on a real runner, not reasoning about the docs. Two throwaway workflows on
 Positive, run https://github.com/Archont561/pixi-sandbox/actions/runs/36639757694 pinned at 2735887: job 'plan' resolved uses: Archont561/pixi-sandbox/setup@2735887 and ran pixi-sandbox plan, and the matrix job was INSTANTIATED - GitHub named it 'publish (developer, default, linux-64, ubuntu-latest, sandbox/developer-linux-64, true)', i.e. the include entry expanded. The same job also ran publish/action.yml (subpath: setup mode), so both published action paths were exercised from a remote ref. Reproduced green a second time in run 36639860666.
 
 Negative control, run https://github.com/Archont561/pixi-sandbox/actions/runs/36639860753: the identical shapes on the pre-fix code fail exactly as reported. Job 'plan-old' (uses: .../setup@26e1349, the old ../action.yml shim) has ONE step, 'Set up job', and it is red; the runner annotation is 'Failed to load Archont561/pixi-sandbox/26e13491.../setup/action.yml' followed by a System.FormatException - the runner cannot even format its own 'Expected format {org}/{repo}[/path]@ref' message because of the braces. Job 'publish-old' (matrix fed the include array) does not appear in the run's job list at all: not failed, never created. That is the silent mode this task is about, and the control shows both halves side by side in one run.
+
+Opened as PR #38 (https://github.com/Archont561/pixi-sandbox/pull/38). All three required checks green on GitHub's runners, not only in the airlock: 'ci (lint · test · coverage)', 'validate airlock plan', and 'airlock linux-64' (the end-to-end pack/publish/offline-restore proof).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
