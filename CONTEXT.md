@@ -54,22 +54,10 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 > **assigned to an online agent running in GitHub Codespaces (or CI)** and is tracked here so it is
 > not silently attempted offline:
 
-1. **Cut the `v0.3.0` release, then repin the one-liner to the release asset** (backlog **task-2**
-   AC#1/AC#3). `release.yml` now publishes **`scripts/init.sh` as a release asset** alongside the
-   five static binaries and `SHA256SUMS`, so the install one-liner can point at an immutable release
-   URL (`.../releases/download/<tag>/init.sh`) instead of a branch. Until `v0.3.0` exists, the
-   one-liner works *today* by fetching `init.sh` from `main` and installing the existing **v0.2.0**
-   binaries (README, `quickstart.mdx`, `using-in-your-project.mdx`, and `init.sh`'s `VERSION`
-   default). Online steps that the airlock cannot perform (`uploads.github.com` is blocked here):
-   run `gh workflow run auto-release.yml -f version=v0.3.0`, then repin every one-liner from
-   `raw.githubusercontent.com/.../main/scripts/init.sh` to
-   `github.com/Archont561/pixi-sandbox/releases/download/v0.3.0/init.sh`. (Alternatively, to switch
-   sooner without a new release, `gh release upload v0.2.0 scripts/init.sh` and point at
-   `.../releases/download/v0.2.0/init.sh`.) Preferably do this after task-1 lands.
-2. **Prove `osx-arm64` and publish a macOS bundle** (backlog **task-1**, gated by **D11**). AC#1
+1. **Prove `osx-arm64` and publish a macOS bundle** (backlog **task-1**, gated by **D11**). AC#1
    requires a **native macOS runner** doing an offline restore end-to-end; it cannot be validated
    from a Linux airlock.
-3. **Implement `pixi-sandbox tools update`** (backlog **task-4**). The command can be *written and
+2. **Implement `pixi-sandbox tools update`** (backlog **task-4**). The command can be *written and
    unit-tested* offline, but its live behaviour — resolving/downloading/sha256-verifying the latest
    `pixi`, `pixi-pack`, `pixi-unpack`, `rattler-index` pins — needs network, so end-to-end
    verification belongs in Codespaces/CI.

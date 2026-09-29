@@ -200,16 +200,16 @@ Both actions live in **same repo** with short references.
 
 ```yaml
 # Root = setup (like prefix-dev/setup-pixi)
-- uses: Archont561/pixi-sandbox@v0.2.0
+- uses: Archont561/pixi-sandbox@v0.3.0
   with:
-    version: v0.2.0
+    version: v0.3.0
 - run: pixi-sandbox --version
 
 # Explicit short path
-- uses: Archont561/pixi-sandbox/setup@v0.2.0
+- uses: Archont561/pixi-sandbox/setup@v0.3.0
   id: setup
   with:
-    version: v0.2.0
+    version: v0.3.0
 ```
 
 Pinned SHA (supply-chain secure):
@@ -223,7 +223,7 @@ Pinned SHA (supply-chain secure):
 ### Publish (pack + doctor + publish one native bundle)
 
 ```yaml
-- uses: Archont561/pixi-sandbox/publish@v0.2.0
+- uses: Archont561/pixi-sandbox/publish@v0.3.0
   with:
     project: .
     environments: dev,docs
@@ -238,7 +238,7 @@ Pinned SHA (supply-chain secure):
 
 ### Full workflow — just two actions (recommended)
 
-No `release-repository`/`release-version` inputs. Your `uses: @v0.2.0` pin *is* the version.
+No `release-repository`/`release-version` inputs. Your `uses: @v0.3.0` pin *is* the version.
 
 ```yaml
 # .github/workflows/publish-sandbox.yml in your project
@@ -253,9 +253,9 @@ jobs:
     outputs: { matrix: ${{ steps.plan.outputs.matrix }} }
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: Archont561/pixi-sandbox/setup@v0.2.0
+      - uses: Archont561/pixi-sandbox/setup@v0.3.0
         id: setup
-        with: { version: v0.2.0 }
+        with: { version: v0.3.0 }
       - id: plan
         run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
 
@@ -271,10 +271,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: prefix-dev/setup-pixi@v0.10.2
-      - uses: Archont561/pixi-sandbox/setup@v0.2.0
+      - uses: Archont561/pixi-sandbox/setup@v0.3.0
         id: setup
-        with: { version: v0.2.0 }
-      - uses: Archont561/pixi-sandbox/publish@v0.2.0
+        with: { version: v0.3.0 }
+      - uses: Archont561/pixi-sandbox/publish@v0.3.0
         with:
           project: .
           environments: ${{ matrix.environments }}
@@ -289,10 +289,10 @@ jobs:
 Single-platform without `plan`:
 
 ```yaml
-- uses: Archont561/pixi-sandbox/setup@v0.2.0
+- uses: Archont561/pixi-sandbox/setup@v0.3.0
   id: setup
-  with: { version: v0.2.0 }
-- uses: Archont561/pixi-sandbox/publish@v0.2.0
+  with: { version: v0.3.0 }
+- uses: Archont561/pixi-sandbox/publish@v0.3.0
   with:
     project: .
     environments: dev,docs
@@ -314,11 +314,11 @@ Single-platform without `plan`:
 ```yaml
 jobs:
   publish:
-    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.2.0
+    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.3.0
     with:
       config: .pixi-sandbox.toml
       release-repository: Archont561/pixi-sandbox
-      release-version: v0.2.0
+      release-version: v0.3.0
     secrets:
       SANDBOX_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -536,8 +536,7 @@ tooling into the published sandbox branch.
 - **Changelog**: `CHANGELOG.md` generated via `convco changelog` from conventional commits. Tasks: `pixi run changelog`.
 - **Release**: Tag `v*.*.*` → `release.yml` builds 5 static binaries, `SHA256SUMS`, creates GitHub Release with `generate_release_notes: true`.
   ```bash
-  git tag v0.2.0 -m "v0.2.0"
-  git push origin main --tags
+  gh workflow run auto-release.yml -f version=vX.Y.Z
   ```
 - **Dependabot**: `.github/dependabot.yml` for cargo, gha, npm (docs) — weekly, groups patch/minor, prefixes `chore`/`ci` to pass convco.
 - **Pixi deps**: Manual via `pixi update`, `pixi lock --check`.
