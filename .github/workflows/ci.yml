@@ -39,6 +39,7 @@ jobs:
       - run: pixi run lint-rust
       - run: pixi run deny
       - run: pixi run lint-actions
+      - run: pixi run lint-generated-workflow
       - run: pixi run lint-sandbox-plan
       - run: pixi run lint-toml
       - run: pixi run lint-docs

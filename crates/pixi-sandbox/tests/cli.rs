@@ -1025,6 +1025,119 @@ fn init_github_generates_minimal_project_launchers_and_workflow() {
     assert!(project.join(".pixi-sandbox.toml").is_file());
 }
 
+/// Generate a project with `init github` and hand back (project dir, workflow text).
+///
+/// The tempdir is returned too: dropping it deletes the project, so the caller has to keep it.
+fn generated_github_project() -> (tempfile::TempDir, PathBuf, String) {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    bin()
+        // No network in a test (and none in the airlock): this is the documented way to pin the
+        // action commit `init` would otherwise resolve from api.github.com.
+        .env(
+            "PIXI_SANDBOX_ACTION_SHA",
+            "0123456789abcdef0123456789abcdef01234567",
+        )
+        .args([
+            "init",
+            "github",
+            "--project-root",
+            project.to_str().unwrap(),
+            "--branch",
+            "sandbox/developer-linux-64",
+        ])
+        .assert()
+        .success();
+
+    let workflow =
+        fs::read_to_string(project.join(".github/workflows/publish-sandbox.yml")).unwrap();
+    (temp, project, workflow)
+}
+
+/// Issue #37 / task-12: `strategy.matrix` must be an *object*, so the `include` array goes one
+/// level down.
+///
+/// `plan --json` emits `{"schema":1,"include":[...]}`. v0.3.1 generated
+/// `matrix: ${{ fromJSON(needs.plan.outputs.matrix).include }}`, which hands `strategy.matrix`
+/// the array itself — a shape Actions will not expand, so the plan job succeeded and the publish
+/// job was never instantiated. The failure is silent (a green run that published nothing), and
+/// actionlint does not see it: it accepts both forms, because it will not evaluate the
+/// expression. Hence a text assertion here, on the exact block the generator emits.
+#[test]
+fn init_github_generates_an_object_shaped_publish_matrix() {
+    let (_temp, _project, workflow) = generated_github_project();
+
+    assert!(
+        workflow.contains(
+            "    strategy:\n      fail-fast: false\n      # `include:` nested under `matrix:`"
+        ),
+        "the publish job must declare a strategy with a nested matrix:\n{workflow}"
+    );
+    assert!(
+        workflow.contains(
+            "      matrix:\n        include: ${{ fromJSON(needs.plan.outputs.matrix).include }}\n"
+        ),
+        "`include:` must be nested under `matrix:`, not passed as the matrix itself:\n{workflow}"
+    );
+    // The v0.3.1 regression, spelled out so it cannot come back in a reworded template.
+    assert!(
+        !workflow.contains("matrix: ${{ fromJSON("),
+        "strategy.matrix must never be handed the include array directly (issue #37):\n{workflow}"
+    );
+}
+
+/// The generated workflow and `plan --json` are one contract: every `matrix.<key>` the workflow
+/// reads has to be a key the planner actually emits on each `include` entry. A rename on either
+/// side turns into an empty string at run time — `runs-on: ` with no value, or a publish that
+/// packs the wrong environments — so it is pinned from both ends at once.
+#[test]
+fn the_generated_workflow_only_reads_matrix_keys_the_plan_emits() {
+    let (_temp, project, workflow) = generated_github_project();
+
+    let config = project.join(".pixi-sandbox.toml");
+    let output = bin()
+        .args(["plan", "--config", config.to_str().unwrap(), "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let plan: Value = serde_json::from_slice(&output).expect("plan --json emits JSON");
+
+    // The workflow consumes `fromJSON(...).include`, so that is the field that must exist.
+    let include = plan["include"]
+        .as_array()
+        .expect("plan --json emits an include array");
+    assert!(!include.is_empty(), "the generated plan publishes nothing");
+
+    let mut referenced: Vec<String> = Vec::new();
+    for (index, _) in workflow.match_indices("matrix.") {
+        let key: String = workflow[index + "matrix.".len()..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if !key.is_empty() && !referenced.contains(&key) {
+            referenced.push(key);
+        }
+    }
+    assert!(
+        referenced.len() >= 4,
+        "expected the workflow to read several matrix keys, found {referenced:?}"
+    );
+
+    for entry in include {
+        let entry = entry.as_object().expect("each include entry is an object");
+        for key in &referenced {
+            assert!(
+                entry.contains_key(key),
+                "the generated workflow reads matrix.{key}, which plan --json does not emit: {entry:?}"
+            );
+        }
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn a_bare_root_invocation_verifies_the_branch_and_only_prints_a_hint() {
