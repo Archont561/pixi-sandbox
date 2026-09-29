@@ -131,30 +131,27 @@ cmd_scan() {
 }
 
 cmd_rewrite() {
-  local old_tag="$1" new_tag="$2"
-  if [ -z "$old_tag" ] || [ -z "$new_tag" ]; then
-    printf 'usage: release-refs.sh rewrite <old-tag> <new-tag>\n' >&2
+  local new_tag="$1"
+  if [ -z "$new_tag" ]; then
+    printf 'usage: release-refs.sh rewrite <new-tag>\n' >&2
     return 1
   fi
-  # The rewrite is destination-driven: every version token on a line that names this project
-  # becomes `new_tag`, whatever it was. `old_tag` is therefore not a filter — it is the caller's
-  # claim about what is being replaced, and it is checked against reality so a stale or wrong
-  # claim fails loudly instead of quietly repinning a tree that was not where the caller thought.
-  # (Not filtering on it is deliberate: a doc that had already drifted to some third version is
-  # exactly what `scan` exists to report, and refusing to fix it would leave the drift in place.)
-  local root current
+  # Destination-only, deliberately. The obvious extra argument — "replace <old> with <new>" — reads
+  # like a safety check, and as a *guard* it was actively wrong: `prepare-release.sh` stamps
+  # Cargo.toml before it repins, so by the time this runs the tree already declares the NEW
+  # version, and comparing it against the old tag failed every release with
+  # "asked to replace v0.3.0 but the tree declares v0.4.0". The tree cannot tell us what the
+  # references used to say; only the caller's history can, and it does not need to. Every version
+  # token on a line that names this project becomes `new_tag`, which is the same thing
+  # `scan` asserts afterwards: whatever the docs said, they now say the declared release.
+  local root
   root="$(project_root)"
   if [ -z "$root" ]; then
     printf "::error::action.yml has no parsable 'repository' default — refusing to guess what to rewrite\n" >&2
     return 1
   fi
-  current="$(declared_version)"
-  if [ -z "$current" ]; then
+  if [ -z "$(declared_version)" ]; then
     printf '::error::Cargo.toml has no parsable top-level version\n' >&2
-    return 1
-  fi
-  if [ "v$current" != "$old_tag" ]; then
-    printf '::error::asked to replace %s but the tree declares %s — re-read the current version\n' "$old_tag" "v$current" >&2
     return 1
   fi
 
@@ -210,9 +207,9 @@ cmd_rewrite() {
 case "${1:-}" in
 root) cmd_root ;;
 scan) cmd_scan ;;
-rewrite) shift; cmd_rewrite "${1:-}" "${2:-}" ;;
+rewrite) shift; cmd_rewrite "${1:-}" ;;
 *)
-  printf 'usage: release-refs.sh {root|scan|rewrite <old> <new>}\n' >&2
+  printf 'usage: release-refs.sh {root|scan|rewrite <new-tag>}\n' >&2
   exit 2
   ;;
 esac

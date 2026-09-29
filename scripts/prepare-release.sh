@@ -123,7 +123,7 @@ fi
 # references are ours — that shared definition is the whole point. Third-party pins on the same
 # line (`actions/checkout@v7.0.1`) are never touched.
 log "→ repinning the documented release references to $TAG"
-bash scripts/release-refs.sh rewrite "v$CURRENT" "$TAG"
+bash scripts/release-refs.sh rewrite "$TAG"
 
 # convco owns the changelog format (.versionrc). The changelog is generated *before* the tag
 # exists, so name the pending section after the version being cut (`--unreleased X.Y.Z` titles it
