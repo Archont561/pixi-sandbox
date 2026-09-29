@@ -4,6 +4,8 @@
 //! catalogue makes installed packages self-contained; an external file remains available for a
 //! reviewed organisation mirror or a deliberately different release pin.
 
+pub mod update;
+
 use crate::cli::{ToolsArgs, ToolsCommand};
 use crate::commands::support;
 use anyhow::{Context, Result};
@@ -13,13 +15,7 @@ use std::path::Path;
 pub fn run(args: ToolsArgs) -> Result<()> {
     match args.command {
         ToolsCommand::List { tools_lock } => list(tools_lock.as_deref()),
-        ToolsCommand::Update { tools_lock } => {
-            let target = tools_lock
-                .as_deref()
-                .map(|path| path.display().to_string())
-                .unwrap_or_else(|| "an explicit --tools-lock file".to_string());
-            Err(super::not_yet(&format!("tools update ({target})"), "10"))
-        }
+        ToolsCommand::Update(args) => update::run(args),
     }
 }
 

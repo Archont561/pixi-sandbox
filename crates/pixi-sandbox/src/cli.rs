@@ -277,10 +277,24 @@ pub enum ToolsCommand {
         tools_lock: Option<PathBuf>,
     },
     /// Refresh an explicit pin file from upstream releases (network; review the diff).
-    Update {
-        #[arg(long)]
-        tools_lock: Option<PathBuf>,
-    },
+    Update(ToolsUpdateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ToolsUpdateArgs {
+    /// Update this file in place. Without it the candidate catalogue is printed, so it can be
+    /// redirected into `crates/pixi-sandbox-core/assets/tools.lock.json` and reviewed as a diff.
+    #[arg(long)]
+    pub tools_lock: Option<PathBuf>,
+
+    /// Report whether anything is newer and exit non-zero if so, without downloading or writing.
+    /// This is the form a scheduled workflow keys on.
+    #[arg(long)]
+    pub check: bool,
+
+    /// Limit the run to these tool names (repeatable). Everything else is reported as skipped.
+    #[arg(long = "tool", value_name = "NAME")]
+    pub tool: Vec<String>,
 }
 
 pub fn run() -> Result<()> {

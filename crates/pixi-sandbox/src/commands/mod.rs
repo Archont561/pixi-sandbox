@@ -1,10 +1,10 @@
 //! Command implementations.
 //!
-//! `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, and `tools list` share one
-//! manifest/config contract. `unpack` is the single-environment primitive that `restore` drives once per env,
-//! and is also the escape hatch for a payload that arrived outside the branch flow.
-//! `.knowledge/design.md` specifies every verb; `tools update` (§10) is intentionally the only
-//! deferred CLI operation.
+//! `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, `tools list`, and `tools update`
+//! share one manifest/config contract. `unpack` is the single-environment primitive that
+//! `restore` drives once per env, and is also the escape hatch for a payload that arrived
+//! outside the branch flow. `.knowledge/design.md` specifies every verb; there are no deferred
+//! operations left, so nothing here can send an operator to a section instead of doing the work.
 
 mod doctor;
 mod init;
@@ -31,12 +31,4 @@ pub fn install_tracing() {
     let filter =
         EnvFilter::try_from_env("PIXI_SANDBOX_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
     let _ = fmt().with_env_filter(filter).without_time().try_init();
-}
-
-/// Every not-yet-implemented path points at the design section that specifies it.
-pub(crate) fn not_yet(verb: &str, section: &str) -> anyhow::Error {
-    anyhow::anyhow!(
-        "`{verb}` is not implemented yet (schema + behaviour are specified in \
-         .knowledge/design.md §{section}, which is the only reference for this verb)"
-    )
 }

@@ -195,8 +195,27 @@ Rejects unsafe/implicit runner selection, checks embedded tool coverage.
 ```bash
 pixi-sandbox tools list
 pixi-sandbox tools list --tools-lock /path/to/tools.lock.json
-pixi-sandbox tools update   # not yet implemented (reports deferred)
+
+# connected host: is any pin stale? downloads nothing, exits non-zero if so
+pixi-sandbox tools update --check
+
+# refresh the pins and print a candidate catalogue for review
+pixi-sandbox tools update > /tmp/tools.lock.json
+
+# refresh one file in place (atomic; unchanged on any failure)
+pixi-sandbox tools update --tools-lock /path/to/tools.lock.json
+pixi-sandbox tools update --tool pixi --tools-lock /path/to/tools.lock.json
 ```
+
+`tools update` resolves each tool's latest release from the repository in its own
+`url_template`, downloads the release assets, and re-derives the recorded `linkage` from the
+bytes — a pin that claims `static` but ships a dynamically linked binary is refused. The write
+happens only after every asset has been checked, so a failure leaves the file untouched.
+
+Upstream does not publish checksums for the bare binaries this catalogue pins (see design.md
+§10), so each pin's `note` records which guarantees actually applied: cross-checked against an
+upstream manifest, manifest-does-not-cover-this-asset, or no manifest. Treat a new pin as
+reviewed data: read the diff before committing it.
 
 ## One-command reconstruction
 

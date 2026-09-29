@@ -675,27 +675,57 @@ fn publish_keep_rotates_the_branch_instead_of_replacing_it() {
     );
 }
 
-/// Task-6: a deferred verb is read by an operator who has no network to check what it names.
+/// Task-6: an operator with no network must never be sent to a reference that no longer exists.
 /// It used to send them to a reference implementation that 0.2.0 deleted from the repository,
-/// which is exactly the kind of dead end an airlock cannot resolve, so the only thing it may
-/// cite is the design section that specifies the verb.
+/// which is exactly the kind of dead end an airlock cannot resolve. `tools update` was the last
+/// verb that could emit such a pointer, so the rule is now asserted over every operator-visible
+/// surface: no verb may claim to be unimplemented, and no help text may name a deleted reference.
 #[test]
-fn a_deferred_verb_cites_only_the_design_section() {
-    let tools = bin().args(["tools", "update"]).assert().failure();
+fn no_verb_defers_to_a_reference_and_no_help_cites_a_deleted_one() {
+    let deferred = bin()
+        .args([
+            "tools",
+            "update",
+            "--check",
+            "--tools-lock",
+            "/nonexistent/does-not-exist.json",
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&deferred.get_output().stderr);
+    assert!(
+        !stderr.contains("not implemented yet"),
+        "`tools update` is implemented; it must not still defer:\n{stderr}"
+    );
 
-    for (verb, output, section) in [("tools update", tools.get_output(), "§10")] {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            stderr.contains(".knowledge/design.md") && stderr.contains(section),
-            "`{verb}` must name the design section that specifies it, got:\n{stderr}"
-        );
+    let surfaces: &[&[&str]] = &[
+        &["--help"],
+        &["tools", "--help"],
+        &["pack", "--help"],
+        &["restore", "--help"],
+    ];
+    for verb in surfaces {
+        let help = bin().args(*verb).assert().success();
+        let text = String::from_utf8_lossy(&help.get_output().stdout).to_ascii_lowercase();
         // stale-ref-allowed: this list is the rule `lint-repo-consistency` enforces elsewhere.
         for stale in ["python", "prototype", ".knowledge/research"] {
             assert!(
-                !stderr.to_ascii_lowercase().contains(stale),
-                "`{verb}` still points at the deleted {stale} reference:\n{stderr}"
+                !text.contains(stale),
+                "`{}` points at the deleted {stale} reference",
+                verb.join(" ")
             );
         }
+    }
+
+    // The flags only exist because the verb is implemented, so their presence is the positive
+    // half of "not a stub" — the failure above only rules out the old wording coming back.
+    let update = bin().args(["tools", "update", "--help"]).assert().success();
+    let text = String::from_utf8_lossy(&update.get_output().stdout);
+    for flag in ["--tools-lock", "--check", "--tool"] {
+        assert!(
+            text.contains(flag),
+            "`tools update --help` must document {flag}:\n{text}"
+        );
     }
 }
 

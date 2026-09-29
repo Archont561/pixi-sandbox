@@ -394,6 +394,37 @@ validation remains required under D11. The embedded copy must be **static** on L
 `~/.pixi/bin` shim is a 766 KiB trampoline that execs a dynamic binary inside its own prefix —
 it works on the build machine and dies on the airlock ✅. Mach-O and PE require native proof.
 
+### Refreshing the pins (`tools update`)
+
+The catalogue is reviewed data, so the command never installs anything and never decides that a
+newer build is *better*; it produces a candidate lock for a human to diff. The repository comes
+out of each pin's own `url_template` (the same source the existing pin was compiled from, never a
+hardcoded name in the code that could drift from the data it serves), the release asset is the
+last path segment of the *substituted* URL, and `--check` reports staleness without downloading
+or writing, which is the form a scheduled workflow keys on. The write is atomic and happens only
+after every asset checks out, so a failure leaves the lock byte-for-byte unchanged.
+
+**Measured: no current pin has an independently published checksum.** pixi *does* publish a
+`sha256.sum` per release, but it lists ten entries — all archives (`.tar.gz`, `.zip`, `.msi`) plus
+`source.tar.gz` — and the catalogue pins the **bare** binary, which is not among them ✅.
+pixi-pack publishes no manifest at all. So the honest guarantee is trust-on-first-use for every
+pin today, and each pin's `note` says which of the three cases applies (cross-checked / manifest
+does not cover this asset / no manifest) rather than implying a guarantee nobody verified. Two
+independent re-downloads reproduced the committed hashes exactly (`pixi` 0.81.0 linux-64
+`248510f5…`, `pixi-unpack` 0.7.11 linux-64 `8191f586…`) ✅, which is evidence the assets are
+stable, not proof they are the intended ones. A future archive-derived check (verify
+`pixi-….tar.gz` against `sha256.sum`, then hash the binary inside it) would make pixi's five
+platforms genuinely cross-checked; that needs gzip and zip readers, so it is a decision, not a
+detail.
+
+**Linkage is re-derived from the bytes, never copied forward.** A pin may *claim* `static`; the
+command reads the ELF and refuses if the asset is not — catching the `~/.pixi/bin` trampoline at
+pin time rather than at restore time. What was observed is what gets written, so a pin cannot
+carry a stale `linkage` claim to whoever reads it next. This is the one check that is fully local
+and fully available, and it is why the weaker hash story is tolerable. A no-op update re-renders
+the committed asset byte-for-byte, so a future pin bump arrives as a small diff instead of a
+reformatted file (`tools_lock::tests::the_catalogue_round_trips_to_its_committed_bytes`).
+
 ## §11 Cargo vendoring
 
 ### §11.1 Layout: a sibling of `envs/` and `tools/`
