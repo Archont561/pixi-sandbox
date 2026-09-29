@@ -27,6 +27,7 @@ opinion.
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
 | `feature.utils.actionlint` | runs `actionlint` from conda directly when validating workflows in the `default` environment |
 | `scripts/restore.sh` | one-liner offline reconstruction from orphan branch with PATH aliases; derives the branch from `.pixi-sandbox.toml` for the host platform |
+| `scripts/lint-repo-consistency.sh` | the repo-level lints a cargo test may not perform (D10): no prototype references under `crates/`, one platform story across README badge / `pixi.toml` / `.pixi-sandbox.toml`. Opt out of the first with `stale-ref-allowed` on (or above) the line |
 | `package.json` + `bun.lock` | the root bun workspace — `docs` is a member, so `docs-install` runs at the root — plus the repo-wide `backlog.md` / `skills` devDependencies (`pixi run backlog`, `pixi run skills`) |
 
 ## Invariants (do not break these)
@@ -56,7 +57,7 @@ The checksum-verified release publisher is implemented as reviewed composite-act
 
 ```bash
 # one environment, so every task is `pixi run <task>` with no -e flag
-pixi run lint           # fmt-check + clippy -D warnings + deny + actionlint + taplo + biome
+pixi run lint           # fmt-check + clippy -D warnings + deny + actionlint + taplo + biome + repo-consistency
 pixi run test           # nextest workspace, including fixture-backed offline lifecycle tests
 pixi run coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
 pixi run docs-dev       # Astro dev server for docs/

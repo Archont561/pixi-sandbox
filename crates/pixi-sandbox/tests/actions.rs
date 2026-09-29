@@ -1,7 +1,7 @@
 //! Integration tests for release Action and checksum verification logic.
 //!
-//! Replaces the external Python Action test harness with native Rust tests that run under
-//! `cargo nextest`.
+//! The release contract is exercised by native Rust tests that run under `cargo nextest`, so
+//! the Action needs no external test harness of its own.
 
 use pixi_sandbox_core::shard::sha256_bytes;
 use std::collections::HashMap;

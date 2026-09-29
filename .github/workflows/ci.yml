@@ -42,6 +42,7 @@ jobs:
       - run: pixi run lint-sandbox-plan
       - run: pixi run lint-toml
       - run: pixi run lint-docs
+      - run: pixi run lint-repo-consistency
       - run: pixi run test
       - run: pixi run test-doc
       - run: pixi run coverage

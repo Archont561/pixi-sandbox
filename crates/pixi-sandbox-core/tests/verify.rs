@@ -123,8 +123,8 @@ fn a_missing_blob_is_reported_as_missing() {
 fn a_script_is_not_a_dynamic_binary() {
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("pixi-sandbox");
-    fs::write(&script, b"#!/usr/bin/env python3\nprint('prototype')\n").unwrap();
-    assert_eq!(linkage_of(&script), Linkage::Script); // the reference prototype ships this way
+    fs::write(&script, b"#!/bin/sh\nexec pixi-sandbox \"$@\"\n").unwrap();
+    assert_eq!(linkage_of(&script), Linkage::Script); // a text launcher, not a linked binary
 }
 
 #[test]

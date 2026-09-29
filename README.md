@@ -6,7 +6,7 @@
   <a href="https://github.com/Archont561/pixi-sandbox/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/Rust-1.85%2B-orange.svg?logo=rust" alt="Rust"></a>
   <a href="https://pixi.sh"><img src="https://img.shields.io/badge/Pixi-0.81%2B-yellow.svg?logo=condaforge" alt="Pixi"></a>
-  <img src="https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64%20%7C%20win--64-brightgreen.svg" alt="Platforms">
+  <img src="https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg" alt="Platforms">
   <a href="https://github.com/Archont561/pixi-sandbox/releases"><img src="https://img.shields.io/github/v/release/Archont561/pixi-sandbox?label=release" alt="Release"></a>
   <a href="https://archont561.github.io/pixi-sandbox/"><img src="https://img.shields.io/badge/Docs-Starlight-blueviolet?logo=astro" alt="Docs"></a>
   <a href="https://github.com/Archont561/pixi-sandbox/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
@@ -21,6 +21,20 @@
 
 > [!NOTE]
 > Because `pixi` discovers `pixi-<command>` on `$PATH`, installing `pixi-sandbox` unlocks native subcommands: `pixi sandbox pack`, `doctor`, `publish`, `restore`, `plan`.
+
+## 🖥️ Platform Support
+
+The badge above mirrors `[workspace] platforms` in `pixi.toml`. A platform only gets a published
+bundle in `.pixi-sandbox.toml` once a native runner has passed the airlock proof (decision D11),
+so "builds here" and "restores offline there" are tracked separately —
+`pixi run lint-repo-consistency` keeps the badge, `pixi.toml` and the publish plan in agreement.
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| `linux-64` | ✅ proven, published | `sandbox/developer-linux-64` is packed, verified and restored offline in CI |
+| `osx-arm64` | 🟡 declared, airlock unproven | Builds from `pixi.toml`; no bundle until a macOS runner passes the D11 proof |
+| `linux-aarch64`, `osx-64` | 🟡 release binaries only | Static binaries ship with every release; no bundle published |
+| `win-64` | ❌ not supported | No conda-forge `bun` build (`pixi lock`: "No candidates were found for bun *"), so Windows is out of `[workspace] platforms` and D11 still lists it as unproven |
 
 ## 📦 Sandbox Visualization
 

@@ -658,6 +658,46 @@ fn publish_keep_is_not_silently_ignored() {
         .stderr(predicate::str::contains("design.md"));
 }
 
+/// Task-6: a deferred verb is read by an operator who has no network to check what it names.
+/// It used to send them to a reference implementation that 0.2.0 deleted from the repository,
+/// which is exactly the kind of dead end an airlock cannot resolve, so the only thing it may
+/// cite is the design section that specifies the verb.
+#[test]
+fn a_deferred_verb_cites_only_the_design_section() {
+    let transport = transport_copy();
+    let publish = bin()
+        .args([
+            "publish",
+            "--input-dir",
+            transport.path().to_str().unwrap(),
+            "--branch-name",
+            "sandbox/demo-linux-64",
+            "--keep",
+            "3",
+        ])
+        .assert()
+        .failure();
+    let tools = bin().args(["tools", "update"]).assert().failure();
+
+    for (verb, output, section) in [
+        ("publish --keep", publish.get_output(), "§2"),
+        ("tools update", tools.get_output(), "§10"),
+    ] {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(".knowledge/design.md") && stderr.contains(section),
+            "`{verb}` must name the design section that specifies it, got:\n{stderr}"
+        );
+        // stale-ref-allowed: this list is the rule `lint-repo-consistency` enforces elsewhere.
+        for stale in ["python", "prototype", ".knowledge/research"] {
+            assert!(
+                !stderr.to_ascii_lowercase().contains(stale),
+                "`{verb}` still points at the deleted {stale} reference:\n{stderr}"
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------- unpack / restore, fixture proof
 
 #[test]

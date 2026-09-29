@@ -79,6 +79,10 @@ lint-actions = "actionlint"
 lint-sandbox-plan = "cargo run -q -p pixi-sandbox -- plan --config .pixi-sandbox.toml --json"
 lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pixi-sandbox-core/Cargo.toml crates/pixi-sandbox/Cargo.toml crates/pixi-sandbox/pixi.toml crates/pixi-sandbox-git/Cargo.toml deny.toml"
 lint-docs = "biome check docs"
+# Claims this repository makes about itself that no cargo test may check (D10 keeps tests on the
+# fixtures): crates/ free of references to the deleted prototype, and one platform story across
+# the README badge, `pixi.toml` and `.pixi-sandbox.toml`.
+lint-repo-consistency = "bash scripts/lint-repo-consistency.sh"
 # conventional-commit check for the `commit-msg` hook; reads the proposed message from stdin
 lint-commit = "convco check --from-stdin"
 # changelog via convco (conventional commits -> CHANGELOG.md)
@@ -93,6 +97,7 @@ lint = { depends-on = [
   "lint-sandbox-plan",
   "lint-toml",
   "lint-docs",
+  "lint-repo-consistency",
 ] }
 
 # docs

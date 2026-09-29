@@ -32,6 +32,12 @@ pre-commit:
       glob: ".github/workflows/*.{yml,yaml}"
       run: pixi run lint-actions
 
+    - name: repo-consistency
+      # the README badge, the workspace platforms and the publish plan tell one platform story,
+      # and crates/ never points at the prototype deleted in 0.2.0
+      glob: "{README.md,pixi.toml,.pixi-sandbox.toml,crates/**/*.rs,crates/**/*.md}"
+      run: pixi run lint-repo-consistency
+
     - name: manifest-schema
       # the manifest shape is a wire format: changing it needs a schema bump + a fixture update
       glob: "{crates/pixi-sandbox-core/src/manifest.rs,crates/pixi-sandbox-core/tests/manifest.rs}"
