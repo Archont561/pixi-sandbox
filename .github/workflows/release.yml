@@ -19,6 +19,8 @@ on:
 
 permissions:
   contents: write
+  # Needed to dispatch docs.yml after publishing the release (see "Trigger docs rebuild").
+  actions: write
 
 jobs:
   build:
@@ -177,3 +179,20 @@ jobs:
             dist/install.sh
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+      - name: Trigger docs rebuild for the released version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The release commit repins every version reference across docs/** and README, but that
+          # commit is pushed with GITHUB_TOKEN, and GitHub suppresses workflow triggers on
+          # GITHUB_TOKEN pushes — so docs.yml's `push: [main]` trigger never fires for it and GitHub
+          # Pages keeps serving the previous version. Publishing a release is exactly when the site
+          # should catch up, so dispatch docs.yml on main here. A workflow_dispatch via the API is
+          # not subject to the push-recursion suppression, so GITHUB_TOKEN + actions:write is enough.
+          gh workflow run docs.yml --ref main
+          echo "::notice::dispatched docs.yml on main to republish the site for $TAG"
+          echo "Dispatched **docs.yml** on \`main\` — GitHub Pages will refresh for \`$TAG\`." >> "$GITHUB_STEP_SUMMARY"

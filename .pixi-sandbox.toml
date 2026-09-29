@@ -4,8 +4,12 @@
 # `pull_request` trigger in .github/workflows/airlock.yml runs `plan --json` over this file and
 # fans the matrix out onto each platform's native runner, egress-denied tier included. So a new
 # target lands as a PR that must stay red-free on its own runner before it is merged — the gate
-# is the review, not the edit. linux-64 has been validated since 0.1.0; osx-arm64 is being
-# proven by the PR that added this line (task-1).
+# is the review, not the edit. linux-64 has been validated since 0.1.0. osx-arm64 was proven under
+# task-1 and stays a supported target (it is still declared in `pixi.toml` and the README badge),
+# but it is intentionally left out of the routine publish plan below: its native-runner pack +
+# publish adds ~30 minutes to every push to main for a bundle that rarely changes. Re-add it here
+# to schedule the macOS proof/publish again (subset-of-`pixi.toml` is all the consistency lint
+# requires, so dropping it here does not touch the badge or the workspace platform list).
 schema = 1
 branch_prefix = "sandbox"
 cargo_vendor = true
@@ -13,4 +17,4 @@ cargo_vendor = true
 [[bundle]]
 name = "developer"
 environments = ["default"]
-platforms = ["linux-64", "osx-arm64"]
+platforms = ["linux-64"]
