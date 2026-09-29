@@ -146,22 +146,6 @@ jobs:
             fi
           done
 
-      - name: Stage the install bootstrap script
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Ship the connected-side bootstrapper as a release asset so the documented install
-          # one-liner can curl it from an immutable release URL instead of a branch (task-2).
-          # It is delivered over `curl | sh` (trust-on-first-use via TLS), so it is intentionally
-          # NOT added to SHA256SUMS — SHA256SUMS stays the binary contract setup-pixi-sandbox reads,
-          # and init.sh verifies the binary it downloads against it.
-          if [ ! -f scripts/init.sh ]; then
-            echo "::error::scripts/init.sh not found in the checked-out release ref"
-            exit 1
-          fi
-          cp scripts/init.sh dist/init.sh
-          ls -lh dist/init.sh
-
       - name: Determine release tag
         id: tag
         shell: bash
@@ -176,6 +160,38 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Release tag: $TAG"
+
+      - name: Stage the install bootstrap script
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Ship the connected-side bootstrapper as a release asset so the documented install
+          # one-liner can curl it from an immutable release URL instead of a branch (task-2).
+          # It is delivered over `curl | sh` (trust-on-first-use via TLS), so it is intentionally
+          # NOT added to SHA256SUMS — SHA256SUMS stays the binary contract setup-pixi-sandbox reads,
+          # and init.sh verifies the binary it downloads against it.
+          if [ ! -f scripts/init.sh ]; then
+            echo "::error::scripts/init.sh not found in the checked-out release ref"
+            exit 1
+          fi
+          # Stamp the version this asset is released under, so `curl …/download/$TAG/init.sh`
+          # installs the binaries from that same release instead of whatever default the
+          # committed copy carried. Without this, a v0.4.0 init.sh would install v0.3.0 binaries
+          # and the one-liner would silently lag a release behind — the exact defect task-2 hit.
+          # The committed default still matters for a checkout of a branch, so keep it in sync
+          # rather than blanking it.
+          cp scripts/init.sh dist/init.sh
+          sed -i.bak "s|^VERSION=\${PIXI_SANDBOX_VERSION:-v[0-9.]*}$|VERSION=\${PIXI_SANDBOX_VERSION:-$TAG}|" dist/init.sh
+          rm -f dist/init.sh.bak
+          # Fail the release rather than ship an asset that installs a different version.
+          if ! grep -q "^VERSION=\${PIXI_SANDBOX_VERSION:-$TAG}$" dist/init.sh; then
+            echo "::error::could not stamp $TAG into dist/init.sh — check the VERSION line in scripts/init.sh"
+            exit 1
+          fi
+          grep -n '^VERSION=' dist/init.sh
+          ls -lh dist/init.sh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3.0.3 # v3.0.3
