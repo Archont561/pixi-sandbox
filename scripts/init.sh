@@ -3,7 +3,7 @@
 set -eu
 
 REPOSITORY=${PIXI_SANDBOX_REPOSITORY:-Archont561/pixi-sandbox}
-VERSION=${PIXI_SANDBOX_VERSION:-v0.3.0}
+VERSION=${PIXI_SANDBOX_VERSION:-v0.2.0}
 PROJECT_ROOT=${PIXI_SANDBOX_PROJECT_ROOT:-.}
 
 case "$(uname -s)-$(uname -m)" in

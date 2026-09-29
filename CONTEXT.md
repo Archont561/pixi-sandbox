@@ -43,11 +43,43 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 
 ---
 
+## 🌐 Online / Codespaces agent tasks (cannot be done from the airlock)
+
+> [!NOTE]
+> This repository is often worked from a **restored, offline-style airlock sandbox** where general
+> package registries are unreachable (only `github.com` git and npm are). An airlock agent can
+> build/test/lint, edit docs, run `convco`, and record decisions — but it **cannot** reach
+> crates.io / conda channels / `static.rust-lang.org`, cross-compile the release targets, cut a
+> GitHub Release, or run a native macOS/Windows runner. The following work is therefore explicitly
+> **assigned to an online agent running in GitHub Codespaces (or CI)** and is tracked here so it is
+> not silently attempted offline:
+
+1. **Cut the `v0.3.0` release** (backlog **task-2** AC#1/AC#3). The install one-liner has been made
+   to work *today* by fetching `scripts/init.sh` from `main` and installing the existing **v0.2.0**
+   binaries (README, `quickstart.mdx`, `using-in-your-project.mdx`, and `init.sh`'s `VERSION`
+   default). `init.sh` did not exist at the `v0.2.0` tag, so a proper immutable-tag pin needs a new
+   release that **ships `init.sh` plus the five static binaries and `SHA256SUMS`**. Trigger it with
+   the `auto-release` workflow (`gh workflow run auto-release.yml -f version=v0.3.0`), then repin the
+   one-liner from `main` to the immutable `v0.3.0` tag. Preferably do this after task-1 lands.
+2. **Prove `osx-arm64` and publish a macOS bundle** (backlog **task-1**, gated by **D11**). AC#1
+   requires a **native macOS runner** doing an offline restore end-to-end; it cannot be validated
+   from a Linux airlock.
+3. **Implement `pixi-sandbox tools update`** (backlog **task-4**). The command can be *written and
+   unit-tested* offline, but its live behaviour — resolving/downloading/sha256-verifying the latest
+   `pixi`, `pixi-pack`, `pixi-unpack`, `rattler-index` pins — needs network, so end-to-end
+   verification belongs in Codespaces/CI.
+
+The dev container that provides this online environment is `.devcontainer/devcontainer.json`
+(`ghcr.io/prefix-dev/pixi`, with `pixi install --locked --all` + `docs-install` + `setup-opencode`
+on create).
+
+---
+
 ## 📚 Key References
 
 | Resource | Purpose |
 |:---|:---|
-| [`.knowledge/decisions.md`](.knowledge/decisions.md) | Architectural Decisions D1–D11 with empirical lab measurements |
+| [`.knowledge/decisions.md`](.knowledge/decisions.md) | Architectural Decisions D1–D12 with empirical lab measurements |
 | [`.knowledge/design.md`](.knowledge/design.md) | In-depth design specification and airlock invariants |
 | [`.knowledge/rust-bootstrap.md`](.knowledge/rust-bootstrap.md) | Rust static bootstrap binary strategy and validation checklist |
 | [`.knowledge/README.md`](.knowledge/README.md) | Open Knowledge Format index |
