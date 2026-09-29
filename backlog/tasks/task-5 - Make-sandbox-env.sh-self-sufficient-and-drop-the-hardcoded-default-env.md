@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@agent'
 created_date: '2026-09-28 22:05'
-updated_date: '2026-09-29 06:49'
+updated_date: '2026-09-29 07:02'
 labels:
   - restore
   - ux
@@ -41,6 +41,8 @@ TDD: add a CLI integration test in tests/cli.rs that restores the fixture transp
 
 <!-- SECTION:NOTES:BEGIN -->
 RED: added sourcing_the_generated_sandbox_env_resolves_restored_environment_binaries in crates/pixi-sandbox/tests/cli.rs, chose fixture bin/freetype-config over lzmainfo because this sandbox has a system lzmainfo that would let the test pass for the wrong reason. GREEN: write_sandbox_env now takes the restored environment list and prepends envs/name/bin for each one before PATH; verified with an env -i fresh shell against a locally built binary restoring the real sandbox/developer-linux-64 transport, cargo and rustc resolved with zero extra PATH setup. Also removed the hardcoded envs/default export in scripts/restore.sh, replaced with a PATH diff report; note the currently published sandbox branch still embeds the pre-fix pixi-sandbox binary so scripts/restore.sh will only show the full PATH gain after the next publish. Full cargo test -p pixi-sandbox and clippy are clean.
+
+Post-merge verification: PR 28 merged to main (commit d19ee5e), ci succeeded on main, publish-sandbox auto-triggered via workflow_run and force-pushed a fresh sandbox/developer-linux-64 (commit 868a2da, snapshot 2026-09-29T06:59:45Z) carrying the fixed pixi-sandbox binary. Fetched that branch and ran scripts/restore.sh end to end. Generated .pixi/sandbox-env.sh now includes envs/default/bin in PATH. In a fully empty shell, env -i, sourcing sandbox-env.sh alone resolved cargo, rustc, and bun with no manual PATH export. Original bug is confirmed fixed against the real published artifact, not just the fixture.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
