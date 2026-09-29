@@ -1,0 +1,53 @@
+name: task-12 negative control
+
+# TEMPORARY, deleted with task-12-proof.yml. A proof that goes green proves nothing unless the
+# same shape goes red on the code it claims to fix, so this runs the v0.3.1 forms on purpose:
+#
+#   plan-old     uses the pre-fix shim (setup@26e1349, `uses: ../action.yml`). Expected: the job
+#                fails during setup, before any step runs. `continue-on-error` keeps the rest of
+#                the run alive so the second half can be observed in the same run.
+#   publish-old  uses the pre-fix matrix shape (`matrix:` fed the include array). Expected: the
+#                job is never instantiated and does not appear in the run's job list at all —
+#                the silent failure mode this task is about.
+
+on:
+  push:
+    branches: [arena/01a0ef3a-pixi-sandbox]
+
+permissions:
+  contents: read
+
+jobs:
+  plan-ok:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: sandbox
+        # stale-ref-allowed: the commit under proof, not a third-party pin
+        uses: Archont561/pixi-sandbox/setup@27358871b6a32f10d1c6574fffaba56498de323b
+      - id: plan
+        shell: bash
+        run: echo "matrix=$(pixi-sandbox plan --config .pixi-sandbox.toml --json)" >> "$GITHUB_OUTPUT"
+
+  plan-old:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: sandbox
+        # stale-ref-allowed: the pre-fix commit, deliberately
+        uses: Archont561/pixi-sandbox/setup@26e13491ea341c198981e55ecf86b8210e8c93f9
+      - shell: bash
+        run: echo "unreachable — the old shim cannot resolve"
+
+  publish-old:
+    needs: plan-ok
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan-ok.outputs.matrix).include }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - shell: bash
+        run: echo "unreachable — the old matrix shape instantiates no job"
