@@ -19,6 +19,8 @@
 #    manifests declare. A release commit bumps `Cargo.toml` but cannot rewrite the ~100 doc
 #    references, so the two drift silently and a reader following the docs installs the previous
 #    release. This is the check that makes the drift a CI failure instead of a support issue.
+# 4. every third-party `uses:` is a full commit SHA with a trailing release label, so a moved tag
+#    cannot change what CI runs. actionlint checks workflow syntax, not what a `uses:` resolves to.
 
 set -euo pipefail
 
@@ -156,10 +158,51 @@ else
   fi
 fi
 
+# ---------------------------------------------------------------- 4. action pins
+
+# Every third-party `uses:` is a full commit SHA plus a trailing release label, so a compromised
+# or force-moved tag cannot change what CI runs. `ci.yml`, `auto-release.yml` and `docs.yml` have
+# always done this; `release.yml` and `publish-sandbox.yml` carried plain `@vX.Y.Z` tags, which
+# made the rule a convention nobody enforced. actionlint validates the workflows' syntax and
+# inputs but says nothing about what a `uses:` resolves to, so this is the only thing standing
+# between a mutable tag and the release pipeline.
+#
+# Same-repository actions (`./setup`, `../action.yml`) are not third-party and carry no ref to
+# pin. A deliberate exception — a pin that must name an older action release — opts out with
+# `stale-ref-allowed` on the line.
+unpinned="$(
+  find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0 |
+    xargs -0 awk '
+      FNR == 1 { prev = "" }
+      {
+        if ($0 ~ /^[[:space:]]*#/ || $0 !~ /uses:/) { prev = $0; next }
+        if (index($0, "stale-ref-allowed") || index(prev, "stale-ref-allowed")) { prev = $0; next }
+        if (match($0, /uses:[[:space:]]*[^[:space:]#]+/)) {
+          spec = substr($0, RSTART, RLENGTH)
+          sub(/^uses:[[:space:]]*/, "", spec)
+          if (spec ~ /^\.\.?\// || spec ~ /^docker:\/\// || !match(spec, /@/)) { prev = $0; next }
+          ref = substr(spec, RSTART + 1)
+          why = ""
+          if (ref !~ /^[0-9a-f]{40}$/)
+            why = "pins " ref ", a mutable ref, not a 40-character commit SHA"
+          else if (substr($0, RSTART + RLENGTH) !~ /#[[:space:]]*v[0-9]/)
+            why = "pins a SHA with no trailing release label, so the next person cannot tell what it is"
+          if (why != "") printf "%s:%d:%s\n", FILENAME, FNR, why
+        }
+        prev = $0
+      }
+    ' || true
+)"
+if [ -n "$unpinned" ]; then
+  fail "a third-party action is not pinned to a full commit SHA (see .knowledge/publish-automation.md):"
+  printf '  %s\n' "$unpinned" >&2
+  echo "  resolve the tag with 'gh api repos/OWNER/REPO/git/ref/tags/TAG', dereference it if it is an annotated tag, and pin it as owner/repo@<sha> # vX.Y.Z" >&2
+fi
+
 # ----------------------------------------------------------------
 
 if [ "$failures" -gt 0 ]; then
   printf 'repo consistency: %d check(s) failed\n' "$failures" >&2
   exit 1
 fi
-echo "repo consistency: crates/ is free of prototype references; platform and version claims agree"
+echo "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable"

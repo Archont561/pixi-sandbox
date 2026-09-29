@@ -152,7 +152,7 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - name: Checkout project
-        uses: actions/checkout@v7.0.1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: project
           persist-credentials: false
@@ -170,7 +170,7 @@ jobs:
 
       - name: Checkout pixi-sandbox actions (release mode)
         if: ${{ inputs.release-repository != '' }}
-        uses: actions/checkout@v7.0.1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.release-repository }}
           ref: ${{ inputs.release-ref || inputs.release-version }}
@@ -223,7 +223,7 @@ jobs:
       # ------------------------------------------------------------------
       - name: Install Pixi (local mode)
         if: ${{ inputs.release-repository == '' }}
-        uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           # The project is checked out into project/, not the job root. This is
           # setup-pixi's own input: the step-level `working-directory` key is only
@@ -234,7 +234,7 @@ jobs:
 
       - name: Rust cache (local mode)
         if: ${{ inputs.release-repository == '' }}
-        uses: Swatinem/rust-cache@v2.9.2 # v2.9.2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # The Cargo workspace is in project/, not the job root.
           workspaces: project
@@ -301,7 +301,7 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
     steps:
       - name: Checkout project
-        uses: actions/checkout@v7.0.1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: project
           persist-credentials: false
@@ -319,7 +319,7 @@ jobs:
 
       - name: Checkout pixi-sandbox actions (release)
         if: ${{ inputs.release-repository != '' }}
-        uses: actions/checkout@v7.0.1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.release-repository }}
           ref: ${{ inputs.release-ref || inputs.release-version }}
@@ -329,7 +329,7 @@ jobs:
 
       - name: Install Pixi (release)
         if: ${{ inputs.release-repository != '' }}
-        uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           # See the `plan` job: the project lives in project/, not the job root (#16).
           working-directory: project
@@ -368,7 +368,7 @@ jobs:
       # ------------------------------------------------------------------
       - name: Install Pixi (local)
         if: ${{ inputs.release-repository == '' }}
-        uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           # See the `plan` job: the project lives in project/, not the job root (#16).
           working-directory: project
@@ -377,7 +377,7 @@ jobs:
 
       - name: Rust cache (local)
         if: ${{ inputs.release-repository == '' }}
-        uses: Swatinem/rust-cache@v2.9.2 # v2.9.2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # The Cargo workspace is in project/, not the job root.
           workspaces: project
@@ -457,7 +457,7 @@ jobs:
 
       - name: Upload published manifest
         if: success()
-        uses: actions/upload-artifact@v7.0.1 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sandbox-manifest-${{ matrix.bundle }}-${{ matrix.platform }}
           path: ${{ steps.publish-release.outputs.manifest || steps.publish-local.outputs.manifest }}
