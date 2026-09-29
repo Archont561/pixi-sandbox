@@ -13,7 +13,7 @@ This guide is for **project owners** who want to ship their pixi environments to
 Run the first command from the root of your Pixi project on the **connected side**:
 
 ```bash
-curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.1/install.sh | sh
+curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.2/install.sh | sh
 ```
 
 The script detects Linux/macOS and CPU architecture, downloads the matching v0.3.0 release asset,
@@ -46,10 +46,10 @@ run `.\\restore.ps1` instead.
 The connected-side script accepts environment overrides:
 
 ```bash
-PIXI_SANDBOX_VERSION=v0.3.1 \
+PIXI_SANDBOX_VERSION=v0.3.2 \
 PIXI_SANDBOX_REPOSITORY=Archont561/pixi-sandbox \
 PIXI_SANDBOX_PROJECT_ROOT=. \
-  sh -c "$(curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.1/install.sh)"
+  sh -c "$(curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.2/install.sh)"
 ```
 
 ## 1. Prerequisites

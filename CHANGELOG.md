@@ -6,7 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.3.1](https://github.com/Archont561/pixi-sandbox/compare/v0.3.0...bdebeaa6dfab62b4eaf72393d53feac6a6d4f610) (2026-09-29)
+### [v0.3.2](https://github.com/Archont561/pixi-sandbox/compare/v0.3.1...f157a6d51180808d0a8c3921e09d6a12896f7859) (2026-09-29)
+
+#### Fixes
+
+* make the generated publish workflow and the published action paths runnable (#38)
+([f157a6d](https://github.com/Archont561/pixi-sandbox/commit/f157a6d51180808d0a8c3921e09d6a12896f7859)),
+closes [#38](https://github.com/Archont561/pixi-sandbox/issues/38)
+[#37](https://github.com/Archont561/pixi-sandbox/issues/37)
+
+#### CI
+
+* drop osx-arm64 from routine publish plan and refresh docs on release (#36)
+([26e1349](https://github.com/Archont561/pixi-sandbox/commit/26e13491ea341c198981e55ecf86b8210e8c93f9)),
+closes [#36](https://github.com/Archont561/pixi-sandbox/issues/36)
+
+### [v0.3.1](https://github.com/Archont561/pixi-sandbox/compare/v0.3.0...v0.3.1) (2026-09-29)
 
 #### Features
 

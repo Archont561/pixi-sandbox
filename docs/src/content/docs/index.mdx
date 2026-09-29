@@ -111,19 +111,19 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
     # .github/workflows/publish-sandbox.yml in your project
     jobs:
       sandbox:
-        uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.3.1
+        uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.3.2
         with:
           config: .pixi-sandbox.toml
-          release-version: v0.3.1
+          release-version: v0.3.2
         secrets:
           SANDBOX_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     # Or short refs
-    - uses: Archont561/pixi-sandbox/setup@v0.3.1
+    - uses: Archont561/pixi-sandbox/setup@v0.3.2
       id: setup
       with:
-        version: v0.3.1
-    - uses: Archont561/pixi-sandbox/publish@v0.3.1
+        version: v0.3.2
+    - uses: Archont561/pixi-sandbox/publish@v0.3.2
       with:
         project: .
         environments: dev
