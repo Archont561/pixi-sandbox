@@ -32,7 +32,7 @@ so "builds here" and "restores offline there" are tracked separately —
 | Platform | Status | Notes |
 |----------|--------|-------|
 | `linux-64` | ✅ proven, published | `sandbox/developer-linux-64` is packed, verified and restored offline in CI |
-| `osx-arm64` | 🟡 declared, airlock unproven | Builds from `pixi.toml`; no bundle until a macOS runner passes the D11 proof |
+| `osx-arm64` | 🟡 bundle declared, proof in flight | `.pixi-sandbox.toml` now plans `sandbox/developer-osx-arm64` onto `macos-14`, which is what schedules the D11 proof on the `airlock` workflow's `pull_request` run; the row flips to ✅ when that native job — egress-denied tier included — is green and the branch is published (task-1) |
 | `linux-aarch64`, `osx-64` | 🟡 release binaries only | Static binaries ship with every release; no bundle published |
 | `win-64` | ❌ not supported | No conda-forge `bun` build (`pixi lock`: "No candidates were found for bun *"), so Windows is out of `[workspace] platforms` and D11 still lists it as unproven |
 
