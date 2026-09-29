@@ -188,12 +188,24 @@ jobs:
           path: project
           persist-credentials: false
 
+      # The publish action drives `pixi install --frozen` inside the project before packing,
+      # so pixi itself must be on PATH. `run-install: false` — the action does its own install,
+      # and this job must not build an environment the transport is then compared against.
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+
       # A real airlock begins with a checksum-verified released binary, so that is what the
       # proof uses — both to drive the pack and as the self-bootstrap embedded in the transport.
       - name: Install the released pixi-sandbox (checksum-verified)
         id: sandbox
-        uses: ./project/setup
+        # Local `uses:` must name the directory holding action.yml, and the sub-actions
+        # (`setup/`, `publish/`) are shims whose `../action.yml` reference only resolves
+        # when the repository root action is the entry point — hence `subpath`, the same
+        # spelling publish-sandbox.yml uses for this layout (#16).
+        uses: ./project
         with:
+          subpath: setup
           version: ${{ vars.SANDBOX_RELEASE_VERSION || 'latest' }}
           target: auto
           add-to-path: false
@@ -215,8 +227,9 @@ jobs:
 
       - name: Publish the transport to the throwaway remote
         id: publish
-        uses: ./project/publish
+        uses: ./project
         with:
+          subpath: publish
           project: project
           environments: ${{ matrix.environments }}
           platform: ${{ matrix.platform }}
