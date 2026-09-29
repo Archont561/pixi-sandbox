@@ -6,7 +6,71 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [v0.3.0](https://github.com/Archont561/pixi-sandbox/compare/v0.2.0...8d6cca6a87171e507f84e353244f28515a173c02) (2026-09-29)
+### [v0.3.1](https://github.com/Archont561/pixi-sandbox/compare/v0.3.0...bdebeaa6dfab62b4eaf72393d53feac6a6d4f610) (2026-09-29)
+
+#### Features
+
+* **sandbox:** declare the osx-arm64 developer bundle to schedule the D11 proof
+([78b60cb](https://github.com/Archont561/pixi-sandbox/commit/78b60cb0e35f671da4d07a4c771cb38e2cb02c08))
+* **core:** verify a restored project against the manifest, not just its shape (task-10, D13)
+([30272a9](https://github.com/Archont561/pixi-sandbox/commit/30272a98f1cb6d39687794d66348c0e2b2255660))
+* **tools:** implement tools update, with honest verification (task-4)
+([fdabd2b](https://github.com/Archont561/pixi-sandbox/commit/fdabd2b7b10d7892cce93639822c8d91c49feb88))
+
+#### Fixes
+
+* **release:** drop the old-tag argument from the release repin
+([bdebeaa](https://github.com/Archont561/pixi-sandbox/commit/bdebeaa6dfab62b4eaf72393d53feac6a6d4f610))
+* **release:** make the version references data driven
+([305764a](https://github.com/Archont561/pixi-sandbox/commit/305764a87921e6b061a1f3cd5ba24646be5ffaf0))
+* **ci:** publish sandboxes only from the default branch
+([451e0b5](https://github.com/Archont561/pixi-sandbox/commit/451e0b5601b8007e6b1cae43f60d134353199510))
+* **airlock:** stop one block of allocator noise failing the no-op gate
+([2c612f9](https://github.com/Archont561/pixi-sandbox/commit/2c612f958a0b473d1585894112a731808019f0b8))
+* **airlock:** run the egress-denied tier on the triggers that actually fire
+([8e03cdf](https://github.com/Archont561/pixi-sandbox/commit/8e03cdfd6dabdb21cc2098b76d78b82a25767a72))
+* **setup:** stop a rate-limited releases API from failing silently
+([10fa729](https://github.com/Archont561/pixi-sandbox/commit/10fa729ff8c77be03d065932c7e65b6f41ccf4e4))
+* **setup:** install the release binary on macOS, where bash is still 3.2
+([26eac11](https://github.com/Archont561/pixi-sandbox/commit/26eac1162bae904c54708db2f7b3f81180f7d25e))
+* **gate:** pixi install runs inside the restored project, not the caller's cwd
+([4c1c4a1](https://github.com/Archont561/pixi-sandbox/commit/4c1c4a1aae0a0cd92195eb1e6343de2f09930e45))
+* **ci:** proof job needs pixi on PATH and the root-action subpath spelling
+([e1ed6a6](https://github.com/Archont561/pixi-sandbox/commit/e1ed6a6af85512a193277a956e5fcbae1d713edb)),
+closes [#16](https://github.com/Archont561/pixi-sandbox/issues/16)
+* **ci:** the airlock workflow's first run — plan job cwd, local action paths, gate release
+transition
+([ea3339a](https://github.com/Archont561/pixi-sandbox/commit/ea3339a974cf01eb27feb896cdeed4a6dd2f48c0)),
+closes [#16](https://github.com/Archont561/pixi-sandbox/issues/16)
+* **pack:** refuse a lockfile cargo cannot vendor (task-8)
+([7dcfd08](https://github.com/Archont561/pixi-sandbox/commit/7dcfd08dbe60f7b042aaebe4afa99b5ed167b6cc))
+* **release:** stamp the tag into the published init.sh
+([2ac6284](https://github.com/Archont561/pixi-sandbox/commit/2ac6284e498c48826e30b6ac3e7319c4b2f726cb))
+* **docs:** point the install one-liner at the v0.3.0 release (task-2)
+([265a420](https://github.com/Archont561/pixi-sandbox/commit/265a420e2340bd0ee65e36fd68a2481752c5f349))
+
+#### Refactoring
+
+* **plan:** make the plan binary the only platform-to-runner table
+([5572b2c](https://github.com/Archont561/pixi-sandbox/commit/5572b2c50162093892395d2b505271f832bf2063))
+
+#### Documentation
+
+* **readme:** mark osx-arm64 proven on a native runner with egress denied
+([5f615b1](https://github.com/Archont561/pixi-sandbox/commit/5f615b13d42a59849b48dd584b22ebda00b0095a))
+* repin every v0.2.0 reference to the v0.3.0 release
+([f43963c](https://github.com/Archont561/pixi-sandbox/commit/f43963c9c71a55ce00d9051025baa1cfdd223a51))
+
+#### CI
+
+* pin every action to a commit SHA, and lint that it stays that way
+([5c85bc2](https://github.com/Archont561/pixi-sandbox/commit/5c85bc2bee6ab2030dc4acdb5690891ba5edd651))
+* prove the airlock natively, with egress actually denied
+([ec73095](https://github.com/Archont561/pixi-sandbox/commit/ec7309559fd4b65e0bcd9cdf02620576927306b7))
+* fail when the docs pin a version the manifests do not declare
+([0a9e18d](https://github.com/Archont561/pixi-sandbox/commit/0a9e18d84eeb302dc1c6cb2953d87adef140e606))
+
+## [v0.3.0](https://github.com/Archont561/pixi-sandbox/compare/v0.2.0...v0.3.0) (2026-09-29)
 
 ### Features
 
