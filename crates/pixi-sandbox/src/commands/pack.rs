@@ -8,7 +8,8 @@ use crate::cli::{PackArgs, VendorModeArg};
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::manifest::{
-    Env, MANIFEST_DIR, MANIFEST_FILE, Manifest, SCHEMA_VERSION, Source, ToolEntry, ToolInfo, Vendor,
+    Env, EnvFiles, MANIFEST_DIR, MANIFEST_FILE, Manifest, SCHEMA_VERSION, Source, ToolEntry,
+    ToolInfo, Vendor,
 };
 use pixi_sandbox_core::shard;
 use pixi_sandbox_core::tools_lock::{ToolsLock, executable_filename};
@@ -91,6 +92,23 @@ pub fn run(args: PackArgs) -> Result<()> {
             anyhow::anyhow!("pixi-pack is not on PATH (pass --fetch-tools to use embedded pins)")
         })?,
     };
+    // The per-file oracle (D13) is built by unpacking each environment once more, with the
+    // same pinned unpacker the airlock will use, so it must be resolved up here rather than
+    // in the embed step below. The embed step re-resolves it from the same verified cache.
+    let unpacker = match &lock {
+        Some(lock) => {
+            fetch_tool(
+                lock,
+                "pixi-unpack",
+                &args.platform,
+                cache.as_deref().expect("a fetched tool always has a cache"),
+            )?
+            .path
+        }
+        None => support::find_executable("pixi-unpack").ok_or_else(|| {
+            anyhow::anyhow!("pixi-unpack is not on PATH (pass --fetch-tools to use embedded pins)")
+        })?,
+    };
 
     fs::create_dir_all(&payload)
         .with_context(|| format!("creating transport payload at {}", payload.display()))?;
@@ -119,8 +137,7 @@ pub fn run(args: PackArgs) -> Result<()> {
             .arg("-o")
             .arg(&target)
             .arg("--directory-only");
-        let output =
-            support::run(&mut command).with_context(|| format!("pixi-pack environment {name}"))?;
+        support::run(&mut command).with_context(|| format!("pixi-pack environment {name}"))?;
 
         let files = shard::files_under(&target)
             .with_context(|| format!("reading pixi-pack output for environment {name}"))?;
@@ -128,17 +145,20 @@ pub fn run(args: PackArgs) -> Result<()> {
             bail!("pixi-pack produced no files for environment {name}");
         }
         let packed_size = sum_files(&files)?;
-        // pixi-pack 0.7 prints an unpacked-size hint on some releases but not all. The
-        // installed prefix is authoritative when it is available, and gives restore a useful
-        // disk-space estimate instead of recording a misleading zero.
-        let unpacked_size = parse_unpacked_size(&output)
-            .or(installed_environment_size(&root, name)?)
-            .unwrap_or(0);
+
+        // The oracle: unpack the pack once more (a copy — pixi-unpack writes a cache into
+        // the pack dir it reads from) and record every file of the tree the airlock will
+        // actually get. This is also the honest `unpacked_size_bytes`: measured on the
+        // unpacked tree, not parsed from a version-dependent log line.
+        let (oracle, unpacked_size) =
+            build_files_oracle(&out, &payload, name, &target, &unpacker, shard_limit)
+                .with_context(|| format!("building the per-file oracle for environment {name}"))?;
         println!(
-            "  {name}: {} files · {} MiB packed · {} MiB unpacked",
+            "  {name}: {} files · {} MiB packed · {} MiB unpacked · {} file entries recorded",
             files.len(),
             support::mib(packed_size),
-            support::mib(unpacked_size)
+            support::mib(unpacked_size),
+            oracle.entries
         );
 
         envs.insert(
@@ -150,6 +170,7 @@ pub fn run(args: PackArgs) -> Result<()> {
                 unpacked_size_bytes: unpacked_size,
                 pixi_environment_fingerprint: fingerprint_of(&root, name),
                 blobs: Vec::new(),
+                files: Some(oracle),
             },
         );
     }
@@ -328,6 +349,105 @@ fn shard_limit_bytes(mebibytes: f64) -> Result<u64> {
         bail!("--shard-limit-mib is too large");
     }
     Ok(bytes as u64)
+}
+
+/// Build the per-file oracle for one environment (D13): unpack the finished pack with the
+/// pinned unpacker — exactly what `restore` will do on the airlock — and record the tree it
+/// produces, with every prefix-path spelling canonicalised away (see `files_manifest`).
+///
+/// The unpack runs on a *copy* of the pack: pixi-unpack writes its extraction cache into the
+/// pack directory it reads from, and the payload tree must stay exactly what pixi-pack
+/// produced. The scratch lives inside `out` (never `/tmp`, invariant 3) and is removed before
+/// returning, so a successful pack leaves no trace of it.
+fn build_files_oracle(
+    out: &Path,
+    payload: &Path,
+    env: &str,
+    pack: &Path,
+    unpacker: &Path,
+    shard_limit: u64,
+) -> Result<(EnvFiles, u64)> {
+    let scratch = out.join(format!(".pixi-sandbox-verify-{env}"));
+    support::remove_path(&scratch)?;
+    let pack_copy = scratch.join("pack");
+    let stage = scratch.join("stage");
+    fs::create_dir_all(scratch.join("tmp"))
+        .with_context(|| format!("creating {}", scratch.join("tmp").display()))?;
+    fs::create_dir_all(&pack_copy).with_context(|| format!("creating {}", pack_copy.display()))?;
+    fs::create_dir_all(&stage).with_context(|| format!("creating {}", stage.display()))?;
+
+    for file in shard::files_under(pack)? {
+        let relative = file
+            .strip_prefix(pack)
+            .with_context(|| format!("{} is outside {}", file.display(), pack.display()))?;
+        let destination = pack_copy.join(relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        }
+        fs::copy(&file, &destination)
+            .with_context(|| format!("copying {} for the verification unpack", file.display()))?;
+    }
+
+    let mut command = Command::new(unpacker);
+    command
+        .arg(&pack_copy)
+        .arg("-o")
+        .arg(&stage)
+        .arg("-e")
+        .arg(env);
+    support::use_work_tmp(&mut command, &scratch);
+    support::run(&mut command).with_context(|| {
+        format!(
+            "verification-unpacking environment {env} with {}",
+            unpacker.display()
+        )
+    })?;
+
+    let prefix = stage.join(env);
+    if !prefix.is_dir() {
+        bail!(
+            "the verification unpack completed but did not create {}",
+            prefix.display()
+        );
+    }
+
+    // The paths this side must neutralise: the stage prefix the unpacker stamped in, and the
+    // pack copy it installed from — in both literal and canonical form, so a symlinked
+    // scratch directory cannot defeat the canonicalisation.
+    let mut candidates: Vec<Vec<u8>> = Vec::new();
+    let mut push_candidate = |path: &Path| {
+        let bytes = path.to_string_lossy().into_owned().into_bytes();
+        if !bytes.is_empty() && !candidates.contains(&bytes) {
+            candidates.push(bytes);
+        }
+    };
+    push_candidate(&prefix);
+    if let Ok(canonical) = prefix.canonicalize() {
+        push_candidate(&canonical);
+    }
+    push_candidate(&pack_copy);
+    if let Ok(canonical) = pack_copy.canonicalize() {
+        push_candidate(&canonical);
+    }
+
+    let (doc, unpacked_bytes) =
+        pixi_sandbox_core::files_manifest::scan_prefix(&prefix, &candidates)
+            .context("scanning the verification-unpacked environment")?;
+    support::remove_path(&scratch)?;
+
+    let relative = pixi_sandbox_core::files_manifest::list_rel_path(env);
+    let list_path = payload.join(&relative);
+    let encoded = doc.to_bytes()?;
+    fs::write(&list_path, &encoded).with_context(|| format!("writing {}", list_path.display()))?;
+    let blob = shard::record_file(payload, &relative, shard_limit)
+        .with_context(|| format!("recording {}", list_path.display()))?;
+    Ok((
+        EnvFiles {
+            blob,
+            entries: doc.entries() as u64,
+        },
+        unpacked_bytes,
+    ))
 }
 
 fn validate_env_names(envs: &[String]) -> Result<()> {
@@ -735,14 +855,6 @@ fn sum_files(paths: &[PathBuf]) -> Result<u64> {
     })
 }
 
-fn installed_environment_size(root: &Path, env: &str) -> Result<Option<u64>> {
-    let prefix = root.join(".pixi").join("envs").join(env);
-    if !prefix.is_dir() {
-        return Ok(None);
-    }
-    Ok(Some(sum_files(&shard::files_under(&prefix)?)?))
-}
-
 fn fingerprint_of(root: &Path, env: &str) -> Option<String> {
     let marker = root
         .join(".pixi")
@@ -768,32 +880,6 @@ fn git_commit(root: &Path) -> Option<String> {
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
         .filter(|commit| !commit.is_empty())
-}
-
-fn parse_unpacked_size(output: &str) -> Option<u64> {
-    for line in output.lines() {
-        if !line.to_ascii_lowercase().contains("unpacked") {
-            continue;
-        }
-        let tokens = line.split_whitespace().collect::<Vec<_>>();
-        for (index, token) in tokens.iter().enumerate() {
-            let unit = token.trim_matches(|character: char| !character.is_ascii_alphabetic());
-            let scale = match unit.to_ascii_lowercase().as_str() {
-                "gib" => 1024_f64.powi(3),
-                "mib" => 1024_f64.powi(2),
-                "kib" => 1024_f64,
-                "b" => 1.0,
-                _ => continue,
-            };
-            let number = tokens
-                .get(index.checked_sub(1)?)?
-                .trim_matches(|character: char| !(character.is_ascii_digit() || character == '.'));
-            if let Ok(number) = number.parse::<f64>() {
-                return Some((number * scale) as u64);
-            }
-        }
-    }
-    None
 }
 
 fn write_branch_docs(

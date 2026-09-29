@@ -203,6 +203,18 @@ pub struct DoctorArgs {
     #[arg(long)]
     pub verify: bool,
 
+    /// Verify a *restored project* against the manifest's per-file digests: every file,
+    /// symlink target and executable bit of `.pixi/envs/<name>`, plus the fingerprint
+    /// marker. Implies --verify (an oracle is only as good as its own bytes). Writes nothing.
+    #[arg(long, value_name = "PROJECT")]
+    pub verify_restored: Option<PathBuf>,
+
+    /// The restore work directory, when the restore used a non-default one. The
+    /// restored-tree check neutralises the scratch paths a restore embeds; with a custom
+    /// `--work-dir` it needs the same one named here.
+    #[arg(long, requires = "verify_restored")]
+    pub work_dir: Option<PathBuf>,
+
     /// Limit verification to these envs.
     #[arg(long, value_delimiter = ',')]
     pub envs: Vec<String>,
@@ -261,6 +273,28 @@ pub struct PlanArgs {
     /// Emit a compact GitHub Actions matrix object on stdout.
     #[arg(long)]
     pub json: bool,
+
+    /// Plan one ad-hoc target instead of the reviewed bundles, for a manual dispatch. Passing
+    /// this switches off config mode; the runner label and helper-pin coverage are still
+    /// resolved and validated exactly as they are for a reviewed bundle.
+    #[arg(long, value_name = "NAME", value_delimiter = ',')]
+    pub envs: Option<Vec<String>>,
+
+    /// Platform for the ad-hoc target. Only valid together with `--envs`.
+    #[arg(long, requires = "envs")]
+    pub platform: Option<String>,
+
+    /// Bundle name for the ad-hoc target, which becomes part of the branch name.
+    #[arg(long, requires = "envs", default_value = "custom")]
+    pub bundle: String,
+
+    /// Branch prefix for the ad-hoc target.
+    #[arg(long, requires = "envs", default_value = "sandbox")]
+    pub branch_prefix: String,
+
+    /// Cargo-vendor policy for the ad-hoc target.
+    #[arg(long, requires = "envs", default_value_t = true)]
+    pub cargo_vendor: bool,
 }
 
 #[derive(Debug, Args)]
@@ -308,6 +342,8 @@ pub fn run() -> Result<()> {
             commands::doctor(DoctorArgs {
                 branch_location: branch.clone(),
                 verify: true,
+                verify_restored: None,
+                work_dir: None,
                 envs: Vec::new(),
                 json: false,
             })?;

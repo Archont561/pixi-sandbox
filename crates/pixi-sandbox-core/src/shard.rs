@@ -286,6 +286,86 @@ pub fn materialise(src_root: &Path, blob: &Blob, dst: &Path) -> Result<()> {
     join_parts(dst, &parts_root, &blob.parts, &blob.sha256, blob.size)
 }
 
+/// Read a blob's bytes into memory, verifying size and digest first (joining parts when
+/// the blob travelled split).
+///
+/// For the small metadata blobs (an environment's `files.json`), not payload: a `.conda`
+/// archive has no business being held in memory, and the size guard below refuses to
+/// believe a manifest that claims one is.
+pub fn read_blob(root: &Path, blob: &Blob) -> Result<Vec<u8>> {
+    // A corrupted manifest may declare an absurd size; never pre-allocate on that number.
+    const INLINE_CAP: u64 = 64 * 1024 * 1024;
+    if blob.size > INLINE_CAP {
+        return Err(Error::Invalid(format!(
+            "{}: refusing to read a {} byte blob into memory",
+            blob.path, blob.size
+        )));
+    }
+
+    if blob.parts.is_empty() {
+        let abs = root.join(&blob.path);
+        let bytes = fs::read(&abs).map_err(|e| Error::io(&abs, e))?;
+        if bytes.len() as u64 != blob.size {
+            return Err(Error::SizeMismatch {
+                path: blob.path.clone(),
+                expected: blob.size,
+                actual: bytes.len() as u64,
+            });
+        }
+        let actual = sha256_bytes(&bytes);
+        if actual != blob.sha256 {
+            return Err(Error::Integrity {
+                path: blob.path.clone(),
+                expected: blob.sha256.clone(),
+                actual,
+            });
+        }
+        return Ok(bytes);
+    }
+
+    let parts_root = match Path::new(&blob.path).parent() {
+        Some(dir) => root.join(dir),
+        None => root.to_path_buf(),
+    };
+    let mut out = Vec::with_capacity(blob.size.min(INLINE_CAP) as usize);
+    for part in &blob.parts {
+        let src = parts_root.join(Path::new(&part.path).file_name().expect("file name"));
+        let bytes = fs::read(&src).map_err(|e| Error::io(&src, e))?;
+        if bytes.len() as u64 != part.size {
+            return Err(Error::SizeMismatch {
+                path: part.path.clone(),
+                expected: part.size,
+                actual: bytes.len() as u64,
+            });
+        }
+        let actual = sha256_bytes(&bytes);
+        if actual != part.sha256 {
+            return Err(Error::Integrity {
+                path: part.path.clone(),
+                expected: part.sha256.clone(),
+                actual,
+            });
+        }
+        out.extend_from_slice(&bytes);
+    }
+    if out.len() as u64 != blob.size {
+        return Err(Error::SizeMismatch {
+            path: blob.path.clone(),
+            expected: blob.size,
+            actual: out.len() as u64,
+        });
+    }
+    let actual = sha256_bytes(&out);
+    if actual != blob.sha256 {
+        return Err(Error::Integrity {
+            path: blob.path.clone(),
+            expected: blob.sha256.clone(),
+            actual,
+        });
+    }
+    Ok(out)
+}
+
 /// All files under `root` (recursively), relative paths, sorted — the set of shards
 /// a pack operation must record.
 pub fn files_under(root: &Path) -> Result<Vec<PathBuf>> {

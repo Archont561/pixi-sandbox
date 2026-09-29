@@ -52,7 +52,10 @@ uniformly shaped.
 ## Rules for new tests
 
 1. Project paths come from `fixtures::demo_project()`; payload paths from
-   `fixtures::transport()`. Never `..` out of the crate to the repository root.
+   `fixtures::transport()`. Never `..` out of the crate to the repository root — the one
+   sanctioned exception is `e2e.rs`'s gate test, which reaches the real
+   `scripts/airlock-gate.sh` because the script itself is the artifact under test (task-10);
+   `fixtures.rs::no_test_targets_the_repository_root` allows exactly that path and nothing else.
 2. Anything that writes copies the fixture into a `tempfile::TempDir` first — fixtures are
    read-only, and a test that mutates one breaks every other test.
 3. A test that needs the network (a real `pixi install`, a real `pixi-pack` download) is

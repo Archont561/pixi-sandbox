@@ -92,11 +92,12 @@ fetched checkout (AGENTS invariant 2). A restore stages everything in the *proje
 ```
 <branch>/
 ├── .pixi-sandbox/
-│   ├── manifest.json               schema 1 — the only source of truth
+│   ├── manifest.json               schema 2 — the only source of truth
 │   ├── envs/<env>/pack/            output of `pixi-pack --directory-only` (D2)
 │   │   ├── channel/{noarch,linux-64}/*.conda
 │   │   ├── environment.yml
 │   │   └── pixi-pack.json
+│   ├── envs/<env>/files.json       the per-file oracle for the unpacked prefix (D13)
 │   ├── tools/<platform>/           pixi · pixi-unpack · pixi-sandbox (sha256-verified; static on Linux)
 │   └── vendor/                     cargo vendor output (D6)
 ├── README.md                       generated from the manifest
@@ -121,7 +122,7 @@ reassembles them logically, `materialise()` reassembles them physically. Chunkin
 into fixed-size pieces would destroy git dedup (measured: +0.07 MiB vs +3.96 MiB per crate
 bump ✅) and is explicitly rejected.
 
-**`manifest.json` (schema 1)** — every field is load-bearing:
+**`manifest.json` (schema 2)** — every field is load-bearing:
 
 | field | meaning |
 | --- | --- |
@@ -131,15 +132,28 @@ bump ✅) and is explicitly rejected.
 | `shard_limit_bytes` | what the packer used; `doctor` reports files that were split |
 | `source.commit`, `source.lock_sha256` | which commit and which `pixi.lock` produced this |
 | `tools` | embedded tools: `version`, `url`, `pinned_sha256`, `linkage`, `size_bytes`, `path` |
-| `envs.<name>` | `pack_path`, packed/unpacked sizes, `pixi_environment_fingerprint`, `blobs` |
+| `envs.<name>` | `pack_path`, packed/unpacked sizes, `pixi_environment_fingerprint`, `blobs`, `files` |
 | `envs.<name>.blobs[]` | every packed file: `path`, `size`, `sha256`, optional `parts[]` |
+| `envs.<name>.files` | schema 2: the per-file oracle — `files.json`'s own blob record (path, size, sha256) and its entry count (D13) |
 | `vendor` | `mode`, `crates`, `size_bytes`, `cargo_lock_sha256`, `directory`, `blobs[]` (D6) |
 
 Rules the validator enforces: schema match, at least one env or tool, no empty envs, every
-`path` relative and non-escaping, every digest a 64-hex sha256, and split parts summing to the
-blob size. Every `path` in the manifest — env blobs *and* `tools.<name>.path` — is relative to
-`.pixi-sandbox/`; `envs.<name>.pack_path` is relative to the branch root and informational
-(it is where *pack* put the directory).
+`path` relative and non-escaping, every digest a 64-hex sha256, split parts summing to the
+blob size, and (schema 2) an oracle that lists at least one entry. Every `path` in the
+manifest — env blobs *and* `tools.<name>.path` — is relative to `.pixi-sandbox/`;
+`envs.<name>.pack_path` is relative to the branch root and informational (it is where *pack*
+put the directory).
+
+**The per-file oracle (D13).** After packing an env, `pack` runs its own verification
+unpack of the pack into scratch (a throwaway `.pixi-sandbox-verify-<env>` under the output),
+scans the prefix it got, and records `envs/<env>/files.json`: one entry per file (relative
+path, canonicalised sha256, exec bit) and symlink (target), with conda-meta records
+presence-only. "Canonicalised" is the trick that makes both sides agree: relocation rewrites
+the staging prefix to the final prefix in text files, and NUL-padded binaries keep the staging
+path forever — so digests are taken over a canonical form in which either side's path
+spellings (pack's scratch, restore's work dir and final prefix) are replaced by a sentinel.
+`doctor --verify-restored` derives its candidate spellings from the project path, env name and
+work dir alone — never from files restore wrote, which would be a candidate-injection hole.
 
 **`README.md` and `AGENTS.md` are generated, never hand-edited.** They carry the env table,
 the payload split, the exact restore commands for this platform, the vendor summary and the
@@ -292,8 +306,38 @@ The promise: **nothing reaches the user's working tree before its sha256 matches
 manifest.** That is implemented as: verify-before-write everywhere (`shard::materialise`,
 `join_parts` stages in a temp file and renames only after the whole blob verifies), one code
 path for verification (`verify::verify`) shared by `doctor`, `restore` and `unpack`, and an
-error type that distinguishes *missing*, *size*, *integrity*, *missing-part* and *dynamic-tool*
-so the operator's report is actionable. `doctor` reports **all** failures, not the first ✅.
+error type that distinguishes *missing*, *size*, *integrity*, *missing-part*, *dynamic-tool*,
+*unexpected* and *mode* so the operator's report is actionable. `doctor` reports **all**
+failures, not the first ✅ — for the branch and, since task-10, for the restored tree alike.
+
+### Which layer proves what
+
+"Is this sandbox intact?" is three different questions, and each has exactly one owner:
+
+1. **Transport integrity** — *are the bytes in the branch the bytes the manifest describes?*
+   Owned by verify-before-write (every blob is sha256-checked before it is written) and
+   `doctor --verify` over the branch. This is what `restore` enforces on arrival.
+2. **Restored-tree integrity** — *is the tree restore produced the tree the manifest
+   describes, file for file?* Owned by `doctor --verify-restored <PROJECT>` (D13): the
+   manifest carries a per-file oracle (`envs/<name>/files.json`, schema 2) that the packer
+   records from its own verification unpack, and the doctor compares the restored prefix
+   against it — content, symlink targets, executable bits, and the fingerprint marker, with
+   conda-meta records presence-only (their own bodies embed digests of files relocation
+   rewrote). It collects every mismatch and writes nothing. A schema-1 env is reported
+   *unverifiable*, not failed: an old branch cannot be retrofitted. The same honesty applies
+   to the release transition — while the transport's embedded pixi-sandbox predates the
+   oracle, the gate prints a notice and stays a shape check rather than failing every airlock
+   on the way to the first oracle-carrying release.
+3. **Self-sufficiency** — *does the restored sandbox need anything from the network?* Owned
+   by the airlock gate (`scripts/airlock-gate.sh`): `pixi install --frozen --offline` must be
+   a no-op and `cargo check --offline` must build against the vendored tree. The gate's
+   `--transport` option wires layer 2 in, so a stub prefix with a fabricated conda-meta
+   record — the one attack shape checks cannot see — is rejected by a test, not a comment.
+
+The layers do not substitute for each other: layer 1 cannot see a restore bug (relocation
+gone wrong, a lost exec bit), layer 2 cannot see a network need, and layer 3 with a live
+network can be fooled by a re-fetch (`--offline` is a request, not enforcement — which is why
+the workflow's blocked tier is the authoritative one, §6).
 
 What this model does **not** protect against: a malicious writer who rewrites payload *and*
 manifest consistently (there is no signature/attestation yet — open), and a compromised
@@ -308,11 +352,16 @@ Failure catalogue (each verified in the lab ✅ unless marked):
 | `missing split part …` | a `.partNNN` not pushed (or filtered by a proxy) | re-fetch; check `doctor --verify` output |
 | `tool … is dynamically linked` | a `~/.pixi/bin` trampoline or a distro binary got embedded | ship the static asset (D4); the packer refuses it too |
 | `pixi install` wants the network | markers missing/wrong, or a package absent from `envs/<env>/pack` | D5; re-pack with the same `pixi.lock` |
+| `unexpected: … present in the restored prefix but not in the manifest's file list` | a file smuggled into (or forged inside) a restored prefix | treat the restore as untrusted; re-restore from a verified branch |
+| `integrity: content does not match the manifest's file list` | tampered or unrelocated content in a restored prefix | same — the oracle lists per-file digests (D13) |
+| `mode: executable bit …` | a restored file lost (or gained) the exec bit the manifest records | re-restore; do not chmod by hand |
+| `unverifiable` (env-level) | a schema-1 transport, packed before the oracle existed | nothing is wrong; re-pack to gain per-file verification |
 | unpack fails at ~all of the disk's free space | `$TMPDIR` on a small tmpfs | use `--work-dir`/default work dir (§4) |
 | restore fails | misconfigured work dir | use --work-dir on same filesystem |
 
 Backward compatibility: `doctor` must keep reading schema 1 across tool versions (§9), and a
-schema bump requires a fixture update in `tests/manifest.rs`.
+schema bump requires a fixture update in `tests/manifest.rs`. Schema 2 adds `envs.<name>.files`
+(the per-file oracle); readers accept 1..=2 and only refuse a schema newer than themselves.
 
 ---
 
@@ -564,7 +613,12 @@ would never be seen. The fixture is the opposite of all four:
   `tests/fixtures.rs::the_demo_project_does_not_depend_on_the_packers` asserts that stays true
   (it reads dependencies, not comments);
 * `tests/fixtures.rs::no_test_targets_the_repository_root` scans the test sources and fails if
-  a test walks out of its crate from `CARGO_MANIFEST_DIR` (`".."`, `.parent()`);
+  a test walks out of its crate from `CARGO_MANIFEST_DIR` (`".."`, `.parent()`). One exception
+  is carved out and documented in the test: `e2e.rs`'s
+  `the_airlock_gate_rejects_a_forged_conda_meta_record` reaches the real
+  `scripts/airlock-gate.sh`, because the gate script is the artifact under test (task-10's
+  acceptance criterion demands the rejection be *proven by a test*) and a copy of the script
+  would prove nothing about what CI runs;
 * `transport/` is committed with real digests, so `doctor`, `publish`, `restore` and the
   verification path are covered with **no pixi, no packer and no network** — including the
   split-blob (`.partNNN`) case that a 95 MiB payload would otherwise be needed for;
@@ -573,7 +627,13 @@ would never be seen. The fixture is the opposite of all four:
 
 Fixture transport is static and checked in. It was originally generated via Python, now maintained
 as a synthetic payload with real digests; `demo-project/` is a real project (pixi.lock from `pixi lock`,
-Cargo.lock from `cargo generate-lockfile`).
+Cargo.lock from `cargo generate-lockfile`). Since task-10 the fixture carries the schema-2 per-file
+oracle (`envs/demo/files.json`, 14 entries), and `fixtures.rs` re-derives its digests from
+`prefix.tar.gz` with the packer's own canonicalisation — so a tarball edited without regenerating
+the list fails in the fixture suite, not in a downstream airlock. The restored-tree oracle itself
+is tested in core (`tests/verify.rs`, the `restored` module: faithful restore, forged record,
+tampered content, lost exec bit, retargeted symlink, failed relocation, corrupted oracle) and the
+gate's use of it in `e2e.rs` against the real `scripts/airlock-gate.sh`.
 
 Two findings that shaped this section, both measured:
 

@@ -163,7 +163,16 @@ fn the_fixture_transport_verifies_and_covers_the_split_case() {
     // the manifest describes, down to the split parts.
     let report = verify::verify(&manifest, &dir, None);
     assert!(report.ok(), "fixture must verify: {:?}", report.failures);
-    assert_eq!(report.files, 11, "9 env+vendor blobs and 3 tools");
+    assert_eq!(
+        report.files, 12,
+        "9 env+vendor blobs, 3 tools, and the files.json oracle"
+    );
+    let demo = &manifest.envs["demo"];
+    assert_eq!(
+        demo.files.as_ref().unwrap().entries,
+        14,
+        "the fixture's per-file oracle: 13 regular files (2 conda-meta records presence-only) + the libz.so symlink"
+    );
     assert!(
         manifest
             .envs
@@ -213,6 +222,61 @@ fn the_fixture_transport_is_small_enough_to_commit() {
     );
 }
 
+/// The oracle the fixture carries must describe the tarball the fixture carries. This test
+/// re-derives every digest from `prefix.tar.gz` with the same canonicalisation pack uses —
+/// with `@PREFIX@` standing in for the staging path the fixture's unpacker substitutes — so a
+/// tarball edited without regenerating `files.json` fails here, not in a downstream airlock.
+#[test]
+#[cfg(unix)]
+fn the_fixtures_file_list_is_derivable_from_its_tarball() {
+    use pixi_sandbox_core::files_manifest::{self, FilesDoc};
+    use std::process::Command as StdCommand;
+
+    let temp = tempfile::tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    std::fs::create_dir_all(&prefix).unwrap();
+    let status = StdCommand::new("tar")
+        .arg("-xzf")
+        .arg(transport().join(".pixi-sandbox/envs/demo/pack/prefix/prefix.tar.gz"))
+        .arg("-C")
+        .arg(&prefix)
+        .arg("--strip-components=1")
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "system tar must unpack the fixture tarball"
+    );
+
+    // The fixture's placeholder plays the role the staging path plays in a real pack, which
+    // is exactly how files.json was generated (D13): both sides canonicalise their own path
+    // spelling to the sentinel, so the digests must agree.
+    let (derived, _) = files_manifest::scan_prefix(&prefix, &[b"@PREFIX@".to_vec()]).unwrap();
+    let listed = FilesDoc::parse(
+        &std::fs::read(transport().join(".pixi-sandbox/envs/demo/files.json")).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(derived.entries(), listed.entries());
+    let by_path: std::collections::BTreeMap<&str, _> =
+        listed.files.iter().map(|e| (e.p.as_str(), e)).collect();
+    for entry in &derived.files {
+        let recorded = by_path.get(entry.p.as_str()).unwrap_or_else(|| {
+            panic!(
+                "{}: listed by the scan but missing from files.json",
+                entry.p
+            )
+        });
+        assert_eq!(
+            entry.h, recorded.h,
+            "{}: digest re-derived from the tarball must equal the recorded one",
+            entry.p
+        );
+        assert_eq!(entry.x, recorded.x, "{}: executable bit", entry.p);
+        assert_eq!(entry.l, recorded.l, "{}: symlink target", entry.p);
+    }
+}
+
 /// The rule that matters is narrower than "always mention fixtures", and sharper: locating a
 /// path from `CARGO_MANIFEST_DIR` and then walking **up** (`".."`, `.parent()`) is how a test
 /// reaches this repository instead of the fixture — that is forbidden, and this is the test
@@ -236,6 +300,13 @@ fn no_test_targets_the_repository_root() {
             }
             if statement.contains("fixtures") {
                 checked += 1;
+                continue;
+            }
+            // The gate test is the one sanctioned exception: `scripts/airlock-gate.sh` is not
+            // fixture data but the artifact under test (task-10 — the gate must be proven to
+            // reject a forged conda-meta record), so the test reaches the real script in this
+            // repository rather than a copy that would prove nothing about the gate CI runs.
+            if statement.contains("airlock-gate.sh") {
                 continue;
             }
             let escapes = statement.contains("\"..\"") || statement.contains(".parent()");

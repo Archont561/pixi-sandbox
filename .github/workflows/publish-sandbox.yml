@@ -38,6 +38,10 @@ on:
         description: Branch prefix override
         type: string
         default: ""
+      bundle:
+        description: Bundle name for an ad-hoc platform/environments dispatch
+        type: string
+        default: ""
       self-binary:
         description: Executable embedded in the branch so it can bootstrap itself
         type: string
@@ -85,6 +89,11 @@ on:
         default: ""
       branch-prefix:
         description: Branch prefix override
+        required: false
+        type: string
+        default: ""
+      bundle:
+        description: Bundle name for an ad-hoc platform/environments dispatch
         required: false
         type: string
         default: ""
@@ -143,7 +152,7 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - name: Checkout project
-        uses: actions/checkout@v7.0.1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: project
           persist-credentials: false
@@ -161,7 +170,7 @@ jobs:
 
       - name: Checkout pixi-sandbox actions (release mode)
         if: ${{ inputs.release-repository != '' }}
-        uses: actions/checkout@v7.0.1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.release-repository }}
           ref: ${{ inputs.release-ref || inputs.release-version }}
@@ -181,48 +190,40 @@ jobs:
           token: ${{ secrets.SANDBOX_RELEASE_TOKEN || github.token }}
 
       - name: Emit reviewed native matrix (release mode)
-        if: ${{ inputs.release-repository != '' && inputs.environments == '' }}
+        if: ${{ inputs.release-repository != '' }}
         id: plan-release
         working-directory: project
         shell: bash
         env:
           CONFIG: ${{ inputs.config || '.pixi-sandbox.toml' }}
+          ENVIRONMENTS: ${{ inputs.environments }}
+          PLATFORM: ${{ inputs.platform }}
+          BUNDLE: ${{ inputs.bundle }}
+          BRANCH_PREFIX: ${{ inputs.branch-prefix }}
+          CARGO_VENDOR: ${{ inputs.cargo-vendor }}
           SANDBOX_BIN: ${{ steps.sandbox-release.outputs.path }}
         run: |
-          matrix=$("$SANDBOX_BIN" plan --config "$CONFIG" --json)
-          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
-
-      - name: Emit simple matrix (release mode + manual override)
-        if: ${{ inputs.release-repository != '' && inputs.environments != '' }}
-        id: plan-release-simple
-        shell: bash
-        env:
-          ENVIRONMENTS: ${{ inputs.environments }}
-          PLATFORM: ${{ inputs.platform || 'linux-64' }}
-          BRANCH_PREFIX: ${{ inputs.branch-prefix || 'sandbox' }}
-          CARGO_VENDOR: ${{ inputs.cargo-vendor && 'true' || 'false' }}
-        run: |
           set -euo pipefail
-          PLATFORM="${PLATFORM:-linux-64}"
-          case "$PLATFORM" in
-            linux-64) RUNNER="ubuntu-latest" ;;
-            linux-aarch64) RUNNER="ubuntu-24.04-arm" ;;
-            osx-arm64) RUNNER="macos-14" ;;
-            osx-64) RUNNER="macos-13" ;;
-            win-64) RUNNER="windows-latest" ;;
-            *) RUNNER="ubuntu-latest" ;;
-          esac
-          BRANCH_PREFIX="${BRANCH_PREFIX:-sandbox}"
-          BRANCH="${BRANCH_PREFIX}/${PLATFORM}"
-          MATRIX=$(jq -cn --arg envs "$ENVIRONMENTS" --arg platform "$PLATFORM" --arg runner "$RUNNER" --arg branch "$BRANCH" --argjson cargo_vendor "$CARGO_VENDOR" '{include:[{bundle:"custom", environments:$envs, platform:$platform, runner:$runner, branch:$branch, cargo_vendor:$cargo_vendor}]}')
-          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          args=(--config "$CONFIG")
+          # An ad-hoc dispatch is planned by the same binary, with the same runner table and the
+          # same validation, as the reviewed bundles. This step used to carry its own inline
+          # `case` mapping platform to runner label, which is how `linux-aarch64` came to be
+          # dispatched to `ubuntu-24.04-arm` while the README and the CLI both require an
+          # explicit runner for it.
+          if [ -n "$ENVIRONMENTS" ]; then
+            args+=(--envs "$ENVIRONMENTS" --platform "${PLATFORM:-linux-64}")
+            args+=(--bundle "${BUNDLE:-custom}" --branch-prefix "${BRANCH_PREFIX:-sandbox}")
+            if [ "$CARGO_VENDOR" != "true" ]; then args+=(--cargo-vendor=false); fi
+          fi
+          matrix=$("$SANDBOX_BIN" plan "${args[@]}" --json)
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------------
       # Local mode: no release-repository, use cargo run + embedded pins
       # ------------------------------------------------------------------
       - name: Install Pixi (local mode)
         if: ${{ inputs.release-repository == '' }}
-        uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           # The project is checked out into project/, not the job root. This is
           # setup-pixi's own input: the step-level `working-directory` key is only
@@ -233,46 +234,33 @@ jobs:
 
       - name: Rust cache (local mode)
         if: ${{ inputs.release-repository == '' }}
-        uses: Swatinem/rust-cache@v2.9.2 # v2.9.2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # The Cargo workspace is in project/, not the job root.
           workspaces: project
 
       - name: Emit reviewed native matrix (local mode)
-        if: ${{ inputs.release-repository == '' && inputs.environments == '' }}
+        if: ${{ inputs.release-repository == '' }}
         id: plan-local
         working-directory: project
         shell: bash
         env:
           CONFIG: ${{ inputs.config || '.pixi-sandbox.toml' }}
-        run: |
-          set -euo pipefail
-          MATRIX=$(cargo run -q -p pixi-sandbox -- plan --config "$CONFIG" --json)
-          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
-
-      - name: Emit simple matrix (local mode + manual override)
-        if: ${{ inputs.release-repository == '' && inputs.environments != '' }}
-        id: plan-local-simple
-        shell: bash
-        env:
           ENVIRONMENTS: ${{ inputs.environments }}
-          PLATFORM: ${{ inputs.platform || 'linux-64' }}
-          BRANCH_PREFIX: ${{ inputs.branch-prefix || 'sandbox' }}
-          CARGO_VENDOR: ${{ inputs.cargo-vendor && 'true' || 'false' }}
+          PLATFORM: ${{ inputs.platform }}
+          BUNDLE: ${{ inputs.bundle }}
+          BRANCH_PREFIX: ${{ inputs.branch-prefix }}
+          CARGO_VENDOR: ${{ inputs.cargo-vendor }}
         run: |
           set -euo pipefail
-          PLATFORM="${PLATFORM:-linux-64}"
-          case "$PLATFORM" in
-            linux-64) RUNNER="ubuntu-latest" ;;
-            linux-aarch64) RUNNER="ubuntu-24.04-arm" ;;
-            osx-arm64) RUNNER="macos-14" ;;
-            osx-64) RUNNER="macos-13" ;;
-            win-64) RUNNER="windows-latest" ;;
-            *) RUNNER="ubuntu-latest" ;;
-          esac
-          BRANCH_PREFIX="${BRANCH_PREFIX:-sandbox}"
-          BRANCH="${BRANCH_PREFIX}/${PLATFORM}"
-          MATRIX=$(jq -cn --arg envs "$ENVIRONMENTS" --arg platform "$PLATFORM" --arg runner "$RUNNER" --arg branch "$BRANCH" --argjson cargo_vendor "$CARGO_VENDOR" '{include:[{bundle:"custom", environments:$envs, platform:$platform, runner:$runner, branch:$branch, cargo_vendor:$cargo_vendor}]}')
+          args=(--config "$CONFIG")
+          # Same CLI, same runner table, same validation as the release-mode step above.
+          if [ -n "$ENVIRONMENTS" ]; then
+            args+=(--envs "$ENVIRONMENTS" --platform "${PLATFORM:-linux-64}")
+            args+=(--bundle "${BUNDLE:-custom}" --branch-prefix "${BRANCH_PREFIX:-sandbox}")
+            if [ "$CARGO_VENDOR" != "true" ]; then args+=(--cargo-vendor=false); fi
+          fi
+          MATRIX=$(cargo run -q -p pixi-sandbox -- plan "${args[@]}" --json)
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
       - name: Consolidate matrix output
@@ -280,16 +268,15 @@ jobs:
         shell: bash
         env:
           MATRIX_RELEASE: ${{ steps.plan-release.outputs.matrix }}
-          MATRIX_RELEASE_SIMPLE: ${{ steps.plan-release-simple.outputs.matrix }}
           MATRIX_LOCAL: ${{ steps.plan-local.outputs.matrix }}
-          MATRIX_LOCAL_SIMPLE: ${{ steps.plan-local-simple.outputs.matrix }}
         run: |
           set -euo pipefail
-          MATRIX=""
-          if [ -n "$MATRIX_RELEASE" ]; then MATRIX="$MATRIX_RELEASE"; fi
-          if [ -n "$MATRIX_RELEASE_SIMPLE" ]; then MATRIX="$MATRIX_RELEASE_SIMPLE"; fi
-          if [ -n "$MATRIX_LOCAL" ]; then MATRIX="$MATRIX_LOCAL"; fi
-          if [ -n "$MATRIX_LOCAL_SIMPLE" ]; then MATRIX="$MATRIX_LOCAL_SIMPLE"; fi
+          # Both modes now emit from the same `plan` call, so exactly one can be non-empty.
+          if [ -n "$MATRIX_RELEASE" ] && [ -n "$MATRIX_LOCAL" ]; then
+            echo "::error::both the release and local plan steps produced a matrix"
+            exit 1
+          fi
+          MATRIX="${MATRIX_RELEASE:-$MATRIX_LOCAL}"
           if [ -z "$MATRIX" ]; then
             echo "::error::Failed to produce publish matrix"
             exit 1
@@ -314,7 +301,7 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
     steps:
       - name: Checkout project
-        uses: actions/checkout@v7.0.1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: project
           persist-credentials: false
@@ -332,7 +319,7 @@ jobs:
 
       - name: Checkout pixi-sandbox actions (release)
         if: ${{ inputs.release-repository != '' }}
-        uses: actions/checkout@v7.0.1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.release-repository }}
           ref: ${{ inputs.release-ref || inputs.release-version }}
@@ -342,7 +329,7 @@ jobs:
 
       - name: Install Pixi (release)
         if: ${{ inputs.release-repository != '' }}
-        uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           # See the `plan` job: the project lives in project/, not the job root (#16).
           working-directory: project
@@ -381,7 +368,7 @@ jobs:
       # ------------------------------------------------------------------
       - name: Install Pixi (local)
         if: ${{ inputs.release-repository == '' }}
-        uses: prefix-dev/setup-pixi@v0.10.2 # v0.10.2
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           # See the `plan` job: the project lives in project/, not the job root (#16).
           working-directory: project
@@ -390,7 +377,7 @@ jobs:
 
       - name: Rust cache (local)
         if: ${{ inputs.release-repository == '' }}
-        uses: Swatinem/rust-cache@v2.9.2 # v2.9.2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # The Cargo workspace is in project/, not the job root.
           workspaces: project
@@ -470,7 +457,7 @@ jobs:
 
       - name: Upload published manifest
         if: success()
-        uses: actions/upload-artifact@v7.0.1 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sandbox-manifest-${{ matrix.bundle }}-${{ matrix.platform }}
           path: ${{ steps.publish-release.outputs.manifest || steps.publish-local.outputs.manifest }}

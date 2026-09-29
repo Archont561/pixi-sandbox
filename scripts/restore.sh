@@ -230,6 +230,17 @@ else
   "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force
 fi
 
+# The branch was verified before anything was written and every blob was verified as it was
+# written; this checks the tree that came out the other end against the manifest's per-file
+# digests (D13). It fails closed on a mismatch — a wrong prefix must not be reported as a
+# restore — and merely reports a notice for a schema-1 branch, which predates the oracle.
+# Either way this runs before the worktree is cleaned up, and on failure the worktree stays
+# as evidence.
+if ! "$BIN" doctor --branch-location "$WORKTREE" --verify-restored "$OUTPUT"; then
+  echo "::error::the restored project does not match the manifest; $WORKTREE is kept for inspection" >&2
+  exit 1
+fi
+
 echo "→ cleanup worktree"
 git worktree remove "$WORKTREE" --force || rm -rf "$WORKTREE"
 

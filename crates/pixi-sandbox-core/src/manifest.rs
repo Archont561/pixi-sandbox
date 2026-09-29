@@ -1,19 +1,23 @@
-//! `manifest.json` — the wire format of a sandbox branch (schema 1).
+//! `manifest.json` — the wire format of a sandbox branch (schema 2).
 //!
 //! This file is the *only* source of truth about a transport: what environments it holds,
 //! which files make them up, what each file's sha256 is, which tools are embedded, and where
 //! the vendored crates came from. `README.md`/`AGENTS.md` on the branch are generated from it.
 //!
 //! Changing anything here changes a wire format: bump [`SCHEMA_VERSION`], update the fixture
-//! in `tests/manifest.rs`, and keep `doctor` able to read the previous version.
+//! in `tests/manifest.rs`, and keep `doctor` able to read the previous version — a published
+//! branch outlives the binary that packed it, so readers accept every schema they understand
+//! and refuse only newer ones.
 
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Bumped only for incompatible changes; readers refuse anything newer.
-pub const SCHEMA_VERSION: u32 = 1;
+/// Bumped only for incompatible changes; readers refuse anything newer. Schema 2 added
+/// `envs.<name>.files` (the per-file oracle for a restored prefix, D13); a schema-1
+/// transport simply has no oracle and `doctor --verify-restored` says so instead of guessing.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Directory that holds the payload inside a transport / on a branch.
 pub const MANIFEST_DIR: &str = ".pixi-sandbox";
@@ -88,6 +92,22 @@ pub struct Env {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pixi_environment_fingerprint: Option<String>,
     pub blobs: Vec<Blob>,
+    /// Per-file digests of the unpacked, relocated tree (schema 2, D13). Absent on schema-1
+    /// transports, where `doctor --verify-restored` reports the environment as unverifiable
+    /// rather than claiming a check it cannot make.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<EnvFiles>,
+}
+
+/// The per-file oracle for one environment: `envs/<name>/files.json`, recorded as a blob so
+/// it gets the same verify-before-write treatment as the payload itself (see
+/// `files_manifest` for what the digests mean and what they deliberately do not cover).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvFiles {
+    /// The list itself, shipped inside the transport.
+    pub blob: Blob,
+    /// Number of per-file entries, so a summary can be checked without reading the list.
+    pub entries: u64,
 }
 
 /// One file of the payload. `parts` is empty unless the file exceeded the shard limit.
@@ -149,9 +169,12 @@ impl Manifest {
     /// The rules that make a manifest safe to act on. Everything here is cheap; the
     /// expensive checks (hashing 250 MiB) live in [`crate::verify`].
     pub fn validate(&self) -> Result<()> {
-        if self.schema != SCHEMA_VERSION {
+        // A published branch outlives the binary that wrote it: an airlock may restore a
+        // transport packed by an older release (which simply carries fewer fields), but a
+        // newer schema than this build understands is refused — it could mean anything.
+        if !schema_supported(self.schema) {
             return Err(Error::Invalid(format!(
-                "manifest schema {} is not supported by this build (expected {SCHEMA_VERSION})",
+                "manifest schema {} is not supported by this build (understands 1..={SCHEMA_VERSION})",
                 self.schema
             )));
         }
@@ -170,6 +193,14 @@ impl Manifest {
             }
             for blob in &env.blobs {
                 check_blob(&format!("env {name}"), blob)?;
+            }
+            if let Some(files) = &env.files {
+                check_blob(&format!("env {name} files"), &files.blob)?;
+                if files.entries == 0 {
+                    return Err(Error::Invalid(format!(
+                        "env {name}: files manifest declares no entries"
+                    )));
+                }
             }
         }
         if let Some(vendor) = &self.vendor {
@@ -234,7 +265,8 @@ impl Manifest {
     }
 }
 
-/// Rules every declared blob must satisfy, wherever it lives (an env or the vendor tree).
+/// Rules every declared blob must satisfy, wherever it lives (an env, its files manifest,
+/// or the vendor tree).
 fn check_blob(context: &str, blob: &Blob) -> Result<()> {
     check_rel_path(&blob.path, "blob path")?;
     check_digest(&blob.sha256, &blob.path)?;
@@ -254,7 +286,12 @@ fn check_blob(context: &str, blob: &Blob) -> Result<()> {
     Ok(())
 }
 
-fn check_rel_path(path: &str, what: &str) -> Result<()> {
+/// True when this build can act on the manifest's schema (see [`SCHEMA_VERSION`]).
+pub fn schema_supported(schema: u32) -> bool {
+    (1..=SCHEMA_VERSION).contains(&schema)
+}
+
+pub(crate) fn check_rel_path(path: &str, what: &str) -> Result<()> {
     if path.is_empty() {
         return Err(Error::Invalid(format!("empty {what}")));
     }

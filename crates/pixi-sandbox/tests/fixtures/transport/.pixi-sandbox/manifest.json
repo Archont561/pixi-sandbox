@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "tool": {
     "name": "pixi-sandbox",
     "version": "0.1.0"
@@ -92,7 +92,15 @@
           "size": 77213,
           "sha256": "ba13427ca806a93e678f38a4bd0ecedd02446ad03ac406cfd76757427792c1e9"
         }
-      ]
+      ],
+      "files": {
+        "blob": {
+          "path": "envs/demo/files.json",
+          "size": 1895,
+          "sha256": "0203b653d220f204a1b1dc150474e5bd23ca5aa3a837ab11b8ae9b106914bcb7"
+        },
+        "entries": 14
+      }
     }
   },
   "vendor": {
