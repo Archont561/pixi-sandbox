@@ -1,76 +1,164 @@
 # Changelog
 
-All notable changes to this project are documented in this file. It is generated via [convco](https://github.com/convco/convco) from conventional commits (`pixi run changelog`).
+All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and adheres to [Conventional Commits](https://www.conventionalcommits.org/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+and this project adheres to
+[Conventional Commits](https://www.conventionalcommits.org/).
 
-## [Unreleased]
-
-## [0.2.0] - 2026-09-21
+## [v0.3.0](https://github.com/Archont561/pixi-sandbox/compare/v0.2.0...8d6cca6a87171e507f84e353244f28515a173c02) (2026-09-29)
 
 ### Features
 
-- **setup & publish short refs in same repo** — both GitHub Actions now usable with short references:
-  - `Archont561/pixi-sandbox@vX` → setup (root, like `prefix-dev/setup-pixi`)
-  - `Archont561/pixi-sandbox/setup@vX` → setup explicit alias
-  - `Archont561/pixi-sandbox/publish@vX` → publish one native bundle
-  - Root `action.yml` now wraps `.github/actions/setup-pixi-sandbox` (DRY); `setup/action.yml` and `publish/action.yml` wrap their respective composites. Long-form `.github/actions/...` paths still work.
-  - Updated README, `quickstart.mdx`, and action READMEs.
-
-- **one-liner offline reconstruction with PATH aliases** — `scripts/restore.sh` + `pixi run sandbox-restore`:
-  - `git fetch origin sandbox/linux-64 && git worktree add /tmp/sb ... && /tmp/sb/.pixi-sandbox/tools/.../pixi-sandbox restore --output-path . --force; git worktree remove /tmp/sb --force; source .pixi/sandbox-env.sh; export PATH="$PWD/.pixi/envs/dev/bin:$PATH"`
-  - Wires `pixi()` function + tools + dev bin like `setup-pixi`.
-
-- **setup action like `prefix-dev/setup-pixi`** — root `action.yml` proxy with optional `repository`/`version` defaults, so minimal usage is `uses: Archont561/pixi-sandbox@v0.2.0`.
-
-- **pure Rust self-bootstrap** — `sandbox-pack` now builds Rust binary via `sandbox-build-self` (`cargo build -p pixi-sandbox --release`) and embeds `target/release/pixi-sandbox` as `--self-bin` instead of Python reference implementation.
-
-- **two-action user workflow** — recommended publishing is now just `Archont561/pixi-sandbox/setup@vX` + `Archont561/pixi-sandbox/publish@vX` with `plan --json` matrix; no `release-repository`/`release-version` duplication. Reusable workflow `publish-sandbox.yml` kept as alternative.
+* **publish:** rotate the branch with --keep N
+([4e4ffa6](https://github.com/Archont561/pixi-sandbox/commit/4e4ffa68123f1d783a600bcc2ded099df7d09ae9))
+* **skills:** add local backlog.md workflow skill
+([bae5e60](https://github.com/Archont561/pixi-sandbox/commit/bae5e6091451a6db0ccf958bb3c2386a6c282f2f))
+* **ci:** add dry-run mode to publish-sandbox
+([0844fb7](https://github.com/Archont561/pixi-sandbox/commit/0844fb73cdd35a28ab2d94ae701e46f6c0291626))
+* **init:** derive the launcher branch from the reviewed plan
+([2a1a0a1](https://github.com/Archont561/pixi-sandbox/commit/2a1a0a17a068f3fae5c887efd1d5c46ce42d7b5e))
+* **restore:** derive the sandbox branch from .pixi-sandbox.toml
+([0ba40d7](https://github.com/Archont561/pixi-sandbox/commit/0ba40d7f7bcd039679ebc0007490972a17d21aef))
+* pin generated actions to latest commit
+([60daa44](https://github.com/Archont561/pixi-sandbox/commit/60daa44622e78ef00582ed7d8761d01f5a4517dc))
+* generate project-side airlock bootstrap
+([4df9a79](https://github.com/Archont561/pixi-sandbox/commit/4df9a79e21be36f9d3a672958d019ebb55969777))
 
 ### Fixes
 
-- **unify publish workflows** — `publish-sandbox.yml` now handles `workflow_run` (after ci.yml success), `workflow_dispatch`, and `workflow_call`; uses composite actions `setup-pixi-sandbox` (verified download) and `publish-pixi-sandbox` (install, pack with `--self-bin`, doctor, publish). Removed `publish-sandboxes.yml`.
+* **cli:** cite only design.md for deferred verbs
+([2520562](https://github.com/Archont561/pixi-sandbox/commit/252056207a285a5e72c6fb43328fd9373876abcb))
+* **restore:** delete the staging scratch once an environment is in place
+([fca1f0e](https://github.com/Archont561/pixi-sandbox/commit/fca1f0eb3a0d270ed02258aa06528ed1ec78ebfe)),
+closes [#18](https://github.com/Archont561/pixi-sandbox/issues/18)
+[#18](https://github.com/Archont561/pixi-sandbox/issues/18)
+* remove orphaned node dependencies from lockfile
+([cedf273](https://github.com/Archont561/pixi-sandbox/commit/cedf273a096105194e18d341594f533ad9172ed9))
+* relocate restored environment text prefixes
+([11beaf9](https://github.com/Archont561/pixi-sandbox/commit/11beaf94cfe825651c1bd19083b4864899bb9955))
+* **ci:** build static sandbox bootstrap
+([68cda7e](https://github.com/Archont561/pixi-sandbox/commit/68cda7ea46fc3433af07c06b18f1de00395f4fed))
+* **ci:** point local action uses at directories, not action.yml files (#21)
+([7e3b012](https://github.com/Archont561/pixi-sandbox/commit/7e3b0123897cd1678f3eadf5b1dd193a548dab95)),
+closes [#21](https://github.com/Archont561/pixi-sandbox/issues/21)
+* **ci:** build the publish matrix from plan --json `.include` only
+([e1b3755](https://github.com/Archont561/pixi-sandbox/commit/e1b3755b8e532b2f0e9502721a73ec19dec65472)),
+closes [#16](https://github.com/Archont561/pixi-sandbox/issues/16)
+* **ci:** point the publish plan's setup-pixi steps at project/ (#16)
+([bff760e](https://github.com/Archont561/pixi-sandbox/commit/bff760e2feef46ed625bb0056f6ef8362956ba24)),
+closes [#16](https://github.com/Archont561/pixi-sandbox/issues/16)
+* **ci:** track docs with the bun ecosystem so frozen installs stay valid
+([bebac6d](https://github.com/Archont561/pixi-sandbox/commit/bebac6d4db6984c1d8ce10d0e73c09b7b3201106))
 
-- **release workflow** — new `release.yml` builds 5 tier-1 static binaries (musl Linux x86_64/aarch64, macOS x86_64/aarch64, Windows x86_64), strips, generates `SHA256SUMS` via `sha256sum`, creates GitHub Release with `generate_release_notes: true`. Contract matches `setup-pixi-sandbox` README (`pixi-sandbox-{target}{exe}`).
+### Refactoring
 
-- **rename flag with alias** — CLI `--output-path` with alias `--path-to-main-repo-code` (backward compat). Updated `restore.rs`, `pack.rs`, `publish.rs`, `cli.rs`, tests, fixtures, and `docs/restore.mdx`.
-
-- **scratch leak** — `shell.rs` fix: move scratch repo outside transport (same filesystem, never `/tmp`) to avoid leaking `.pixi-sandbox-publish-<pid>/` because git only ignores `.git`, not custom `GIT_DIR` names.
-
-- **remove all Python script references** — deleted `.knowledge/research/pixi_sandbox.py`, `make_fixture_transport.py`, `reproduce.sh`, `scripts/write_release_checksums.py`; replaced with Rust tasks (`sandbox-proof`, `ci-proof` pure bash using embedded binary) and `sha256sum` for checksums.
+* single pixi environment, linux/macos-only, one root action
+([809f934](https://github.com/Archont561/pixi-sandbox/commit/809f934bbd36e5c50a13d9b51b9bf3b3a54e547d))
 
 ### Documentation
 
-- Removed Python refs from `.knowledge/README.md`, `AGENTS.md`, `design.md`, `publish-automation.md`, `rust-bootstrap.md`, `repository.mdx`, `quickstart.mdx`, `restore.mdx`, `fixtures/README.md`, `transport/README.md`, `EVIDENCE.md`, `REPRODUCE-TRANSCRIPT.md`.
-- Updated `quickstart.mdx` to use Rust self-bin and unified publisher.
-- Added `setup/README.md` and `publish/README.md` short-alias docs.
-- Removed `.knowledge` links from user-facing docs (`design.mdx`, `repository.mdx`) — docs now standalone.
-- Updated `README.md`, `quickstart.mdx`, `guides/ci-publishing.mdx`, `guides/actions.mdx` to make two-action workflow the primary example; reusable workflow moved to alternative.
+* sync the README devcontainer quote with the actual command
+([8d6cca6](https://github.com/Archont561/pixi-sandbox/commit/8d6cca6a87171e507f84e353244f28515a173c02))
+* fix install one-liner (task-2), record rattler no-go D12 (task-9)
+([6fd1152](https://github.com/Archont561/pixi-sandbox/commit/6fd1152c992ced5933b72fb5e5fd7ef7adbb7ece)),
+closes [#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+* **knowledge:** measure the rattler v2 trade-off (task-9 spike)
+([edf94e1](https://github.com/Archont561/pixi-sandbox/commit/edf94e16468b90468b72c57f9db8585ea80d7c84)),
+closes [#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+* **repository:** fix the dangling sentence left by the prototype removal
+([33e6076](https://github.com/Archont561/pixi-sandbox/commit/33e607618393ca3452a09a042275851396bb7d81))
+* **context:** a restored environment names itself, not the scratch
+([35066b5](https://github.com/Archont561/pixi-sandbox/commit/35066b59445ca02029165e60240fb9414225a98e))
+* **readme:** resync with the code and provision git/gh in the container
+([244b51e](https://github.com/Archont561/pixi-sandbox/commit/244b51e377185c43e54b9fa954aa9e0738d3bf5e))
+* reduce setup and restore to two commands
+([8c4ec2b](https://github.com/Archont561/pixi-sandbox/commit/8c4ec2bc79834927b50fb5232ca2d4e035424189))
+
+### Build System
+
+* **devcontainer:** provision a C compiler, so the Rust gates can run at all
+([42ff52c](https://github.com/Archont561/pixi-sandbox/commit/42ff52c099f15f5d4b4b35b5918e24a3eedbb8ae))
+* **dev:** one bun workspace at the root, with the repo dev tooling in it
+([b35eddb](https://github.com/Archont561/pixi-sandbox/commit/b35eddb1788f88c8cf4076e19f5352baea1d7d4b))
+* **devcontainer:** provision the agent CLI in the container
+([8ef9c81](https://github.com/Archont561/pixi-sandbox/commit/8ef9c81c837b936039ab5674dd058009f8af3f52))
+* **devcontainer:** use the official pixi image directly
+([e581c79](https://github.com/Archont561/pixi-sandbox/commit/e581c79167cbae5fbf2ca20faa374aac1d75d794))
+* add Pixi development container
+([4a15985](https://github.com/Archont561/pixi-sandbox/commit/4a15985c0c81ec7a9cd045cb3dc9712940b6adbb))
+* remove Node.js from development environment
+([3ad1f01](https://github.com/Archont561/pixi-sandbox/commit/3ad1f01b9b836d927d00c505de0e20f73ccdbf95))
 
 ### CI
 
-- `pixi.toml` `sandbox-proof` and `ci-proof` rewritten in bash using embedded Rust binary (replaces old `reproduce.sh`).
-- `lint-commit = "convco check --from-stdin"` via lefthook commit-msg hook enforces conventional commits.
-- New tasks: `changelog = "convco changelog > CHANGELOG.md"` and `changelog-preview`.
+* publish scripts/init.sh as a release asset (task-2)
+([5a765eb](https://github.com/Archont561/pixi-sandbox/commit/5a765ebc566531d4f1235218aaa1fcd549ed7d18))
+* add on-demand auto-release workflow
+([5fd7b3f](https://github.com/Archont561/pixi-sandbox/commit/5fd7b3f4625c3b41aadbde52e99e54d8faaae66a))
 
-## [0.1.0] - 2026-09-20
+## v0.2.0 (2026-09-21)
 
-### Initial
+### Features
 
-- Initial commit with core crates:
-  - `pixi-sandbox-core`: manifest format, sharding, tool pins, validation
-  - `pixi-sandbox-git`: trait-based Git ops (`ShellGit` + `FakeGit`/`RecordingRunner`)
-  - `pixi-sandbox`: CLI (`pack`, `publish`, `restore`, `doctor`, `plan`, `tools`)
-- Fixtures: `demo-project` (real pixi project) + `transport` (synthetic payload with split blob)
-- GitHub Actions: `ci.yml`, `docs.yml`, `publish-sandbox.yml`
-- Docs: Astro + Starlight site, `.knowledge/` Open Knowledge Format (D1–D11)
-- Tooling: `pixi.toml` tasks, `lefthook.yml`, `taplo`, `biome`, `actionlint`, `cargo-deny`, `convco`
+* self-bootstrap at branch root and apply dependency updates
+([72d466a](https://github.com/Archont561/pixi-sandbox/commit/72d466a27d0dc79d66ace6ef0360e12c4f93c905))
+* short refs for setup and publish in same repo
+([6434700](https://github.com/Archont561/pixi-sandbox/commit/6434700dc1d93e2b337f579dd7881ad6cc07f74f))
+* one-liner offline reconstruction with PATH aliases
+([81813e1](https://github.com/Archont561/pixi-sandbox/commit/81813e14536f4e69e318c261d8615114816fdbcb))
+* make setup action usable like prefix-dev/setup-pixi
+([2bec5d7](https://github.com/Archont561/pixi-sandbox/commit/2bec5d7ecd51f2111589e5befa704262a4506cc7))
+
+### Fixes
+
+* biome lint-docs failures (formatting, SVG a11y, Astro false positives)
+([901095a](https://github.com/Archont561/pixi-sandbox/commit/901095a9fae8fcfe561a04f75949f1454781fad4))
+* unify publish workflows, rename output-path, add release workflow, remove python refs, fix
+scratch leak
+([0c90180](https://github.com/Archont561/pixi-sandbox/commit/0c9018060ce0c80e8693e75f3a08256eb7ef73eb))
+* **e2e:** simplify unshare_check with is_ok_and for clippy
+([0e3eb86](https://github.com/Archont561/pixi-sandbox/commit/0e3eb86867a93bcb948768569cb8d45c0a05ec6e))
+* **ci:** add Cargo caching and consolidate CI into unified single job
+([91b6848](https://github.com/Archont561/pixi-sandbox/commit/91b6848cc048385a49c234973e8dce63ecbfe91e))
+* **ci:** resolve CI failures and rewrite action and test logic in Rust
+([0379c4f](https://github.com/Archont561/pixi-sandbox/commit/0379c4f96cca0ad443b739fdb9d625ac557f54b2))
+
+### Documentation
+
+* regenerate README with badges, sandbox viz, guides, config ref
+([1b50d03](https://github.com/Archont561/pixi-sandbox/commit/1b50d034fce0ab96ab3cf07e8b363814f7f16ae8))
+* redesign to astro-icon + iconify with sandbox visualization
+([d170922](https://github.com/Archont561/pixi-sandbox/commit/d1709220fa3c8bf0ff38f7d0919d87ff1522b392))
+* add CHANGELOG.md via convco and changelog tasks
+([b008ad7](https://github.com/Archont561/pixi-sandbox/commit/b008ad7ba9ecc33b402891ef7f9c2e7e7ab7f9ce))
+* clean remaining python refs in fixtures and evidence
+([3c19540](https://github.com/Archont561/pixi-sandbox/commit/3c19540409b9fe8e4c2ace4e1c933fb52b427482))
+* remove all python references, update to pure Rust bootstrap
+([c748d76](https://github.com/Archont561/pixi-sandbox/commit/c748d76b80024fa0d7114c531b21ef624a26967f))
+* regenerate READMEs and CONTEXT with shields, badges, and enhanced markdown
+([eb25794](https://github.com/Archont561/pixi-sandbox/commit/eb25794673f9ddc2a6c6fc2fd66970d75bf3560f))
 
 ### CI
 
-- Upgrade workflow actions to Node 24 native versions
-- Add codecov configuration and status badge
-
----
-
-Generated with `pixi run changelog-preview` (convco). To update: `pixi run changelog`.
+* **deps:** bump actions/upload-pages-artifact from 3.0.1 to 5.0.0
+([a2409bf](https://github.com/Archont561/pixi-sandbox/commit/a2409bf5ceec6d08a56f7fa304e8d29ba08be834))
+* **deps:** bump actions/deploy-pages from 4.0.5 to 5.0.1
+([2c48646](https://github.com/Archont561/pixi-sandbox/commit/2c486469629a9777a86a5d23ce8217b418e2e066))
+* **deps:** bump actions/configure-pages from 5.0.0 to 6.0.0
+([a3d7a1e](https://github.com/Archont561/pixi-sandbox/commit/a3d7a1ec974def61cc5194cf41a980af550a6922))
+* **deps:** bump softprops/action-gh-release from 2.4.1 to 3.0.3
+([85a5fbd](https://github.com/Archont561/pixi-sandbox/commit/85a5fbd5d86a6b79c28fb7c644675d7c400147b6))
+* **deps:** bump actions/download-artifact from 7.0.1 to 8.0.1
+([5ab22cd](https://github.com/Archont561/pixi-sandbox/commit/5ab22cdf20e1a61dd16f9691a30cf58aeacf7b5f))
+* **deps:** bump codecov/codecov-action from 5.4.0 to 7.1.1
+([1a30e00](https://github.com/Archont561/pixi-sandbox/commit/1a30e00c636e466e209837641ed78bdf52541dda))
+* add dependabot for cargo, gha, and npm (docs)
+([5733af2](https://github.com/Archont561/pixi-sandbox/commit/5733af2ab323dfe52c8bcaeb28237c720606c72c))
+* upgrade workflow actions to Node 24 native versions
+([9be64a3](https://github.com/Archont561/pixi-sandbox/commit/9be64a3ad88131c81d83f8baf7baf06f9089620a))
+* add codecov configuration and status badge
+([d4956b3](https://github.com/Archont561/pixi-sandbox/commit/d4956b3694ac82d752ec682641f87d895e63540d))
+* trigger publish-sandbox after ci is green with workflow_run and workflow_dispatch
+([be50f7b](https://github.com/Archont561/pixi-sandbox/commit/be50f7bcdc16d2b78b61bd63f3f1b92d54d856b4))
