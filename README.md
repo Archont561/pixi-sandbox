@@ -423,8 +423,9 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `crates/pixi-sandbox-git` | Trait-based Git: `ShellGit` + `FakeGit`/`RecordingRunner` |
 | `crates/pixi-sandbox` | CLI binary + fixtures |
 | `crates/pixi-sandbox/tests/fixtures/` | Synthetic transport (15 KB, split blob) — tests never point at repo root |
-| `action.yml` + `setup/action.yml` | Setup action (short refs `owner/repo@vX`, `owner/repo/setup@vX`) |
-| `publish/action.yml` | Publish action (short ref `owner/repo/publish@vX`) |
+| `action.yml` | The one action implementation — setup and publish, selected by `subpath` (short ref `owner/repo@vX`) |
+| `setup/action.yml`, `publish/action.yml` | Generated complete copies of it, so `owner/repo/setup@vX` and `owner/repo/publish@vX` run from the ref you pinned |
+| `scripts/render-action-shims.sh` | Renders those two copies from `action.yml`; check 7 of the repo-consistency lint re-renders and fails on drift |
 | `.github/workflows/ci.yml` | CI: lint + test + coverage + docs-build |
 | `.github/workflows/publish-sandbox.yml` | Unified publisher: workflow_run + dispatch + call, native runners |
 | `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + SHA256SUMS + GitHub Release |
@@ -432,6 +433,7 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `.github/dependabot.yml` | Dependabot: cargo, gha, npm (convco prefixes) |
 | `templates/install.sh` | Template for the `install.sh` release asset; `scripts/render-install.sh` stamps the tag |
 | `scripts/restore.sh` | One-liner offline reconstruction with PATH aliases; branch derived from `.pixi-sandbox.toml` |
+| `scripts/lint-generated-workflow.sh` | actionlint over the workflow `init github` generates, not just this repo's own |
 | `.pixi-sandbox.toml` | Reviewed publish plan: bundles, platforms, branch prefix, runner overrides |
 | `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals, opencode via `setup-opencode` |
 | `lefthook.yml` | Git hooks — every hook calls a pixi task so hooks and CI cannot drift |

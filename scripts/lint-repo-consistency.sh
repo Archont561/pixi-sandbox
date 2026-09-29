@@ -27,6 +27,9 @@
 #    one-liner cannot default to a version other than its own (task-2).
 # 6. no workflow pins a literal `vX.Y.Z` release tag, so no proof silently keeps running against
 #    the previous release after a cut.
+# 7. task-12 — every published action path (`action.yml`, `setup/action.yml`, `publish/action.yml`)
+#    is a self-contained composite action, and the two generated copies still match the root they
+#    are rendered from. A relative `uses:` is what broke `owner/repo/setup@ref` in v0.3.1.
 
 set -euo pipefail
 
@@ -152,7 +155,12 @@ unpinned="$(
           if (spec ~ /^\.\.?\// || spec ~ /^docker:\/\// || !match(spec, /@/)) { prev = $0; next }
           ref = substr(spec, RSTART + 1)
           why = ""
-          if (ref !~ /^[0-9a-f]{40}$/)
+          # length() + a character-class test, not /^[0-9a-f]{40}$/: mawk (the default awk on
+          # Debian-family hosts, including a restored airlock) is built without interval
+          # expressions, so the braced form never matches and every correctly pinned SHA was
+          # reported as mutable. The check has to run where the work happens, not only on
+          # ubuntu-latest.
+          if (length(ref) != 40 || ref ~ /[^0-9a-f]/)
             why = "pins " ref ", a mutable ref, not a 40-character commit SHA"
           else if (substr($0, RSTART + RLENGTH) !~ /#[[:space:]]*v[0-9]/)
             why = "pins a SHA with no trailing release label, so the next person cannot tell what it is"
@@ -241,10 +249,55 @@ if [ -n "$pinned_tags" ]; then
   echo "  read the tag from the checked-out Cargo.toml, or take it from a repository variable" >&2
 fi
 
+# ---------------------------------------------------------------- 7. self-contained actions
+
+# v0.3.1 published two action paths that could not run. `setup/action.yml` and `publish/action.yml`
+# each contained a single step, `uses: ../action.yml`, and a relative reference inside a *remote*
+# composite action does not resolve against the repository that defines the action: `../` is
+# rejected by the runner's reference parser ("Expected format {org}/{repo}[/path]@ref"), and `./`
+# would resolve in the consumer's own checkout. So every `Archont561/pixi-sandbox/setup@<ref>`
+# caller failed during job setup (issue #37). actionlint does not see this — it lints workflows,
+# not action manifests — and no cargo test may read this repository's own files (D10), so the
+# check belongs here.
+#
+# The fix makes each published path a complete composite action, generated from the root by
+# scripts/render-action-shims.sh. Generation without verification is just a slower copy-paste, so
+# both halves are checked: the copies re-render identically, and no published path contains a
+# relative `uses:` (which would silently reintroduce the bug in a new place).
+ACTION_PATHS="action.yml setup/action.yml publish/action.yml"
+for action in $ACTION_PATHS; do
+  if [ ! -f "$action" ]; then
+    fail "$action is missing — it is a published action path (owner/repo[/path]@ref) (task-12)"
+    continue
+  fi
+  relative="$(grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*\.' "$action" || true)"
+  if [ -n "$relative" ]; then
+    fail "$action uses a relative action reference, which cannot resolve from a remote ref (task-12):"
+    printf '  %s\n' "$relative" >&2
+    echo "  a published action path must be self-contained; edit action.yml and run 'bash scripts/render-action-shims.sh'" >&2
+  fi
+  grep -q '^  using: composite$' "$action" ||
+    fail "$action is not a composite action — a published action path must run on its own (task-12)"
+done
+
+for variant in setup publish; do
+  generated="$variant/action.yml"
+  [ -f "$generated" ] || continue
+  rendered_action="$(mktemp)"
+  if ! bash scripts/render-action-shims.sh "$variant" "$rendered_action" 2>/dev/null; then
+    fail "scripts/render-action-shims.sh cannot render $generated from action.yml (task-12)"
+  elif ! diff -u "$generated" "$rendered_action" >/dev/null; then
+    fail "$generated has drifted from action.yml (task-12):"
+    diff -u "$generated" "$rendered_action" | sed -n '1,20p' | sed 's/^/  /' >&2
+    echo "  regenerate with 'bash scripts/render-action-shims.sh'" >&2
+  fi
+  rm -f "$rendered_action"
+done
+
 # ----------------------------------------------------------------
 
 if [ "$failures" -gt 0 ]; then
   printf 'repo consistency: %d check(s) failed\n' "$failures" >&2
   exit 1
 fi
-echo "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; the install one-liner is rendered from templates/; no workflow pins a literal release tag"
+echo "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; the install one-liner is rendered from templates/; no workflow pins a literal release tag; every published action path is self-contained and matches action.yml"

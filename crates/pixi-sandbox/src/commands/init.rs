@@ -127,7 +127,12 @@ jobs:
     needs: plan
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix).include }}
+      # `include:` nested under `matrix:`, not `matrix:` itself. `plan --json` emits
+      # {"schema":1,"include":[...]}, and Actions requires strategy.matrix to be an object:
+      # handing it the array directly type-checks at parse time, so the plan job goes green
+      # and the publish job is never instantiated (issue #37, task-12).
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7.0.1

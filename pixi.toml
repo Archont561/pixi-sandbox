@@ -75,6 +75,9 @@ deny = "cargo deny check"
 
 # config / workflows / docs
 lint-actions = "actionlint"
+# actionlint over the workflow `init github` GENERATES — a different artifact from this repo's own
+# CI, and the one that shipped broken in v0.3.1 (issue #37, task-12).
+lint-generated-workflow = "bash scripts/lint-generated-workflow.sh"
 # Keep the checked-in release matrix valid against this binary's embedded helper-tool catalogue.
 lint-sandbox-plan = "cargo run -q -p pixi-sandbox -- plan --config .pixi-sandbox.toml --json"
 lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pixi-sandbox-core/Cargo.toml crates/pixi-sandbox/Cargo.toml crates/pixi-sandbox/pixi.toml crates/pixi-sandbox-git/Cargo.toml deny.toml"
@@ -99,6 +102,7 @@ lint = { depends-on = [
   "lint-rust",
   "deny",
   "lint-actions",
+  "lint-generated-workflow",
   "lint-sandbox-plan",
   "lint-toml",
   "lint-docs",

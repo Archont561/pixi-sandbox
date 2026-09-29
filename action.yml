@@ -5,10 +5,16 @@ branding:
   icon: package
   color: orange
 
-# One implementation, selected by `subpath`. `setup/action.yml` and `publish/action.yml` are
-# the shims that make the public `owner/repo/{setup,publish}@ref` refs work; each forwards its
-# inputs here and pins its own `subpath`. Referencing the repo root keeps the historical
-# `owner/repo@ref` behaviour, which has always been setup.
+# One implementation, selected by `subpath`, and the only file to edit. `setup/action.yml` and
+# `publish/action.yml` make the public `owner/repo/{setup,publish}@ref` refs work, and they are
+# *generated copies* of this file with a different header and `subpath` default — run
+# `bash scripts/render-action-shims.sh` after editing here, or check 7 of
+# scripts/lint-repo-consistency.sh fails. They used to be two-line shims doing
+# `uses: ../action.yml`, which can never work from a remote ref: a relative `uses:` inside a
+# composite action resolves against the caller's workspace, and `../` is rejected by the
+# reference parser outright, so every remote `setup@ref` caller died at job setup (issue #37,
+# task-12). Referencing the repo root keeps the historical `owner/repo@ref` behaviour, which
+# has always been setup.
 #
 # Because the two modes share one `inputs:` block, the publish inputs are declared optional
 # here and checked at run time by the publish steps — a `required: true` input would fail
