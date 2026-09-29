@@ -216,7 +216,10 @@ for env_name in ${ENVS//,/ }; do
   # install — the claim under test is that pixi needs no byte it did not get from the branch,
   # and after the settle that is true with zero exceptions.
   echo "pixi install --frozen --offline -e $env_name (settle: pixi's own first-run markers)"
-  "$TOOLS_BIN/pixi" install --frozen --offline -e "$env_name" ||
+  # pixi resolves the project from the working directory, and this script must not care where
+  # it was invoked from (CI runs it from a checkout that is itself a pixi project — the wrong
+  # one), so every pixi call runs inside the restored project.
+  (cd "$PROJECT" && "$TOOLS_BIN/pixi" install --frozen --offline -e "$env_name") ||
     fail "pixi install --frozen --offline -e $env_name failed: the transport is not self-sufficient"
 
   # Counted as files and on-disk size rather than a checksum walk: the prefix is hundreds of MiB,
@@ -225,7 +228,7 @@ for env_name in ${ENVS//,/ }; do
   before="$(find "$PROJECT/.pixi" -type f | wc -l | tr -d ' '):$(du -sk "$PROJECT/.pixi" | cut -f1)"
 
   echo "pixi install --frozen --offline -e $env_name"
-  "$TOOLS_BIN/pixi" install --frozen --offline -e "$env_name" ||
+  (cd "$PROJECT" && "$TOOLS_BIN/pixi" install --frozen --offline -e "$env_name") ||
     fail "pixi install --frozen --offline -e $env_name failed: the transport is not self-sufficient"
 
   after="$(find "$PROJECT/.pixi" -type f | wc -l | tr -d ' '):$(du -sk "$PROJECT/.pixi" | cut -f1)"

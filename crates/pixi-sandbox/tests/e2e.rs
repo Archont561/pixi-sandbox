@@ -417,6 +417,23 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
     // packed by an older release embeds a pixi-sandbox without --verify-restored, and the gate
     // must pass with a loud notice — failing the release transition would teach operators to
     // ignore the gate. The stub's `doctor --help` echoes its arguments, never naming the flag.
+    //
+    // pixi is replaced with a recording stub first, for a separate reason: the gate must run
+    // `pixi install` inside the restored project, not wherever the gate itself was invoked
+    // from (CI invokes it from a checkout that is itself a pixi project — the wrong one). The
+    // stub writes its working directory to a marker so the assertion below is a fact.
+    let marker = airlock.join("gate-pixi-cwd.txt");
+    let pixi_stub = airlock.join(".pixi/tools/linux-64/pixi");
+    fs::write(
+        &pixi_stub,
+        format!(
+            "#!/bin/sh\npwd > {}\nif [ \"$1\" = \"--version\" ]; then echo \"pixi 0.81.0\"; exit 0; fi\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    make_executable(&pixi_stub);
+
     let degraded = run_gate().output().unwrap();
     let degraded_log = String::from_utf8_lossy(&degraded.stdout);
     assert!(
@@ -426,6 +443,12 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
     assert!(
         degraded_log.contains("predates the per-file oracle"),
         "the degradation must be said out loud, not passed silently:\n{degraded_log}"
+    );
+    let recorded_cwd = fs::read_to_string(&marker).unwrap();
+    assert_eq!(
+        recorded_cwd.trim(),
+        airlock.canonicalize().unwrap().to_str().unwrap(),
+        "pixi install must run inside the restored project, not the gate's invocation cwd"
     );
 
     // The fixture's pixi-sandbox is a script stub that cannot run doctor. Restore verified it
