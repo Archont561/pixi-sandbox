@@ -1,0 +1,58 @@
+name: task-12 proof
+
+# TEMPORARY. Proof for task-12 / issue #37, deleted once the verdict is recorded on the task.
+#
+# It is the generated publish workflow with the force-push removed: a plan job, then a matrix
+# job built from `fromJSON(...).include`. It fails on the v0.3.1 code in two separate ways and
+# can only go green if both fixes are real:
+#
+#   1. `uses: Archont561/pixi-sandbox/setup@<sha>` must resolve. With the old shim
+#      (`uses: ../action.yml`) the job died during setup, before any step ran.
+#   2. the `publish` job must be INSTANTIATED. With `matrix:` fed the include array directly,
+#      Actions creates no job at all and the run is still green — so "publish ran" is the
+#      assertion, and the step below prints the matrix entry to make it visible.
+#
+# The publish action is invoked in `subpath: setup` mode: that resolves and runs the
+# `publish/action.yml` file itself (the thing that was broken) without packing or force-pushing
+# a branch.
+
+on:
+  push:
+    branches: [arena/01a0ef3a-pixi-sandbox]
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: sandbox
+        # stale-ref-allowed: the commit under proof, not a third-party pin
+        uses: Archont561/pixi-sandbox/setup@27358871b6a32f10d1c6574fffaba56498de323b
+      - id: plan
+        shell: bash
+        run: echo "matrix=$(pixi-sandbox plan --config .pixi-sandbox.toml --json)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: sandbox
+        # stale-ref-allowed: the commit under proof, not a third-party pin
+        uses: Archont561/pixi-sandbox/publish@27358871b6a32f10d1c6574fffaba56498de323b
+        with:
+          subpath: setup
+      - shell: bash
+        run: |
+          echo "publish job instantiated for ${{ matrix.bundle }} / ${{ matrix.platform }} -> ${{ matrix.branch }}"
+          test -n "${{ matrix.runner }}"
+          "${{ steps.sandbox.outputs.path }}" --version
