@@ -74,8 +74,11 @@ cd /path/to/project
 
 What it does, in order: verifies the tools, stages a copy of each pack under a work dir on
 the project's filesystem, unpacks with the bundled `pixi-unpack`, moves each environment to
-`.pixi/envs/<env>`, writes pixi's `conda-meta` markers, then materialises the vendored crates
-and wires `.cargo/config.toml` to them with a **relative** path.
+`.pixi/envs/<env>`, writes pixi's `conda-meta` markers, materialises the vendored crates and
+wires `.cargo/config.toml` to them with a **relative** path, then writes `.pixi/sandbox-env.sh`.
+That generated script is self-sufficient: it puts the bundled tools **and** every restored
+environment's `bin/` on `PATH` by itself, using the environment names the manifest declared —
+sourcing it is the only PATH setup step 4 needs, whatever the environments happen to be named.
 
 Two things follow from that staging. Before each environment is moved into place, every text file
 in it has the staging path rewritten to the final one, so nothing in `.pixi/envs/<env>` points
@@ -98,7 +101,7 @@ small volume.
 </div>
 
 ```bash
-source .pixi/sandbox-env.sh          # bundled tools on PATH, CARGO_NET_OFFLINE=true
+source .pixi/sandbox-env.sh          # bundled tools *and* every restored env's bin/ on PATH, CARGO_NET_OFFLINE=true
 pixi install --frozen --offline      # must be a no-op, must not touch the network
 cargo build --offline                # uses the vendored crates only
 ```

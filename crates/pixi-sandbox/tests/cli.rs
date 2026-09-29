@@ -686,6 +686,53 @@ fn restore_verify_only_checks_the_fixture_without_writing_a_project() {
     );
 }
 
+/// Task-5: `restore.mdx` step 4 tells the operator to `source .pixi/sandbox-env.sh` and then
+/// run restored tools directly. That contract only holds if sourcing the generated script alone
+/// — no hand-added `envs/<name>/bin` export — puts the restored environment's binaries on PATH.
+/// The fixture's `demo` environment ships a real `bin/freetype-config` executable (see
+/// `fixture_doctor_publish_and_restore_is_the_complete_offline_proof` in `tests/e2e.rs`), so it
+/// stands in for `cargo`/`bun`/`rustc` here. It is picked over the fixture's other executable,
+/// `lzmainfo`, because a real `xz-utils` install can already put a system `lzmainfo` on PATH,
+/// which would let this test pass for the wrong reason.
+#[cfg(unix)]
+#[test]
+fn sourcing_the_generated_sandbox_env_resolves_restored_environment_binaries() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    bin()
+        .args([
+            "restore",
+            "--branch-location",
+            fixture_transport().to_str().unwrap(),
+            "--output-path",
+            project.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("restore complete"));
+
+    let expected = project.join(".pixi/envs/demo/bin/freetype-config");
+    assert!(expected.is_file(), "fixture must restore a real binary");
+
+    let output = StdCommand::new("bash")
+        .arg("-c")
+        .arg("source .pixi/sandbox-env.sh && command -v freetype-config")
+        .current_dir(&project)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "freetype-config did not resolve on PATH after sourcing sandbox-env.sh alone: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        expected.to_str().unwrap(),
+    );
+}
+
 #[test]
 fn unpack_verify_only_checks_the_fixture_without_creating_output() {
     let temp = tempfile::tempdir().unwrap();
