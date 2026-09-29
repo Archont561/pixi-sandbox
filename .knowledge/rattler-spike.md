@@ -162,7 +162,7 @@ Any prototype must be measured, not argued: binary size for all five targets, `c
 cold `cargo check` time, restore wall clock, peak disk, and a byte-for-byte comparison of the
 installed prefix against a `pixi-unpack` restore of the same transport.
 
-### Proposed decision text (not yet recorded)
+### Decision text — recorded as D12 in `decisions.md`
 
 > **D12 — The conda pack/unpack subprocesses stay (rattler is not v2 work yet).**
 > *Decision.* `pixi-pack` and `pixi-unpack` remain external, sha256-pinned static assets driven as
@@ -175,5 +175,5 @@ installed prefix against a `pixi-unpack` restore of the same transport.
 > change category.
 > *What would change it.* The four triggers in `rattler-spike.md` §5.
 
-Recording this in `decisions.md` as D12 is a maintainer call, which is why task-9's AC#2 is a
-separate step from this note.
+Recorded in `decisions.md` as **D12** (backlog task-9 AC#2). The status-quo (option A) stands;
+revisit only on one of the four triggers in §5.

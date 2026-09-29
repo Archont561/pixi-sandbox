@@ -1,0 +1,171 @@
+name: auto-release
+
+# Cut a release on demand. This workflow prepares the release commit — bump the version,
+# refresh Cargo.lock, regenerate CHANGELOG.md — tags it, and hands the tag to `release.yml`,
+# which builds the five static tier-1 binaries + SHA256SUMS and publishes the GitHub Release.
+#
+# It is deliberately split from `release.yml` (which stays the pure build-and-publish half) so
+# the version-bump policy lives in one reviewable place. All the file surgery is `scripts/
+# prepare-release.sh` (`pixi run prepare-release`), so the exact bump CI performs is the one a
+# maintainer can run and review locally.
+#
+# Trigger it remotely — no local checkout required:
+#   gh workflow run auto-release.yml                       # auto bump from conventional commits
+#   gh workflow run auto-release.yml -f bump=minor
+#   gh workflow run auto-release.yml -f version=v0.3.0     # explicit version
+#   gh workflow run auto-release.yml -f dry-run=true       # show the diff, change nothing
+# …or the Actions tab "Run workflow" button, or the REST dispatch API. `workflow_call` lets
+# another pipeline cut a release as a step.
+#
+# Why a separate dispatch to release.yml instead of an automatic tag trigger: a tag pushed with
+# GITHUB_TOKEN does not start another workflow (GitHub suppresses that recursion), so we call
+# release.yml explicitly on the new tag. To fully automate on every merge to main instead, add a
+# `push: branches: [main]` trigger here and gate the release step on convco reporting a bump.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Bump level when no explicit version is supplied
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+        default: auto
+      version:
+        description: Explicit version to cut (e.g. v0.3.0); overrides `bump` when set
+        type: string
+        default: ""
+      dry-run:
+        description: Prepare and print the diff but do not commit, tag, or release
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      bump:
+        description: Bump level when no explicit version is supplied
+        required: false
+        type: string
+        default: auto
+      version:
+        description: Explicit version to cut (e.g. v0.3.0); overrides `bump` when set
+        required: false
+        type: string
+        default: ""
+      dry-run:
+        description: Prepare and print the diff but do not commit, tag, or release
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      RELEASE_PUSH_TOKEN:
+        description: >-
+          Token used to push the release commit/tag and dispatch release.yml. Defaults to
+          GITHUB_TOKEN; supply a PAT or GitHub App token when branch protection or required
+          reviews block the built-in token from pushing to main.
+        required: false
+
+# Push the release commit + tag (contents) and dispatch release.yml (actions).
+permissions:
+  contents: write
+  actions: write
+
+# One release at a time; never cancel a release midway.
+concurrency:
+  group: auto-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    name: cut release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout main (full history for convco)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          # convco derives the next version from the whole commit history, so a shallow
+          # checkout would miscount the bump.
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
+
+      - name: Install Pixi (default env → convco, cargo)
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          environments: default
+          cache: true
+
+      - name: Prepare release (bump + changelog + lock)
+        id: prep
+        shell: bash
+        env:
+          # Explicit version wins; otherwise the chosen bump level.
+          SELECTOR: ${{ inputs.version != '' && inputs.version || inputs.bump }}
+        run: |
+          set -euo pipefail
+          VERSION="$(pixi run prepare-release "$SELECTOR" | tail -n1)"
+          case "$VERSION" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::prepare-release did not return a vX.Y.Z version (got '$VERSION')"; exit 1 ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Prepared \`$VERSION\`"
+            echo
+            echo '```'
+            git --no-pager diff --stat
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Refuse to overwrite an existing tag
+        shell: bash
+        env:
+          TAG: ${{ steps.prep.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::tag $TAG already exists on origin — nothing released"
+            exit 1
+          fi
+
+      - name: Dry-run — show diff and stop
+        if: ${{ inputs.dry-run }}
+        shell: bash
+        env:
+          TAG: ${{ steps.prep.outputs.version }}
+        run: |
+          echo "::notice::dry-run: prepared $TAG but not committing, tagging, or releasing"
+          git --no-pager diff
+
+      - name: Commit, tag, and push
+        if: ${{ ! inputs.dry-run }}
+        shell: bash
+        env:
+          TAG: ${{ steps.prep.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Exactly the files prepare-release.sh touches — no accidental staging of build output.
+          git add Cargo.toml Cargo.lock pixi.toml crates/pixi-sandbox/Cargo.toml CHANGELOG.md
+          git commit -m "chore(release): $TAG"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin HEAD:main
+          git push origin "refs/tags/$TAG"
+
+      - name: Dispatch release build for the new tag
+        if: ${{ ! inputs.dry-run }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
+          TAG: ${{ steps.prep.outputs.version }}
+        run: |
+          set -euo pipefail
+          # A GITHUB_TOKEN tag push does not auto-start release.yml, so trigger it on the new tag.
+          gh workflow run release.yml --ref "$TAG" -f version="$TAG"
+          echo "::notice::dispatched release.yml for $TAG"
+          echo "Dispatched **release.yml** for \`$TAG\` — binaries + GitHub Release will follow." >> "$GITHUB_STEP_SUMMARY"

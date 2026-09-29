@@ -88,6 +88,11 @@ lint-commit = "convco check --from-stdin"
 # changelog via convco (conventional commits -> CHANGELOG.md)
 changelog = "convco changelog > CHANGELOG.md"
 changelog-preview = "convco changelog"
+# Resolve the next release version (convco) and stamp Cargo.toml + pixi.toml + internal crate
+# pins + Cargo.lock + CHANGELOG.md. Never commits or tags — that is the `auto-release` workflow's
+# job (or a reviewer's). Optional selector: `pixi run prepare-release auto|major|minor|patch|vX.Y.Z`
+# (default auto).
+prepare-release = "bash scripts/prepare-release.sh"
 # one line for the whole lint gate (rust + utils + docs, all in `default`)
 lint = { depends-on = [
   "fmt-check",

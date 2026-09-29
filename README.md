@@ -58,7 +58,7 @@ so "builds here" and "restores offline there" are tracked separately —
 **Generate publishing and one-command airlock restoration:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Archont561/pixi-sandbox/v0.3.0/scripts/init.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Archont561/pixi-sandbox/main/scripts/init.sh | sh
 # commit .github/workflows/publish-sandbox.yml, .pixi-sandbox.toml, restore.sh, restore.ps1
 
 # after transferring Git history with the sandbox branch into the airlock:
