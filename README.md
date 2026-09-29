@@ -375,6 +375,9 @@ pixi-sandbox tools list [--tools-lock PATH]
 
 - `--output-path` has alias `--path-to-main-repo-code` for backward compat
 - Work dir default `.pixi/.restore-work` (same FS, TMPDIR redirected) — never small `/tmp`
+- `publish --keep N` retains the N most recent snapshots by *rebuilding* the branch (blobless
+  shallow fetch of the kept commits, then one force-push). It bounds what the branch serves,
+  not what the server stores — dropped snapshots are unreferenced until an admin prunes
 
 Docs: https://archont561.github.io/pixi-sandbox/reference/cli/
 

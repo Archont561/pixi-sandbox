@@ -352,8 +352,11 @@ The Rust CLI now implements the flow without a second wire format (original Pyth
 3. **`restore`** verifies every selected byte before writing, materialises tools/environments/
    vendor sources into project-local staging, atomically installs complete prefixes, writes Pixi
    markers, and writes a relative cargo source replacement when requested.
-4. **`publish`**, `doctor`, and `tools list` remain implemented as before; `publish --keep` and
-   `tools update` intentionally report that they are deferred rather than silently pretending to
+4. **`publish`**, `doctor`, and `tools list` remain implemented as before. `publish --keep N`
+   rotates by rebuilding: the N-1 kept snapshots are fetched shallow and blobless, re-committed
+   as a fresh chain, and the new snapshot is force-pushed on top — so the branch serves at most
+   N snapshots and the dropped ones are unreferenced (never appended, never assumed pruned).
+   `tools update` intentionally reports that it is deferred rather than silently pretending to
    work.
 5. **`plan`** parses the strict schema-1 `.pixi-sandbox.toml`, rejects unsafe/implicit runner
    selection, and emits a stable GitHub Actions `include` matrix for exactly the reviewed bundles.

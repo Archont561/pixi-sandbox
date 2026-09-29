@@ -3,8 +3,8 @@
 //! `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, and `tools list` share one
 //! manifest/config contract. `unpack` is the single-environment primitive that `restore` drives once per env,
 //! and is also the escape hatch for a payload that arrived outside the branch flow.
-//! `.knowledge/design.md` specifies every verb; `publish --keep` (§2) and `tools update` (§10)
-//! are intentionally the only deferred CLI operations.
+//! `.knowledge/design.md` specifies every verb; `tools update` (§10) is intentionally the only
+//! deferred CLI operation.
 
 mod doctor;
 mod init;
