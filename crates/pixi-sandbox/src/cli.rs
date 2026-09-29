@@ -261,6 +261,28 @@ pub struct PlanArgs {
     /// Emit a compact GitHub Actions matrix object on stdout.
     #[arg(long)]
     pub json: bool,
+
+    /// Plan one ad-hoc target instead of the reviewed bundles, for a manual dispatch. Passing
+    /// this switches off config mode; the runner label and helper-pin coverage are still
+    /// resolved and validated exactly as they are for a reviewed bundle.
+    #[arg(long, value_name = "NAME", value_delimiter = ',')]
+    pub envs: Option<Vec<String>>,
+
+    /// Platform for the ad-hoc target. Only valid together with `--envs`.
+    #[arg(long, requires = "envs")]
+    pub platform: Option<String>,
+
+    /// Bundle name for the ad-hoc target, which becomes part of the branch name.
+    #[arg(long, requires = "envs", default_value = "custom")]
+    pub bundle: String,
+
+    /// Branch prefix for the ad-hoc target.
+    #[arg(long, requires = "envs", default_value = "sandbox")]
+    pub branch_prefix: String,
+
+    /// Cargo-vendor policy for the ad-hoc target.
+    #[arg(long, requires = "envs", default_value_t = true)]
+    pub cargo_vendor: bool,
 }
 
 #[derive(Debug, Args)]

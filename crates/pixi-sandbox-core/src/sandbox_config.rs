@@ -26,8 +26,10 @@ pub struct SandboxConfig {
     pub branch_prefix: String,
     #[serde(default = "default_cargo_vendor")]
     pub cargo_vendor: bool,
-    /// Optional platform → single GitHub runner label overrides. The defaults cover the three
-    /// common targets; nonstandard/arm runners must be named explicitly.
+    /// Optional platform → single GitHub runner label overrides. The defaults cover the four
+    /// platforms GitHub hosts for every plan; a platform with no safe hosted default
+    /// (`linux-aarch64`, for one) must be named explicitly, so a typo cannot dispatch a job to a
+    /// runner that does not exist.
     #[serde(default)]
     pub runners: BTreeMap<String, String>,
     #[serde(default, rename = "bundle")]
@@ -72,6 +74,40 @@ pub struct PublishTarget {
     pub runner: String,
     pub branch: String,
     pub cargo_vendor: bool,
+}
+
+/// Bundle name used for a one-target override plan, matching the historical workflow label.
+pub const OVERRIDE_BUNDLE: &str = "custom";
+
+/// A one-target plan for a manual dispatch, built from the *same* runner map and the same
+/// validation as the reviewed config path.
+///
+/// This exists so the platform → runner table lives in exactly one place. The workflow used to
+/// repeat it as an inline `case` statement in each of its two matrix steps, which meant a
+/// platform could be mapped one way in `.pixi-sandbox.toml` planning and another way the moment
+/// someone dispatched by hand — the precise drift D11 exists to prevent. Composing a synthetic
+/// config and running the normal [`SandboxConfig::plan`] means an override cannot skip the
+/// runner-label check or the embedded helper-coverage check.
+pub fn plan_override(
+    bundle: &str,
+    environments: &[String],
+    platform: &str,
+    branch_prefix: &str,
+    cargo_vendor: bool,
+) -> Result<PublishPlan> {
+    SandboxConfig {
+        schema: CONFIG_SCHEMA,
+        branch_prefix: branch_prefix.to_string(),
+        cargo_vendor,
+        runners: BTreeMap::new(),
+        bundles: vec![Bundle {
+            name: bundle.to_string(),
+            environments: environments.to_vec(),
+            platforms: vec![platform.to_string()],
+            cargo_vendor: None,
+        }],
+    }
+    .plan()
 }
 
 impl SandboxConfig {
