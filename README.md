@@ -58,7 +58,7 @@ so "builds here" and "restores offline there" are tracked separately —
 **Generate publishing and one-command airlock restoration:**
 
 ```bash
-curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.0/init.sh | sh
+curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.0/install.sh | sh
 # commit .github/workflows/publish-sandbox.yml, .pixi-sandbox.toml, restore.sh, restore.ps1
 
 # after transferring Git history with the sandbox branch into the airlock:
@@ -430,7 +430,7 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + SHA256SUMS + GitHub Release |
 | `.github/workflows/docs.yml` | Docs → GitHub Pages |
 | `.github/dependabot.yml` | Dependabot: cargo, gha, npm (convco prefixes) |
-| `scripts/init.sh` | Checksum-verified release download + `pixi-sandbox init github` scaffold |
+| `templates/install.sh` | Template for the `install.sh` release asset; `scripts/render-install.sh` stamps the tag |
 | `scripts/restore.sh` | One-liner offline reconstruction with PATH aliases; branch derived from `.pixi-sandbox.toml` |
 | `.pixi-sandbox.toml` | Reviewed publish plan: bundles, platforms, branch prefix, runner overrides |
 | `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals, opencode via `setup-opencode` |

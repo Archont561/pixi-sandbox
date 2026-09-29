@@ -12,7 +12,7 @@ name: auto-release
 # Trigger it remotely — no local checkout required:
 #   gh workflow run auto-release.yml                       # auto bump from conventional commits
 #   gh workflow run auto-release.yml -f bump=minor
-#   gh workflow run auto-release.yml -f version=v0.3.0     # explicit version
+#   gh workflow run auto-release.yml -f version=v1.2.3     # explicit version
 #   gh workflow run auto-release.yml -f dry-run=true       # show the diff, change nothing
 # …or the Actions tab "Run workflow" button, or the REST dispatch API. `workflow_call` lets
 # another pipeline cut a release as a step.
@@ -35,7 +35,7 @@ on:
           - major
         default: auto
       version:
-        description: Explicit version to cut (e.g. v0.3.0); overrides `bump` when set
+        description: Explicit version to cut (e.g. v1.2.3); overrides `bump` when set
         type: string
         default: ""
       dry-run:
@@ -50,7 +50,7 @@ on:
         type: string
         default: auto
       version:
-        description: Explicit version to cut (e.g. v0.3.0); overrides `bump` when set
+        description: Explicit version to cut (e.g. v1.2.3); overrides `bump` when set
         required: false
         type: string
         default: ""
@@ -150,8 +150,35 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Exactly the files prepare-release.sh touches — no accidental staging of build output.
-          git add Cargo.toml Cargo.lock pixi.toml crates/pixi-sandbox/Cargo.toml CHANGELOG.md
+          # Stage what prepare-release.sh reported it changed, not a hand-kept list. The list used
+          # to be literal here, and it was correct right up until the repin step started rewriting
+          # documentation: `git add` would have staged the manifests and dropped every one of the
+          # ~90 doc references, producing a release commit that contradicts itself. Because the
+          # commit is pushed with the GITHUB_TOKEN it starts no CI run, so that contradiction would
+          # have landed on main without a single red check. Derived from the working tree instead:
+          # a file the script forgot to record is still a file the script should not have touched,
+          # and `lint-repo-consistency` is the backstop for that.
+          if [ ! -f .release-touched ]; then
+            echo "::error::prepare-release.sh did not write .release-touched — refusing to guess what to stage" >&2
+            exit 1
+          fi
+          while IFS= read -r f; do
+            [ -n "$f" ] && git add -- "$f"
+          done <.release-touched
+          # The list is a report, not a licence: anything the run left modified but failed to
+          # record would otherwise go uncommitted and be lost on the next checkout.
+          #
+          # `git diff --name-only`, not `git status --porcelain` or `git diff-index HEAD`. Both of
+          # those report *staged* changes as well, so run after the `git add` they name every file
+          # just staged and the guard fires unconditionally — it looked correct and rejected every
+          # release. Worktree-against-index is the question actually being asked: what is modified
+          # and not accounted for.
+          unaccounted="$(git diff --name-only | LC_ALL=C sort)"
+          if [ -n "$unaccounted" ]; then
+            echo "::error::modified files missing from .release-touched:" >&2
+            printf '%s\n' "$unaccounted" >&2
+            exit 1
+          fi
           git commit -m "chore(release): $TAG"
           git tag -a "$TAG" -m "$TAG"
           git push origin HEAD:main

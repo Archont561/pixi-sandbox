@@ -18,9 +18,15 @@
 # 3. task-2 follow-up — every hardcoded `vX.Y.Z` in the user-facing docs is the version the
 #    manifests declare. A release commit bumps `Cargo.toml` but cannot rewrite the ~100 doc
 #    references, so the two drift silently and a reader following the docs installs the previous
-#    release. This is the check that makes the drift a CI failure instead of a support issue.
+#    release. The check and its fix (`scripts/release-refs.sh`, called by `prepare-release.sh`) share
+#    one definition of "our reference", so a release leaves `main` green instead of merely making
+#    the drift visible.
 # 4. every third-party `uses:` is a full commit SHA with a trailing release label, so a moved tag
 #    cannot change what CI runs. actionlint checks workflow syntax, not what a `uses:` resolves to.
+# 5. the `install.sh` release asset is rendered from `templates/install.sh` at the tag, so a published
+#    one-liner cannot default to a version other than its own (task-2).
+# 6. no workflow pins a literal `vX.Y.Z` release tag, so no proof silently keeps running against
+#    the previous release after a cut.
 
 set -euo pipefail
 
@@ -107,55 +113,18 @@ grep -qE "win-64.*[^a-z]bun([^a-z]|$).*[^A-Za-z]D11([^0-9]|$)" "$README" ||
 
 # ---------------------------------------------------------------- 3. version references
 
-# The declared version, from the same anchored substitution prepare-release.sh writes.
-current="$(
-  sed -n 's/^version = "\([^"]*\)".*/\1/p' "$CARGO" | sed 1q
-)"
-if [ -z "$current" ]; then
-  fail "$CARGO has no parsable top-level version — cannot check the doc references (task-2)"
-else
-  current="v$current"
-  # Only OUR tags. A third-party pin on the same line (`prefix-dev/setup-pixi@v0.10.2`,
-  # `actions/checkout@v7.0.1`) is someone else's release and must never be rewritten or failed:
-  # the repository is deliberately not the authority on `setup-pixi`'s version. So a line counts
-  # only when it names this project — an `Archont561/pixi-sandbox...@vX.Y.Z` ref, a
-  # `releases/download/vX.Y.Z/` URL, or a bare `version: vX.Y.Z` input. Everything else is
-  # skipped, which is also why this check cannot be a blind `grep v[0-9]`.
-  #
-  # A reference that must stay on an older release (a deliberate upgrade walkthrough, a
-  # regression test) opts out with `stale-ref-allowed` on the line.
-  stale_versions="$(
-    find . -type f \( -name '*.md' -o -name '*.mdx' \) \
-      -not -path './.git/*' \
-      -not -path './.knowledge/*' \
-      -not -path './node_modules/*' \
-      -not -path './docs/node_modules/*' \
-      -not -name 'CHANGELOG.md' \
-      -not -path './backlog/*' \
-      -print0 |
-      xargs -0 awk -v cur="$current" -v root="Archont561/pixi-sandbox" '
-        FNR == 1 { prev = "" }
-        {
-          if ($0 !~ /stale-ref-allowed/ && prev !~ /stale-ref-allowed/ &&
-              (index($0, root) || $0 ~ /releases\/download\/v[0-9]/ || $0 ~ /version: v[0-9]/ ||
-               $0 ~ /PIXI_SANDBOX_VERSION=v[0-9]/ || $0 ~ /`uses: @v[0-9]/)) {
-            line = $0
-            # Every vX.Y.Z on a project line must be the declared one.
-            while (match(line, /v[0-9]+\.[0-9]+\.[0-9]+/)) {
-              tok = substr(line, RSTART, RLENGTH)
-              if (tok != cur) printf "%s:%d: pins %s, manifests declare %s\n", FILENAME, FNR, tok, cur
-              line = substr(line, RSTART + RLENGTH)
-            }
-          }
-          prev = $0
-        }
-      ' || true
-  )"
-  if [ -n "$stale_versions" ]; then
-    fail "documentation pins a version the manifests do not declare (task-2):"
-    printf '  %s\n' "$stale_versions" >&2
-    echo "  repin to $current, or mark the line stale-ref-allowed if it must name an older release" >&2
-  fi
+# Delegated to scripts/release-refs.sh, which is also what prepare-release.sh calls to FIX the
+# drift. That sharing is the point: while the predicate lived only here, the release bumped the
+# manifests and left ~90 documentation references behind, and this check could report the problem
+# but nothing could fix it — every release was a guaranteed red build until someone hand-edited the
+# docs. One definition, used by the reporter and the fixer, so they cannot disagree about which
+# references are ours (and about the third-party pins that must never be touched).
+stale_versions="$(bash scripts/release-refs.sh scan || true)"
+if [ -n "$stale_versions" ]; then
+  current="v$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "$CARGO" | sed 1q)"
+  fail "documentation pins a version the manifests do not declare (task-2):"
+  printf '  %s\n' "$stale_versions" >&2
+  echo "  fix by running 'bash scripts/prepare-release.sh $current', or mark the line stale-ref-allowed if it must name an older release" >&2
 fi
 
 # ---------------------------------------------------------------- 4. action pins
@@ -199,10 +168,83 @@ if [ -n "$unpinned" ]; then
   echo "  resolve the tag with 'gh api repos/OWNER/REPO/git/ref/tags/TAG', dereference it if it is an annotated tag, and pin it as owner/repo@<sha> # vX.Y.Z" >&2
 fi
 
+# ---------------------------------------------------------------- 5. install one-liner
+
+# The `install.sh` release asset is RENDERED from templates/install.sh at the tag, not copied from
+# a committed script. A committed copy carries a VERSION default that only the release knows the
+# right value for, so it lags: the v0.3.0 asset shipped a v0.2.0 default and every user who followed
+# the documented one-liner silently got the previous binaries (task-2). Both halves are load-bearing,
+# so both are checked here — the render is reproducible and the template still carries a placeholder.
+if [ ! -f templates/install.sh ]; then
+  fail "templates/install.sh is missing — release.yml renders the install.sh asset from it"
+else
+  # The template must still carry a placeholder, and rendering the DECLARED version must produce a
+  # script whose only difference is that one substitution. Anything else means the template and
+  # scripts/render-install.sh disagree — the drift this check exists to make impossible.
+  if ! grep -q '__VERSION__' templates/install.sh; then
+    fail "templates/install.sh has no __VERSION__ placeholder — the release would ship a hardcoded default (task-2)"
+  fi
+  rendered="$(mktemp)"
+  trap 'rm -f "$rendered"' EXIT
+  declared="v$(grep -m1 '^version = ' "$CARGO" | sed 's/.*"\(.*\)"/\1/')"
+  if ! bash scripts/render-install.sh "$declared" "$rendered" 2>/dev/null; then
+    fail "scripts/render-install.sh failed on templates/install.sh — the install one-liner asset cannot be built"
+  elif ! grep -q "^VERSION=\${PIXI_SANDBOX_VERSION:-$declared}$" "$rendered"; then
+    fail "rendering templates/install.sh does not install the declared release ($declared)"
+  fi
+  # Everything except the VERSION line must survive the render untouched.
+  if ! diff -q <(grep -v '^VERSION=' templates/install.sh) <(grep -v '^VERSION=' "$rendered") >/dev/null; then
+    fail "rendering templates/install.sh changes more than the VERSION line — the template and scripts/render-install.sh disagree"
+  fi
+fi
+# A committed, ready-to-run install.sh anywhere outside templates/ is the drift this prevents.
+if [ -e scripts/install.sh ] || [ -e init.sh ]; then
+  fail "a committed install.sh exists outside templates/ — it would ship a hardcoded VERSION default that lags the release (task-2)"
+fi
+
+# ---------------------------------------------------------------- 6. no hardcoded release tags in CI
+
+# A workflow that names a specific `vX.Y.Z` of ours is stale the moment a release lands, and it
+# fails silently: the job keeps running against old binaries and still reports green. That is the
+# worst failure mode a proof can have, and it is exactly what the airlock workflow's
+# `vars.SANDBOX_RELEASE_VERSION || 'v0.3.0'` did — the weekly proof was exercising the previous
+# release while claiming to prove the current one. Derive it (from the checkout, or from a
+# repository variable a human can set without editing YAML) instead.
+#
+# Scoped to a `version:` value, so an example in a description or a comment is not a false
+# positive; a genuine opt-out is `stale-ref-allowed` on the line.
+pinned_tags="$(
+  find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0 |
+    xargs -0 awk '
+      FNR == 1 { prev = "" }
+      {
+        # A `version:` key, not any line containing the word — a `description: Explicit version to
+        # cut (e.g. v1.2.3)` is help text, not a pin. Then any tag on that line counts, because the
+        # real shape is `version: ${{ vars.X || '"'"'v0.3.0'"'"' }}`: the tag is separated from the
+        # key by an expression, so a pattern anchored at the quote matched nothing and the check
+        # passed on exactly the line it was written for.
+        if ($0 !~ /stale-ref-allowed/ && prev !~ /stale-ref-allowed/ &&
+            $0 ~ /(^|[[:space:]])version:[[:space:]]/ && $0 !~ /description:/) {
+          line = $0
+          while (match(line, /v[0-9]+\.[0-9]+\.[0-9]+/)) {
+            printf "%s:%d: pins the literal %s\n", FILENAME, FNR, substr(line, RSTART, RLENGTH)
+            line = substr(line, RSTART + RLENGTH)
+          }
+        }
+        prev = $0
+      }
+    ' || true
+)"
+if [ -n "$pinned_tags" ]; then
+  fail "a workflow pins a literal release tag, so it will silently prove a stale release after the next cut:"
+  printf '  %s\n' "$pinned_tags" >&2
+  echo "  read the tag from the checked-out Cargo.toml, or take it from a repository variable" >&2
+fi
+
 # ----------------------------------------------------------------
 
 if [ "$failures" -gt 0 ]; then
   printf 'repo consistency: %d check(s) failed\n' "$failures" >&2
   exit 1
 fi
-echo "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable"
+echo "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; the install one-liner is rendered from templates/; no workflow pins a literal release tag"

@@ -203,6 +203,64 @@ jobs:
 
       # A real airlock begins with a checksum-verified released binary, so that is what the
       # proof uses — both to drive the pack and as the self-bootstrap embedded in the transport.
+      #
+      # The tag is derived, not hardcoded. A literal here (`'v0.3.0'`) is stale the moment a release
+      # lands and nobody notices: the proof keeps exercising old binaries and reports green, which
+      # is the worst failure mode a proof can have. It is read from the checked-out Cargo.toml, the
+      # same declaration `prepare-release.sh` stamps, so the two cannot disagree.
+      #
+      # It still cannot be `latest` and it still must be a real tag: `latest` costs an
+      # unauthenticated api.github.com call that hosted runners can share into a rate limit — which
+      # is how the first osx-arm64 proof died, in the resolution step rather than in anything about
+      # macOS. Deriving from Cargo.toml is free and reproducible. SANDBOX_RELEASE_VERSION overrides
+      # it when a specific release should be exercised.
+      - name: Resolve the release tag to prove
+        id: tag
+        shell: bash
+        env:
+          # The override stays a repository *variable*, which is what it was before: that is
+          # settable without editing a workflow, and silently moving it to an env var would break
+          # every existing setting. The step still needs the declared value from the checkout, so
+          # the two are combined here rather than in the expression.
+          OVERRIDE: ${{ vars.SANDBOX_RELEASE_VERSION }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          declared="v$(sed -n 's/^version = "\([^"]*\)".*/\1/p' project/Cargo.toml | sed 1q)"
+          if [ -z "$declared" ] || [ "$declared" = "v" ]; then
+            echo "::error::could not read the declared version from project/Cargo.toml" >&2
+            exit 1
+          fi
+
+          # An explicit override is a request, not a guess: honour it and let a 404 be a real error.
+          if [ -n "$OVERRIDE" ]; then
+            echo "resolved=$OVERRIDE" >>"$GITHUB_OUTPUT"
+            echo "proving $OVERRIDE (SANDBOX_RELEASE_VERSION override)" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # `auto-release` pushes the version bump to main BEFORE it dispatches the release build,
+          # so for as long as that build takes the checkout declares a tag whose assets do not
+          # exist yet. Resolving to it would 404 and fail the proof for a reason that has nothing
+          # to do with the airlock. So confirm the tag against the releases API — one authenticated
+          # call, which the job token keeps clear of the shared rate limit that killed the first
+          # osx-arm64 proof — and fall back to the newest release that IS published.
+          published() { gh api "repos/$REPO/releases/tags/$1" --jq '.tag_name' 2>/dev/null || true; }
+          latest() { gh api "repos/$REPO/releases/latest" --jq '.tag_name' 2>/dev/null || true; }
+
+          resolved="$(published "$declared")"
+          if [ -z "$resolved" ]; then
+            resolved="$(latest)"
+            if [ -z "$resolved" ]; then
+              echo "::error::could not reach the releases API for $REPO" >&2
+              exit 1
+            fi
+            echo "::notice::$declared is declared but not published yet (mid-release?); proving the newest published release $resolved" >&2
+          fi
+          echo "resolved=$resolved" >>"$GITHUB_OUTPUT"
+          echo "proving $resolved (declared $declared)" >>"$GITHUB_STEP_SUMMARY"
+
       - name: Install the released pixi-sandbox (checksum-verified)
         id: sandbox
         # Local `uses:` must name the directory holding action.yml, and the sub-actions
@@ -212,12 +270,7 @@ jobs:
         uses: ./project
         with:
           subpath: setup
-          # `latest` costs an unauthenticated api.github.com call, and hosted runners share
-          # egress IPs, so that call can come back rate-limited — which is how the first
-          # osx-arm64 proof died, in the resolution step rather than in anything about macOS.
-          # A pinned tag is also what an airlock actually starts from, so the proof now models
-          # that; SANDBOX_RELEASE_VERSION overrides it when a newer release should be exercised.
-          version: ${{ vars.SANDBOX_RELEASE_VERSION || 'v0.3.0' }}
+          version: ${{ steps.tag.outputs.resolved }}
           target: auto
           add-to-path: false
           # Belt and braces: the job token lifts the API rate limit for any path that still

@@ -12,12 +12,18 @@
 # What it does (and deliberately does NOT do):
 #   * resolves the target version with convco (respecting .versionrc / preMajor),
 #   * rewrites the single top-level `version = "…"` in Cargo.toml and pixi.toml,
+#   * repins every documented reference to our own release (scripts/release-refs.sh),
 #   * regenerates CHANGELOG.md from the conventional-commit history (convco changelog).
 # It never commits, tags, or pushes — that is the release workflow's job, so a human or
 # a dry-run can review the diff first. The only value on stdout is `vX.Y.Z`; every log
 # line goes to stderr so callers can capture the version with a plain command substitution:
 #
 #   VERSION="$(bash scripts/prepare-release.sh auto)"
+#
+# The list of files it changed is written to the path in $RELEASE_TOUCHED_FILE (default
+# .release-touched), one per line, because the release workflow has to `git add` exactly those.
+# A hand-kept list in the workflow is a second place to forget: when the repin was added it would
+# have staged the manifests and silently dropped the ~90 documentation fixes it had just made.
 #
 # Requires convco on PATH (it is in the `default` pixi environment: `pixi run …`).
 
@@ -107,11 +113,36 @@ if command -v cargo >/dev/null 2>&1 && [ -f Cargo.lock ]; then
     log "  warning: could not refresh Cargo.lock automatically — check it before releasing"
 fi
 
+# Move every reference to OUR release in the published docs to the new tag. Without this the
+# release commit bumps the manifests and lands a `main` that contradicts itself: `lint-repo-consistency`
+# fails on ~90 references still naming the previous release, and a reader following the install
+# one-liner gets the previous binaries. The lint already failed on that, which turned a release
+# into a red build; this makes the release *be* green instead of merely being detectable.
+#
+# `release-refs.sh` owns the predicate, so the check and this fix cannot disagree about which
+# references are ours — that shared definition is the whole point. Third-party pins on the same
+# line (`actions/checkout@v7.0.1`) are never touched.
+log "→ repinning the documented release references to $TAG"
+bash scripts/release-refs.sh rewrite "v$CURRENT" "$TAG"
+
 # convco owns the changelog format (.versionrc). The changelog is generated *before* the tag
 # exists, so name the pending section after the version being cut (`--unreleased X.Y.Z` titles it
 # with that version) instead of leaving today's commits under a generic "Unreleased".
 log "→ regenerating CHANGELOG.md (convco changelog --unreleased $SEMVER)"
 convco changelog --unreleased "$SEMVER" >CHANGELOG.md
+
+# Report exactly what this run changed, so the release workflow can stage it without keeping its
+# own list. Derived from the working tree rather than from a hard-coded manifest of "the files this
+# script is supposed to touch" — that manifest was correct right up until the repin above added
+# eleven more files to the set, at which point `git add` would have staged the manifests and
+# quietly dropped every documentation fix, producing a release commit that is internally
+# inconsistent and, because the release commit is pushed with the GITHUB_TOKEN, not even a red CI
+# run to notice.
+TOUCHED_FILE="${RELEASE_TOUCHED_FILE:-.release-touched}"
+git status --porcelain --untracked-files=no |
+  awk '{ sub(/^.../, "", $0); print }' |
+  LC_ALL=C sort >"$TOUCHED_FILE"
+log "  $(wc -l <"$TOUCHED_FILE" | tr -d ' ') file(s) recorded in $TOUCHED_FILE"
 
 log "→ prepared release $TAG"
 printf '%s\n' "$TAG"
