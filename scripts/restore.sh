@@ -14,7 +14,9 @@
 #
 # The branch name is never guessed: it is read from the same reviewed publish plan the
 # publisher uses, so a config change (new bundle, renamed prefix) reaches this script for
-# free. After restore, sources .pixi/sandbox-env.sh and adds the default env to PATH.
+# free. After restore, sources the generated .pixi/sandbox-env.sh, which is self-sufficient:
+# it puts the bundled tools *and* every restored environment's bin/ on PATH by itself, so no
+# environment name is hardcoded here (task-5).
 
 set -euo pipefail
 
@@ -231,16 +233,24 @@ fi
 echo "→ cleanup worktree"
 git worktree remove "$WORKTREE" --force || rm -rf "$WORKTREE"
 
-# Wire PATH aliases like setup-pixi
+# sandbox-env.sh is self-sufficient (task-5): it already wires the bundled tools *and* every
+# restored environment's bin/ onto PATH, using the environment names from the manifest that
+# `restore` just consulted. No env name is hardcoded here, so this works for a bundle whose
+# environment is not called `default`.
 if [ -f "$OUTPUT/.pixi/sandbox-env.sh" ]; then
-  OUTPUT_ABS="$(cd -- "$OUTPUT" && pwd)"
   echo "→ sourcing $OUTPUT/.pixi/sandbox-env.sh"
+  PATH_BEFORE="$PATH"
   # shellcheck disable=SC1090,SC1091
   source "$OUTPUT/.pixi/sandbox-env.sh"
-  export PATH="$OUTPUT_ABS/.pixi/envs/default/bin:$PATH"
-  echo "PATH now includes:"
-  echo "  $OUTPUT_ABS/.pixi/tools/$PLATFORM"
-  echo "  $OUTPUT_ABS/.pixi/envs/default/bin"
+  echo "PATH gained:"
+  case "$PATH" in
+    "$PATH_BEFORE") echo "  (nothing — sandbox-env.sh did not add any entries)" ;;
+    *"$PATH_BEFORE")
+      added="${PATH%"$PATH_BEFORE"}"
+      printf '%s\n' "${added%:}" | tr ':' '\n' | sed 's/^/  /'
+      ;;
+    *) echo "  (PATH was reordered by sandbox-env.sh; see \$PATH)" ;;
+  esac
   echo "  pixi() function → bundled pixi"
   echo "Try: pixi --version; cargo --version; cargo check --offline"
 else
