@@ -1,11 +1,11 @@
 ---
 id: TASK-1
 title: Prove osx-arm64 airlock restore and publish a macOS bundle
-status: In Progress
+status: Done
 assignee:
   - '@agent'
 created_date: '2026-09-28 22:05'
-updated_date: '2026-09-29 15:06'
+updated_date: '2026-09-29 16:05'
 labels:
   - platform
   - sandbox
@@ -27,7 +27,7 @@ pixi.toml declares osx-arm64 but .pixi-sandbox.toml bundles only linux-64, so ma
 <!-- AC:BEGIN -->
 - [x] #1 A native macOS runner restores a packed transport end-to-end offline: doctor --verify passes, restore succeeds, pixi install --frozen --offline is a no-op, cargo check --offline builds against the vendored tree
 - [x] #2 .pixi-sandbox.toml declares the developer bundle for osx-arm64 and pixi run lint-sandbox-plan stays green
-- [ ] #3 A sandbox/developer-osx-arm64 branch is published and the README platform matrix documents macOS
+- [x] #3 A sandbox/developer-osx-arm64 branch is published and the README platform matrix documents macOS
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -52,4 +52,12 @@ Third proof run 36585225178: airlock osx-arm64 GREEN end to end on macos-14 - re
 Fourth run 36585905417: green on both platforms with Tier A executed. airlock osx-arm64 passed the egress-denied gate on macos-14, sandbox-exec with network-outbound denied, which is the tier that can fail for the reason the project cares about; airlock linux-64 passed the same way for the first time. ci lint, test and coverage green on the same commit. AC1 checked on that evidence. AC3 stays open until sandbox/developer-osx-arm64 actually exists on origin, which publish-sandbox.yml does by itself once this merges, since it plans from the same .pixi-sandbox.toml.
 
 Fifth run 36586594920 exposed a flake in the gate itself, not in macOS: airlock osx-arm64 passed again with Tier A, but airlock linux-64 failed Tier B with an identical file list, 5363 files on both sides, and du drifting 2023048 to 2023052 KiB, one 4 KiB block. The no-op check compared files and on-disk size for exact equality, so pixi rewriting its own bookkeeping across a block boundary reported a healthy transport as broken. Replaced the count with an exact comparison of the sorted file list, which is the load-bearing half since anything fetched arrives as new files, and gave the size a 64 KiB budget that is always printed. Verified against the real restored transport in the sandbox: a new file injected between the two installs is caught, 200 KiB of growth with an unchanged file list is caught, and an untouched run passes with 0 KiB drift.
+
+Merged as 2d26683. ci green on the merge commit, then publish-sandbox planned both targets from the same .pixi-sandbox.toml and both jobs succeeded: developer linux-64 and developer osx-arm64. sandbox/developer-osx-arm64 now exists on origin at 90c17f7, sandbox snapshot 2026-09-29T15:57:04Z, default, osx-arm64, vendored crates, schema 2. Inspected through the API rather than cloned, the branch root carries only AGENTS.md and README.md plus .pixi-sandbox with envs, tools/osx-arm64 only, vendor, and a 2.08 MB manifest. Schema 2 means the published transport does carry the per-file oracle: the packer is built from source by the publish workflow, so only the airlock proof, which starts from the released v0.3.0 binary by design, reports the D13 notice. AC3 checked, task done.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+osx-arm64 is proven and published. The PR that declared the platform was itself the D11 proof: airlock.yml plans from .pixi-sandbox.toml and fans the matrix onto macos-14, where the transport was packed, published, fetched, byte-verified, restored and gated with egress denied via sandbox-exec. Getting there required four fixes that a linux-only, Tier-A-skipping CI had been hiding: an empty array expanded under set -u, fatal on the bash 3.2 macOS runners ship; a rate-limited releases API failing silently through a pipefail pipeline; BLOCK_NETWORK inverted, so the authoritative egress-denied tier had never run on any trigger that fires; and a no-op gate that failed on one 4 KiB block of allocator noise. Merged as 2d26683, and publish-sandbox created sandbox/developer-osx-arm64 at 90c17f7, schema 2, alongside the linux-64 branch.
+<!-- SECTION:FINAL_SUMMARY:END -->
