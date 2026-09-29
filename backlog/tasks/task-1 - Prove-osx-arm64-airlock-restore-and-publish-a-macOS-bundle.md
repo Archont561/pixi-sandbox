@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@agent'
 created_date: '2026-09-28 22:05'
-updated_date: '2026-09-29 14:52'
+updated_date: '2026-09-29 14:57'
 labels:
   - platform
   - sandbox
@@ -25,7 +25,7 @@ pixi.toml declares osx-arm64 but .pixi-sandbox.toml bundles only linux-64, so ma
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A native macOS runner restores a packed transport end-to-end offline: doctor --verify passes, restore succeeds, pixi install --frozen --offline is a no-op, cargo check --offline builds against the vendored tree
+- [x] #1 A native macOS runner restores a packed transport end-to-end offline: doctor --verify passes, restore succeeds, pixi install --frozen --offline is a no-op, cargo check --offline builds against the vendored tree
 - [x] #2 .pixi-sandbox.toml declares the developer bundle for osx-arm64 and pixi run lint-sandbox-plan stays green
 - [ ] #3 A sandbox/developer-osx-arm64 branch is published and the README platform matrix documents macOS
 <!-- AC:END -->
@@ -48,4 +48,6 @@ First proof run 36583359794: plan job green, airlock linux-64 green, airlock osx
 Second proof run 36584461694: same step, same bare exit 1, but this time the moving-latest warning is in the annotations, which places the death after that echo and rules the bash 3.2 array out as the remaining cause. The next statement resolved the latest tag by piping an unauthenticated api.github.com call into grep tag_name, and under pipefail any body without a tag, a rate-limit message being the usual one, took the step down with no output. Hosted runners share egress addresses and the unauthenticated limit is 60 per hour per address, which is why only the scarcer macOS pool hit it. Fixed in two places: the proof now pins the released tag instead of resolving latest, and passes the job token; and the action splits the fetch from the parse so an unreachable API and a tagless body each name themselves. Rehearsed offline against a stub curl: pinned path exits 0 with no API call, latest path exits 0, rate-limited body now exits 1 with a named error instead of silence.
 
 Third proof run 36585225178: airlock osx-arm64 GREEN end to end on macos-14 - released binary installed and checksum-verified, transport packed, published to the throwaway remote, fetched, every declared byte verified, restored, and the gate passed. linux-64 green alongside it. But reading the step list rather than the badge turned up that step 12, Tier A with egress denied, was skipped on both platforms, and nothing else in the repo calls this workflow with block-network. The inputs context is null on pull_request and schedule, and null == false is true in GitHub expressions, so BLOCK_NETWORK resolved to false on exactly the two triggers that fire: the authoritative tier has never run. Made it opt-out rather than opt-in, so absent input means blocked and only an explicit false from a dispatch or a caller turns it off. AC1 stays unchecked until a run is green with Tier A actually executed.
+
+Fourth run 36585905417: green on both platforms with Tier A executed. airlock osx-arm64 passed the egress-denied gate on macos-14, sandbox-exec with network-outbound denied, which is the tier that can fail for the reason the project cares about; airlock linux-64 passed the same way for the first time. ci lint, test and coverage green on the same commit. AC1 checked on that evidence. AC3 stays open until sandbox/developer-osx-arm64 actually exists on origin, which publish-sandbox.yml does by itself once this merges, since it plans from the same .pixi-sandbox.toml.
 <!-- SECTION:NOTES:END -->
