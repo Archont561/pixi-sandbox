@@ -537,6 +537,7 @@ dependencies = [
  "serde_json",
  "tar",
  "tempfile",
+ "toml",
  "tracing",
  "tracing-subscriber",
  "ureq",

@@ -20,6 +20,8 @@ pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.3.0" }
 pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.3.0" }
 anyhow = { workspace = true }
 clap = { workspace = true }
+# Reads Cargo.lock to reject a lockfile cargo itself cannot vendor (design.md §11).
+toml = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

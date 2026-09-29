@@ -1,0 +1,18 @@
+# Its own workspace root, and deliberately a member of neither this repository's cargo
+# workspace nor any path the tests resolve. `pack` reads the sibling `Cargo.lock` and refuses
+# it; it never builds this crate.
+[workspace]
+
+[package]
+name = "duplicate-source-project"
+version = "0.1.0"
+edition = "2021"
+description = "Fixture for the pack-time duplicate-crate-source check (design.md §11)"
+publish = false
+
+[dependencies]
+# Both spellings resolve to itoa 1.0.15 — one through crates.io, one through the git source
+# recorded in Cargo.lock. Real manifests hit this accidentally, via a transitive dependency
+# that a workspace member also pulls from a fork.
+itoa = "=1.0.15"
+itoa_git = { git = "file:///tmp/duplicate-source-gitdep", package = "itoa", version = "=1.0.15" }

@@ -1272,3 +1272,124 @@ fn generated_restore_prefers_the_branch_declared_in_the_config() {
     );
     assert!(project.join("restored-by-config").is_file());
 }
+
+/// A project whose `Cargo.lock` carries one crate+version from two sources. See the fixture's
+/// own header and design.md §11.
+fn duplicate_source_project() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/duplicate-source-project")
+}
+
+#[cfg(unix)]
+#[test]
+fn pack_refuses_a_lockfile_cargo_cannot_vendor() {
+    // Without this check, `cargo vendor` aborts with "found duplicate version of package"
+    // and no remedy, and the operator has to work out from cargo's message that the fix is
+    // in their own dependency graph. It also happens *after* the graph is resolved and
+    // downloaded, so the failure is slow to arrive and says nothing about what to do.
+    let temp = tempfile::tempdir().unwrap();
+    let repo = duplicate_source_project();
+    let tools = temp.path().join("fake-tools");
+    let transport = temp.path().join("transport");
+    let self_bin = temp.path().join("self-bin");
+    fake_tools(&tools);
+    write_executable(&self_bin, "#!/bin/sh\necho pixi-sandbox self-binary\n");
+
+    let output = bin()
+        .env("PATH", path_with_fake_tools(&tools))
+        .args([
+            "pack",
+            "--repo-root",
+            repo.to_str().unwrap(),
+            "--envs",
+            "default",
+            "--output-dir",
+            transport.to_str().unwrap(),
+            "--self-bin",
+            self_bin.to_str().unwrap(),
+            "--cargo-vendor",
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8_lossy(&output);
+
+    // The crate and both sources, so the operator knows which collision to resolve...
+    assert!(
+        stderr.contains("itoa 1.0.15"),
+        "the error must name the colliding crate: {stderr}"
+    );
+    assert!(
+        stderr.contains("registry+https://github.com/rust-lang/crates.io-index"),
+        "the error must name the registry source: {stderr}"
+    );
+    assert!(
+        stderr.contains("git+file:///tmp/duplicate-source-gitdep"),
+        "the error must name the git source: {stderr}"
+    );
+    // ...and the remedy, which is the whole point (AC#1). Cargo states the condition and
+    // stops; a maintainer cannot act on it.
+    assert!(
+        stderr.contains("make the versions differ") && stderr.contains("drop one of the"),
+        "the error must offer both remedies: {stderr}"
+    );
+    // Why it matters, so the message is not just an assertion.
+    assert!(
+        stderr.contains("<name>-<version>"),
+        "the error should explain the collision: {stderr}"
+    );
+
+    // "before anything is published" (AC#1): the failure is pack-time, and a rejected lockfile
+    // must not leave a half-built transport behind for the next command to trip over.
+    assert!(
+        !transport.exists(),
+        "a refused pack must not leave a transport directory behind"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn pack_vendors_a_lockfile_whose_crates_come_from_one_source_each() {
+    // The negative case, and the one that keeps the check honest. `demo-project` has several
+    // crates, repeated version strings and a path member of its own, so a check that merely
+    // looked for "more than one entry with the same name" would reject it. The duplicate
+    // fixture also carries a `source`-less package on purpose: a path member is never
+    // vendored, so it is never a duplicate source.
+    let temp = tempfile::tempdir().unwrap();
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo-project");
+    let tools = temp.path().join("fake-tools");
+    let transport = temp.path().join("transport");
+    let self_bin = temp.path().join("self-bin");
+    fake_tools(&tools);
+    write_executable(&self_bin, "#!/bin/sh\necho pixi-sandbox self-binary\n");
+
+    // `cargo vendor` itself is not stubbed, so a pass here means the real dependency graph was
+    // accepted. It needs the crates in the local cargo cache: `cargo test` must stay offline
+    // (tests/fixtures/README.md), and on a machine without them the only thing this asserts
+    // is that the *duplicate* error is absent, which is still the property under test.
+    let output = bin()
+        .env("PATH", path_with_fake_tools(&tools))
+        .args([
+            "pack",
+            "--repo-root",
+            repo.to_str().unwrap(),
+            "--envs",
+            "default",
+            "--output-dir",
+            transport.to_str().unwrap(),
+            "--self-bin",
+            self_bin.to_str().unwrap(),
+            "--cargo-vendor",
+        ])
+        .output()
+        .expect("pack runs");
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("more than one source"),
+            "a single-source lockfile must not be rejected as a duplicate: {stderr}"
+        );
+    }
+}

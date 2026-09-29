@@ -1,0 +1,16 @@
+# A project whose Cargo.lock cargo itself cannot vendor (design.md §11, backlog task-8):
+# `itoa 1.0.15` appears twice, once from crates.io and once from a git source. `cargo vendor`
+# maps each crate to a `<name>-<version>` directory, so the two collide and it aborts.
+#
+# The pixi half is deliberately identical in shape to `demo-project` so the only variable in a
+# test comparing the two is the lockfile. Nothing here is ever installed or solved: the
+# pack-time check reads `Cargo.lock` and fails before any tool runs.
+
+[workspace]
+name = "duplicate-source-project"
+description = "A project whose Cargo.lock has one crate+version from two sources"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+ripgrep = ">=14,<15"

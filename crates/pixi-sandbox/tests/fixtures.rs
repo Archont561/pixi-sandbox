@@ -96,6 +96,64 @@ fn the_demo_project_does_not_depend_on_the_packers() {
 }
 
 #[test]
+fn the_duplicate_source_project_is_a_plain_project_with_the_collision_it_exists_for() {
+    // A second project fixture, for the pack-time duplicate-crate-source check (design.md §11,
+    // backlog task-8). It carries the same policy as `demo-project`: a plain pixi project with
+    // no packer, so using it cannot depend on the developer's environment.
+    let project = crate_dir().join("tests/fixtures/duplicate-source-project");
+    for required in [
+        "pixi.toml",
+        "pixi.lock",
+        "Cargo.toml",
+        "Cargo.lock",
+        "src/main.rs",
+    ] {
+        assert!(
+            project.join(required).is_file(),
+            "{required} is missing from the duplicate-source fixture"
+        );
+    }
+    for file in ["pixi.toml", "pixi.lock"] {
+        let text = std::fs::read_to_string(project.join(file)).unwrap();
+        for forbidden in ["pixi-pack", "pixi-unpack"] {
+            assert!(
+                !text.contains(forbidden),
+                "{file} depends on {forbidden}: every project fixture must be a plain project \
+                 (tests/fixtures/README.md)"
+            );
+        }
+    }
+
+    // The lockfile must still contain the collision, or the test that uses it would be
+    // asserting nothing. `toml` is a dependency of the CLI crate, not this test binary, so
+    // the check is deliberately textual rather than a parse.
+    let lock = std::fs::read_to_string(project.join("Cargo.lock")).unwrap();
+    let itoa = lock
+        .match_indices("name = \"itoa\"")
+        .map(|(at, _)| &lock[at..at + 200.min(lock.len() - at)])
+        .collect::<Vec<_>>();
+    assert_eq!(
+        itoa.len(),
+        2,
+        "the fixture must declare itoa twice, once per source: {lock}"
+    );
+    assert!(
+        itoa.iter().any(|entry| entry.contains("crates.io-index")),
+        "one itoa must come from the registry: {lock}"
+    );
+    assert!(
+        itoa.iter().any(|entry| entry.contains("git+")),
+        "one itoa must come from a git source: {lock}"
+    );
+    // A `source`-less entry (a path member) must be present too, so the check is exercised
+    // against a lockfile that is not uniformly shaped.
+    assert!(
+        lock.contains("name = \"local-helper\""),
+        "the fixture should include a path member with no source: {lock}"
+    );
+}
+
+#[test]
 fn the_fixture_transport_verifies_and_covers_the_split_case() {
     let dir = transport();
     let manifest = Manifest::load(&Manifest::path_in(&dir)).expect("fixture manifest must parse");

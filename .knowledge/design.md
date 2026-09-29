@@ -434,9 +434,20 @@ lives* — a project `.cargo/config.toml` resolves against the project root, `--
 the cwd, `$CARGO_HOME/config.toml` against the CARGO_HOME's parent ✅; with the replacement in
 place, a dead-network `cargo build` works even without `--offline` ✅ (we still export
 `CARGO_NET_OFFLINE=true`, for fail-fast). Cargo gives **no useful error** if a crate is
-missing, so the packer must fail at pack time rather than let the airlock discover it —
-notably `cargo vendor` hard-fails when the same crate+version is reachable from two sources
-(crates.io and a git dependency) ⚠️ known upstream.
+missing, so the packer must fail at pack time rather than let the airlock discover it.
+
+**Duplicate crate sources are rejected before anything is written.** `cargo vendor` stores every
+crate as `<name>-<version>` under one vendor root, so when the same crate+version is reachable
+from two sources (crates.io and a git dependency — measured, upstream known) the two collide and
+cargo aborts with `found duplicate version of package … vendored from two sources` and **no
+remedy** ⚠️. That arrives late — after the whole graph is resolved and downloaded — and points
+at nothing actionable. `pack` therefore reads `Cargo.lock` itself (D6 preflight, no network)
+and refuses **before** the output tree is created, naming the crate, both sources, and the two
+real fixes: make the versions differ, or drop one of the dependencies. Without the early exit a
+refused pack would also leave a half-built transport behind, and the retry would then fail on
+the stale-transport guard with the real error one run in the dark. Path/workspace members carry
+no `source` in the lockfile and are never vendored, so they are not a collision. Fixture:
+`tests/fixtures/duplicate-source-project`, asserted by `tests/cli.rs` ✅.
 
 Vendoring carries **no toolchain and no build artifacts**: `rustc`/`cargo` must come from the
 restored environment (which is why the published environment includes rust) and the airlock pays

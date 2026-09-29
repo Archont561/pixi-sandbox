@@ -43,6 +43,15 @@ pub fn run(args: PackArgs) -> Result<()> {
     }
     validate_env_names(&args.envs)?;
 
+    // Before anything is created: a lockfile cargo cannot vendor is a property of the project,
+    // not of this run, and it is the one `--cargo-vendor` failure an operator cannot act on
+    // without being told what to change (design.md §11). Detecting it here rather than inside
+    // the vendor step means a refused pack leaves no output directory behind — otherwise the
+    // next attempt fails on the stale-transport guard and the real error is one run in the dark.
+    if args.cargo_vendor {
+        validate_vendorable_lockfile(&root)?;
+    }
+
     // Fetching is fully pinned. The default pins are compiled into the released CLI, while an
     // explicit `--tools-lock` is a deliberately reviewable per-project override. The non-fetch
     // fallback is for a developer who consciously supplies pixi-pack/pixi/pixi-unpack on PATH.
@@ -509,12 +518,9 @@ fn vendor_tree(
     mode: VendorModeArg,
 ) -> Result<(Option<Vendor>, Option<VendorInfo>)> {
     let cargo_lock = root.join("Cargo.lock");
-    if !cargo_lock.is_file() {
-        bail!(
-            "--cargo-vendor needs a Cargo.lock at {}",
-            cargo_lock.display()
-        );
-    }
+    // Already validated in `run` before the output tree was created; re-checked here so this
+    // function stays correct if it is ever called on its own.
+    validate_vendorable_lockfile(root)?;
 
     let vendor_dir = payload.join("vendor");
     let source_dir = match mode {
@@ -582,6 +588,102 @@ fn vendor_tree(
             rustc: command_version("rustc").unwrap_or_else(|_| "rustc (unknown)".to_string()),
         }),
     ))
+}
+
+/// A `--cargo-vendor` preflight: the lockfile must exist, and no crate+version may be
+/// reachable from two sources.
+fn validate_vendorable_lockfile(root: &Path) -> Result<()> {
+    let cargo_lock = root.join("Cargo.lock");
+    if !cargo_lock.is_file() {
+        bail!(
+            "--cargo-vendor needs a Cargo.lock at {}",
+            cargo_lock.display()
+        );
+    }
+    reject_duplicate_crate_sources(&cargo_lock)
+}
+
+/// Refuse a lockfile in which one crate+version is reachable from two different sources.
+///
+/// `cargo vendor` cannot represent this: it maps each crate to a `<name>-<version>` directory
+/// under the vendor root, so two entries for the same pair collide and cargo aborts with
+/// "found duplicate version of package ... vendored from two sources" and no remedy (design.md
+/// §11, known upstream). Left alone that surfaces as a pack failure on the connected side at
+/// best, and at worst as a transport that packs "successfully" around a missing crate and only
+/// breaks on the airlock, where cargo reports nothing useful.
+///
+/// The remedy is a maintainer decision, not something to guess at, so the error names the
+/// crates and the two sources and states the two real ways out. Path (workspace) members have
+/// no `source` in the lockfile and are not vendored, so they are ignored; two entries for the
+/// same crate+version from the *same* source are a normal lockfile artefact, not this bug.
+fn reject_duplicate_crate_sources(cargo_lock: &Path) -> Result<()> {
+    let text = fs::read_to_string(cargo_lock)
+        .with_context(|| format!("reading {}", cargo_lock.display()))?;
+    let lock: toml::Value =
+        toml::from_str(&text).with_context(|| format!("parsing {}", cargo_lock.display()))?;
+
+    let Some(packages) = lock.get("package").and_then(toml::Value::as_array) else {
+        // A lockfile with no [[package]] entries cannot have duplicates.
+        return Ok(());
+    };
+
+    // (name, version) -> the distinct sources it is reachable from, in first-seen order.
+    let mut origins: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+    for package in packages {
+        let (Some(name), Some(version)) = (
+            package.get("name").and_then(toml::Value::as_str),
+            package.get("version").and_then(toml::Value::as_str),
+        ) else {
+            continue;
+        };
+        // No `source` means a path/workspace member: not vendored, so not a duplicate source.
+        let Some(source) = package.get("source").and_then(toml::Value::as_str) else {
+            continue;
+        };
+        let seen = origins
+            .entry((name.to_string(), version.to_string()))
+            .or_default();
+        if !seen.iter().any(|existing| existing == source) {
+            seen.push(source.to_string());
+        }
+    }
+
+    let duplicates = origins
+        .into_iter()
+        .filter(|(_, sources)| sources.len() > 1)
+        .collect::<Vec<_>>();
+    if duplicates.is_empty() {
+        return Ok(());
+    }
+
+    let detail = duplicates
+        .iter()
+        .map(|((name, version), sources)| {
+            let list = sources
+                .iter()
+                .map(|source| format!("\n      - {source}"))
+                .collect::<String>();
+            format!(
+                "    {name} {version} is reachable from {} sources:{list}",
+                sources.len()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    bail!(
+        "cannot vendor: {} crate(s) are reachable from more than one source in {}:\n{detail}\n\n\
+         `cargo vendor` stores every crate as <name>-<version> under one vendor root, so two \
+         sources for the same pair collide and it aborts with no remedy. An airlock would then \
+         find a crate missing with nothing pointing at the cause.\n\
+         Fix it on the connected side, before packing:\n  \
+           - make the versions differ, so each source provides a distinct pair; or\n  \
+           - drop one of the two dependencies, if the crate is reachable from the other \
+         source anyway.\n\
+         Patching the vendored tree is not a fix: the next `cargo update` reintroduces the \
+         collision.",
+        duplicates.len(),
+        cargo_lock.display()
+    );
 }
 
 fn crate_directories(root: &Path) -> Result<Vec<PathBuf>> {
