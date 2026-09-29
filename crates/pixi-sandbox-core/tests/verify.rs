@@ -157,3 +157,451 @@ fn elf_with_ph(p_type: u32) -> Vec<u8> {
     elf[64..68].copy_from_slice(&p_type.to_le_bytes());
     elf
 }
+
+// ---------------------------------------------------------------- the restored-tree oracle (D13)
+//
+// These tests build the whole pipeline in miniature: a staged prefix (what pixi-unpack
+// produced), the per-file oracle scanned from it, and a "restored" prefix (what restore
+// leaves behind: the staging path rewritten to the final prefix, plus restore's markers).
+// Then they attack the result the way task-10 measured a real transport being attacked.
+
+/// Build a staged prefix and the transport carrying its oracle. Returns
+/// (transport, project, staged, final) where the project already looks restored.
+#[cfg(unix)]
+mod restored {
+    use pixi_sandbox_core::files_manifest;
+    use pixi_sandbox_core::manifest::Manifest;
+    use pixi_sandbox_core::shard;
+    use pixi_sandbox_core::verify::{Kind, verify, verify_restored};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    pub struct World {
+        pub transport: PathBuf,
+        pub project: PathBuf,
+        pub staged: PathBuf,
+        pub final_prefix: PathBuf,
+        pub manifest: Manifest,
+    }
+
+    pub fn world(dir: &Path) -> World {
+        // The staged prefix sits exactly where restore's default work dir puts it: verify
+        // derives its candidate paths from project + env name + work dir alone (never from
+        // files restore wrote — that would be a candidate-injection hole), so the world must
+        // match that layout for the faithful-restore case to be faithful.
+        let project = dir.join("project");
+        let staged = project.join(".pixi/.restore-work/stage-dev/dev");
+        let final_prefix = project.join(".pixi/envs/dev");
+        let transport = dir.join("transport");
+
+        // --- a staged prefix: text that names the staging prefix, a NUL-padded binary field
+        // that does the same in fixed width, a conda-meta record, history, a symlink.
+        let staged_text = staged.to_string_lossy().into_owned();
+        fs::create_dir_all(staged.join("bin")).unwrap();
+        fs::create_dir_all(staged.join("lib")).unwrap();
+        fs::create_dir_all(staged.join("conda-meta")).unwrap();
+        fs::write(
+            staged.join("bin/tool"),
+            format!("#!/bin/sh\nPREFIX={staged_text}\n"),
+        )
+        .unwrap();
+        fs::write(
+            staged.join("lib/thing.pc"),
+            format!("prefix={staged_text}\nexec_prefix=${{prefix}}\n"),
+        )
+        .unwrap();
+        let field = [staged_text.as_bytes(), b"\0\0\0\0\0\0\0\0"].concat();
+        fs::write(staged.join("lib/binary.ld"), field).unwrap();
+        fs::write(
+            staged.join("conda-meta/pkg-1.0-0.json"),
+            format!("{{\"url\": \"file://{staged_text}/channel/pkg.conda\"}}"),
+        )
+        .unwrap();
+        fs::write(
+            staged.join("conda-meta/history"),
+            "// not relevant for pixi\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink("thing.pc", staged.join("lib/link.pc")).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(staged.join("bin/tool"), fs::Permissions::from_mode(0o755)).unwrap();
+
+        // --- the oracle, scanned the way pack scans it (candidates = this side's paths)
+        let candidates = vec![staged_text.clone().into_bytes()];
+        let (doc, _) = files_manifest::scan_prefix(&staged, &candidates).unwrap();
+
+        // --- the transport: the oracle plus one honest env blob, wired into a manifest
+        let payload = transport.join(".pixi-sandbox");
+        fs::create_dir_all(payload.join("envs/dev/pack/channel/noarch")).unwrap();
+        fs::write(
+            payload.join("envs/dev/pack/channel/noarch/a.conda"),
+            b"conda-payload",
+        )
+        .unwrap();
+        let list_rel = files_manifest::list_rel_path("dev");
+        let list_bytes = doc.to_bytes().unwrap();
+        fs::write(payload.join(&list_rel), &list_bytes).unwrap();
+        let manifest: Manifest = serde_json::from_value(serde_json::json!({
+            "schema": 2,
+            "tool": { "name": "pixi-sandbox", "version": "0.1.0" },
+            "created_at": "2026-09-29T12:00:00Z",
+            "platform": "linux-64",
+            "shard_limit_bytes": 99614720,
+            "source": {},
+            "tools": {},
+            "envs": { "dev": {
+                "platform": "linux-64",
+                "pack_path": ".pixi-sandbox/envs/dev/pack",
+                "packed_size_bytes": 13,
+                "unpacked_size_bytes": 4096,
+                "pixi_environment_fingerprint": "0123456789abcdef",
+                "blobs": [
+                    { "path": "envs/dev/pack/channel/noarch/a.conda", "size": 13,
+                      "sha256": shard::sha256_bytes(b"conda-payload") }
+                ],
+                "files": {
+                    "blob": { "path": list_rel, "size": list_bytes.len(),
+                              "sha256": shard::sha256_bytes(&list_bytes) },
+                    "entries": doc.entries()
+                }
+            }}
+        }))
+        .unwrap();
+        manifest.validate().unwrap();
+
+        // --- the project, the way restore leaves it: the staged prefix moved and its
+        // staging path rewritten to the final prefix, plus restore's own markers.
+        restore_like(&staged, &final_prefix);
+
+        World {
+            transport,
+            project,
+            staged,
+            final_prefix,
+            manifest,
+        }
+    }
+
+    /// The relocation rule restore applies (text only, NUL-preserved binaries untouched),
+    /// then write_markers' two files.
+    pub fn restore_like(staged: &Path, final_prefix: &Path) {
+        let old = staged
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let new = final_prefix.to_string_lossy().into_owned();
+        for file in shard::files_under(staged).unwrap() {
+            let rel = file.strip_prefix(staged).unwrap();
+            let destination = final_prefix.join(rel);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(&file, &destination).unwrap();
+            let bytes = fs::read(&destination).unwrap();
+            if !bytes.contains(&0) {
+                if let Ok(text) = std::str::from_utf8(&bytes) {
+                    if text.contains(&old) {
+                        fs::write(&destination, text.replace(&old, &new)).unwrap();
+                    }
+                }
+            }
+        }
+        // symlinks (files_under skips them)
+        for entry in fs::read_dir(staged.join("lib")).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_symlink() {
+                let target = fs::read_link(&path).unwrap();
+                std::os::unix::fs::symlink(
+                    &target,
+                    final_prefix.join("lib").join(entry.file_name()),
+                )
+                .unwrap();
+            }
+        }
+        fs::create_dir_all(final_prefix.join("conda-meta")).unwrap();
+        fs::write(
+            final_prefix.join("conda-meta/pixi_env_prefix"),
+            format!(
+                "{}/conda-meta",
+                final_prefix.canonicalize().unwrap().display()
+            ),
+        )
+        .unwrap();
+        fs::write(
+            final_prefix.join("conda-meta/.pixi-environment-fingerprint"),
+            "0123456789abcdef",
+        )
+        .unwrap();
+    }
+
+    fn kinds(report: &pixi_sandbox_core::verify::RestoredReport) -> Vec<&'static str> {
+        report
+            .report
+            .failures
+            .iter()
+            .map(|f| f.kind.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_faithful_restore_matches_the_oracle() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        let report = verify_restored(
+            &world.manifest,
+            &world.transport,
+            &world.project,
+            None,
+            None,
+        );
+        assert!(
+            report.ok(),
+            "unexpected failures: {:?}",
+            report.report.failures
+        );
+        assert_eq!(report.verified, ["dev"]);
+        assert!(report.unverifiable.is_empty());
+        // the transport itself verifies too, oracle included
+        let transport_report = verify(&world.manifest, &world.transport, None);
+        assert!(transport_report.ok(), "{:?}", transport_report.failures);
+    }
+
+    #[test]
+    fn a_forged_conda_meta_record_is_an_unexpected_file() {
+        // The exact attack task-10 measured: a stub prefix carrying one hand-forged record
+        // passed every shape check. Here the record is present, but it is not in the list.
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        fs::write(
+            world.final_prefix.join("conda-meta/forged-9.9.9-0.json"),
+            r#"{"name":"forged","version":"9.9.9","build":"0","files":[]}"#,
+        )
+        .unwrap();
+
+        let report = verify_restored(
+            &world.manifest,
+            &world.transport,
+            &world.project,
+            None,
+            None,
+        );
+        assert!(!report.ok());
+        let failures = &report.report.failures;
+        assert_eq!(
+            failures.len(),
+            1,
+            "one forged record, one failure: {failures:?}"
+        );
+        assert_eq!(failures[0].kind, Kind::Unexpected);
+        assert!(failures[0].path.contains("forged"));
+    }
+
+    #[test]
+    fn every_mismatch_is_collected_not_just_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        fs::write(
+            world.final_prefix.join("lib/thing.pc"),
+            "prefix=/somewhere/else\n",
+        )
+        .unwrap();
+        fs::remove_file(world.final_prefix.join("bin/tool")).unwrap();
+        fs::write(world.final_prefix.join("lib/extra.txt"), "smuggled\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(
+            world.final_prefix.join("lib/binary.ld"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+
+        let report = verify_restored(
+            &world.manifest,
+            &world.transport,
+            &world.project,
+            None,
+            None,
+        );
+        assert!(!report.ok());
+        let got = kinds(&report);
+        assert!(got.contains(&"integrity"), "tampered content: {got:?}");
+        assert!(got.contains(&"missing"), "removed file: {got:?}");
+        assert!(got.contains(&"unexpected"), "smuggled file: {got:?}");
+        // a gained exec bit deviates from the recorded mode just as a lost one does — the
+        // oracle records the mode, not a direction
+        assert!(
+            got.contains(&"mode"),
+            "binary.ld gaining the exec bit: {got:?}"
+        );
+        assert_eq!(got.len(), 4, "exactly the four tamper classes: {got:?}");
+    }
+
+    #[test]
+    fn a_lost_executable_bit_is_a_mode_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(
+            world.final_prefix.join("bin/tool"),
+            fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+
+        let report = verify_restored(
+            &world.manifest,
+            &world.transport,
+            &world.project,
+            None,
+            None,
+        );
+        assert!(!report.ok());
+        assert_eq!(report.report.failures[0].kind, Kind::Mode);
+    }
+
+    #[test]
+    fn a_retargeted_symlink_is_an_integrity_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        fs::remove_file(world.final_prefix.join("lib/link.pc")).unwrap();
+        std::os::unix::fs::symlink("binary.ld", world.final_prefix.join("lib/link.pc")).unwrap();
+
+        let report = verify_restored(
+            &world.manifest,
+            &world.transport,
+            &world.project,
+            None,
+            None,
+        );
+        assert!(!report.ok());
+        assert!(
+            report
+                .report
+                .failures
+                .iter()
+                .any(|f| f.kind == Kind::Integrity && f.path.contains("link.pc"))
+        );
+    }
+
+    #[test]
+    fn a_failed_relocation_is_caught_even_though_the_bytes_arrived() {
+        // The blob verified on arrival, but suppose the staged path never got rewritten: the
+        // file on disk names the restore scratch, which no honest final prefix contains.
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        fs::write(
+            world.final_prefix.join("lib/thing.pc"),
+            format!("prefix={}\n", world.staged.to_string_lossy()),
+        )
+        .unwrap();
+
+        let report = verify_restored(
+            &world.manifest,
+            &world.transport,
+            &world.project,
+            None,
+            None,
+        );
+        assert!(
+            !report.ok(),
+            "a prefix still pointing into restore scratch must not pass"
+        );
+        assert_eq!(report.report.failures[0].kind, Kind::Integrity);
+    }
+
+    #[test]
+    fn a_tampered_fingerprint_marker_is_an_integrity_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        fs::write(
+            world
+                .final_prefix
+                .join("conda-meta/.pixi-environment-fingerprint"),
+            "ffffffffffffffff",
+        )
+        .unwrap();
+
+        let report = verify_restored(
+            &world.manifest,
+            &world.transport,
+            &world.project,
+            None,
+            None,
+        );
+        assert!(!report.ok());
+        assert!(
+            report
+                .report
+                .failures
+                .iter()
+                .any(|f| f.kind == Kind::Integrity && f.detail.contains("fingerprint"))
+        );
+    }
+
+    #[test]
+    fn a_schema_one_env_is_reported_unverifiable_not_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        let mut manifest = world.manifest.clone();
+        manifest.envs.get_mut("dev").unwrap().files = None;
+
+        let report = verify_restored(&manifest, &world.transport, &world.project, None, None);
+        assert!(
+            report.ok(),
+            "an old branch cannot be retrofitted, only reported"
+        );
+        assert!(report.verified.is_empty());
+        assert_eq!(report.unverifiable, ["dev"]);
+    }
+
+    #[test]
+    fn a_corrupted_oracle_is_itself_a_failure() {
+        // The oracle is a verified blob: tamper with it in the transport and the check must
+        // refuse to run on it rather than compare against forged digests.
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        let list = world
+            .transport
+            .join(".pixi-sandbox")
+            .join(files_manifest::list_rel_path("dev"));
+        fs::write(
+            &list,
+            b"{\"schema\":1,\"excluded\":[],\"files\":[{\"p\":\"bin/tool\"}]}",
+        )
+        .unwrap();
+
+        let report = verify_restored(
+            &world.manifest,
+            &world.transport,
+            &world.project,
+            None,
+            None,
+        );
+        assert!(!report.ok());
+        assert!(
+            report
+                .report
+                .failures
+                .iter()
+                .any(|f| f.kind == Kind::Integrity && f.detail.contains("file list"))
+        );
+    }
+
+    #[test]
+    fn the_oracle_covers_only_the_selected_envs() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = world(dir.path());
+        let selected = vec!["other".to_string()];
+        // `other` does not exist in the manifest, so selection is by name: dev excluded.
+        let manifest = world.manifest.clone();
+        let report = verify_restored(
+            &manifest,
+            &world.transport,
+            &world.project,
+            Some(&selected),
+            None,
+        );
+        // An unknown env is not this function's error to raise (doctor's select_envs does
+        // that); here it simply selects nothing, so nothing is checked and nothing fails.
+        assert!(report.ok());
+        assert!(report.verified.is_empty());
+        assert!(report.unverifiable.is_empty());
+    }
+}

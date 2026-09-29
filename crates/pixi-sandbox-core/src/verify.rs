@@ -1,11 +1,15 @@
 //! Verification: everything a person needs before trusting a branch, and nothing that writes.
 //!
-//! Two jobs live here:
+//! Three jobs live here:
 //!
 //! 1. **Check every declared byte.** [`verify`] walks a manifest and reports *all* failures
 //!    instead of stopping at the first — an airlock operator wants the full list, not a game
 //!    of whack-a-mole.
-//! 2. **Refuse to ship a dynamic tool** (decision D4). The `~/.pixi/bin` shims are 766 KiB
+//! 2. **Check the tree that comes out the other end.** [`verify_restored`] compares a
+//!    restored project against the manifest's per-file oracle (D13) — the branch being intact
+//!    and each written blob matching its sha does not by itself prove the *prefix* is right,
+//!    and a forged-but-plausible prefix used to pass every check.
+//! 3. **Refuse to ship a dynamic tool** (decision D4). The `~/.pixi/bin` shims are 766 KiB
 //!    trampolines that exec a dynamically linked binary inside their own prefix; a transport
 //!    that carries one works perfectly on the machine that built it and fails on the airlock.
 //!    [`linkage_of`] is what catches that.
@@ -27,6 +31,11 @@ pub enum Kind {
     SizeMismatch,
     MissingPart,
     DynamicTool,
+    /// Only used by [`verify_restored`]: a file that is on disk but not in the manifest's
+    /// file list, and is not one of the bookkeeping files pixi/restore own.
+    Unexpected,
+    /// Only used by [`verify_restored`]: the content matches but the executable bit does not.
+    Mode,
 }
 
 impl Kind {
@@ -37,6 +46,8 @@ impl Kind {
             Kind::SizeMismatch => "size",
             Kind::MissingPart => "missing-part",
             Kind::DynamicTool => "dynamic-tool",
+            Kind::Unexpected => "unexpected",
+            Kind::Mode => "mode",
         }
     }
 }
@@ -68,7 +79,8 @@ impl Report {
 }
 
 /// Check every blob of the selected environments (all of them when `envs` is `None`),
-/// plus the embedded tools' integrity and linkage.
+/// the per-env file lists that act as the restored-tree oracle (D13), plus the embedded
+/// tools' integrity and linkage.
 ///
 /// Never writes anything, never needs the network.
 pub fn verify(manifest: &Manifest, branch_location: &Path, envs: Option<&[String]>) -> Report {
@@ -79,6 +91,17 @@ pub fn verify(manifest: &Manifest, branch_location: &Path, envs: Option<&[String
         report.files += 1;
         report.bytes += blob.size;
         check_blob(env, blob, &abs, &mut report);
+    }
+
+    // The oracle is only as good as its own bytes: an env's files manifest is a blob like
+    // any other and is verified here, so `doctor --verify-restored` can trust what it reads.
+    for (name, env) in selected_envs(manifest, envs) {
+        if let Some(files) = &env.files {
+            report.files += 1;
+            report.bytes += files.blob.size;
+            let abs = manifest.blob_abs_path(branch_location, &files.blob);
+            check_blob(name, &files.blob, &abs, &mut report);
+        }
     }
 
     for (name, tool) in &manifest.tools {
@@ -145,6 +168,295 @@ pub fn verify(manifest: &Manifest, branch_location: &Path, envs: Option<&[String
     }
 
     report
+}
+
+/// The envs a caller selected, or all of them (the same selection rule `Manifest::blobs`
+/// applies, kept in one place for the file lists, which are not part of `blobs`).
+fn selected_envs<'a>(
+    manifest: &'a Manifest,
+    envs: Option<&[String]>,
+) -> impl Iterator<Item = (&'a String, &'a crate::manifest::Env)> {
+    manifest.envs.iter().filter(move |(name, _)| {
+        envs.map(|selected| selected.iter().any(|s| s == name.as_str()))
+            .unwrap_or(true)
+    })
+}
+
+/// The result of checking a *restored project* against the manifest's per-file oracle.
+#[derive(Debug, Clone, Default)]
+pub struct RestoredReport {
+    /// What was checked and what failed, in the same shape as a transport verification so
+    /// `doctor` prints both the same way.
+    pub report: Report,
+    /// Environments whose per-file digests were compared.
+    pub verified: Vec<String>,
+    /// Environments the manifest carries no oracle for (schema 1): reported, not failed —
+    /// an old branch cannot be retrofitted, and pretending otherwise would be the exact
+    /// "shape check dressed up as integrity" this exists to end.
+    pub unverifiable: Vec<String>,
+}
+
+impl RestoredReport {
+    pub fn ok(&self) -> bool {
+        self.report.ok()
+    }
+}
+
+/// Verify the tree a restore produced against the manifest's per-file digests (D13).
+///
+/// `project` is the restored project root (holding `.pixi/envs/<name>`), `branch_location`
+/// the transport the manifest — and therefore the oracle — came from. `work_dir` only needs
+/// naming when the restore used a non-default one: the canonicalisation must neutralise the
+/// same restore-scratch paths the restore itself embedded.
+///
+/// Collects every mismatch instead of stopping at the first, and writes nothing.
+pub fn verify_restored(
+    manifest: &Manifest,
+    branch_location: &Path,
+    project: &Path,
+    envs: Option<&[String]>,
+    work_dir: Option<&Path>,
+) -> RestoredReport {
+    let mut restored = RestoredReport::default();
+
+    for (name, env) in selected_envs(manifest, envs) {
+        let Some(files) = &env.files else {
+            restored.unverifiable.push(name.clone());
+            continue;
+        };
+        let failures_before = restored.report.failures.len();
+        verify_env_restored(
+            branch_location,
+            project,
+            name,
+            env,
+            files,
+            work_dir,
+            &mut restored,
+        );
+        if restored.report.failures.len() == failures_before {
+            restored.verified.push(name.clone());
+        }
+    }
+    restored
+}
+
+fn verify_env_restored(
+    branch_location: &Path,
+    project: &Path,
+    name: &str,
+    env: &crate::manifest::Env,
+    files: &crate::manifest::EnvFiles,
+    work_dir: Option<&Path>,
+    restored: &mut RestoredReport,
+) {
+    let report = &mut restored.report;
+    let prefix = project.join(".pixi").join("envs").join(name);
+
+    // The oracle itself: read, verify against its recorded digest, parse.
+    let list_bytes = match shard::read_blob(&branch_location.join(MANIFEST_DIR), &files.blob) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            report.failures.push(Check {
+                path: files.blob.path.clone(),
+                kind: Kind::Integrity,
+                detail: format!("env {name}: the file list cannot be read or trusted: {e}"),
+            });
+            return;
+        }
+    };
+    let doc = match crate::files_manifest::FilesDoc::parse(&list_bytes) {
+        Ok(doc) => doc,
+        Err(e) => {
+            report.failures.push(Check {
+                path: files.blob.path.clone(),
+                kind: Kind::Integrity,
+                detail: format!("env {name}: {e}"),
+            });
+            return;
+        }
+    };
+    if files.entries != doc.entries() as u64 {
+        report.failures.push(Check {
+            path: files.blob.path.clone(),
+            kind: Kind::SizeMismatch,
+            detail: format!(
+                "env {name}: manifest declares {} file entries, the list holds {}",
+                files.entries,
+                doc.entries()
+            ),
+        });
+    }
+
+    let walked = match crate::files_manifest::walk_prefix(&prefix) {
+        Ok(walked) => walked,
+        Err(e) => {
+            report.failures.push(Check {
+                path: format!(".pixi/envs/{name}"),
+                kind: Kind::Missing,
+                detail: format!("env {name}: the restored prefix cannot be walked: {e}"),
+            });
+            return;
+        }
+    };
+
+    // The prefix-path spellings this side must neutralise: the final prefix (in both its
+    // literal and canonical form — a symlinked `.pixi` must not defeat the check), plus the
+    // restore-scratch paths that survive inside NUL-fixed binaries and conda-meta records.
+    let mut candidates: Vec<Vec<u8>> = Vec::new();
+    let mut push_candidate = |path: &PathBuf| {
+        let bytes = path.to_string_lossy().into_owned().into_bytes();
+        if !bytes.is_empty() && !candidates.contains(&bytes) {
+            candidates.push(bytes);
+        }
+    };
+    push_candidate(&prefix);
+    if let Ok(canonical) = prefix.canonicalize() {
+        push_candidate(&canonical);
+    }
+    let work = work_dir
+        .map(|w| w.to_path_buf())
+        .unwrap_or_else(|| project.join(".pixi").join(".restore-work"));
+    push_candidate(&work.join(format!("stage-{name}")).join(name));
+    push_candidate(&work.join(format!("pack-{name}")));
+
+    let listed: std::collections::BTreeMap<&str, &crate::files_manifest::FileEntry> = doc
+        .files
+        .iter()
+        .map(|entry| (entry.p.as_str(), entry))
+        .collect();
+
+    // Every listed entry must exist, with the recorded content, mode and symlink target.
+    for entry in &doc.files {
+        report.files += 1;
+        if let Some(path) = walked.files.get(&entry.p) {
+            report.bytes += std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            if let Some(expected) = &entry.h {
+                let raw = match std::fs::read(path) {
+                    Ok(raw) => raw,
+                    Err(e) => {
+                        report.failures.push(Check {
+                            path: entry.p.clone(),
+                            kind: Kind::Missing,
+                            detail: format!("env {name}: {e}"),
+                        });
+                        continue;
+                    }
+                };
+                let actual = crate::files_manifest::canonical_sha256(&raw, &candidates);
+                if &actual != expected {
+                    report.failures.push(Check {
+                        path: entry.p.clone(),
+                        kind: Kind::Integrity,
+                        detail: format!(
+                            "env {name}: content does not match the manifest's file list \
+                             (expected {expected}, got {actual})"
+                        ),
+                    });
+                }
+            }
+            match crate::files_manifest::is_executable(path) {
+                Ok(actual) if actual != entry.x => {
+                    report.failures.push(Check {
+                        path: entry.p.clone(),
+                        kind: Kind::Mode,
+                        detail: format!(
+                            "env {name}: executable bit is {}, the manifest records {}",
+                            if entry.x { "clear" } else { "set" },
+                            if entry.x { "set" } else { "clear" }
+                        ),
+                    });
+                }
+                Err(e) => report.failures.push(Check {
+                    path: entry.p.clone(),
+                    kind: Kind::Missing,
+                    detail: format!("env {name}: {e}"),
+                }),
+                _ => {}
+            }
+        } else if let Some(path) = walked.symlinks.get(&entry.p) {
+            let actual = match std::fs::read_link(path) {
+                Ok(target) => String::from_utf8_lossy(&crate::files_manifest::canonicalise(
+                    target.to_string_lossy().as_bytes(),
+                    &candidates,
+                ))
+                .into_owned(),
+                Err(e) => {
+                    report.failures.push(Check {
+                        path: entry.p.clone(),
+                        kind: Kind::Missing,
+                        detail: format!("env {name}: {e}"),
+                    });
+                    continue;
+                }
+            };
+            let expected = entry.l.clone().unwrap_or_default();
+            if actual != expected {
+                report.failures.push(Check {
+                    path: entry.p.clone(),
+                    kind: Kind::Integrity,
+                    detail: format!(
+                        "env {name}: symlink points at {actual:?}, the manifest records {expected:?}"
+                    ),
+                });
+            }
+        } else {
+            report.failures.push(Check {
+                path: entry.p.clone(),
+                kind: Kind::Missing,
+                detail: format!(
+                    "env {name}: in the manifest's file list but not in the restored prefix"
+                ),
+            });
+        }
+    }
+
+    // Nothing unlisted, except the bookkeeping files pixi and restore own (the allowlist is
+    // exactly conda-meta markers — see files_manifest::ALLOWED_EXTRAS).
+    for rel in walked.files.keys().chain(walked.symlinks.keys()) {
+        if !listed.contains_key(rel.as_str())
+            && !crate::files_manifest::ALLOWED_EXTRAS.contains(&rel.as_str())
+        {
+            report.failures.push(Check {
+                path: rel.clone(),
+                kind: Kind::Unexpected,
+                detail: format!(
+                    "env {name}: present in the restored prefix but not in the manifest's \
+                     file list — a file the transport never carried"
+                ),
+            });
+        }
+    }
+
+    // The fingerprint marker restore writes must still say what the manifest recorded.
+    if let Some(expected) = &env.pixi_environment_fingerprint {
+        let marker = prefix
+            .join("conda-meta")
+            .join(".pixi-environment-fingerprint");
+        match std::fs::read_to_string(&marker) {
+            Ok(actual) => {
+                if actual.trim() != expected {
+                    report.failures.push(Check {
+                        path: format!(".pixi/envs/{name}/conda-meta/.pixi-environment-fingerprint"),
+                        kind: Kind::Integrity,
+                        detail: format!(
+                            "env {name}: fingerprint is {}, the manifest records {expected}",
+                            actual.trim()
+                        ),
+                    });
+                }
+            }
+            Err(_) => {
+                report.failures.push(Check {
+                    path: format!(".pixi/envs/{name}/conda-meta/.pixi-environment-fingerprint"),
+                    kind: Kind::Missing,
+                    detail: format!(
+                        "env {name}: restore should have written the recorded fingerprint"
+                    ),
+                });
+            }
+        }
+    }
 }
 
 fn check_blob(env: &str, blob: &Blob, abs: &Path, report: &mut Report) {

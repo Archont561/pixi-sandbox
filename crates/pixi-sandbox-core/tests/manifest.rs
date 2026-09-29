@@ -34,7 +34,12 @@ fn valid_manifest() -> String {
       "blobs": [
         {{ "path": "envs/dev/pack/channel/noarch/a.conda", "size": 4,
            "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }}
-      ]
+      ],
+      "files": {{
+        "blob": {{ "path": "envs/dev/files.json", "size": 512,
+                  "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }},
+        "entries": 12
+      }}
     }}
   }},
   "vendor": {{ "mode": "loose", "crates": 33, "size_bytes": 2048, "cargo_lock_sha256": "bb",
@@ -80,6 +85,11 @@ fn a_well_formed_manifest_validates_and_summarises() {
     let round_trip: Manifest =
         serde_json::from_str(&serde_json::to_string(&manifest).unwrap()).unwrap();
     assert_eq!(round_trip.envs.len(), 1);
+    assert_eq!(
+        round_trip.envs["dev"].files.as_ref().unwrap().entries,
+        12,
+        "the per-file oracle must survive a round trip"
+    );
 }
 
 #[test]
@@ -87,6 +97,69 @@ fn unknown_schema_is_refused() {
     let text = valid_manifest().replace(&format!("\"schema\": {SCHEMA_VERSION}"), "\"schema\": 99");
     let err = parse(&text).validate().expect_err("must refuse");
     assert!(err.to_string().contains("schema 99"), "got: {err}");
+}
+
+/// A published branch outlives the binary that packed it: schema 1 transports (everything
+/// published before the per-file oracle existed) must stay restorable, with the oracle simply
+/// absent. Only a schema newer than this build is refused.
+#[test]
+fn an_older_schema_still_validates_without_the_file_oracle() {
+    let text = valid_manifest()
+        .replace(&format!("\"schema\": {SCHEMA_VERSION}"), "\"schema\": 1")
+        .replace(
+            // operates on the rendered JSON (single braces), not on the format! source
+            r#",
+      "files": {
+        "blob": { "path": "envs/dev/files.json", "size": 512,
+                  "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" },
+        "entries": 12
+      }"#,
+            "",
+        );
+    let manifest = parse(&text);
+    manifest.validate().expect("schema 1 must stay loadable");
+    assert_eq!(manifest.schema, 1);
+    assert!(
+        manifest.envs["dev"].files.is_none(),
+        "a schema-1 env carries no oracle; verify_restored must say so, not guess"
+    );
+}
+
+#[test]
+fn a_files_manifest_with_a_bad_path_entries_or_digest_is_refused() {
+    // escaping list path
+    let escaping = valid_manifest().replace("envs/dev/files.json", "../outside/files.json");
+    assert!(
+        parse(&escaping)
+            .validate()
+            .expect_err("an escaping files path must be refused")
+            .to_string()
+            .contains("escapes")
+    );
+
+    // zero entries: an oracle that lists nothing checks nothing
+    let empty = valid_manifest().replace("\"entries\": 12", "\"entries\": 0");
+    assert!(
+        parse(&empty)
+            .validate()
+            .expect_err("zero entries must be refused")
+            .to_string()
+            .contains("no entries")
+    );
+
+    // a list digest that is not a sha256
+    let bad_digest = valid_manifest().replace(
+        r#""blob": { "path": "envs/dev/files.json", "size": 512,
+                  "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" },"#,
+        r#""blob": { "path": "envs/dev/files.json", "size": 512, "sha256": "nope" },"#,
+    );
+    assert!(
+        parse(&bad_digest)
+            .validate()
+            .expect_err("a non-sha256 list digest must be refused")
+            .to_string()
+            .contains("sha256")
+    );
 }
 
 #[test]

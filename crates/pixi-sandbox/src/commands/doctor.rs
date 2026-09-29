@@ -3,12 +3,16 @@
 //! This is the one fully implemented command in the scaffold, because it is the one an
 //! airlock operator needs *before* anything is written and the one CI runs against its own
 //! output. It never writes, never touches the network, and (with `--verify`) reports every
-//! failure instead of the first one.
+//! failure instead of the first one. `--verify-restored <project>` extends the same honesty
+//! to the *output* of a restore: the tree that came out the other end is checked against the
+//! manifest's per-file digests (D13), because an intact branch plus verified writes still
+//! does not prove the prefix is right.
 
 use crate::cli::DoctorArgs;
+use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::manifest::Manifest;
-use pixi_sandbox_core::verify::{self, Report};
+use pixi_sandbox_core::verify::{self, Report, RestoredReport};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -20,24 +24,57 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     } else {
         Some(args.envs.as_slice())
     };
+    let project = match &args.verify_restored {
+        Some(project) => Some(support::existing_dir(project, "--verify-restored")?),
+        None => None,
+    };
 
-    let report = args
-        .verify
+    // The restored-tree check trusts the manifest as its oracle, so it always verifies the
+    // transport first — an unchecked oracle would turn the check into theater.
+    let report = (args.verify || project.is_some())
         .then(|| verify::verify(&manifest, &args.branch_location, only));
+    let restored = project.as_deref().map(|project| {
+        (
+            project,
+            verify::verify_restored(
+                &manifest,
+                &args.branch_location,
+                project,
+                only,
+                args.work_dir.as_deref(),
+            ),
+        )
+    });
 
+    let restored_section = restored
+        .as_ref()
+        .map(|(project, report)| (*project, report));
     if args.json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&as_json(&path, &manifest, report.as_ref()))?
+            serde_json::to_string_pretty(&as_json(
+                &path,
+                &manifest,
+                report.as_ref(),
+                restored_section
+            ))?
         );
     } else {
-        print_human(&path, &manifest, report.as_ref());
+        print_human(&path, &manifest, report.as_ref(), restored_section);
     }
 
-    if let Some(report) = report {
+    if let Some(report) = &report {
         if !report.ok() {
             // Everything is already on stdout; the exit code is for scripts.
             bail!("verify failed: {} failure(s)", report.failures.len());
+        }
+    }
+    if let Some((_, restored)) = &restored {
+        if !restored.ok() {
+            bail!(
+                "restored-tree verification failed: {} failure(s)",
+                restored.report.failures.len()
+            );
         }
     }
     Ok(())
@@ -52,7 +89,12 @@ fn locate(branch_location: &Path) -> PathBuf {
     }
 }
 
-fn print_human(path: &Path, manifest: &Manifest, report: Option<&Report>) {
+fn print_human(
+    path: &Path,
+    manifest: &Manifest,
+    report: Option<&Report>,
+    restored: Option<(&Path, &RestoredReport)>,
+) {
     labelled("manifest", &path.display().to_string());
 
     let commit = manifest.source.commit.as_deref().unwrap_or("unknown");
@@ -67,8 +109,13 @@ fn print_human(path: &Path, manifest: &Manifest, report: Option<&Report>) {
             .as_deref()
             .map(|f| format!(" · fingerprint {f}"))
             .unwrap_or_default();
+        let files = env
+            .files
+            .as_ref()
+            .map(|f| format!(" · {} file entries", f.entries))
+            .unwrap_or_default();
         println!(
-            "  env {name}: {} files packed / {} MiB packed → {} MiB unpacked{fingerprint}",
+            "  env {name}: {} files packed / {} MiB packed → {} MiB unpacked{fingerprint}{files}",
             env.blobs.len(),
             mib(env.packed_size_bytes),
             mib(env.unpacked_size_bytes),
@@ -142,9 +189,52 @@ fn print_human(path: &Path, manifest: &Manifest, report: Option<&Report>) {
             }
         }
     }
+
+    if let Some((project, restored)) = restored {
+        labelled("restored", &project.display().to_string());
+        for name in &restored.verified {
+            println!(
+                "  env {name}: checked against the manifest's file list — {} entry(ies), 0 failure(s)",
+                restored.report.files
+            );
+        }
+        for name in &restored.unverifiable {
+            println!(
+                "  env {name}: no per-file digests in this manifest (schema 1 predates the oracle) — content not verified"
+            );
+        }
+        for failure in &restored.report.failures {
+            println!(
+                "  {}: {}: {}",
+                failure.path,
+                failure.kind.as_str(),
+                failure.detail
+            );
+        }
+        if restored.ok() {
+            if restored.verified.is_empty() {
+                labelled(
+                    "restored",
+                    "nothing to verify — the selected envs predate the per-file oracle",
+                );
+            } else {
+                labelled("restored", "OK — the restored tree matches the manifest");
+            }
+        } else {
+            labelled(
+                "restored",
+                "FAILED — the restored project is not the tree the manifest describes",
+            );
+        }
+    }
 }
 
-fn as_json(path: &Path, manifest: &Manifest, report: Option<&Report>) -> Value {
+fn as_json(
+    path: &Path,
+    manifest: &Manifest,
+    report: Option<&Report>,
+    restored: Option<(&Path, &RestoredReport)>,
+) -> Value {
     let envs: Vec<Value> = manifest
         .envs
         .iter()
@@ -156,6 +246,7 @@ fn as_json(path: &Path, manifest: &Manifest, report: Option<&Report>) -> Value {
                 "unpacked_bytes": env.unpacked_size_bytes,
                 "fingerprint": env.pixi_environment_fingerprint,
                 "platform": env.platform,
+                "file_entries": env.files.as_ref().map(|f| f.entries),
             })
         })
         .collect();
@@ -203,6 +294,24 @@ fn as_json(path: &Path, manifest: &Manifest, report: Option<&Report>) -> Value {
             "files": report.files,
             "bytes": report.bytes,
             "ok": report.ok(),
+            "failures": failures,
+        });
+    }
+
+    if let Some((project, restored)) = restored {
+        let failures: Vec<Value> = restored
+            .report
+            .failures
+            .iter()
+            .map(|f| json!({ "path": f.path, "kind": f.kind.as_str(), "detail": f.detail }))
+            .collect();
+        out["restored"] = json!({
+            "project": project.display().to_string(),
+            "verified": restored.verified,
+            "unverifiable": restored.unverifiable,
+            "entries": restored.report.files,
+            "bytes": restored.report.bytes,
+            "ok": restored.ok(),
             "failures": failures,
         });
     }

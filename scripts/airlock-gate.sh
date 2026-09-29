@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Offline airlock gate. Asserts that a restored sandbox needs nothing from the network.
 #
-# Usage: bash scripts/airlock-gate.sh <restored-project> [env,env] [--skip-cargo]
+# Usage: bash scripts/airlock-gate.sh <restored-project> [env,env] [--transport <dir>] [--skip-cargo]
 #
 # This is the reusable body behind `.github/workflows/airlock.yml`, which runs it twice: once
 # directly, and once with egress actually blocked. Keeping it in a script rather than in YAML is
@@ -14,22 +14,28 @@
 #   2. the bundled static binary actually executes on this host;
 #   3. each environment prefix is a real installed prefix, not an empty directory that pixi
 #      would happily "install" from the network;
-#   4. `pixi install --frozen --offline` needs no byte it did not already have;
-#   5. `cargo check --offline` builds against the vendored tree.
+#   4. with --transport: the restored tree *is the tree the manifest describes* — every file,
+#      symlink target, executable bit and the fingerprint marker, checked against the per-file
+#      digests the packer recorded (doctor --verify-restored, D13). Without it, or against a
+#      schema-1 transport, this script honestly stays a shape check;
+#   5. `pixi install --frozen --offline` needs no byte it did not already have;
+#   6. `cargo check --offline` builds against the vendored tree.
 #
 # Two honest limits, learned the hard way against a real transport:
 #   * `--offline` is a REQUEST, not an enforcement. With a network reachable, `pixi install
 #     --frozen --offline` will happily re-fetch a damaged prefix and report success. That is why
-#     assertion 3 exists, and why the workflow's blocked run is the authoritative one.
-#   * This script does not verify integrity. That is `doctor --verify`'s job, over the branch,
-#     before restore. Restore itself verifies every blob's sha256 before writing it.
+#     assertion 3 exists, why assertion 4 checks content rather than shape, and why the
+#     workflow's blocked run is the authoritative one.
+#   * pixi writes its own bookkeeping (conda-meta/pixi, conda-meta/history, ...) the first time
+#     it installs into a prefix that lacks it. A healthy restore triggers exactly one such
+#     write, so the no-op check below measures the *second* install, after that settle.
 #
-# So: this is a *self-sufficiency* gate, not a tamper detector.
+# So: with --transport this is a self-sufficiency *and* integrity gate; without it, self-sufficiency.
 
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-  sed -n '3,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 2
 fi
 
@@ -44,20 +50,28 @@ else
 fi
 
 SKIP_CARGO=0
-for arg in "$@"; do
-  case "$arg" in
-    --skip-cargo) SKIP_CARGO=1 ;;
+TRANSPORT=""
+fail() {
+  echo "::error::$*" >&2
+  exit 1
+}
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --skip-cargo) SKIP_CARGO=1; shift ;;
+    --transport)
+      [ $# -ge 2 ] || fail "--transport needs a directory"
+      TRANSPORT="$2"
+      shift 2
+      ;;
     *)
-      echo "::error::unknown option $arg" >&2
+      echo "::error::unknown option $1" >&2
       exit 2
       ;;
   esac
 done
 
-fail() {
-  echo "::error::$*" >&2
-  exit 1
-}
+[ -d "$TRANSPORT" ] || [ -z "$TRANSPORT" ] ||
+  fail "--transport $TRANSPORT is not a directory; the extracted branch is what the restored tree is checked against"
 
 [ -d "$PROJECT" ] || fail "no restored project at $PROJECT"
 [ -f "$PROJECT/.pixi/sandbox-env.sh" ] ||
@@ -149,17 +163,45 @@ else
   CARGO_BIN="$(command -v cargo 2>/dev/null || true)"
   if [ -z "$CARGO_BIN" ]; then
     if [ "$SKIP_CARGO" = "1" ]; then
+      # Not exiting here: --skip-cargo skips the cargo section only — the integrity and
+      # self-sufficiency sections below must still run.
       echo "::notice::no cargo available; skipping the vendored-tree check"
-      exit 0
+    else
+      fail "no cargo available from the transport or the image; pass --skip-cargo if this project genuinely has no Rust workspace"
     fi
-    fail "no cargo available from the transport or the image; pass --skip-cargo if this project genuinely has no Rust workspace"
   fi
   echo "::notice::the restored environment ships no cargo; using the image's $CARGO_BIN. This proves the vendored tree is complete, not that the toolchain came from the branch."
+fi
+
+# ---------------------------------------------------------------- the tree matches the manifest
+# Integrity, not shape: the restored prefix is compared file-by-file against the digests the
+# packer recorded after its own verification unpack (D13). The binary doing the checking is
+# the one the transport carried — restored and verified like every other tool — so the oracle
+# and the checker travel together. Without --transport this section is skipped and the gate
+# says so, because a shape check dressed up as an integrity check is worse than none.
+if [ -n "$TRANSPORT" ]; then
+  SANDBOX_BIN="$TOOLS_BIN/pixi-sandbox"
+  [ -x "$SANDBOX_BIN" ] || [ -f "$SANDBOX_BIN" ] ||
+    fail "the bundled pixi-sandbox is missing at $SANDBOX_BIN; the integrity check cannot run"
+  echo "doctor --verify-restored against $TRANSPORT"
+  "$SANDBOX_BIN" doctor --branch-location "$TRANSPORT" --verify-restored "$PROJECT" --envs "$ENVS" ||
+    fail "the restored project does not match the manifest in $TRANSPORT — see the failures above"
+else
+  echo "::notice::no --transport given: prefix shape and self-sufficiency are checked, integrity is not (D13)"
 fi
 
 # ---------------------------------------------------------------- the gate proper
 for env_name in ${ENVS//,/ }; do
   assert_prefix "$env_name" "after restore"
+
+  # pixi writes its own bookkeeping the first time it installs into a prefix that lacks it
+  # (conda-meta/pixi, conda-meta/history, ...): a healthy restore triggers exactly one such
+  # write, measured live against a real transport. Let that settle, then measure the second
+  # install — the claim under test is that pixi needs no byte it did not get from the branch,
+  # and after the settle that is true with zero exceptions.
+  echo "pixi install --frozen --offline -e $env_name (settle: pixi's own first-run markers)"
+  "$TOOLS_BIN/pixi" install --frozen --offline -e "$env_name" ||
+    fail "pixi install --frozen --offline -e $env_name failed: the transport is not self-sufficient"
 
   # Counted as files and on-disk size rather than a checksum walk: the prefix is hundreds of MiB,
   # and the claim under test is "no byte was needed", which a growth check answers as well as a

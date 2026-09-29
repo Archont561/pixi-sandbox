@@ -60,14 +60,27 @@ pixi-sandbox doctor --branch-location .sandbox-out --verify --envs dev
 pixi-sandbox doctor --branch-location .sandbox-out --verify --json
 ```
 
+Verify a **restored project** against the manifest's per-file list, not just the branch:
+
+```bash
+pixi-sandbox doctor --branch-location .sandbox-out --verify-restored /path/to/project
+```
+
 | Flag | Description |
 |------|-------------|
 | `--branch-location` | Transport dir |
 | `--verify` | Verify all blobs |
+| `--verify-restored <PROJECT>` | Also compare the restored tree to the manifest's per-file digests (implies `--verify`) |
+| `--work-dir` | Work dir the restore used, if not the default `<project>/.pixi/.restore-work` |
 | `--envs` | Filter envs |
 | `--json` | Machine-readable output |
 
 Reports all failures, not first. Checks size + sha256 + tool linkage (rejects dynamic).
+`--verify-restored` additionally checks every file of the restored prefix (content, symlink
+targets, exec bits, the fingerprint marker) against the `files.json` oracle the packer
+recorded, flags any file present that the transport never carried, and reports schema-1
+environments as `unverifiable` rather than failed. `scripts/airlock-gate.sh --transport` runs
+it as part of the airlock gate.
 
 ## publish
 

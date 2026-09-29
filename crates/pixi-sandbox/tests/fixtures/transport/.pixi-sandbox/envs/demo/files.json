@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "excluded": [
+    "conda-meta/pixi_env_prefix",
+    "conda-meta/.pixi-environment-fingerprint"
+  ],
+  "files": [
+    {
+      "p": "bin/freetype-config",
+      "h": "530fe1362ac17c529df08a1d179c41e1dd20b1eb572cb19d8ad7cd127e5bbd67",
+      "x": true
+    },
+    {
+      "p": "bin/lzmainfo",
+      "h": "69ce230057396aad22aa0e6130a15350b51595383d121bafd34c8f05256c8bec",
+      "x": true
+    },
+    {
+      "p": "conda-meta/expat-2.8.5-hd2095e1_0.json"
+    },
+    {
+      "p": "conda-meta/zlib-1.3.2-h25fd6f3_3.json"
+    },
+    {
+      "p": "etc/conda/activate.d/activate-gxx_linux-64.sh",
+      "h": "d6ab71734c60483066bb959e99ea9fef1f0838a678ad715354ce5d2015e46a24"
+    },
+    {
+      "p": "lib/-gdb.py",
+      "h": "9aa98d6afc527eeb4077841c59d37dd1fb0ed660d6ecf795e7eeb33d406b2854"
+    },
+    {
+      "p": "lib/cmake/libjpeg-turbo/libjpeg-turboTargets-release.cmake",
+      "h": "765453c822b23c0c0a59cff812c99d1995298c9e7019fef895b9256fa1ebbdec"
+    },
+    {
+      "p": "lib/gcc/x86_64-conda-linux-gnu/16.2.0/plugin/include/configargs.h",
+      "h": "4adef4057d9b00ce0442673d6e13d8afafbcfcde999e42d839b466830dc67ff1"
+    },
+    {
+      "p": "lib/libz.so",
+      "l": "libz.so.1.3.2"
+    },
+    {
+      "p": "lib/libz.so.1.3.2",
+      "h": "6260bbd413113cefd946b4505b61136cb9397da1203ca352c90a6869cf87c18d",
+      "x": true
+    },
+    {
+      "p": "lib/pkgconfig/expat.pc",
+      "h": "84fde56d197800e808b6350162ce475797ff02149dec9ef0eb600dce5995882f"
+    },
+    {
+      "p": "lib/pkgconfig/freetype2.pc",
+      "h": "8d89f87954b5218b92a63ae7a21dbb21285b8b34df06ed4739dbed689a2fdbff"
+    },
+    {
+      "p": "lib/pkgconfig/zlib.pc",
+      "h": "fde79cfd01edc61215097bd844a86f44e4236e61b8943b59a1d3dae8b1184165"
+    },
+    {
+      "p": "x86_64-conda-linux-gnu/lib/ldscripts/elf_i386.xser",
+      "h": "a2d22a596155696c81de956aed18f159453398cc033373b2dbc2b5f212e52456"
+    }
+  ]
+}

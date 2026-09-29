@@ -286,3 +286,179 @@ fn a_real_packed_environment_restores_with_nothing_pointing_into_restore_scratch
     }
     assert!(!airlock.join(".pixi/.restore-work").exists());
 }
+
+/// The gate script is part of the deliverable, not fixture data: this test runs the real
+/// `scripts/airlock-gate.sh` from this repository (the one sanctioned reach outside the crate,
+/// recorded in `tests/fixtures.rs`), because testing a copy would prove nothing about the
+/// script CI runs.
+fn gate_script() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/airlock-gate.sh")
+}
+
+/// task-10: `doctor --verify-restored` checks the tree restore produced, not just the branch
+/// it came from. A faithful restore passes; a fabricated conda-meta record — the exact stub
+/// prefix that fooled every shape check — is rejected, and so is tampered payload content.
+#[test]
+fn doctor_verify_restored_checks_the_tree_restore_produced() {
+    let temp = tempfile::tempdir().unwrap();
+    let transport = temp.path().join("transport");
+    let airlock = temp.path().join("airlock-project");
+    copy_tree(&fixture_transport(), &transport);
+    fs::create_dir_all(&airlock).unwrap();
+
+    bin()
+        .args([
+            "restore",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--output-path",
+            airlock.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--verify-restored",
+            airlock.to_str().unwrap(),
+            "--envs",
+            "demo",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "checked against the manifest's file list — 14 entry(ies), 0 failure(s)",
+        ))
+        .stdout(predicate::str::contains(
+            "OK — the restored tree matches the manifest",
+        ));
+
+    // The attack the transport-shape checks could not see: a record that was never packed.
+    let prefix = airlock.join(".pixi/envs/demo");
+    fs::write(
+        prefix.join("conda-meta/forged-9.9.9-0.json"),
+        r#"{"name":"forged","version":"9.9.9","build":"0","files":[]}"#,
+    )
+    .unwrap();
+    bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--verify-restored",
+            airlock.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("forged-9.9.9-0.json"))
+        .stdout(predicate::str::contains(
+            "present in the restored prefix but not in the manifest's file list",
+        ));
+
+    // And tampered payload content, not just extra files: the oracle lists per-file digests.
+    fs::remove_file(prefix.join("conda-meta/forged-9.9.9-0.json")).unwrap();
+    let pc = prefix.join("lib/pkgconfig/zlib.pc");
+    let body = fs::read_to_string(&pc).unwrap();
+    fs::write(&pc, body.replace("prefix=", "prefix=/tampered/")).unwrap();
+    bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--verify-restored",
+            airlock.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "content does not match the manifest's file list",
+        ));
+}
+
+/// task-10's headline claim, proven end to end: the airlock gate calls doctor --verify-restored
+/// (via --transport) and a stub prefix carrying a fabricated conda-meta record is rejected —
+/// by a test, not by a comment in the script.
+#[test]
+fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
+    let temp = tempfile::tempdir().unwrap();
+    let transport = temp.path().join("transport");
+    let airlock = temp.path().join("airlock-project");
+    copy_tree(&fixture_transport(), &transport);
+    fs::create_dir_all(&airlock).unwrap();
+
+    bin()
+        .args([
+            "restore",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--output-path",
+            airlock.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // The fixture's pixi-sandbox is a script stub that cannot run doctor. Restore verified it
+    // as shipped; now swap in the real binary the test build produced, which is what the gate
+    // executes. (Restore itself would refuse a dynamically linked tool — this happens after.)
+    let tool = airlock.join(".pixi/tools/linux-64/pixi-sandbox");
+    fs::copy(env!("CARGO_BIN_EXE_pixi-sandbox"), &tool).unwrap();
+    make_executable(&tool);
+
+    let run_gate = || {
+        let mut command = StdCommand::new("bash");
+        command
+            .arg(gate_script())
+            .arg(airlock.canonicalize().unwrap())
+            .arg("demo")
+            .arg("--skip-cargo")
+            .arg("--transport")
+            .arg(transport.canonicalize().unwrap());
+        command
+    };
+
+    // A faithful restore passes the whole gate, integrity section included.
+    let status = run_gate().status().unwrap();
+    assert!(
+        status.success(),
+        "the gate must pass for a faithful fixture restore"
+    );
+
+    // The stub prefix: everything the shape checks look at is present, plus one fabricated
+    // record the transport never carried. The gate must fail and name the file.
+    let records = airlock.join(".pixi/envs/demo/conda-meta");
+    fs::write(
+        records.join("forged-9.9.9-0.json"),
+        r#"{"name":"forged","version":"9.9.9","build":"0","files":[]}"#,
+    )
+    .unwrap();
+    let output = run_gate().output().unwrap();
+    assert!(
+        !output.status.success(),
+        "the gate must reject a prefix with a fabricated conda-meta record"
+    );
+    let log = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        log.contains("forged-9.9.9-0.json")
+            && log.contains("present in the restored prefix but not in the manifest's file list"),
+        "the gate must name the forged record, got:\n{log}"
+    );
+
+    // And the failure was the record, not flakiness: remove it and the gate passes again.
+    fs::remove_file(records.join("forged-9.9.9-0.json")).unwrap();
+    let status = run_gate().status().unwrap();
+    assert!(
+        status.success(),
+        "the gate must pass again once the record is gone"
+    );
+}
+
+#[cfg(unix)]
+fn make_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions).unwrap();
+}

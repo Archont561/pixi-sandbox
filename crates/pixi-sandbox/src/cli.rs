@@ -203,6 +203,18 @@ pub struct DoctorArgs {
     #[arg(long)]
     pub verify: bool,
 
+    /// Verify a *restored project* against the manifest's per-file digests: every file,
+    /// symlink target and executable bit of `.pixi/envs/<name>`, plus the fingerprint
+    /// marker. Implies --verify (an oracle is only as good as its own bytes). Writes nothing.
+    #[arg(long, value_name = "PROJECT")]
+    pub verify_restored: Option<PathBuf>,
+
+    /// The restore work directory, when the restore used a non-default one. The
+    /// restored-tree check neutralises the scratch paths a restore embeds; with a custom
+    /// `--work-dir` it needs the same one named here.
+    #[arg(long, requires = "verify_restored")]
+    pub work_dir: Option<PathBuf>,
+
     /// Limit verification to these envs.
     #[arg(long, value_delimiter = ',')]
     pub envs: Vec<String>,
@@ -330,6 +342,8 @@ pub fn run() -> Result<()> {
             commands::doctor(DoctorArgs {
                 branch_location: branch.clone(),
                 verify: true,
+                verify_restored: None,
+                work_dir: None,
                 envs: Vec::new(),
                 json: false,
             })?;

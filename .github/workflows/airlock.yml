@@ -9,10 +9,12 @@
 # Two tiers, and the distinction matters:
 #   Tier B runs the gate with the network reachable. It is a smoke test.
 #   Tier A runs the same gate with egress actually denied, which is the authoritative check.
-# Only Tier A can fail for the reason we care about. See scripts/airlock-gate.sh for why the
-# Tier B no-op check cannot be trusted on its own: `pixi install --offline` is a request, not
-# an enforcement, and will re-fetch a damaged prefix over a live network while reporting
-# success.
+# Only Tier A can fail for the reason we care about. Since the gate gained its integrity
+# section (--transport, D13) both tiers also compare the restored tree against the manifest's
+# per-file digests — but only Tier A proves the same about a machine that *could not* fetch.
+# See scripts/airlock-gate.sh for why the Tier B no-op check cannot be trusted on its own:
+# `pixi install --offline` is a request, not an enforcement, and will re-fetch a damaged
+# prefix over a live network while reporting success.
 #
 # Nothing here touches a real branch or a real remote: the publish step targets a bare repo
 # under the runner's own temp directory, so the proof is self-contained and safe on a PR.
@@ -246,8 +248,10 @@ jobs:
             --envs "$ENVS" --force
 
       # ---------------------------------------------------------------- the gate
+      # --transport hands the gate the extracted branch, so its integrity section can compare
+      # the restored tree against the manifest's per-file digests (D13) instead of shape only.
       - name: Tier B — gate with the network reachable
-        run: bash project/scripts/airlock-gate.sh "${{ runner.temp }}/restored" "$ENVS"
+        run: bash project/scripts/airlock-gate.sh "${{ runner.temp }}/restored" "$ENVS" --transport "${{ runner.temp }}/airlock-checkout"
 
       - name: Tier A — gate with egress denied
         if: ${{ env.BLOCK_NETWORK == 'true' }}
@@ -258,12 +262,12 @@ jobs:
           case "$(uname -s)" in
             Linux)
               # A private network namespace: no route, no DNS, nothing to fall back to.
-              sudo unshare -n -- bash project/scripts/airlock-gate.sh "$RESTORED" "$ENVS"
+              sudo unshare -n -- bash project/scripts/airlock-gate.sh "$RESTORED" "$ENVS" --transport "${{ runner.temp }}/airlock-checkout"
               ;;
             Darwin)
               # macOS has no unshare; sandbox-exec with outbound denied is the equivalent.
               sudo sandbox-exec -p '(version 1)(allow default)(deny network-outbound)' \
-                /bin/bash project/scripts/airlock-gate.sh "$RESTORED" "$ENVS"
+                /bin/bash project/scripts/airlock-gate.sh "$RESTORED" "$ENVS" --transport "${{ runner.temp }}/airlock-checkout"
               ;;
             *)
               echo "::error::no egress-denial mechanism known for $(uname -s)"

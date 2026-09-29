@@ -1,7 +1,7 @@
 ---
 id: TASK-10
 title: 'Verify a restored project against the manifest, not just the branch'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-29 10:54'
 labels:
@@ -24,5 +24,14 @@ There is no oracle to close this with today. A manifest env entry stores `.conda
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The manifest records enough to verify a restored prefix - the unpacked file list with a sha256 per file, or a per-env digest of the extracted tree - with SCHEMA_VERSION bumped and tests/manifest.rs plus the fixtures updated,A doctor mode checks a restored project against the manifest and collects every mismatch instead of stopping at the first and writes nothing,scripts/airlock-gate.sh calls it and a stub prefix with fabricated conda-meta is rejected - proven by a test rather than asserted in a comment,.knowledge/design.md states which layer verifies integrity and which verifies self-sufficiency
+- [x] #1 The manifest records enough to verify a restored prefix — the unpacked file list with a sha256 per file — with SCHEMA_VERSION bumped (1 → 2) and tests/manifest.rs plus the fixtures updated
+- [x] #2 A doctor mode checks a restored project against the manifest and collects every mismatch instead of stopping at the first and writes nothing (`doctor --verify-restored <PROJECT>`, D13)
+- [x] #3 scripts/airlock-gate.sh calls it (`--transport <dir>`) and a stub prefix with fabricated conda-meta is rejected — proven by a test (`the_airlock_gate_rejects_a_forged_conda_meta_record`), not asserted in a comment
+- [x] #4 .knowledge/design.md states which layer verifies integrity and which verifies self-sufficiency (§7 "Which layer proves what")
+
+Done 2026-09-29. Also fixed while here: the gate's first-run no-op failure (pixi writes its own
+bookkeeping on first install — the gate now settles that install, then measures the second),
+and the `--skip-cargo` early exit that would have skipped the integrity section on hosts with
+no cargo. conda-meta records are presence-only by design (their bodies embed digests of
+relocated files); task-1 (osx-arm64) needs macOS hardware and stays open.
 <!-- AC:END -->
