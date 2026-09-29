@@ -33,8 +33,8 @@ pixi-sandbox/
 
 The split is deliberate: `core` is the part that must be *right* (it decides what reaches a
 user's disk), `git` is the part that touches a remote (the part you cannot unit-test against
-reality), and the CLI orchestrates verified staging plus external helper tools. The prototype
-in pure Rust with static release binaries as the portable bootstrap (former Python prototype removed).
+reality), and the CLI orchestrates verified staging plus external helper tools. All three are
+pure Rust, and the static release binaries are the portable bootstrap an airlock restores from.
 
 **Adding a crate** is three steps: `cargo new --lib crates/<name>`, add it to
 `members` in the root `Cargo.toml`, and give it `description` plus `license.workspace = true`
