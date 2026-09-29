@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@me'
 created_date: '2026-09-28 22:05'
-updated_date: '2026-09-29 10:10'
+updated_date: '2026-09-29 10:23'
 labels:
   - cli
   - tools
@@ -25,10 +25,10 @@ tools.rs returns not_yet for tools update. The embedded catalogue in crates/pixi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 pixi-sandbox tools update writes an updated tools lock fetched from the same source the embedded pins were compiled from
-- [ ] #2 Downloaded artifacts are sha256-verified before the lock is written and a mismatch aborts without touching the lock
-- [ ] #3 tests/manifest.rs the_embedded_tool_pins_are_valid_and_complete stays green after an update
-- [ ] #4 The --tools-lock PATH override is honoured for out-of-tree locks
+- [x] #1 pixi-sandbox tools update writes an updated tools lock fetched from the same source the embedded pins were compiled from
+- [x] #2 Downloaded artifacts are sha256-verified before the lock is written and a mismatch aborts without touching the lock
+- [x] #3 tests/manifest.rs the_embedded_tool_pins_are_valid_and_complete stays green after an update
+- [x] #4 The --tools-lock PATH override is honoured for out-of-tree locks
 <!-- AC:END -->
 
 ## Implementation Plan
