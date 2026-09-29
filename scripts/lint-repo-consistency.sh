@@ -15,6 +15,10 @@
 # 2. task-7 — the README Platforms badge says exactly what `pixi.toml` declares, every platform
 #    `.pixi-sandbox.toml` publishes is one of them, and the Windows gap (no conda-forge `bun`,
 #    D11) is documented rather than advertised by the badge.
+# 3. task-2 follow-up — every hardcoded `vX.Y.Z` in the user-facing docs is the version the
+#    manifests declare. A release commit bumps `Cargo.toml` but cannot rewrite the ~100 doc
+#    references, so the two drift silently and a reader following the docs installs the previous
+#    release. This is the check that makes the drift a CI failure instead of a support issue.
 
 set -euo pipefail
 
@@ -24,6 +28,7 @@ cd "$REPO_ROOT"
 README=README.md
 PIXI=pixi.toml
 PLAN=.pixi-sandbox.toml
+CARGO=Cargo.toml
 
 failures=0
 fail() {
@@ -98,10 +103,63 @@ esac
 grep -qE "win-64.*[^a-z]bun([^a-z]|$).*[^A-Za-z]D11([^0-9]|$)" "$README" ||
   fail "$README does not document the Windows gap on one line: name win-64, the conda-forge bun blocker and D11 (task-7)"
 
+# ---------------------------------------------------------------- 3. version references
+
+# The declared version, from the same anchored substitution prepare-release.sh writes.
+current="$(
+  sed -n 's/^version = "\([^"]*\)".*/\1/p' "$CARGO" | sed 1q
+)"
+if [ -z "$current" ]; then
+  fail "$CARGO has no parsable top-level version — cannot check the doc references (task-2)"
+else
+  current="v$current"
+  # Only OUR tags. A third-party pin on the same line (`prefix-dev/setup-pixi@v0.10.2`,
+  # `actions/checkout@v7.0.1`) is someone else's release and must never be rewritten or failed:
+  # the repository is deliberately not the authority on `setup-pixi`'s version. So a line counts
+  # only when it names this project — an `Archont561/pixi-sandbox...@vX.Y.Z` ref, a
+  # `releases/download/vX.Y.Z/` URL, or a bare `version: vX.Y.Z` input. Everything else is
+  # skipped, which is also why this check cannot be a blind `grep v[0-9]`.
+  #
+  # A reference that must stay on an older release (a deliberate upgrade walkthrough, a
+  # regression test) opts out with `stale-ref-allowed` on the line.
+  stale_versions="$(
+    find . -type f \( -name '*.md' -o -name '*.mdx' \) \
+      -not -path './.git/*' \
+      -not -path './.knowledge/*' \
+      -not -path './node_modules/*' \
+      -not -path './docs/node_modules/*' \
+      -not -name 'CHANGELOG.md' \
+      -not -path './backlog/*' \
+      -print0 |
+      xargs -0 awk -v cur="$current" -v root="Archont561/pixi-sandbox" '
+        FNR == 1 { prev = "" }
+        {
+          if ($0 !~ /stale-ref-allowed/ && prev !~ /stale-ref-allowed/ &&
+              (index($0, root) || $0 ~ /releases\/download\/v[0-9]/ || $0 ~ /version: v[0-9]/ ||
+               $0 ~ /PIXI_SANDBOX_VERSION=v[0-9]/ || $0 ~ /`uses: @v[0-9]/)) {
+            line = $0
+            # Every vX.Y.Z on a project line must be the declared one.
+            while (match(line, /v[0-9]+\.[0-9]+\.[0-9]+/)) {
+              tok = substr(line, RSTART, RLENGTH)
+              if (tok != cur) printf "%s:%d: pins %s, manifests declare %s\n", FILENAME, FNR, tok, cur
+              line = substr(line, RSTART + RLENGTH)
+            }
+          }
+          prev = $0
+        }
+      ' || true
+  )"
+  if [ -n "$stale_versions" ]; then
+    fail "documentation pins a version the manifests do not declare (task-2):"
+    printf '  %s\n' "$stale_versions" >&2
+    echo "  repin to $current, or mark the line stale-ref-allowed if it must name an older release" >&2
+  fi
+fi
+
 # ----------------------------------------------------------------
 
 if [ "$failures" -gt 0 ]; then
   printf 'repo consistency: %d check(s) failed\n' "$failures" >&2
   exit 1
 fi
-echo "repo consistency: crates/ is free of prototype references; platform claims agree"
+echo "repo consistency: crates/ is free of prototype references; platform and version claims agree"
