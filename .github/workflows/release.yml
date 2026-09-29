@@ -146,6 +146,22 @@ jobs:
             fi
           done
 
+      - name: Stage the install bootstrap script
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ship the connected-side bootstrapper as a release asset so the documented install
+          # one-liner can curl it from an immutable release URL instead of a branch (task-2).
+          # It is delivered over `curl | sh` (trust-on-first-use via TLS), so it is intentionally
+          # NOT added to SHA256SUMS — SHA256SUMS stays the binary contract setup-pixi-sandbox reads,
+          # and init.sh verifies the binary it downloads against it.
+          if [ ! -f scripts/init.sh ]; then
+            echo "::error::scripts/init.sh not found in the checked-out release ref"
+            exit 1
+          fi
+          cp scripts/init.sh dist/init.sh
+          ls -lh dist/init.sh
+
       - name: Determine release tag
         id: tag
         shell: bash
@@ -168,5 +184,6 @@ jobs:
           files: |
             dist/pixi-sandbox-*
             dist/SHA256SUMS
+            dist/init.sh
           generate_release_notes: true
           fail_on_unmatched_files: true
