@@ -221,7 +221,7 @@ pub enum Linkage {
     Static,
     /// Needs shared libraries / an interpreter from its build prefix.
     Dynamic,
-    /// A script (e.g. the reference prototype): fine, it just needs its interpreter.
+    /// A `#!` script (e.g. a generated launcher): fine, it just needs its interpreter.
     Script,
     /// Mach-O / PE: system-linked by definition; not our airlock problem here.
     System,
@@ -259,7 +259,7 @@ pub fn linkage_of(path: &Path) -> Linkage {
         return Linkage::Unknown;
     }
 
-    // Scripts: `#!` — the prototype ships this way.
+    // Scripts: `#!` — a launcher shipped as text, not a binary.
     if &head[..2] == b"#!" {
         return Linkage::Script;
     }

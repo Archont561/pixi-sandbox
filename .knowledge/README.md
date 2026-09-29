@@ -9,6 +9,7 @@ agents who were not in the room.
 | [`design.md`](design.md) | In-depth technical specification: transport format, CLI surface, airlock invariants |
 | [`rust-bootstrap.md`](rust-bootstrap.md) | Standalone static Rust bootstrap replacement strategy and platform checklist |
 | [`publish-automation.md`](publish-automation.md) | `.pixi-sandbox.toml` bundle schema, setup actions, and multi-platform branch publication |
+| [`rattler-spike.md`](rattler-spike.md) | Measured trade-off for the v2 idea of replacing the `pixi-pack`/`pixi-unpack` subprocesses with the `rattler` library, and the proposed D12 |
 | [`research-results.md`](research-results.md) | Concise summary of initial research conclusions and feasibility studies |
 | [`research/EVIDENCE.md`](research/EVIDENCE.md) | Raw lab measurements: bundle sizes, restore timings, Git object economics, Pixi internals |
 | [`research/REPRODUCE-TRANSCRIPT.md`](research/REPRODUCE-TRANSCRIPT.md) | Verbatim cold-run reproduction log on a clean system |

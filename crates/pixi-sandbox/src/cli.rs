@@ -105,7 +105,7 @@ pub struct PublishArgs {
     #[arg(long)]
     pub remote: Option<String>,
 
-    /// Keep at most N snapshots on the branch (rotation; 0 = keep everything).
+    /// Keep at most N snapshots on the branch (rotation; 0/1 = one orphan snapshot).
     #[arg(long, default_value_t = 0)]
     pub keep: u32,
 

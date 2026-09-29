@@ -31,6 +31,23 @@ fn request<'a>(dir: &'a Path, message: &'a str) -> Snapshot<'a> {
         branch: BRANCH,
         remote: REMOTE,
         message,
+        keep: 0,
+    }
+}
+
+/// A request aimed at a real remote (the mock ignores where `REMOTE` points).
+fn request_to<'a>(dir: &'a Path, message: &'a str, remote: &'a str) -> Snapshot<'a> {
+    Snapshot {
+        remote,
+        ..request(dir, message)
+    }
+}
+
+/// The same request with rotation asked for: keep at most `keep` snapshots on the branch.
+fn rotating<'a>(dir: &'a Path, message: &'a str, keep: u32) -> Snapshot<'a> {
+    Snapshot {
+        keep,
+        ..request(dir, message)
     }
 }
 
@@ -127,6 +144,62 @@ fn the_mock_replaces_history_instead_of_appending_to_it() {
     );
 }
 
+/// Task-3 / design §2: a force-push does not reclaim server space, so retention cannot mean
+/// "append and let gc sort it out" — rotation *rebuilds* the branch so it carries at most N
+/// snapshots, newest first, and the ones that fall off are no longer referenced.
+#[test]
+fn the_mock_rotates_the_branch_to_at_most_keep_snapshots() {
+    let git = FakeGit::new();
+    let mut tips = Vec::new();
+    for round in 1..=4 {
+        let body = format!("snapshot {round}");
+        let dir = snapshot(&[("payload.txt", body.as_bytes())]);
+        git.publish(&rotating(dir.path(), &body, 3)).unwrap();
+        tips.push(git.tip(REMOTE, BRANCH).unwrap());
+    }
+
+    let history = git.history(REMOTE, BRANCH);
+    assert_eq!(
+        history.len(),
+        3,
+        "keep 3 must cap the branch at 3 snapshots"
+    );
+    assert_eq!(history[0], tips[3], "the newest snapshot is the tip");
+    assert_eq!(
+        history,
+        vec![tips[3].clone(), tips[2].clone(), tips[1].clone()],
+        "history is the N most recent snapshots, newest first"
+    );
+    assert!(
+        !history.contains(&tips[0]),
+        "the oldest snapshot must fall off the rebuilt history"
+    );
+    assert_eq!(
+        git.files(REMOTE, BRANCH).unwrap()["payload.txt"],
+        b"snapshot 4".to_vec(),
+        "rotation must not change which payload the branch serves"
+    );
+    assert_eq!(git.pushes(), 4, "still exactly one push per publish");
+}
+
+/// Rotation is opt-in: the default request is the orphan snapshot it has always been.
+#[test]
+fn the_mock_treats_keep_one_and_no_keep_the_same_way() {
+    for keep in [0, 1] {
+        let git = FakeGit::new();
+        for round in 1..=3 {
+            let body = format!("snapshot {round}");
+            let dir = snapshot(&[("payload.txt", body.as_bytes())]);
+            git.publish(&rotating(dir.path(), &body, keep)).unwrap();
+        }
+        assert_eq!(
+            git.history(REMOTE, BRANCH).len(),
+            1,
+            "keep={keep} must leave a single-snapshot orphan branch"
+        );
+    }
+}
+
 #[test]
 fn a_rejected_push_keeps_the_remote_unchanged_and_names_it() {
     let git = FakeGit::new();
@@ -201,6 +274,7 @@ fn the_shell_implementation_publishes_and_fetches_byte_for_byte() {
             branch: BRANCH,
             remote: &remote,
             message: "snapshot",
+            keep: 0,
         })
         .unwrap();
     assert_eq!(published.commit.len(), 40);
@@ -231,6 +305,7 @@ fn a_second_publish_replaces_the_branch_history() {
             branch: BRANCH,
             remote: &remote,
             message: "snapshot",
+            keep: 0,
         })
         .unwrap();
     }
@@ -254,6 +329,138 @@ fn a_second_publish_replaces_the_branch_history() {
     );
 }
 
+/// Task-3 against a real remote: four publishes with `keep 2` must leave a branch that serves
+/// two snapshots — the newest on top, the one before it as its parent — and each kept commit
+/// must still serve its own payload, or "rotation" would just be truncation of the content.
+#[test]
+fn the_shell_implementation_rebuilds_a_bounded_history_on_the_remote() {
+    let (_tmp, remote) = bare_remote();
+    let git = ShellGit::new();
+
+    for round in 1..=4 {
+        let body = format!("snapshot {round}");
+        let transport = snapshot(&[("payload.txt", body.as_bytes())]);
+        git.publish(&Snapshot {
+            keep: 2,
+            ..request_to(transport.path(), &body, &remote)
+        })
+        .unwrap();
+    }
+
+    let bare = PathBuf::from(&remote);
+    assert_eq!(
+        run_git(&["rev-list", "--count", BRANCH], &bare),
+        "2",
+        "keep 2 caps the published history at two snapshots"
+    );
+    assert_eq!(
+        run_git(&["log", "--format=%s", BRANCH], &bare)
+            .lines()
+            .collect::<Vec<_>>(),
+        vec!["snapshot 4", "snapshot 3"],
+        "the two most recent snapshots survive, newest first"
+    );
+    assert_eq!(
+        run_git(&["show", &format!("{BRANCH}:payload.txt")], &bare),
+        "snapshot 4"
+    );
+    assert_eq!(
+        run_git(&["show", &format!("{BRANCH}~1:payload.txt")], &bare),
+        "snapshot 3",
+        "a kept snapshot keeps its own tree, not the tip's"
+    );
+}
+
+/// The claim design §2 will not take on faith: rotation has to be able to make an existing
+/// history *smaller*, not merely stop it from growing.
+#[test]
+fn lowering_keep_shrinks_a_history_that_is_already_on_the_remote() {
+    let (_tmp, remote) = bare_remote();
+    let git = ShellGit::new();
+    let bare = PathBuf::from(&remote);
+
+    for round in 1..=3 {
+        let body = format!("snapshot {round}");
+        let transport = snapshot(&[("payload.txt", body.as_bytes())]);
+        git.publish(&Snapshot {
+            keep: 3,
+            ..request_to(transport.path(), &body, &remote)
+        })
+        .unwrap();
+    }
+    assert_eq!(run_git(&["rev-list", "--count", BRANCH], &bare), "3");
+
+    let transport = snapshot(&[("payload.txt", b"snapshot 4")]);
+    git.publish(&Snapshot {
+        keep: 1,
+        ..request_to(transport.path(), "snapshot 4", &remote)
+    })
+    .unwrap();
+
+    assert_eq!(
+        run_git(&["rev-list", "--count", BRANCH], &bare),
+        "1",
+        "publishing with keep 1 must rebuild the branch down to a single snapshot"
+    );
+    assert_eq!(
+        run_git(&["show", &format!("{BRANCH}:payload.txt")], &bare),
+        "snapshot 4"
+    );
+}
+
+/// A guard on what makes rotation affordable: re-committing a kept snapshot needs its commit
+/// and tree, never its blobs, and the payload is the whole weight of a transport. If the filter
+/// or the depth is ever dropped, a rotation starts downloading hundreds of MiB to rewrite a
+/// commit object — and nothing else in the suite would notice.
+#[test]
+fn a_rotating_publish_fetches_metadata_only_and_a_default_one_does_not_fetch_at_all() {
+    let (_tmp, remote) = bare_remote();
+    let seed = snapshot(&[("payload.txt", b"snapshot 1")]);
+    ShellGit::new()
+        .publish(&Snapshot {
+            keep: 2,
+            ..request_to(seed.path(), "snapshot 1", &remote)
+        })
+        .unwrap();
+
+    let recorded = Arc::new(RecordingRunner::new());
+    let git = ShellGit::with_runner(Box::new(recorded.clone()));
+    let next = snapshot(&[("payload.txt", b"snapshot 2")]);
+    git.publish(&Snapshot {
+        keep: 2,
+        ..request_to(next.path(), "snapshot 2", &remote)
+    })
+    .unwrap();
+
+    let fetches: Vec<String> = recorded
+        .rendered()
+        .into_iter()
+        .filter(|command| command.contains(" fetch "))
+        .collect();
+    assert_eq!(fetches.len(), 1, "one fetch per rotation: {fetches:?}");
+    assert!(
+        fetches[0].contains("--filter=blob:none"),
+        "a rotation must not download the payload it is rotating: {}",
+        fetches[0]
+    );
+    assert!(
+        fetches[0].contains("--depth=1"),
+        "keep 2 inherits exactly one snapshot: {}",
+        fetches[0]
+    );
+
+    let plain = Arc::new(RecordingRunner::new());
+    let last = snapshot(&[("payload.txt", b"snapshot 3")]);
+    ShellGit::with_runner(Box::new(plain.clone()))
+        .publish(&request_to(last.path(), "snapshot 3", &remote))
+        .unwrap();
+    assert!(
+        !plain.rendered().iter().any(|c| c.contains(" fetch ")),
+        "a publish without --keep must not talk to the remote before pushing: {:?}",
+        plain.rendered()
+    );
+}
+
 #[test]
 fn the_shell_implementation_never_writes_into_the_transport() {
     let (_tmp, _remote) = bare_remote();
@@ -267,6 +474,7 @@ fn the_shell_implementation_never_writes_into_the_transport() {
             branch: BRANCH,
             remote: &remote,
             message: "snapshot",
+            keep: 0,
         })
         .unwrap();
 
@@ -295,6 +503,7 @@ fn the_recording_runner_makes_the_orphan_and_the_force_visible() {
         branch: BRANCH,
         remote: &remote,
         message: "snapshot",
+        keep: 0,
     })
     .unwrap();
 
@@ -355,6 +564,7 @@ fn the_remote_size_is_knowable_for_a_local_remote_and_not_for_a_url() {
         branch: BRANCH,
         remote: &remote,
         message: "snapshot",
+        keep: 0,
     })
     .unwrap();
 

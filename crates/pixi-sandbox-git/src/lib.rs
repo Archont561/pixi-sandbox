@@ -18,6 +18,8 @@
 //! 1. **Publishing is an orphan.** One call produces exactly one commit with no parent on the
 //!    destination branch and force-pushes it. History is *replaced*, never appended — that is
 //!    what makes a branch a snapshot rather than a changelog (design.md §2, decision D1).
+//!    With [`Snapshot::keep`] > 1 the branch is *rebuilt* to the N most recent snapshots
+//!    instead: still a force-push of a history this call constructed, never an append.
 //! 2. **The snapshot directory is read-only.** `publish` never writes into it, never creates a
 //!    `.git` in it; the payload is not copied, either — objects and the index go to a scratch
 //!    directory next to it, which is removed before returning.
@@ -106,6 +108,18 @@ pub struct Snapshot<'a> {
     pub remote: &'a str,
     /// Commit message — the manifest summary, so the branch is self-describing in `git log`.
     pub message: &'a str,
+    /// How many snapshots the branch may carry afterwards. `0` and `1` both mean the
+    /// single-commit orphan branch; a larger N *rebuilds* the history to the N most recent
+    /// snapshots (design.md §2 — a force-push is not a shrink, so retention cannot append).
+    pub keep: u32,
+}
+
+impl Snapshot<'_> {
+    /// Snapshots to leave on the branch: rotation is opt-in, so anything below 2 is the
+    /// historical single-snapshot behaviour.
+    pub fn retained(&self) -> usize {
+        self.keep.max(1) as usize
+    }
 }
 
 /// What a publish or fetch did, for reporting and for CI logs.

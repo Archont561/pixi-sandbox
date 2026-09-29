@@ -293,6 +293,102 @@ impl ShellGit {
         self.log().split_off(from.min(self.log().len()))
     }
 
+    /// Run a command that is allowed to fail (a branch that does not exist yet, a server that
+    /// refuses a filter). Logged like any other, so `--dry-run` still shows it.
+    fn try_run(&self, command: &Command) -> Option<Output> {
+        self.log
+            .lock()
+            .expect("git log lock")
+            .push(command.rendered());
+        match self.runner.run(command) {
+            Ok(output) if output.ok() => Some(output),
+            _ => None,
+        }
+    }
+
+    /// The parent chain a rotating publish commits on top of, or `None` for an orphan.
+    ///
+    /// Rotation *rebuilds* (design.md §2): the kept snapshots are re-committed here as a fresh
+    /// parentless chain, so the pushed history is exactly what this call constructed and the
+    /// dropped snapshots are unreferenced. Reusing the fetched commits as parents instead would
+    /// drag their whole ancestry along, which is the growth the flag exists to stop.
+    fn rebuilt_parent(&self, snapshot: &Snapshot<'_>, scratch: &Path) -> Result<Option<String>> {
+        let inherited = snapshot.retained() - 1;
+        if inherited == 0 {
+            return Ok(None);
+        }
+
+        // `--filter=blob:none` keeps a rotation from downloading the payload it is rotating:
+        // only commits and trees are needed to re-commit them, and the remote already has every
+        // blob. Servers may refuse the filter, so a plain shallow fetch is the fallback, and a
+        // branch that does not exist yet simply has nothing to inherit.
+        let fetch = |extra: Option<&str>| {
+            let mut command = self
+                .git(["fetch", "--no-tags"])
+                .arg(format!("--depth={inherited}"));
+            if let Some(extra) = extra {
+                command = command.arg(extra);
+            }
+            command
+                .arg(snapshot.remote)
+                .arg(format!("refs/heads/{}", snapshot.branch))
+                .env("GIT_DIR", path(scratch))
+        };
+        if self.try_run(&fetch(Some("--filter=blob:none"))).is_none()
+            && self.try_run(&fetch(None)).is_none()
+        {
+            return Ok(None);
+        }
+
+        let listed = self.run_text(
+            &self
+                .git([
+                    "rev-list",
+                    &format!("--max-count={inherited}"),
+                    "FETCH_HEAD",
+                ])
+                .env("GIT_DIR", path(scratch)),
+        )?;
+        // rev-list is newest first; re-commit oldest first so the chain comes out in order.
+        let kept: Vec<String> = listed.lines().rev().map(str::to_string).collect();
+
+        let mut parent: Option<String> = None;
+        for commit in kept {
+            let tree = self.run_text(
+                &self
+                    .git(["rev-parse", &format!("{commit}^{{tree}}")])
+                    .env("GIT_DIR", path(scratch)),
+            )?;
+            let message = self.run_text(
+                &self
+                    .git(["log", "-1", "--format=%B", &commit])
+                    .env("GIT_DIR", path(scratch)),
+            )?;
+            parent = Some(self.commit_tree(&tree, parent.as_deref(), &message, scratch)?);
+        }
+        Ok(parent)
+    }
+
+    /// One commit object: parentless unless a rotation gave it a parent.
+    fn commit_tree(
+        &self,
+        tree: &str,
+        parent: Option<&str>,
+        message: &str,
+        scratch: &Path,
+    ) -> Result<String> {
+        let mut command = self.git(["commit-tree"]).arg(tree);
+        if let Some(parent) = parent {
+            command = command.args(["-p", parent]);
+        }
+        self.run_text(
+            &command
+                .args(["-m", message])
+                .env("GIT_DIR", path(scratch))
+                .env("GIT_INDEX_FILE", path(&scratch.join("index"))),
+        )
+    }
+
     fn push(&self, remote: &str, branch: &str, git_dir: &Path) -> Result<()> {
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
         let command = self
@@ -348,12 +444,10 @@ impl GitProtocol for ShellGit {
 
         self.run(&with_scratch(self.git(["add", "-A", "-f"])).cwd(snapshot.dir))?;
         let tree = self.run_text(&with_scratch(self.git(["write-tree"])))?;
-        // No `-p`: the commit is parentless, so the branch is an orphan by construction.
-        let commit = self.run_text(&with_scratch(
-            self.git(["commit-tree"])
-                .arg(&tree)
-                .args(["-m", snapshot.message]),
-        ))?;
+        // No parent by default: the commit is parentless, so the branch is an orphan by
+        // construction. `--keep N` gives it the rebuilt chain of the N-1 kept snapshots.
+        let parent = self.rebuilt_parent(snapshot, &scratch)?;
+        let commit = self.commit_tree(&tree, parent.as_deref(), snapshot.message, &scratch)?;
         self.run(&with_scratch(
             self.git(["update-ref"])
                 .arg(format!("refs/heads/{}", snapshot.branch))

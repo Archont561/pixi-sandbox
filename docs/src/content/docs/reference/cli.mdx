@@ -87,10 +87,32 @@ pixi-sandbox publish \
 | `--input-dir` | Transport dir |
 | `--branch-name` | Orphan branch to force-push |
 | `--remote` | Git remote (default `origin`) |
-| `--keep` | Keep N history (rebuilds history, not shrink) |
+| `--keep` | Retain at most N snapshots on the branch (default: 1, a single-commit orphan) |
 | `--dry-run` | Preview git commands, don't push |
 
 Implementation: `GIT_DIR` points at scratch repo **next to** transport (same FS, never /tmp), `GIT_INDEX_FILE` scratch, `GIT_WORK_TREE` = transport, plumbing `add → write-tree → commit-tree (no -p) → update-ref → push --force`. No `.git` in owned dir, no copy.
+
+### Rotation (`--keep N`)
+
+Without `--keep` (or with `--keep 1`) a publish is what it has always been: one parentless
+commit that replaces the branch. `--keep N` keeps the **N most recent snapshots** instead —
+the N-1 previous ones are fetched shallow and `--filter=blob:none` (commits and trees only, so
+rotating does not download the payload it is rotating), re-committed as a fresh chain, and the
+new snapshot goes on top. The result is force-pushed like any other publish.
+
+```bash
+# a branch that carries the last three builds, oldest dropped on every publish
+pixi-sandbox publish --input-dir .sandbox-out --branch-name sandbox/dev-linux-64 --keep 3
+```
+
+:::caution[Rotation is not a shrink]
+Dropping a snapshot makes its objects **unreferenced, not deleted**. A force-push followed by
+`git gc --aggressive` on the server has been measured *not* to reclaim the space, and a hosted
+server may keep unreferenced objects for a long time. `--keep N` bounds what the branch
+*serves*, which bounds what an airlock fetches; reclaiming disk on the remote still needs an
+administrator to prune, or the branch to be deleted and re-created under a new name. See
+design §2.
+:::
 
 ## restore
 

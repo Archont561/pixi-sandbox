@@ -40,8 +40,9 @@ pub enum Op {
 #[derive(Debug, Clone, Default)]
 struct RemoteBranch {
     commit: String,
-    /// The commit history the remote would serve. A publish replaces it (orphan + force);
-    /// a mock that appended here would let a broken publish pass its tests.
+    /// The commit history the remote would serve, newest first. A publish replaces it (orphan
+    /// plus force) or, with `keep`, rebuilds it capped at N; a mock that appended here would
+    /// let a broken publish pass its tests.
     history: Vec<String>,
     files: BTreeMap<String, Vec<u8>>,
 }
@@ -84,8 +85,9 @@ impl FakeGit {
             .map(|b| b.commit.clone())
     }
 
-    /// How many commits the remote would serve for this branch. Always 1 after a publish:
-    /// that is the orphan-branch contract (design.md §2).
+    /// The commits the remote would serve for this branch, newest first. One after a default
+    /// publish — the orphan-branch contract (design.md §2) — and at most `keep` after a
+    /// rotating one.
     pub fn history(&self, remote: &str, branch: &str) -> Vec<String> {
         self.state
             .lock()
@@ -147,11 +149,21 @@ impl GitProtocol for FakeGit {
             files.insert(path.clone(), content);
         }
 
+        // Rotation rebuilds: the new snapshot goes on top and the tail is cut to `keep`, so a
+        // branch never grows past what the operator asked to retain.
+        let mut history = state
+            .branches
+            .get(&branch)
+            .map(|previous| previous.history.clone())
+            .unwrap_or_default();
+        history.insert(0, commit.clone());
+        history.truncate(snapshot.retained());
+
         state.branches.insert(
             branch,
             RemoteBranch {
                 commit: commit.clone(),
-                history: vec![commit.clone()],
+                history,
                 files,
             },
         );

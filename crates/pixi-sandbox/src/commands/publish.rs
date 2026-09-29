@@ -5,10 +5,10 @@
 //! the tests use. `--dry-run` swaps in [`ShellGit::preview`], i.e. the very same code path
 //! with a runner that records commands and executes nothing.
 //!
-//! Remaining work for the port (the rest is done):
-//!   1. `--keep N` rotation: rebuild the branch's history with N snapshots instead of
-//!      replacing it. Deferred until there is a retention policy — force-push + `gc` does
-//!      *not* shrink an orphan repo (measured, see §2).
+//! `--keep N` rotates the branch by *rebuilding* its history to the N most recent snapshots.
+//! It bounds what the branch serves, not what the server stores: force-push + `gc` does *not*
+//! shrink an orphan repo (measured, see §2), so the dropped snapshots are unreferenced until
+//! an administrator prunes — which is why the flag says so on every rotating publish.
 
 use crate::cli::PublishArgs;
 use crate::commands::support;
@@ -24,12 +24,6 @@ pub fn run(args: PublishArgs) -> Result<()> {
     let manifest_path = Manifest::path_in(&input);
     let manifest = Manifest::load(&manifest_path)
         .with_context(|| format!("loading {}", manifest_path.display()))?;
-    if args.keep > 0 {
-        // Deliberately not silently ignored: an operator asking for retention must hear that
-        // this build replaces history.
-        return Err(super::not_yet("publish --keep", "2"));
-    }
-
     let remote = args.remote.as_deref().unwrap_or("origin").to_string();
     let message = commit_message(&manifest);
 
@@ -44,6 +38,7 @@ pub fn run(args: PublishArgs) -> Result<()> {
             branch: &args.branch_name,
             remote: &remote,
             message: &message,
+            keep: args.keep,
         })
         .with_context(|| format!("publishing {} to {remote}", input.display()))?;
 
@@ -75,6 +70,15 @@ pub fn run(args: PublishArgs) -> Result<()> {
         "  commit {}",
         &published.commit[..published.commit.len().min(12)]
     );
+    if args.keep > 1 {
+        // Rotation rebuilt the history; say so, and say what it does *not* do — a force-push
+        // leaves the dropped objects on the server until an administrator prunes (design §2).
+        println!(
+            "  keeping at most {} snapshot(s) on the branch — the dropped snapshots are \
+             unreferenced, not deleted: ask an administrator to gc the remote to reclaim space",
+            args.keep
+        );
+    }
     match git.remote_size(&remote, &args.branch_name) {
         // A local remote (or one mounted as a path) can answer this; a URL cannot.
         Ok(Some(bytes)) => println!("  branch stores {} MiB", mib(bytes)),

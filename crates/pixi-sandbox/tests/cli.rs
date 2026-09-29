@@ -640,22 +640,63 @@ fn publish_refuses_a_directory_that_is_not_a_transport() {
         .stderr(predicate::str::contains("manifest.json"));
 }
 
+/// Task-3: `--keep N` is the retention flag, and it has to be visible in the output — an
+/// operator who asked for rotation must be able to read what the branch now carries.
 #[test]
-fn publish_keep_is_not_silently_ignored() {
+fn publish_keep_rotates_the_branch_instead_of_replacing_it() {
+    let tmp = tempfile::tempdir().unwrap();
     let transport = transport_copy();
-    bin()
-        .args([
-            "publish",
-            "--input-dir",
-            transport.path().to_str().unwrap(),
-            "--branch-name",
-            "sandbox/demo-linux-64",
-            "--keep",
-            "3",
-        ])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("design.md"));
+    let remote = bare_remote(tmp.path());
+    let branch = "sandbox/demo-linux-64";
+
+    for _ in 0..3 {
+        bin()
+            .args([
+                "publish",
+                "--input-dir",
+                transport.path().to_str().unwrap(),
+                "--branch-name",
+                branch,
+                "--remote",
+                &remote,
+                "--keep",
+                "2",
+            ])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("published"))
+            .stdout(predicate::str::contains("keeping at most 2 snapshot"));
+    }
+
+    assert_eq!(
+        run_git(&["rev-list", "--count", branch], Path::new(&remote)),
+        "2",
+        "three publishes with --keep 2 must leave two snapshots on the branch"
+    );
+}
+
+/// Task-6: a deferred verb is read by an operator who has no network to check what it names.
+/// It used to send them to a reference implementation that 0.2.0 deleted from the repository,
+/// which is exactly the kind of dead end an airlock cannot resolve, so the only thing it may
+/// cite is the design section that specifies the verb.
+#[test]
+fn a_deferred_verb_cites_only_the_design_section() {
+    let tools = bin().args(["tools", "update"]).assert().failure();
+
+    for (verb, output, section) in [("tools update", tools.get_output(), "§10")] {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(".knowledge/design.md") && stderr.contains(section),
+            "`{verb}` must name the design section that specifies it, got:\n{stderr}"
+        );
+        // stale-ref-allowed: this list is the rule `lint-repo-consistency` enforces elsewhere.
+        for stale in ["python", "prototype", ".knowledge/research"] {
+            assert!(
+                !stderr.to_ascii_lowercase().contains(stale),
+                "`{verb}` still points at the deleted {stale} reference:\n{stderr}"
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------- unpack / restore, fixture proof

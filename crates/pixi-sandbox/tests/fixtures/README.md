@@ -27,8 +27,8 @@ sha256-verified pins and works on a machine with nothing installed), or be marke
 
 ## Regenerating
 
-`transport/` is checked in so the tests are hermetic. It was originally generated deterministically
-via Python; now it is maintained as a static payload with real digests (edit files directly,
+`transport/` is checked in so the tests are hermetic. It is maintained as a static payload with
+real digests (edit files directly,
 or re-pack via Rust CLI and copy manifest structure). The fixture intentionally includes a split blob
 `.partNNN` case and one verified `pixi-sandbox` stub under `.pixi-sandbox/tools/linux-64/`.
 Its root contains only `README.md` and `AGENTS.md`, matching the v0.3 transport layout.

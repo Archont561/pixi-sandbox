@@ -2,9 +2,9 @@
 //!
 //! `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, and `tools list` share one
 //! manifest/config contract. `unpack` is the single-environment primitive that `restore` drives once per env,
-//! and is also the escape hatch for a payload that arrived outside the branch flow. The Python
-//! prototype in `.knowledge/research/pixi_sandbox.py` remains a reproducibility reference;
-//! `publish --keep` and `tools update` are intentionally the only deferred CLI operations.
+//! and is also the escape hatch for a payload that arrived outside the branch flow.
+//! `.knowledge/design.md` specifies every verb; `tools update` (§10) is intentionally the only
+//! deferred CLI operation.
 
 mod doctor;
 mod init;
@@ -37,7 +37,6 @@ pub fn install_tracing() {
 pub(crate) fn not_yet(verb: &str, section: &str) -> anyhow::Error {
     anyhow::anyhow!(
         "`{verb}` is not implemented yet (schema + behaviour are specified in \
-         .knowledge/design.md §{section}; the Python prototype in .knowledge/research/ \
-         implements it end-to-end and is the reference for this port)"
+         .knowledge/design.md §{section}, which is the only reference for this verb)"
     )
 }
