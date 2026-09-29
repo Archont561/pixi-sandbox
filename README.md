@@ -491,7 +491,7 @@ and no C compiler, so the post-create step provisions the host tools, materialis
 project environment, installs the bun workspace, and installs the agent CLI:
 
 ```jsonc
-"postCreateCommand": "pixi global install git gh && pixi global install --expose cc --expose gcc --expose ar=x86_64-conda-linux-gnu-ar c-compiler && pixi install --locked --all && pixi run docs-install && pixi run setup-opencode"
+"postCreateCommand": "pixi g i git gh && pixi g i --expose cc --expose gcc --expose ar=x86_64-conda-linux-gnu-ar c-compiler && pixi install --locked --all && pixi run docs-install && pixi run setup-opencode"
 ```
 
 `pixi global` installs into `/root/.pixi/bin`, which the official image already has on `PATH`,
