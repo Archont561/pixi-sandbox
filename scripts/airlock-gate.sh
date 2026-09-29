@@ -35,6 +35,12 @@
 
 set -euo pipefail
 
+# How much on-disk drift the second `pixi install` may show while still counting as a no-op, in
+# KiB. Only pixi rewriting its own bookkeeping can move this — the file list is compared exactly,
+# so nothing can arrive from the network inside this budget. One filesystem block of drift was
+# observed in CI; the budget is a handful of blocks, not a licence to fetch.
+NOOP_DRIFT_KIB=64
+
 if [ $# -lt 1 ]; then
   sed -n '3,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 2
@@ -222,19 +228,42 @@ for env_name in ${ENVS//,/ }; do
   (cd "$PROJECT" && "$TOOLS_BIN/pixi" install --frozen --offline -e "$env_name") ||
     fail "pixi install --frozen --offline -e $env_name failed: the transport is not self-sufficient"
 
-  # Counted as files and on-disk size rather than a checksum walk: the prefix is hundreds of MiB,
-  # and the claim under test is "no byte was needed", which a growth check answers as well as a
-  # byte-for-byte diff would.
-  before="$(find "$PROJECT/.pixi" -type f | wc -l | tr -d ' '):$(du -sk "$PROJECT/.pixi" | cut -f1)"
+  # Compared as the *set of files* plus on-disk size rather than a checksum walk: the prefix is
+  # hundreds of MiB, and the claim under test is "no byte was needed". Anything pixi would have
+  # had to fetch arrives as new files — a package brings its payload and its conda-meta record —
+  # so an unchanged file list is the load-bearing half of this check, and it is compared exactly.
+  #
+  # The size half carries a small tolerance because equality was flaky in practice: run
+  # 36586594920 failed the linux-64 gate with an identical file list (5363 files both sides) and
+  # `du -sk` drifting 2023048 -> 2023052, a single 4 KiB block. pixi rewrites its own bookkeeping
+  # on each install, and a rewrite that crosses a block boundary moves the total without anything
+  # being fetched. Failing the authoritative claim on one block of allocator noise reports a
+  # healthy transport as broken, so the size is allowed to drift within one tolerance and the
+  # drift is always printed.
+  list_before="$(find "$PROJECT/.pixi" -type f | LC_ALL=C sort | cksum)"
+  files_before="$(find "$PROJECT/.pixi" -type f | wc -l | tr -d ' ')"
+  kib_before="$(du -sk "$PROJECT/.pixi" | cut -f1)"
 
   echo "pixi install --frozen --offline -e $env_name"
   (cd "$PROJECT" && "$TOOLS_BIN/pixi" install --frozen --offline -e "$env_name") ||
     fail "pixi install --frozen --offline -e $env_name failed: the transport is not self-sufficient"
 
-  after="$(find "$PROJECT/.pixi" -type f | wc -l | tr -d ' '):$(du -sk "$PROJECT/.pixi" | cut -f1)"
-  [ "$before" = "$after" ] ||
-    fail "pixi install was not a no-op for '$env_name' (.pixi went from '$before' to '$after' files/KiB); it wrote bytes instead of using only what the branch carried"
-  echo "  $env_name: install was a no-op (.pixi unchanged at $after)"
+  list_after="$(find "$PROJECT/.pixi" -type f | LC_ALL=C sort | cksum)"
+  files_after="$(find "$PROJECT/.pixi" -type f | wc -l | tr -d ' ')"
+  kib_after="$(du -sk "$PROJECT/.pixi" | cut -f1)"
+
+  if [ "$list_before" != "$list_after" ]; then
+    fail "pixi install was not a no-op for '$env_name': the set of files under .pixi changed ($files_before -> $files_after files); it wrote bytes instead of using only what the branch carried"
+  fi
+
+  drift=$((kib_after - kib_before))
+  if [ "$drift" -lt 0 ]; then
+    drift=$((-drift))
+  fi
+  if [ "$drift" -gt "$NOOP_DRIFT_KIB" ]; then
+    fail "pixi install was not a no-op for '$env_name': .pixi grew by ${drift} KiB ($kib_before -> $kib_after) with no new files, more than the ${NOOP_DRIFT_KIB} KiB allowed for pixi rewriting its own bookkeeping"
+  fi
+  echo "  $env_name: install was a no-op ($files_after files unchanged, ${drift} KiB drift within the ${NOOP_DRIFT_KIB} KiB tolerance)"
 
   assert_prefix "$env_name" "after the offline install"
 done

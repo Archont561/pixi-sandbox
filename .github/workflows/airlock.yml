@@ -181,7 +181,13 @@ jobs:
       ENVS: ${{ matrix.environments }}
       BRANCH: ${{ matrix.branch }}
       CARGO_VENDOR: ${{ matrix.cargo_vendor }}
-      BLOCK_NETWORK: ${{ inputs.block-network == false && 'false' || 'true' }}
+      # `inputs` is null on `pull_request` and `schedule`, and in GitHub expressions
+      # `null == false` is true — so the previous spelling, `inputs.block-network == false`,
+      # resolved to 'false' on exactly the two triggers that actually fire, and Tier A was
+      # skipped on every run this workflow has ever done. The authoritative tier has to be
+      # opt-out, never opt-in, so absent input means blocked; only an explicit `false` from a
+      # dispatch or a caller turns it off.
+      BLOCK_NETWORK: ${{ inputs.block-network == null && 'true' || (inputs.block-network && 'true' || 'false') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -206,9 +212,17 @@ jobs:
         uses: ./project
         with:
           subpath: setup
-          version: ${{ vars.SANDBOX_RELEASE_VERSION || 'latest' }}
+          # `latest` costs an unauthenticated api.github.com call, and hosted runners share
+          # egress IPs, so that call can come back rate-limited — which is how the first
+          # osx-arm64 proof died, in the resolution step rather than in anything about macOS.
+          # A pinned tag is also what an airlock actually starts from, so the proof now models
+          # that; SANDBOX_RELEASE_VERSION overrides it when a newer release should be exercised.
+          version: ${{ vars.SANDBOX_RELEASE_VERSION || 'v0.3.0' }}
           target: auto
           add-to-path: false
+          # Belt and braces: the job token lifts the API rate limit for any path that still
+          # resolves a tag, and costs nothing here — `contents: read` is all this needs.
+          token: ${{ github.token }}
 
       - name: Report the platform contract
         run: |

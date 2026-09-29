@@ -57,11 +57,22 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 
 1. **Prove `osx-arm64` and publish a macOS bundle** (backlog **task-1**, gated by **D11**). AC#1
    requires a **native macOS runner** doing an offline restore end-to-end; it cannot be validated
-   from a Linux airlock.
-2. **Implement `pixi-sandbox tools update`** (backlog **task-4**). The command can be *written and
-   unit-tested* offline, but its live behaviour — resolving/downloading/sha256-verifying the latest
-   `pixi`, `pixi-pack`, `pixi-unpack`, `rattler-index` pins — needs network, so end-to-end
-   verification belongs in Codespaces/CI.
+   from a Linux airlock. It does *not* require an online agent to drive it by hand: declaring the
+   platform in `.pixi-sandbox.toml` puts it in `plan --json`, and the `pull_request` trigger on
+   `.github/workflows/airlock.yml` fans that matrix onto `macos-14` on its own. An airlock agent
+   can therefore open the PR and read the verdict; only the *execution* needs the runner.
+   (`gh workflow run` is not an alternative from a sandbox: the token there has no `actions:
+   write`, and a dispatch returns HTTP 403.)
+2. **Verify `pixi-sandbox tools update` live** (backlog **task-4**, code Done). The command is
+   implemented and unit-tested offline in `commands/tools/update.rs`; what still needs network is
+   the live run — resolving/downloading/sha256-verifying the latest `pixi`, `pixi-pack`,
+   `pixi-unpack`, `rattler-index` pins against real GitHub releases. Release *assets* are
+   unreachable from the airlock (`objects.githubusercontent.com` and
+   `release-assets.githubusercontent.com` both fail to connect, even though `api.github.com`
+   answers), so `tools update --check` cannot be exercised here; it belongs in Codespaces/CI.
+3. **Repin the published `init.sh` to v0.3.0 binaries** (backlog **task-11**). The v0.3.0 asset was
+   cut before the repin landed, so the one-liner installs v0.2.0 binaries; re-uploading an asset
+   needs `uploads.github.com`, which the airlock cannot reach.
 
 The dev container that provides this online environment is `.devcontainer/devcontainer.json`
 (`ghcr.io/prefix-dev/pixi`, with `pixi install --locked --all` + `docs-install` + `setup-opencode`
