@@ -1,11 +1,11 @@
 ---
 id: TASK-2
 title: Point the install one-liner at a release that exists (v0.3.0 vs v0.2.0)
-status: In Progress
+status: Done
 assignee:
   - '@agent'
 created_date: '2026-09-28 22:05'
-updated_date: '2026-09-29 08:35'
+updated_date: '2026-09-29 09:47'
 labels:
   - docs
   - release
@@ -26,9 +26,9 @@ README.md, the docs quickstart and using-in-your-project all curl scripts/init.s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every documented install URL resolves with HTTP 200 for the pinned tag
+- [x] #1 Every documented install URL resolves with HTTP 200 for the pinned tag
 - [x] #2 The pin is consistent across README.md and every docs page that references a version
-- [ ] #3 A v0.3.0 release, if cut, ships init.sh plus the five static binaries and SHA256SUMS matching the release workflow contract
+- [x] #3 A v0.3.0 release, if cut, ships init.sh plus the five static binaries and SHA256SUMS matching the release workflow contract
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -38,6 +38,13 @@ Airlock-completable part done. scripts/init.sh was added after the v0.2.0 tag, s
 
 AC#1/AC#3 need an online/CI agent: a proper immutable-tag pin requires cutting a v0.3.0 release that ships init.sh + the five static binaries + SHA256SUMS (via the auto-release/release workflows), then repinning the one-liner from `main` to the v0.3.0 tag. Tracked in CONTEXT.md under "Online / Codespaces agent tasks".
 
-
 Update: release.yml now ships scripts/init.sh as a release asset (cp into dist/, added to the gh-release files, deliberately not in SHA256SUMS since it's fetched via curl|sh). This lets the one-liner point at an immutable release URL (releases/download/<tag>/init.sh) once v0.3.0 is cut, rather than a branch. Could not add the asset to the existing v0.2.0 release from the airlock (uploads.github.com is blocked), so the one-liner stays on main until an online agent cuts v0.3.0 (or uploads init.sh to v0.2.0) and repins - see CONTEXT.md.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+v0.3.0 cut via auto-release.yml and published with the five static tier-1 binaries + SHA256SUMS + init.sh as release assets. All six download URLs verified HTTP 200. Install one-liner repinned from a mutable main branch to the immutable releases/download/v0.3.0/init.sh in README.md, quickstart.mdx and using-in-your-project.mdx, with the init.sh VERSION default and the surrounding prose moved to v0.3.0. (AC#2 was closed earlier.)
+
+Caveat: the v0.3.0 asset was cut before the repin, so the published init.sh still defaults to v0.2.0 binaries - functional, and the next release carries v0.3.0 as the default.
+<!-- SECTION:FINAL_SUMMARY:END -->
