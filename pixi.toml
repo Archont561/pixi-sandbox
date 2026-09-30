@@ -113,11 +113,20 @@ lint = { depends-on = [
 # One bun workspace at the repo root (package.json workspaces: ["docs"]), so the
 # install runs there and hoists into the root node_modules; `docs/` has no lockfile
 # of its own any more.
+#
+# SANDBOX_VERSION is exported by these tasks and read by the site, so the documented
+# version is decided by the tree that built it and never written into the pages:
+# scripts/version.sh reads `[workspace.package] version` from the root Cargo.toml — the
+# one place the version exists — and docs/astro.config.mjs substitutes it for every
+# `__VERSION__` at build time. That is what lets a release rewrite zero documentation
+# lines (release-refs.sh now stamps only the README family, which GitHub renders raw).
+# A bare `bun run build` in docs/ still works: the config falls back to reading the
+# same Cargo.toml directly.
 docs-install = "bun install --frozen-lockfile"
-docs-dev = { cmd = "bun run dev", cwd = "docs" }
+docs-dev = { cmd = "SANDBOX_VERSION=$(bash \"$PIXI_PROJECT_ROOT/scripts/version.sh\") bun run dev", cwd = "docs" }
 docs-build = { depends-on = [
   "docs-install",
-], cmd = "bun run build", cwd = "docs" }
+], cmd = "SANDBOX_VERSION=$(bash \"$PIXI_PROJECT_ROOT/scripts/version.sh\") bun run build", cwd = "docs" }
 
 # the conda package this project ships, installed with
 # `pixi global install -c <target-dir> -c conda-forge pixi-sandbox` (decision D8)
