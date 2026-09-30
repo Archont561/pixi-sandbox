@@ -496,11 +496,12 @@ pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
 
 `.devcontainer/devcontainer.json` is four keys and no Dockerfile — it runs the official
 `ghcr.io/prefix-dev/pixi` image as-is. That image is Ubuntu plus the pixi binary: no `git`,
-and no C compiler, so the post-create step provisions the host tools, materialises the
+and no C compiler, so the post-create step delegates to a commented script,
+`.devcontainer/setup.sh`, which provisions the host tools, materialises the
 project environment, installs the bun workspace, and installs the agent CLI:
 
 ```jsonc
-"postCreateCommand": "pixi g i git gh && pixi g i --expose cc --expose gcc --expose ar=x86_64-conda-linux-gnu-ar c-compiler && pixi install --locked --all && pixi run docs-install && pixi run setup-opencode"
+"postCreateCommand": "bash .devcontainer/setup.sh"
 ```
 
 `pixi global` installs into `/root/.pixi/bin`, which the official image already has on `PATH`,
