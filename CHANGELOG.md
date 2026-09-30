@@ -6,7 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.3.2](https://github.com/Archont561/pixi-sandbox/compare/v0.3.1...f157a6d51180808d0a8c3921e09d6a12896f7859) (2026-09-29)
+### [v0.3.3](https://github.com/Archont561/pixi-sandbox/compare/v0.3.2...b509f065b50642be95bddc6389f3b9a04721a28f) (2026-09-30)
+
+#### Features
+
+* **release:** publish pixi-sandbox package to prefix.dev
+([2575347](https://github.com/Archont561/pixi-sandbox/commit/257534712d889d52b2e5a0026acf28339931659c))
+
+#### Refactoring
+
+* **devcontainer:** move postCreateCommand into setup.sh
+([535b0fc](https://github.com/Archont561/pixi-sandbox/commit/535b0fc11bbaf6dd553be2ec6d7c614ce5318398))
+
+#### Documentation
+
+* **release:** describe prefix package in autorelease
+([860b036](https://github.com/Archont561/pixi-sandbox/commit/860b0366792848f8cfdb531228afa9ec2b4b3d25))
+
+#### Build System
+
+* derive the docs version from Cargo.toml instead of repinning literals (#39)
+([9b0150d](https://github.com/Archont561/pixi-sandbox/commit/9b0150d1bf8c8d1518e2f3bd169d44c720156feb)),
+closes [#39](https://github.com/Archont561/pixi-sandbox/issues/39)
+
+### [v0.3.2](https://github.com/Archont561/pixi-sandbox/compare/v0.3.1...v0.3.2) (2026-09-29)
 
 #### Fixes
 
