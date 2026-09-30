@@ -8,6 +8,7 @@
   <a href="https://pixi.sh"><img src="https://img.shields.io/badge/Pixi-0.81%2B-yellow.svg?logo=condaforge" alt="Pixi"></a>
   <img src="https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg" alt="Platforms">
   <a href="https://github.com/Archont561/pixi-sandbox/releases"><img src="https://img.shields.io/github/v/release/Archont561/pixi-sandbox?label=release" alt="Release"></a>
+  <a href="https://prefix.dev/channels/@archont561/pixi-sandbox"><img src="https://img.shields.io/badge/prefix.dev-%40archont561%2Fpixi--sandbox-5c4ee5" alt="prefix.dev channel"></a>
   <a href="https://archont561.github.io/pixi-sandbox/"><img src="https://img.shields.io/badge/Docs-Starlight-blueviolet?logo=astro" alt="Docs"></a>
   <a href="https://github.com/Archont561/pixi-sandbox/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
 </p>
@@ -60,6 +61,12 @@ so "builds here" and "restores offline there" are tracked separately —
 ```bash
 curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.2/install.sh | sh
 # commit .github/workflows/publish-sandbox.yml, .pixi-sandbox.toml, restore.sh, restore.ps1
+
+# Connected alternative: install the same CLI from the prefix.dev channel
+pixi global install \
+  --channel https://prefix.dev/@archont561/pixi-sandbox \
+  --channel conda-forge \
+  pixi-sandbox
 
 # after transferring Git history with the sandbox branch into the airlock:
 ./restore.sh
@@ -428,7 +435,7 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `scripts/render-action-shims.sh` | Renders those two copies from `action.yml`; check 7 of the repo-consistency lint re-renders and fails on drift |
 | `.github/workflows/ci.yml` | CI: lint + test + coverage + docs-build |
 | `.github/workflows/publish-sandbox.yml` | Unified publisher: workflow_run + dispatch + call, native runners |
-| `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + SHA256SUMS + GitHub Release |
+| `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + install.sh + prefix.dev Conda package + GitHub Release |
 | `.github/workflows/docs.yml` | Docs → GitHub Pages |
 | `.github/dependabot.yml` | Dependabot: cargo, gha, npm (convco prefixes) |
 | `templates/install.sh` | Template for the `install.sh` release asset; `scripts/render-install.sh` stamps the tag |
@@ -536,7 +543,7 @@ tooling into the published sandbox branch.
 ## 🔖 Changelog & Release
 
 - **Changelog**: `CHANGELOG.md` generated via `convco changelog` from conventional commits. Tasks: `pixi run changelog`.
-- **Release**: Tag `v*.*.*` → `release.yml` builds 5 static binaries, `SHA256SUMS`, creates GitHub Release with `generate_release_notes: true`.
+- **Release**: Tag `v*.*.*` → `release.yml` builds 5 static binaries, renders `install.sh`, builds `pixi-sandbox` as a Conda package, publishes it to [`@archont561/pixi-sandbox`](https://prefix.dev/channels/@archont561/pixi-sandbox) with GitHub OIDC, then creates the GitHub Release. Configure prefix.dev Repository Access for this repository's `release.yml` workflow; no long-lived token is stored in GitHub.
   ```bash
   gh workflow run auto-release.yml -f version=vX.Y.Z
   ```

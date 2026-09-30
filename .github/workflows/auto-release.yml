@@ -2,7 +2,7 @@ name: auto-release
 
 # Cut a release on demand. This workflow prepares the release commit — bump the version,
 # refresh Cargo.lock, regenerate CHANGELOG.md — tags it, and hands the tag to `release.yml`,
-# which builds the five static tier-1 binaries + SHA256SUMS and publishes the GitHub Release.
+# which builds the five static tier-1 binaries, publishes the Conda package to prefix.dev, and publishes the GitHub Release.
 #
 # It is deliberately split from `release.yml` (which stays the pure build-and-publish half) so
 # the version-bump policy lives in one reviewable place. All the file surgery is `scripts/
@@ -195,4 +195,4 @@ jobs:
           # A GITHUB_TOKEN tag push does not auto-start release.yml, so trigger it on the new tag.
           gh workflow run release.yml --ref "$TAG" -f version="$TAG"
           echo "::notice::dispatched release.yml for $TAG"
-          echo "Dispatched **release.yml** for \`$TAG\` — binaries + GitHub Release will follow." >> "$GITHUB_STEP_SUMMARY"
+          echo "Dispatched **release.yml** for \`$TAG\` — binaries + prefix.dev package + GitHub Release will follow." >> "$GITHUB_STEP_SUMMARY"

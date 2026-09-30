@@ -114,10 +114,14 @@ jobs:
           retention-days: 7
 
   release:
-    name: publish GitHub Release
+    name: publish prefix.dev and GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
     # Create a Release on tag pushes, or on dispatch when a version is supplied
     if: ${{ startsWith(github.ref, 'refs/tags/') || inputs.version != '' }}
     steps:
@@ -130,23 +134,44 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Build the conda package from this exact tagged tree. The package is also attached to
+      # the GitHub Release below, so prefix.dev and GitHub distribute identical bytes.
+      - name: Install Pixi
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          environments: default
+          cache: true
+
+      - name: Install the locked environment
+        run: pixi install --locked
+
+      - name: Build Conda package
+        shell: bash
+        run: |
+          set -euo pipefail
+          pixi run package
+          packages=(.publish/out/*.conda)
+          [ -e "${packages[0]}" ] || { echo "::error::pixi publish produced no .conda package"; exit 1; }
+          cp "${packages[@]}" dist/
+          ls -lh dist/*.conda
+
       - name: Generate SHA256SUMS
         shell: bash
         run: |
           set -euo pipefail
           ls -lh dist/
-          # Deterministic SHA256SUMS matching setup-pixi-sandbox contract
-          (cd dist && sha256sum pixi-sandbox-* > SHA256SUMS)
+          # Only standalone release binaries belong in SHA256SUMS; the similarly named .conda
+          # package has its own prefix.dev/GitHub Release integrity path.
+          (cd dist && find . -maxdepth 1 -type f -name 'pixi-sandbox-*unknown-*' -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS)
           cat dist/SHA256SUMS
           # Verify that every binary has a checksum line
-          for bin in dist/pixi-sandbox-*; do
-            [ -f "$bin" ] || continue
+          while IFS= read -r bin; do
             name=$(basename "$bin")
-            if ! grep -q "$name" dist/SHA256SUMS; then
+            grep -q "  $name$" dist/SHA256SUMS || {
               echo "::error::Missing checksum for $name"
               exit 1
-            fi
-          done
+            }
+          done < <(find dist -maxdepth 1 -type f -name 'pixi-sandbox-*unknown-*' -print | sort)
 
       - name: Determine release tag
         id: tag
@@ -169,6 +194,19 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: bash scripts/render-install.sh "$TAG" dist/install.sh
 
+      # prefix.dev uses the job's short-lived GitHub OIDC identity. Configure Repository
+      # Access for this repository's `release.yml` workflow on @archont561/pixi-sandbox;
+      # no PREFIX_API_KEY or other long-lived publishing secret is needed.
+      - name: Publish Conda package to prefix.dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          pixi upload prefix \
+            --channel '@archont561/pixi-sandbox' \
+            --generate-attestation \
+            dist/*.conda
+
+      # GitHub Release is created only after the canonical prefix.dev package upload succeeds.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
