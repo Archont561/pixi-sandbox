@@ -11,7 +11,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 Connected project root:
 
 ```bash
-curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.2/install.sh | sh
+curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSION__/install.sh | sh
 ```
 
 After committing the generated files, letting GitHub publish the sandbox branch, and transferring
@@ -117,7 +117,7 @@ pixi-sandbox plan --config .pixi-sandbox.toml
 pixi-sandbox plan --config .pixi-sandbox.toml --json  # GitHub Actions matrix
 ```
 
-Your workflow just uses the two actions — your `uses: @v0.3.2` pin is the version, no `release-repository` needed.
+Your workflow just uses the two actions — your `uses: @v__VERSION__` pin is the version, no `release-repository` needed.
 
 <Tabs>
   <TabItem label="Two actions (recommended)">
@@ -131,9 +131,9 @@ Your workflow just uses the two actions — your `uses: @v0.3.2` pin is the vers
         outputs: { matrix: ${{ steps.plan.outputs.matrix }} }
         steps:
           - uses: actions/checkout@v7.0.1
-          - uses: Archont561/pixi-sandbox/setup@v0.3.2
+          - uses: Archont561/pixi-sandbox/setup@v__VERSION__
             id: setup
-            with: { version: v0.3.2 }
+            with: { version: v__VERSION__ }
           - id: plan
             run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
       publish:
@@ -148,10 +148,10 @@ Your workflow just uses the two actions — your `uses: @v0.3.2` pin is the vers
         steps:
           - uses: actions/checkout@v7.0.1
           - uses: prefix-dev/setup-pixi@v0.10.2
-          - uses: Archont561/pixi-sandbox/setup@v0.3.2
+          - uses: Archont561/pixi-sandbox/setup@v__VERSION__
             id: setup
-            with: { version: v0.3.2 }
-          - uses: Archont561/pixi-sandbox/publish@v0.3.2
+            with: { version: v__VERSION__ }
+          - uses: Archont561/pixi-sandbox/publish@v__VERSION__
             with:
               project: .
               environments: ${{ matrix.environments }}
@@ -165,10 +165,10 @@ Your workflow just uses the two actions — your `uses: @v0.3.2` pin is the vers
   </TabItem>
   <TabItem label="Single platform">
     ```yaml
-    - uses: Archont561/pixi-sandbox/setup@v0.3.2
+    - uses: Archont561/pixi-sandbox/setup@v__VERSION__
       id: setup
-      with: { version: v0.3.2 }
-    - uses: Archont561/pixi-sandbox/publish@v0.3.2
+      with: { version: v__VERSION__ }
+    - uses: Archont561/pixi-sandbox/publish@v__VERSION__
       with:
         project: .
         environments: dev
@@ -191,7 +191,7 @@ jobs:
     with:
       config: .pixi-sandbox.toml
       release-repository: Archont561/pixi-sandbox
-      release-version: v0.3.2
+      release-version: v__VERSION__
     secrets:
       SANDBOX_PUSH_TOKEN: ${{ secrets.SANDBOX_PUSH_TOKEN }}
 ```
@@ -211,17 +211,17 @@ Both live in same repo:
 
 ```yaml
 # Setup
-- uses: Archont561/pixi-sandbox@v0.3.2
+- uses: Archont561/pixi-sandbox@v__VERSION__
   with:
-    version: v0.3.2
+    version: v__VERSION__
 - run: pixi-sandbox --version
 
 # Explicit short paths
-- uses: Archont561/pixi-sandbox/setup@v0.3.2
+- uses: Archont561/pixi-sandbox/setup@v__VERSION__
   id: setup
   with:
-    version: v0.3.2
-- uses: Archont561/pixi-sandbox/publish@v0.3.2
+    version: v__VERSION__
+- uses: Archont561/pixi-sandbox/publish@v__VERSION__
   with:
     project: .
     environments: dev

@@ -6,7 +6,7 @@ description: Setup and publish actions with short references — like prefix-dev
 import { Icon } from 'astro-icon/components';
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Your workflow just uses these two actions — no `release-repository` needed. Your `uses: @v0.3.2` pin *is* the version.
+Your workflow just uses these two actions — no `release-repository` needed. Your `uses: @v__VERSION__` pin *is* the version.
 
 ```yaml
 name: publish sandbox
@@ -17,9 +17,9 @@ jobs:
     outputs: { matrix: ${{ steps.plan.outputs.matrix }} }
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: Archont561/pixi-sandbox/setup@v0.3.2
+      - uses: Archont561/pixi-sandbox/setup@v__VERSION__
         id: setup
-        with: { version: v0.3.2 }
+        with: { version: v__VERSION__ }
       - id: plan
         run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
   publish:
@@ -34,10 +34,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: prefix-dev/setup-pixi@v0.10.2
-      - uses: Archont561/pixi-sandbox/setup@v0.3.2
+      - uses: Archont561/pixi-sandbox/setup@v__VERSION__
         id: setup
-        with: { version: v0.3.2 }
-      - uses: Archont561/pixi-sandbox/publish@v0.3.2
+        with: { version: v__VERSION__ }
+      - uses: Archont561/pixi-sandbox/publish@v__VERSION__
         with:
           project: .
           environments: ${{ matrix.environments }}
@@ -62,16 +62,16 @@ Downloads verified release binary, checksum-verified, adds to PATH.
   <TabItem label="Short refs">
     ```yaml
     # Root = setup (like setup-pixi)
-    - uses: Archont561/pixi-sandbox@v0.3.2
+    - uses: Archont561/pixi-sandbox@v__VERSION__
       with:
-        version: v0.3.2
+        version: v__VERSION__
     - run: pixi-sandbox --version
 
     # Explicit short path
-    - uses: Archont561/pixi-sandbox/setup@v0.3.2
+    - uses: Archont561/pixi-sandbox/setup@v__VERSION__
       id: setup
       with:
-        version: v0.3.2
+        version: v__VERSION__
         repository: Archont561/pixi-sandbox
     - run: ${{ steps.setup.outputs.path }} --version
     ```
@@ -80,16 +80,16 @@ Downloads verified release binary, checksum-verified, adds to PATH.
     ```yaml
     - uses: Archont561/pixi-sandbox@<sha>
       with:
-        version: v0.3.2
+        version: v__VERSION__
 
     - uses: Archont561/pixi-sandbox/setup@<sha>
       with:
-        version: v0.3.2
+        version: v__VERSION__
 
     - uses: Archont561/pixi-sandbox@<sha>
       with:
         subpath: setup
-        version: v0.3.2
+        version: v__VERSION__
     ```
   </TabItem>
 </Tabs>
@@ -143,7 +143,7 @@ Packs one `bundle × platform`, verifies, publishes orphan branch.
 <Tabs>
   <TabItem label="Short ref">
     ```yaml
-    - uses: Archont561/pixi-sandbox/publish@v0.3.2
+    - uses: Archont561/pixi-sandbox/publish@v__VERSION__
       with:
         project: .
         environments: dev,docs

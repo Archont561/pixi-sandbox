@@ -15,12 +15,14 @@
 # 2. task-7 — the README Platforms badge says exactly what `pixi.toml` declares, every platform
 #    `.pixi-sandbox.toml` publishes is one of them, and the Windows gap (no conda-forge `bun`,
 #    D11) is documented rather than advertised by the badge.
-# 3. task-2 follow-up — every hardcoded `vX.Y.Z` in the user-facing docs is the version the
-#    manifests declare. A release commit bumps `Cargo.toml` but cannot rewrite the ~100 doc
-#    references, so the two drift silently and a reader following the docs installs the previous
-#    release. The check and its fix (`scripts/release-refs.sh`, called by `prepare-release.sh`) share
-#    one definition of "our reference", so a release leaves `main` green instead of merely making
-#    the drift visible.
+# 3. task-2 follow-up — version references cannot drift. Two regimes, one predicate
+#    (`scripts/release-refs.sh`, shared with the fix in `prepare-release.sh`):
+#    the README family carries literals (GitHub renders it raw, nothing can derive there), so
+#    every hardcoded `vX.Y.Z` must be the version the manifests declare; the docs site derives
+#    its version at build time (scripts/version.sh → SANDBOX_VERSION → docs/astro.config.mjs
+#    substitutes `__VERSION__`), so there any literal tag of ours is the defect — correct today,
+#    silently stale after the next cut. And 3b: the conda package manifest is the one file whose
+#    format demands a restated literal version, so it must equal Cargo.toml's.
 # 4. every third-party `uses:` is a full commit SHA with a trailing release label, so a moved tag
 #    cannot change what CI runs. actionlint checks workflow syntax, not what a `uses:` resolves to.
 # 5. the `install.sh` release asset is rendered from `templates/install.sh` at the tag, so a published
@@ -127,7 +129,26 @@ if [ -n "$stale_versions" ]; then
   current="v$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "$CARGO" | sed 1q)"
   fail "documentation pins a version the manifests do not declare (task-2):"
   printf '  %s\n' "$stale_versions" >&2
-  echo "  fix by running 'bash scripts/prepare-release.sh $current', or mark the line stale-ref-allowed if it must name an older release" >&2
+  echo "  README-family drift: run 'bash scripts/prepare-release.sh $current' (or mark the line stale-ref-allowed)" >&2
+  echo "  docs/ literals: replace the tag with v__VERSION__ — the site derives the version at build time" >&2
+fi
+
+# 3b. every manifest that must carry a literal version agrees with Cargo.toml. The workspace
+# members inherit (`version.workspace = true`) and the docs site derives (scripts/version.sh →
+# SANDBOX_VERSION → docs/astro.config.mjs), so exactly one file is left that restates the
+# version because its format demands a literal: the conda package manifest, a standalone
+# pixi-build workspace that cannot inherit. It sat at 0.2.0 for two releases while the
+# workspace said 0.3.2 — a `pixi publish` would have shipped a wrongly-versioned .conda with
+# no red build anywhere. Same pattern as the install-template check below: where a literal is
+# unavoidable, prepare-release.sh stamps it and this lint proves the stamp landed.
+CONDA_MANIFEST=crates/pixi-sandbox/pixi.toml
+workspace_version="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "$CARGO" | sed 1q)"
+conda_version="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "$CONDA_MANIFEST" | sed 1q)"
+if [ -z "$conda_version" ]; then
+  fail "$CONDA_MANIFEST has no parsable [package] version — 'pixi publish' would refuse or guess"
+elif [ "$conda_version" != "$workspace_version" ]; then
+  fail "$CONDA_MANIFEST declares $conda_version but $CARGO declares $workspace_version — the published .conda would carry the wrong version"
+  echo "  prepare-release.sh stamps this file; for a manual fix set version = \"$workspace_version\" in $CONDA_MANIFEST" >&2
 fi
 
 # ---------------------------------------------------------------- 4. action pins

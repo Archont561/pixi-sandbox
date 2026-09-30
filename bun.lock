@@ -11,8 +11,9 @@
     },
     "docs": {
       "name": "pixi-sandbox-docs",
-      "version": "0.2.0",
+      "version": "0.0.0",
       "dependencies": {
+        "@astrojs/markdown-satteri": "^0.4.2",
         "@astrojs/starlight": "^0.42.4",
         "@iconify-json/lucide": "^1.2.136",
         "@iconify-json/mdi": "^1.2.0",

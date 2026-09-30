@@ -5,7 +5,7 @@
 # Usage:
 #   bash scripts/release-refs.sh root
 #   bash scripts/release-refs.sh scan
-#   bash scripts/release-refs.sh rewrite <old-tag> <new-tag>
+#   bash scripts/release-refs.sh rewrite <new-tag>
 #
 # Why this is one script and not a predicate pasted into each caller: the bug this exists to kill
 # is a release commit that bumps the manifests and leaves the ~90 documentation references on the
@@ -27,6 +27,13 @@
 # A reference that must stay on an older release (a deliberate upgrade walkthrough, a regression
 # fixture) opts out with `stale-ref-allowed` on the line or the line above it, and is left alone by
 # both modes.
+#
+# The docs site (docs/src/content) is NOT in the stamped set: it derives the version at build time.
+# Its pages write `v__VERSION__` and docs/astro.config.mjs substitutes the version scripts/version.sh
+# reads from the root Cargo.toml, so a release rewrites zero documentation lines there. What `scan`
+# asserts for docs is therefore the inverse claim: an ours-line must carry NO literal tag at all —
+# a literal would be correct today and silently stale after the next cut, which is the exact rot
+# the derivation exists to kill.
 
 set -euo pipefail
 
@@ -44,17 +51,25 @@ cd "$REPO_ROOT"
 # an older tag opts out with `stale-ref-allowed` on the line, which is visible in a diff and
 # reviewable. Silently excluding a path here would hide a real reference from both modes.
 
-# Prints the null-separated set of files to inspect.
+# Prints the null-separated set of files that carry LITERAL references (the README family):
+# GitHub renders them raw, so there is no build step to derive a version in. These are what
+# `rewrite` stamps at release time. `docs/` is excluded as a whole — the site derives.
 ref_files() {
   find . -type f \( -name '*.md' -o -name '*.mdx' \) \
     -not -path './.git/*' \
     -not -path './.knowledge/*' \
     -not -path './node_modules/*' \
-    -not -path './docs/node_modules/*' \
-    -not -path './docs/dist/*' \
+    -not -path './docs/*' \
     -not -path './backlog/*' \
     -not -name 'CHANGELOG.md' \
     -print0
+}
+
+# Prints the null-separated set of files that DERIVE the version (the docs site's content).
+# `scan` checks these for the opposite defect — a literal tag where `v__VERSION__` belongs —
+# and `rewrite` never touches them.
+docs_files() {
+  find ./docs/src/content -type f \( -name '*.md' -o -name '*.mdx' \) -print0
 }
 
 # The declared version, read the way prepare-release.sh writes it: the single top-level
@@ -74,9 +89,9 @@ project_root() {
 # ---------------------------------------------------------------- shared predicate
 #
 # One awk program, three modes, so `scan` and `rewrite` cannot disagree about what is ours.
-#   mode=report   print every token that is not the declared version
+#   mode=report   print every token that is not the declared version (the README family)
+#   mode=docs     print every token, full stop — the docs derive, so any literal is the defect
 #   mode=mark     print `FILENAME LINE` for each line that qualifies (the rewrite worklist)
-#   mode=rewrite  unused
 #
 # The division of labour is deliberate: awk decides WHICH lines are ours, and `sed` does the actual
 # substitution. An earlier version had awk write a replacement file itself and hit two byte-level
@@ -95,6 +110,13 @@ FNR == 1 { prev = "" }
   if (ours && !allowed) {
     if (mode == "mark") {
       printf "%s %d\n", FILENAME, FNR
+    } else if (mode == "docs") {
+      line = $0
+      while (match(line, /v[0-9]+\.[0-9]+\.[0-9]+/)) {
+        tok = substr(line, RSTART, RLENGTH)
+        printf "%s:%d: pins the literal %s — the docs derive the version; write v__VERSION__\n", FILENAME, FNR, tok
+        line = substr(line, RSTART + RLENGTH)
+      }
     } else {
       line = $0
       while (match(line, /v[0-9]+\.[0-9]+\.[0-9]+/)) {
@@ -128,6 +150,9 @@ cmd_scan() {
   fi
   ref_files |
     xargs -0 awk -v mode=report -v cur="v$current" -v root="$root" "$AWK_PROGRAM" || true
+  # The docs derive the version at build time; any literal tag of ours there is stale-by-design.
+  docs_files |
+    xargs -0 awk -v mode=docs -v root="$root" "$AWK_PROGRAM" || true
 }
 
 cmd_rewrite() {

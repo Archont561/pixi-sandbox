@@ -11,8 +11,12 @@
 #
 # What it does (and deliberately does NOT do):
 #   * resolves the target version with convco (respecting .versionrc / preMajor),
-#   * rewrites the single top-level `version = "…"` in Cargo.toml and pixi.toml,
-#   * repins every documented reference to our own release (scripts/release-refs.sh),
+#   * rewrites the single top-level `version = "…"` in Cargo.toml, pixi.toml and the
+#     conda package manifest (crates/pixi-sandbox/pixi.toml — `pixi publish` needs a
+#     literal there, and lint-repo-consistency asserts it agrees with Cargo.toml),
+#   * repins every documented reference to our own release in the README family
+#     (scripts/release-refs.sh; the docs site derives its version at build time
+#     from scripts/version.sh and carries no literals to repin),
 #   * regenerates CHANGELOG.md from the conventional-commit history (convco changelog).
 # It never commits, tags, or pushes — that is the release workflow's job, so a human or
 # a dry-run can review the diff first. The only value on stdout is `vX.Y.Z`; every log
@@ -90,6 +94,11 @@ stamp_version() {
 
 stamp_version Cargo.toml
 stamp_version pixi.toml
+# The conda package manifest is its own standalone pixi workspace (pixi-build), so it cannot
+# inherit the version and `pixi publish` needs a literal. It shipped stale at 0.2.0 while the
+# workspace was at 0.3.2 — stamping it here plus the equality check in lint-repo-consistency.sh
+# turns that drift into a red build instead of a wrongly-versioned .conda.
+stamp_version crates/pixi-sandbox/pixi.toml
 
 # The CLI crate pins its sibling libraries by an exact `path = …, version = "X.Y.Z"` requirement.
 # Those must move with the workspace version or cargo refuses to resolve the bumped members
