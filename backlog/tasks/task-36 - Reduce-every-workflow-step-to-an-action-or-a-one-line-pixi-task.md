@@ -4,7 +4,7 @@ title: Reduce every workflow step to an action or a one-line pixi task
 status: In Progress
 assignee: []
 created_date: '2026-10-01 19:10'
-updated_date: '2026-10-01 20:00'
+updated_date: '2026-10-01 20:08'
 labels:
   - ci
   - tooling
@@ -37,13 +37,13 @@ Bring all three to the `ci.yml` shape. Trivial host bootstrap (`rustup target ad
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every step in `release.yml`, `auto-release.yml` and `airlock.yml` is `uses: <pinned action>`, a single `pixi run <task>` line, or a one-line host-bootstrap command; no `run: |` block and no PowerShell remains in any workflow
-- [ ] #2 Workflow-to-task plumbing travels as task arguments with local defaults (the convention that replaced the deleted `ci-pack`/`ci-doctor`/`ci-publish` twins: CI passes its own values on the same one-line `pixi run` a developer runs, so nothing reads an environment variable that can silently expand to an empty string); `env:` is reserved for runner-provided values the invoked tool reads natively or that cannot be an argument (`CARGO_BUILD_TARGET`, `GH_TOKEN`), inline `${{ }}` interpolation stays out of any multi-command string, and every new task is listed in `AGENTS.md` and `README.md` with the others
-- [ ] #3 Logic that was shell is an `xtask` subcommand with tempdir-fixture tests (D10), not a one-line task wrapping the same `bash -c`: staging/stripping a release binary, SHA256SUMS generation plus its completeness check, the release commit/tag/push routine and its `.release-touched` guards, the airlock matrix emission, the airlock release-tag resolution, and the airlock branch fetch (git through `pixi-sandbox-git`, D9)
-- [ ] #4 `GITHUB_OUTPUT` / `GITHUB_STEP_SUMMARY` writes happen inside the xtask commands that produce the value, and each command degrades to plain stdout when those variables are absent, so the identical invocation works locally
-- [ ] #5 `xtask check-repository` gains a workflow-shape check: a `run:` whose body is more than one command fails, with a documented opt-out marker for a reviewed exception, and the check is fixture-tested with a passing and a failing workflow
+- [x] #1 Every step in `release.yml`, `auto-release.yml` and `airlock.yml` is `uses: <pinned action>`, a single `pixi run <task>` line, or a one-line host-bootstrap command; no `run: |` block and no PowerShell remains in any workflow
+- [x] #2 Workflow-to-task plumbing travels as task arguments with local defaults (the convention that replaced the deleted `ci-pack`/`ci-doctor`/`ci-publish` twins: CI passes its own values on the same one-line `pixi run` a developer runs, so nothing reads an environment variable that can silently expand to an empty string); `env:` is reserved for runner-provided values the invoked tool reads natively or that cannot be an argument (`CARGO_BUILD_TARGET`, `GH_TOKEN`), inline `${{ }}` interpolation stays out of any multi-command string, and every new task is listed in `AGENTS.md` and `README.md` with the others
+- [x] #3 Logic that was shell is an `xtask` subcommand with tempdir-fixture tests (D10), not a one-line task wrapping the same `bash -c`: staging/stripping a release binary, SHA256SUMS generation plus its completeness check, the release commit/tag/push routine and its `.release-touched` guards, the airlock matrix emission, the airlock release-tag resolution, and the airlock branch fetch (git through `pixi-sandbox-git`, D9)
+- [x] #4 `GITHUB_OUTPUT` / `GITHUB_STEP_SUMMARY` writes happen inside the xtask commands that produce the value, and each command degrades to plain stdout when those variables are absent, so the identical invocation works locally
+- [x] #5 `xtask check-repository` gains a workflow-shape check: a `run:` whose body is more than one command fails, with a documented opt-out marker for a reviewed exception, and the check is fixture-tested with a passing and a failing workflow
 - [ ] #6 The three workflows still do exactly what they did: a dry-run `auto-release`, a tag-triggered `release`, and an `airlock` matrix leg each produce the same artifacts, summaries and failure modes as before (verify by dispatch on a throwaway tag before closing)
-- [ ] #7 `pixi run lint` (actionlint over committed and generated workflows, repo-consistency) and `pixi run test` are green, and the new tasks are reachable from a clean clone with one `pixi run`
+- [x] #7 `pixi run lint` (actionlint over committed and generated workflows, repo-consistency) and `pixi run test` are green, and the new tasks are reachable from a clean clone with one `pixi run`
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -79,8 +79,9 @@ Slice 2 (auto-release.yml) done: all five multi-line run: blocks gone. New xtask
 
 Slice 3 (airlock.yml) done: all nine multi-line run: blocks are gone; the only shell steps left are the two one-line airlock-gate.sh tiers that task-35 deletes.
 
-
 New tested xtask subcommands in crates/xtask/src/airlock.rs: airlock-matrix (plan binary invoked with config or override argv, include-array validated, matrix= to GITHUB_OUTPUT, stdout locally), resolve-release-tag (override honored without API calls, declared-but-published confirmed via gh, newest-published fallback, shape guard, capture-then-check), airlock-pack (frozen env installs per matrix entry, released binary resolved on PATH, conditional vendor flag), airlock-fetch (init, remote add, shallow fetch, worktree through new pixi-sandbox-git primitives, D9), deny-egress (sudo unshare -n on Linux, sudo sandbox-exec with the outbound-denied profile on macOS, loud error otherwise). New pixi tasks: airlock-install-released, airlock-doctor, airlock-publish, airlock-restore. resolve-release-tag moved to the plan job so the toolchain is needed once on ubuntu, not per proof leg; the proof job runs every pixi step through -e package like the release matrix, so no development environment is ever solved on a proof runner.
+
+Slice 4 (the guard, AC#5) done: check-repository check 9 fails any run: block holding more than one logical command line. Text-based on purpose - a YAML parser would be a new registry dependency the airlock cannot take until a transport carries it, and the shape being policed is visible without one. What counts as one command: folded scalars (run: >-) fold to a single command and are never flagged; inside literal blocks, blanks and # comments are not commands and a trailing backslash continues a line, so a wrapped single command stays legal. The reviewed exception marker is multiline-run-allowed, honoured on the run: line, the line above it, or a comment inside the block. Four fixture tests cover firing, every legal single-command spelling, comments-not-commands, and all three marker placements; verified live against the real tree (passes: the three migration slices leave no multi-line block anywhere) and against a sabotaged ci.yml (fires with file, line, count and remedy). ACs 1-5 and 7 are checked; AC#6 stays open for the throwaway-tag dispatch on a real runner - the one proof this sandbox cannot produce.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -71,11 +71,12 @@ produces a value writes it to `GITHUB_OUTPUT`/`GITHUB_STEP_SUMMARY` itself, fall
 stdout when those are unset so the same invocation works locally.
 
 `ci.yml`, `docs.yml`, `release.yml`, `auto-release.yml` and `airlock.yml` are the reference
-shape — no multi-line `run:` block remains in any workflow. The last shell steps are the two
-`scripts/airlock-gate.sh` tiers in `airlock.yml` (one-line invocations; **task-35** moves the
-gate into the e2e suite and deletes them), plus the sanctioned bootstrap scripts. The
-remaining **task-36** slice is the `check-repository` rule that fails any new multi-line
-`run:` block.
+shape — no multi-line `run:` block remains in any workflow, and `xtask check-repository`
+(check 9) fails any new one: a step must be `uses:`, a single `pixi run <task>` line, or a
+one-line host bootstrap. The last shell steps are the two `scripts/airlock-gate.sh` tiers in
+`airlock.yml` (one-line invocations; **task-35** moves the gate into the e2e suite and deletes
+them), plus the sanctioned bootstrap scripts. A reviewed exception (a generated consumer
+artifact, say) carries `multiline-run-allowed` on the step.
 
 ```bash
 # one development environment, so every task is `pixi run <task>` with no -e flag. The bun tasks
