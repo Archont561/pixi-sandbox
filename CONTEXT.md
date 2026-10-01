@@ -173,83 +173,8 @@ went from 38 tasks to 23 behind one `xtask` task and argument-carrying tasks.
   `pixi` on a developer's PATH and every airlock session still sources `sandbox-env.sh`. A
   repack would switch that on. Not done because `publish` force-pushes the branch — a
   maintainer's call, not an agent's.
-- **`deny-egress` as an xtask** (sketched in task-36): one subcommand that re-execs under
-  `unshare -n` / `sandbox-exec` would let the airlock workflow's Tier A be a one-line step and
-  would make the egress-denied gate reproducible on a developer's Linux box.
 - **Docs tasks could collapse further** (`docs-dev`/`docs-build` → one `docs <mode>` task). Left
   alone deliberately: both names appear in CI, docs and the README, and the churn buys one line.
-
-### 2026-10-01 — proposal: a relock bot, so a dependency can be declared offline
-
-**Problem.** Adding a dependency means editing `pixi.toml` (or a `Cargo.toml`) *and* re-solving
-the lockfile, and solving needs the network: prefix.dev and the crates.io index are exactly
-what an airlocked host cannot reach. `pixi add` solves before it writes, so it is not an option
-here either. The manifest edit is the part a human wants to make; the solve is machinery.
-
-**Shape.** Hand-edit the manifest, commit it with a stale lock, and let a workflow produce the
-lockfile. Two distinct commands, not one:
-
-| intent | command | churn |
-|:---|:---|:---|
-| make the lock satisfy a manifest I just edited | `pixi lock` | minimal — only what the new constraint forces |
-| move everything to the newest allowed versions | `pixi update` | every dependency that can move |
-| the Rust equivalent of the first | `cargo fetch` | resolves the new entry, leaves the rest pinned |
-| the Rust equivalent of the second | `cargo update` | bumps the workspace |
-
-`pixi lock --check` exits non-zero when the lock does not satisfy the manifest — that is the
-guard CI should carry, because `setup-pixi` defaults to `locked: true` and otherwise fails with
-a message about installation rather than about the manifest.
-
-**Proposed `.github/workflows/relock.yml`** (one line per step, SHA-pinned actions, the house
-rule). `pixi lock` runs as a bare one-liner, *not* `pixi run <task>`: a pixi task would first
-have to solve the very environment whose lock is stale.
-
-```yaml
-name: relock
-on:
-  pull_request:
-    paths: [pixi.toml, Cargo.toml, "crates/**/Cargo.toml"]
-  workflow_dispatch:
-  schedule:
-    - cron: "17 5 1 * *"        # monthly refresh, the `pixi update` flavour
-concurrency:
-  group: relock-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
-permissions:
-  contents: write
-jobs:
-  relock:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@<sha>        # v7.0.1 — ref: ${{ github.head_ref }}
-      - uses: prefix-dev/setup-pixi@<sha>   # v0.10.2 — with: run-install: false
-      - run: pixi lock                      # or `pixi update` on the schedule
-      - run: cargo fetch
-      - uses: stefanzweifel/git-auto-commit-action@<sha>   # commits pixi.lock + Cargo.lock
-      - run: gh workflow run ci.yml --ref ${{ github.head_ref }}
-```
-
-**The two traps.**
-
-1. A commit pushed with `GITHUB_TOKEN` does not trigger another workflow — deliberate loop
-   prevention. So the bot's lock commit leaves CI unrun unless the last step dispatches it
-   explicitly (`gh workflow run`, which *is* allowed with `GITHUB_TOKEN` because
-   `workflow_dispatch` is an explicit API call), or the push uses a GitHub App token / PAT.
-2. **A new dependency is not usable in the airlock until a transport carries it.** Merging the
-   lock only fixes the connected side; a restored host builds against `.pixi-sandbox/vendor`
-   and the packed conda envs. The full lane is: edit manifest → bot relocks → merge → pack and
-   publish a transport → restore. Any task that adds a dependency (task-38 and `rstest`, for
-   one) inherits that ordering.
-
-**Not agreed yet:** whether the bot pushes onto the PR branch (simple, single-maintainer, needs
-`contents: write` and breaks for fork PRs) or opens its own PR with
-`peter-evans/create-pull-request` (the shape prefix.dev documents, needs "Allow GitHub Actions
-to create and approve pull requests" and a non-default token for CI to run on it).
-
-**Decided 2026-10-01, and graduated:** method A — the bot pushes onto the PR branch, identity
-`pixi-sandbox-lockbot`, conventional `chore(lock):` commits; now backlog **task-39**. The
-scheduled `pixi update` flavour stays unbuilt on purpose: it needs the opens-its-own-PR shape,
-not this one.
 
 ### 2026-10-01 — session close
 
@@ -288,6 +213,85 @@ mandatory on a restored host.
 > Propose the slice and stop. House rules are in `AGENTS.md` (note invariant 10: anything you
 > do not implement goes in `CONTEXT.md`, not into the files it speculates about), the session
 > procedure and its templates are in `.agents/skills/session/`.
+
+### 2026-10-01 (evening) — session close: the relock lane
+
+**Landed** (PR #52, squash `b2e028f`, ten commits): task-39 complete, all seven ACs, built as a
+*generated* artifact rather than a hand-written workflow —
+`crates/pixi-sandbox/src/generated/relock_workflow.rs` rendered by `pixi-sandbox init`
+(`--relock-workflow-path`, `--relock-ci-workflow`) and committed here as
+`.github/workflows/relock.yml`, held byte-equal by `check-repository` check 10 with
+`pixi run xtask render-relock` as the only way to change it. Also: the session skill's missing
+half (`.agents/skills/session/`) — the opening-prompt and session-report templates, and a
+post-merge phase that forbids closing a task on an AC no machine here can prove.
+
+**The finding that made the generated shape cheap:** the check-9 generated-file exemption, which
+the dogfood proposal below still needs for the *publisher*, was not needed here at all. The
+relock lane is one-line steps throughout, so its render satisfies the workflow-shape rule
+unaided. The exemption question is therefore still open, but it is now specifically a *publisher*
+problem (bootstrap download + pack loop are multi-line shell by necessity), not a generated-file
+problem in general.
+
+**What the live demonstration taught, kept because the next bot-shaped workflow will hit it:**
+
+1. **A job-level `permissions:` block replaces the default set; it does not add to it.** With
+   `contents: write` alone the lock commit pushed and then `gh workflow run` exited 1 for want of
+   `actions: write` (run 36927489932) — the worst ordering, since the commit lands and its
+   verdict does not. Both scopes are now named, and a renderer test holds them.
+2. **The `GITHUB_TOKEN` suppression is observable, not folklore.** The bot's push created a
+   `pull_request` run that sat in `action_required` and never executed (36927958169).
+3. **AC#5's premise, measured side by side on one commit:** the guard failed in 5s with a message
+   about the manifest; `ci` failed in 22s inside `setup-pixi` with a message about installation.
+
+**Open, in the order a session should consider them:**
+
+- **task-35** (medium, unblocked, the natural next) — move the airlock gate into `tests/e2e`
+  behind a `ci` cargo feature and delete `scripts/airlock-gate.sh`, which also removes its
+  exception from `fixtures.rs`. It is the last shell in any workflow.
+- **task-36 AC#6** (In Progress) — the release/auto-release half. The airlock half is proven on a
+  real runner (PR #51). What remains needs a *real* cut: the newest `auto-release` run
+  (36922096859) was a dry run that prepared **v0.4.0** without committing or tagging, so no
+  `release.yml` run exists to read. One maintainer click produces it.
+- **The 0.3.7+ transport repack** (maintainer's call — `publish` force-pushes
+  `sandbox/developer-linux-64`). Still the reason every airlock session sources
+  `sandbox-env.sh`, and now also the gate on task-38.
+- **task-38** (medium) — the lock half of its blocker is gone: declaring `rstest` is an ordinary
+  manifest edit, and the bot relocks it. The *airlock* half is not: a restored host builds
+  against `.pixi-sandbox/vendor`, so the full ordering is edit → bot relocks → merge → repack and
+  publish a transport → restore. Do not start it before the repack.
+- **A fork-PR proof of AC#4.** The refusal is unit-tested and its gate was observed evaluating
+  (`skipped` on a same-repo PR), but no fork of this repository exists to prove the live path.
+  Needs a fork and a throwaway PR from it.
+- **`lock guard` and branch protection.** Deliberately *not* added as a required check: it is red
+  by design on any PR where the bot still has work to do, and only turns green when the bot's own
+  dispatch re-runs it. Decide after watching a few real dependency PRs.
+
+**Baselines for the next session:** 274 tests passing / 1 skipped (was 259); `pixi run lint` is
+nine gates; `pixi lock --check` is clean and answers offline in milliseconds; the published
+transport is still packed by 0.3.6, so sourcing `sandbox-env.sh` remains mandatory, and nothing
+new was vendored this session, so the vendor tree still builds main.
+
+**Prompt to start the next session with:**
+
+> Restore the sandbox and baseline the suite (expect 274 passing / 1 skipped — the published
+> transport is still the 0.3.6 pack, and the relock session added no dependency, so its vendor
+> tree still builds main), then read `CONTEXT.md` § Session scratchpad — the evening close lists
+> six open items.
+>
+> First, one look at the repo state: `gh release list`. If v0.4.0 exists, task-36's last open
+> path is proven by its `release.yml` run — read the run (five binaries, a complete SHA256SUMS,
+> five conda packages, the docs dispatch), check AC#6, complete the task file and close task-36.
+> If it does not exist, leave it In Progress and say so.
+>
+> I want to take **task-35** this session — move the airlock gate into `crates/pixi-sandbox/tests/e2e.rs`
+> behind a `ci` cargo feature (skipped locally, run by the matrix), delete `scripts/airlock-gate.sh`,
+> and drop its reviewed exception from `fixtures.rs`. In slices: the e2e tests and the feature
+> wiring first — all locally provable — then the `airlock.yml` rewiring, whose proof is a native
+> matrix run on the PR and needs a push I will sanction.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
+> and its templates are in `.agents/skills/session/`. The backlog CLI is `pixi run bunx backlog …`.
 
 ### 2026-10-01 — proposal: pack the developer transport from the tree, on a trigger
 
