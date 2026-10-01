@@ -171,7 +171,8 @@ Do these in order, and do not skip to the report:
    next session's surprise. `gh run view <id> --log` often cannot stream from this sandbox;
    `gh run view <id>` alone still gives job verdicts and annotations, which is usually enough
    to tell a real failure from a flake.
-2. **Close the task files** in house format: every AC `[x]`, status `Done`, `updated_date`
+2. **Close the task files** in house format — in the pull request itself when the evidence is
+   already in hand, in a follow-up commit when the proof only arrives after the merge: every AC `[x]`, status `Done`, `updated_date`
    bumped, `SECTION:NOTES` and `SECTION:SUMMARY` appended, no PLAN edits. **An AC you could not
    prove is not a checked AC.** When the remaining proof needs a native runner, a cut release
    or a maintainer's click, leave the task `In Progress`, name the AC and the missing proof in
