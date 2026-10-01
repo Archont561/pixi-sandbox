@@ -4,6 +4,7 @@ title: Reduce every workflow step to an action or a one-line pixi task
 status: To Do
 assignee: []
 created_date: '2026-10-01 19:10'
+updated_date: '2026-10-01 18:20'
 labels:
   - ci
   - tooling
@@ -37,7 +38,7 @@ Bring all three to the `ci.yml` shape. Trivial host bootstrap (`rustup target ad
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Every step in `release.yml`, `auto-release.yml` and `airlock.yml` is `uses: <pinned action>`, a single `pixi run <task>` line, or a one-line host-bootstrap command; no `run: |` block and no PowerShell remains in any workflow
-- [ ] #2 Workflow-to-task plumbing travels in `env:` (the `SANDBOX_*` convention `ci-pack`/`ci-doctor`/`ci-publish` already use), never as inline interpolation inside a multi-command string, and every new task is listed in `AGENTS.md` and `README.md` with the others
+- [ ] #2 Workflow-to-task plumbing travels as task arguments with local defaults (the convention that replaced the deleted `ci-pack`/`ci-doctor`/`ci-publish` twins: CI passes its own values on the same one-line `pixi run` a developer runs, so nothing reads an environment variable that can silently expand to an empty string); `env:` is reserved for runner-provided values the invoked tool reads natively or that cannot be an argument (`CARGO_BUILD_TARGET`, `GH_TOKEN`), inline `${{ }}` interpolation stays out of any multi-command string, and every new task is listed in `AGENTS.md` and `README.md` with the others
 - [ ] #3 Logic that was shell is an `xtask` subcommand with tempdir-fixture tests (D10), not a one-line task wrapping the same `bash -c`: staging/stripping a release binary, SHA256SUMS generation plus its completeness check, the release commit/tag/push routine and its `.release-touched` guards, the airlock matrix emission, the airlock release-tag resolution, and the airlock branch fetch (git through `pixi-sandbox-git`, D9)
 - [ ] #4 `GITHUB_OUTPUT` / `GITHUB_STEP_SUMMARY` writes happen inside the xtask commands that produce the value, and each command degrades to plain stdout when those variables are absent, so the identical invocation works locally
 - [ ] #5 `xtask check-repository` gains a workflow-shape check: a `run:` whose body is more than one command fails, with a documented opt-out marker for a reviewed exception, and the check is fixture-tested with a passing and a failing workflow
