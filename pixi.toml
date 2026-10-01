@@ -130,7 +130,7 @@ docs-build = { depends-on = [
 
 # the conda package this project ships, installed with
 # `pixi global install -c <target-dir> -c conda-forge pixi-sandbox` (decision D8)
-package = "pixi publish --path crates/pixi-sandbox --build-dir .publish/build --target-dir .publish/out"
+package = "pixi publish --path crates/pixi-sandbox --build-dir $PIXI_PROJECT_ROOT/.publish/build --target-dir $PIXI_PROJECT_ROOT/.publish/out"
 
 # ---------------------------------------------------------------------------
 # opencode: the agent binary. Installed globally with bun, not as a conda

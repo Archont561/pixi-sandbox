@@ -31,6 +31,11 @@ lcov.info
 !.vscode/extensions.json
 
 # --- scratch / local runs --------------------------------------------------
+# conda packaging scratch and release bundle dirs (pixi run package / release.yml):
+# `pixi publish` requires absolute --build-dir/--target-dir (pixi 0.81 panics on relative
+# ones), hence the $PIXI_PROJECT_ROOT form in the `package` task.
+/.publish/
+/dist/
 /repro/
 /repro*/
 /.sandbox-out/
