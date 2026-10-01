@@ -100,9 +100,13 @@ Two kinds of PATH setup exist, and they are for different needs:
 
 Registration refuses to overwrite a `pixi` or `pixi-sandbox` you already have in the user bin
 directory unless you pass `--force`. For CI runners, shared accounts, or locked-down airlocks,
-pass `--user-tools skip` (or set `PIXI_SANDBOX_USER_TOOLS=skip` before running the generated
-launcher): restore then touches nothing outside the project, and verification and project
-output are identical either way. `--user-bin <dir>` relocates the launchers for sites with
+set `PIXI_SANDBOX_USER_TOOLS=skip` before running the generated launcher (or append
+`--user-tools skip` when you call `pixi-sandbox restore` yourself and know the binary
+understands it): restore then touches nothing outside the project, and verification and
+project output are identical either way. The generated launchers pass the policy as an
+environment variable rather than a flag on purpose — the binary a launcher executes comes
+from the packed branch, which may predate the flag, and an unknown variable is ignored where
+an unknown flag is a hard error. `--user-bin <dir>` relocates the launchers for sites with
 their own bin-directory policy.
 
 Two things follow from that staging. Before each environment is moved into place, every text file

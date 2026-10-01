@@ -339,18 +339,23 @@ jobs:
       # ---------------------------------------------------------------- restore
       # `restore` in place over a copy of the project, which is the situation the airlock page
       # describes: a developer has the repository and reconstructs the environment under it.
-      # `--user-tools skip` is explicit (task-33): this is a shared CI runner, and the proof
-      # must not edit the runner's home or profile. The restore output must be identical
-      # either way — registration is a post-verification step, not part of the payload.
+      # `PIXI_SANDBOX_USER_TOOLS=skip` is explicit (task-33): this is a shared CI runner, and
+      # the proof must not edit the runner's home or profile. The policy travels as an
+      # environment variable, not a flag, because the `pixi-sandbox` driven here is the one
+      # the published branch ships — it may predate `--user-tools`, and an unknown variable
+      # is ignored where an unknown flag is a hard error. The restore output must be
+      # identical either way — registration is a post-verification step, not payload.
       - name: Restore into a copy of the project
         shell: bash
+        env:
+          PIXI_SANDBOX_USER_TOOLS: skip
         run: |
           set -euo pipefail
           cp -r project "${{ runner.temp }}/restored"
           pixi-sandbox restore \
             --branch-location "${{ runner.temp }}/airlock-checkout" \
             --output-path "${{ runner.temp }}/restored" \
-            --envs "$ENVS" --force --user-tools skip
+            --envs "$ENVS" --force
 
       # ---------------------------------------------------------------- the gate
       # --transport hands the gate the extracted branch, so its integrity section can compare

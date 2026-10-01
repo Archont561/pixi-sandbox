@@ -230,13 +230,16 @@ echo "→ doctor $BIN"
 echo "→ restore to $OUTPUT"
 # The policy is explicit here rather than inherited from the CLI default (task-33): this
 # script is the repo's own airlock path, so what it does to the user's home is written down.
-# Later arguments win in the CLI, so an operator can still append --user-tools skip.
-if "$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force \
-  --user-tools "${PIXI_SANDBOX_USER_TOOLS:-register}" 2>&1; then
+# It travels as an environment variable, never a flag, because the binary driven here comes
+# from the packed branch and may predate --user-tools — an unknown variable is ignored
+# where an unknown flag is a hard error. A trailing --user-tools skip still wins; later
+# arguments override the environment.
+PIXI_SANDBOX_USER_TOOLS="${PIXI_SANDBOX_USER_TOOLS:-register}"
+export PIXI_SANDBOX_USER_TOOLS
+if "$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force 2>&1; then
   :
 else
-  "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force \
-    --user-tools "${PIXI_SANDBOX_USER_TOOLS:-register}"
+  "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force
 fi
 
 # The branch was verified before anything was written and every blob was verified as it was
