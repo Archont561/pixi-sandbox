@@ -83,6 +83,49 @@ on create).
 
 ---
 
+## 🧭 Current v1 Planning and Network Boundary
+
+The current redesign is planned in Backlog milestone **m-0 — v1 standalone cross-platform workflow**. The canonical planning/specification documents are under `backlog/docs/`; `.knowledge/` now keeps historical decisions, raw evidence, and discovery pointers.
+
+### Backlog workstreams
+
+- **TASK-21** — make `init` provider-neutral and platform-specific; use `pixi-sandbox init` with `--github-workflow-path`, `--script-path`, and `--config`; generate only the current platform launcher.
+- **TASK-22** — generate a disposable workflow that installs `pixi-sandbox` from `@archont561/pixi-sandbox` and calls the binary directly, without Archont561 composite Actions.
+- **TASK-23** — publish Pixi/Conda package variants for `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64`, and `win-64`, while retaining standalone release binaries for transport bootstrap.
+- **TASK-24** — measure standalone transport/restore orchestration and tool deduplication before changing the existing D2/D3 `pixi-pack`/`pixi-unpack` decisions; schema compatibility is required.
+- **TASK-25** — move npm-compatible tooling such as Biome and Astro to `package.json`/`bun.lock`, keep Bun in a separate web environment, and decide the Windows Node/Bun fallback.
+- **TASK-26** — evaluate Turbo only after multiple JavaScript workspaces justify dependency-aware orchestration and caching.
+
+The v1 proposal is **not yet an accepted architectural decision**. Backlog `decision-1` is proposed; existing `.knowledge/decisions.md` remains authoritative until TASK-24 produces measurements and an explicit decision.
+
+### Work that requires an online Codespace or native CI
+
+- Resolve/download Pixi, Conda, Bun/npm, Turbo, or release assets when they are not already cached.
+- Run GitHub Actions and inspect workflow results.
+- Publish package variants to prefix.dev.
+- Push sandbox transport branches or create GitHub Releases.
+- Run native macOS/Windows package and binary jobs.
+- Validate installation from the `@archont561/pixi-sandbox` channel.
+- Perform the connected half of the standalone transport comparison.
+
+### Work that can be done offline
+
+- Implement and test `init`, config precedence, launcher generation, and workflow rendering.
+- Update Rust code, Markdown, Backlog tasks/documents, and `.knowledge` pointers.
+- Run fixture-backed tests, lint, manifest verification, and local transport tests.
+- Run the airlock proof against an existing transport:
+
+```bash
+bash scripts/restore.sh
+source .pixi/sandbox-env.sh
+pixi install --frozen --offline
+cargo build --offline
+```
+
+Do not attempt package resolution, prefix.dev publication, GitHub Actions dispatch, or native Windows/macOS validation from an airlock-style environment. First produce artifacts on the connected side, then consume and verify them offline.
+
+---
+
 ## 📚 Key References
 
 | Resource | Purpose |
