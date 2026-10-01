@@ -129,7 +129,7 @@ design §2.
 
 ## restore
 
-Airlock restore — verify then materialize. `pixi-sandbox init github` generates project-side
+Airlock restore — verify then materialize. `pixi-sandbox init` generates project-side
 `restore` and `restore.ps1` launchers that archive the local sandbox branch and call this explicit
 form using its nested binary:
 
@@ -181,24 +181,32 @@ Accepts transport dir, `.pixi-sandbox/envs/<env>/pack` dir, or bare pack dir. Le
 
 ## init
 
-Generate the reviewed project configuration, a reusable GitHub Actions publisher, and minimal
-POSIX/PowerShell launchers on the normal source branch:
+Generate the reviewed project configuration, a reusable GitHub Actions publisher, and exactly
+one launcher for the current platform (`restore.sh` on Unix, `restore.ps1` on Windows):
 
 ```bash
-pixi-sandbox init github
-pixi-sandbox init github --branch sandbox/developer-linux-64 --force
+pixi-sandbox init
+pixi-sandbox init \
+  --github-workflow-path .github/workflows/publish-sandbox.yml \
+  --script-path restore.sh \
+  --config pixi-sandbox.toml
+pixi-sandbox init --branch sandbox/developer-linux-64 --force
 ```
 
-The generated launchers use only local `git archive`, `tar`, and the verified binary stored under
-`.pixi-sandbox/tools/<platform>/` in the sandbox branch. They never download during restoration.
+Without `--config`, init prefers `pixi-sandbox.toml`, falls back to an existing
+`.pixi-sandbox.toml`, and creates the preferred name when neither exists. Generated workflow and
+launcher markers allow safe regeneration without `--force`; an unmarked user-owned destination
+requires the explicit flag. The launcher uses only local `git archive`, `tar`, and the verified
+binary stored under `.pixi-sandbox/tools/<platform>/` in the sandbox branch. It never downloads
+during restoration.
 
 ## plan
 
-Validate `.pixi-sandbox.toml` and emit matrix.
+Validate `pixi-sandbox.toml` and emit matrix.
 
 ```bash
-pixi-sandbox plan --config .pixi-sandbox.toml
-pixi-sandbox plan --config .pixi-sandbox.toml --json
+pixi-sandbox plan --config pixi-sandbox.toml
+pixi-sandbox plan --config pixi-sandbox.toml --json
 ```
 
 Rejects unsafe/implicit runner selection, checks embedded tool coverage.
@@ -233,9 +241,9 @@ reviewed data: read the diff before committing it.
 ## One-command reconstruction
 
 ```bash
-pixi-sandbox init github   # connected host; commit the generated files
+pixi-sandbox init   # connected host; commit the generated files
 ./restore.sh               # disconnected host; local Git objects only
 ```
 
-The generated POSIX and PowerShell launchers contain no installation logic. They archive the
-configured local sandbox branch and delegate verification and restoration to its nested binary.
+The generated platform-appropriate launcher contains no installation logic. It archives the
+configured local sandbox branch and delegates verification and restoration to its nested binary.

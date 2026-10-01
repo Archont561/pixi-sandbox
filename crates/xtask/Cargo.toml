@@ -1,0 +1,15 @@
+[package]
+name = "xtask"
+description = "Repository automation for pixi-sandbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+pixi-sandbox = { path = "../pixi-sandbox", version = "0.3.5" }
+tempfile = { workspace = true }

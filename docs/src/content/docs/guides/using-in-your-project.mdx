@@ -17,16 +17,18 @@ curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSI
 ```
 
 The script detects Linux/macOS and CPU architecture, downloads the matching v0.3.0 release asset,
-verifies it against the release's `SHA256SUMS`, and runs `pixi-sandbox init github`. It creates:
+verifies it against the release's `SHA256SUMS`, and runs `pixi-sandbox init`. It creates the preferred `pixi-sandbox.toml`, the GitHub workflow, and exactly one launcher for
+the connected host:
 
 ```text
-.pixi-sandbox.toml
+pixi-sandbox.toml
 .github/workflows/publish-sandbox.yml
-restore.sh
-restore.ps1
+restore.sh          # Linux/macOS
+# restore.ps1       # Windows instead
 ```
 
-Review and commit those files. Pushing the project runs the generated workflow and publishes the
+Review and commit those files. Existing projects that carry `.pixi-sandbox.toml` keep using it;
+an explicit `--config PATH` wins over both conventional names. Pushing the project runs the generated workflow and publishes the
 configured `sandbox/<bundle>-<platform>` branches. Transfer Git history containing the project and
 sandbox branch into the disconnected network. On the **airlock**, the second product command is:
 
@@ -63,10 +65,10 @@ The one-line initializer downloads `pixi-sandbox` temporarily and checksum-verif
 
 ## 2. Decide what to ship
 
-Not every env in `pixi.toml` should be an airlock branch. Declare explicitly in `.pixi-sandbox.toml`:
+Not every env in `pixi.toml` should be an airlock branch. Declare explicitly in `pixi-sandbox.toml`:
 
 ```toml
-# .pixi-sandbox.toml
+# pixi-sandbox.toml
 schema = 1
 branch_prefix = "sandbox"
 cargo_vendor = true  # false if you only need conda envs
@@ -86,8 +88,8 @@ cargo_vendor = false
 Validate:
 
 ```bash
-pixi-sandbox plan --config .pixi-sandbox.toml
-pixi-sandbox plan --config .pixi-sandbox.toml --json
+pixi-sandbox plan --config pixi-sandbox.toml
+pixi-sandbox plan --config pixi-sandbox.toml --json
 ```
 
 This emits a GitHub Actions matrix — one job per `bundle × platform`.
@@ -173,7 +175,7 @@ After the project and its sandbox branch have crossed the air gap:
 ./restore.sh
 ```
 
-The generated script reads `.pixi-sandbox.toml` and selects
+The generated script reads `pixi-sandbox.toml` and selects
 `<branch_prefix>/<bundle>-<platform>` for the native platform — the same name
 `pixi-sandbox plan` gives the publisher, so renaming a bundle or prefix needs no regenerated
 launcher. It then uses `git archive` into `.pixi/.restore-transport` and delegates verification
@@ -193,7 +195,7 @@ See [Airlock Restore](/pixi-sandbox/restore/) for transfer options and the opera
 If you only need conda envs:
 
 ```toml
-# .pixi-sandbox.toml
+# pixi-sandbox.toml
 schema = 1
 cargo_vendor = false
 

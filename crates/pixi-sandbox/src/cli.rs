@@ -29,7 +29,7 @@ pub enum Command {
     Unpack(UnpackArgs),
     /// Inspect a transport directory or branch: manifest, hashes, tool linkage, sizes.
     Doctor(DoctorArgs),
-    /// Generate project-side GitHub publishing and offline restore files.
+    /// Generate a publishing workflow and this platform's offline restore launcher.
     Init(InitArgs),
     /// Validate `.pixi-sandbox.toml` and emit native publish jobs.
     Plan(PlanArgs),
@@ -226,42 +226,32 @@ pub struct DoctorArgs {
 
 #[derive(Debug, Args)]
 pub struct InitArgs {
-    /// Generator to run. Currently GitHub Actions is the supported connected-side publisher.
-    #[arg(value_enum)]
-    pub provider: InitProvider,
-
     /// Project root where generated files are written.
     #[arg(long, default_value = ".")]
     pub project_root: PathBuf,
 
     /// GitHub Actions workflow path, relative to the project root.
     #[arg(long, default_value = ".github/workflows/publish-sandbox.yml")]
-    pub workflow: PathBuf,
+    pub github_workflow_path: PathBuf,
 
-    /// Reviewed sandbox plan path, relative to the project root.
-    #[arg(long, default_value = ".pixi-sandbox.toml")]
-    pub config: PathBuf,
+    /// Airlock launcher path, relative to the project root. Defaults to restore.sh on Unix and
+    /// restore.ps1 on Windows.
+    #[arg(long)]
+    pub script_path: Option<PathBuf>,
 
-    /// POSIX airlock launcher path, relative to the project root.
-    #[arg(long, default_value = "restore.sh")]
-    pub restore_script: PathBuf,
+    /// Reviewed sandbox plan path. Without this override, init prefers pixi-sandbox.toml and
+    /// falls back to the legacy .pixi-sandbox.toml when it already exists.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 
-    /// PowerShell airlock launcher path, relative to the project root.
-    #[arg(long, default_value = "restore.ps1")]
-    pub powershell_script: PathBuf,
-
-    /// Default local sandbox branch archived by the launchers.
+    /// Default local sandbox branch archived by the launcher.
     #[arg(long, default_value = "sandbox/developer-linux-64")]
     pub branch: String,
 
-    /// Replace files previously generated at the selected paths.
+    /// Replace a user-owned file at a selected generated path. Files carrying pixi-sandbox's
+    /// generation marker are safely regenerated without this flag.
     #[arg(long)]
     pub force: bool,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum InitProvider {
-    Github,
 }
 
 #[derive(Debug, Args)]

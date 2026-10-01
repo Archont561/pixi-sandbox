@@ -33,7 +33,7 @@ pixi-sandbox init [--github-workflow-path PATH] [--script-path PATH] [--config P
 
 ### 1. Init and configuration
 
-- Remove the `init github` provider requirement.
+- Remove the positional `github` provider from `init`.
 - Add `--github-workflow-path`, `--script-path`, and `--config` overrides.
 - Generate only `restore.sh` on Unix or `restore.ps1` on Windows by default.
 - Resolve config in the order explicit path, `pixi-sandbox.toml`, `.pixi-sandbox.toml`.

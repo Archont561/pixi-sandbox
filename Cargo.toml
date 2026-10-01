@@ -4,6 +4,7 @@ members = [
   "crates/pixi-sandbox-core",
   "crates/pixi-sandbox-git",
   "crates/pixi-sandbox",
+  "crates/xtask",
 ]
 
 [workspace.package]

@@ -16,5 +16,5 @@ cargo_vendor = true
 
 [[bundle]]
 name = "developer"
-environments = ["default"]
+environments = ["default", "web"]
 platforms = ["linux-64"]

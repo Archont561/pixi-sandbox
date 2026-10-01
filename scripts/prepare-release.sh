@@ -100,17 +100,19 @@ stamp_version pixi.toml
 # turns that drift into a red build instead of a wrongly-versioned .conda.
 stamp_version crates/pixi-sandbox/pixi.toml
 
-# The CLI crate pins its sibling libraries by an exact `path = …, version = "X.Y.Z"` requirement.
-# Those must move with the workspace version or cargo refuses to resolve the bumped members
-# ("candidate versions found which didn't match"). Only rewrite the pin on the internal-dep lines.
-MEMBER_MANIFEST="crates/pixi-sandbox/Cargo.toml"
-if grep -qE 'pixi-sandbox-(core|git).*path *=' "$MEMBER_MANIFEST" 2>/dev/null; then
-  tmp="$(mktemp)"
-  sed -E "/pixi-sandbox-(core|git).*path *=/ s/version = \"[^\"]*\"/version = \"$SEMVER\"/" \
-    "$MEMBER_MANIFEST" >"$tmp"
-  mv "$tmp" "$MEMBER_MANIFEST"
-  log "  stamped $MEMBER_MANIFEST (internal dependency pins)"
-fi
+# Workspace packages pin internal path dependencies with an exact version so cargo-deny does not
+# treat them as wildcards. They must move with the workspace version or Cargo refuses to resolve
+# the bumped members ("candidate versions found which didn't match"). Only rewrite internal-dep
+# lines; external requirements are release-independent.
+for MEMBER_MANIFEST in crates/pixi-sandbox/Cargo.toml crates/xtask/Cargo.toml; do
+  if grep -qE 'pixi-sandbox(-core|-git)?.*path *=' "$MEMBER_MANIFEST" 2>/dev/null; then
+    tmp="$(mktemp)"
+    sed -E "/pixi-sandbox(-core|-git)?.*path *=/ s/version = \"[^\"]*\"/version = \"$SEMVER\"/" \
+      "$MEMBER_MANIFEST" >"$tmp"
+    mv "$tmp" "$MEMBER_MANIFEST"
+    log "  stamped $MEMBER_MANIFEST (internal dependency pins)"
+  fi
+done
 
 # Keep Cargo.lock's workspace-member versions in step so a later `cargo build --locked` (or CI)
 # does not trip over a stale lock. `--workspace` touches only the members, not external pins;

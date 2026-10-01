@@ -3,50 +3,91 @@
 use crate::cli::InitArgs;
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
+use pixi_sandbox::generated::{GENERATED_MARKER, GithubWorkflowOptions, render_github_workflow};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn run(args: InitArgs) -> Result<()> {
-    match args.provider {
-        crate::cli::InitProvider::Github => {}
-    }
-    let root = support::existing_dir(&args.project_root, "--project-root")?;
-    let workflow = resolve(&root, &args.workflow);
-    let config = resolve(&root, &args.config);
-    let shell = resolve(&root, &args.restore_script);
-    let powershell = resolve(&root, &args.powershell_script);
+const PREFERRED_CONFIG: &str = "pixi-sandbox.toml";
+const LEGACY_CONFIG: &str = ".pixi-sandbox.toml";
 
-    for path in [&workflow, &shell, &powershell] {
-        if path.exists() && !args.force {
-            bail!(
-                "{} already exists — pass --force to replace generated files",
-                path.display()
-            );
+#[derive(Debug, Clone, Copy)]
+enum LauncherKind {
+    Posix,
+    PowerShell,
+}
+
+impl LauncherKind {
+    fn current() -> Self {
+        if cfg!(windows) {
+            Self::PowerShell
+        } else {
+            Self::Posix
         }
     }
 
-    let version = env!("CARGO_PKG_VERSION");
-    let action_sha = latest_action_sha()?;
-    write(&workflow, &github_workflow(version, &action_sha))?;
-    if !config.exists() {
-        write(&config, &default_config())?;
+    fn default_path(self) -> &'static Path {
+        match self {
+            Self::Posix => Path::new("restore.sh"),
+            Self::PowerShell => Path::new("restore.ps1"),
+        }
     }
-    write(&shell, &posix_restore(&args.branch))?;
-    support::make_executable(&shell)?;
+
+    fn render(self, branch: &str, config: &Path) -> String {
+        match self {
+            Self::Posix => posix_restore(branch, config),
+            Self::PowerShell => powershell_restore(&windows_branch(branch), config),
+        }
+    }
+}
+
+pub fn run(args: InitArgs) -> Result<()> {
+    let root = support::existing_dir(&args.project_root, "--project-root")?;
+    let workflow = resolve(&root, &args.github_workflow_path);
+    let config = select_config(&root, args.config.as_deref());
+    let config_reference = project_reference(&root, &config);
+    let launcher_kind = LauncherKind::current();
+    let script_argument = args
+        .script_path
+        .as_deref()
+        .unwrap_or_else(|| launcher_kind.default_path());
+    let script = resolve(&root, script_argument);
+
+    if workflow == script || workflow == config || script == config {
+        bail!(
+            "generated workflow, launcher, and config paths must be distinct (workflow {}, launcher {}, config {})",
+            workflow.display(),
+            script.display(),
+            config.display()
+        );
+    }
+    for path in [&workflow, &script] {
+        ensure_replaceable(path, args.force)?;
+    }
+
     write(
-        &powershell,
-        &powershell_restore(&windows_branch(&args.branch)),
+        &workflow,
+        &render_github_workflow(GithubWorkflowOptions {
+            version: env!("CARGO_PKG_VERSION"),
+            config_path: &config_reference.to_string_lossy(),
+        }),
     )?;
+    if !config.exists() {
+        write(&config, &default_config(current_platform()?))?;
+    }
+    write(
+        &script,
+        &launcher_kind.render(&args.branch, &config_reference),
+    )?;
+    if matches!(launcher_kind, LauncherKind::Posix) {
+        support::make_executable(&script)?;
+    }
 
     println!(
         "generated GitHub sandbox workflow at {}",
         workflow.display()
     );
-    println!(
-        "generated offline launchers at {} and {}",
-        shell.display(),
-        powershell.display()
-    );
+    println!("using sandbox config at {}", config.display());
+    println!("generated offline launcher at {}", script.display());
     Ok(())
 }
 
@@ -58,117 +99,107 @@ fn resolve(root: &Path, path: &Path) -> PathBuf {
     }
 }
 
+fn select_config(root: &Path, explicit: Option<&Path>) -> PathBuf {
+    if let Some(path) = explicit {
+        return resolve(root, path);
+    }
+    let preferred = root.join(PREFERRED_CONFIG);
+    let legacy = root.join(LEGACY_CONFIG);
+    if preferred.exists() || !legacy.exists() {
+        preferred
+    } else {
+        legacy
+    }
+}
+
+fn project_reference(root: &Path, path: &Path) -> PathBuf {
+    path.strip_prefix(root)
+        .map_or_else(|_| path.to_path_buf(), Path::to_path_buf)
+}
+
+fn ensure_replaceable(path: &Path, force: bool) -> Result<()> {
+    if !path.exists() || force {
+        return Ok(());
+    }
+    let generated = fs::read_to_string(path)
+        .map(|text| {
+            text.lines()
+                .take(3)
+                .any(|line| line.contains(GENERATED_MARKER))
+        })
+        .unwrap_or(false);
+    if generated {
+        return Ok(());
+    }
+    bail!(
+        "{} already exists and is not owned by pixi-sandbox — pass --force to replace it",
+        path.display()
+    )
+}
+
 fn write(path: &Path, content: &str) -> Result<()> {
     let parent = path.parent().expect("generated file always has a parent");
     fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     fs::write(path, content).with_context(|| format!("writing {}", path.display()))
 }
 
-fn default_config() -> String {
-    "schema = 1\nbranch_prefix = \"sandbox\"\ncargo_vendor = true\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n".to_string()
-}
-
-fn latest_action_sha() -> Result<String> {
-    if let Ok(sha) = std::env::var("PIXI_SANDBOX_ACTION_SHA") {
-        return validate_sha(&sha);
+fn current_platform() -> Result<&'static str> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => Ok("linux-64"),
+        ("linux", "aarch64") => Ok("linux-aarch64"),
+        ("macos", "x86_64") => Ok("osx-64"),
+        ("macos", "aarch64") => Ok("osx-arm64"),
+        ("windows", "x86_64") => Ok("win-64"),
+        (os, arch) => bail!("init does not support host platform {os}-{arch}"),
     }
-
-    let body = ureq::get("https://api.github.com/repos/Archont561/pixi-sandbox/commits/main")
-        .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "pixi-sandbox-init")
-        .call()
-        .context("resolving the latest pixi-sandbox action commit")?
-        .body_mut()
-        .read_to_string()
-        .context("reading the latest pixi-sandbox action commit")?;
-    let response: serde_json::Value =
-        serde_json::from_str(&body).context("parsing the latest pixi-sandbox action commit")?;
-    let sha = response["sha"]
-        .as_str()
-        .context("GitHub's latest-commit response has no sha")?;
-    validate_sha(sha)
 }
 
-fn validate_sha(sha: &str) -> Result<String> {
-    if sha.len() == 40 && sha.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        Ok(sha.to_ascii_lowercase())
+fn default_config(platform: &str) -> String {
+    format!(
+        "schema = 1\nbranch_prefix = \"sandbox\"\ncargo_vendor = true\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"{platform}\"]\n"
+    )
+}
+
+fn shell_quote(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_./-".contains(&byte))
+    {
+        value.to_string()
     } else {
-        bail!("pixi-sandbox action SHA must be a full 40-character commit SHA")
+        format!("'{}'", value.replace('\'', "'\"'\"'"))
     }
 }
 
-fn github_workflow(version: &str, action_sha: &str) -> String {
-    let template = r#"name: publish sandbox
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-
-permissions:
-  contents: write
-
-jobs:
-  plan:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - id: sandbox
-        uses: Archont561/pixi-sandbox/setup@__ACTION_SHA__
-        with:
-          version: v__VERSION__
-      - id: plan
-        shell: bash
-        run: echo "matrix=$(pixi-sandbox plan --config .pixi-sandbox.toml --json)" >> "$GITHUB_OUTPUT"
-
-  publish:
-    needs: plan
-    strategy:
-      fail-fast: false
-      # `include:` nested under `matrix:`, not `matrix:` itself. `plan --json` emits
-      # {"schema":1,"include":[...]}, and Actions requires strategy.matrix to be an object:
-      # handing it the array directly type-checks at parse time, so the plan job goes green
-      # and the publish job is never instantiated (issue #37, task-12).
-      matrix:
-        include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: prefix-dev/setup-pixi@v0.10.2
-        with:
-          cache: true
-          environments: ${{ matrix.environments }}
-      - id: sandbox
-        uses: Archont561/pixi-sandbox/setup@__ACTION_SHA__
-        with:
-          version: v__VERSION__
-      - uses: Archont561/pixi-sandbox/publish@__ACTION_SHA__
-        with:
-          project: .
-          environments: ${{ matrix.environments }}
-          platform: ${{ matrix.platform }}
-          branch: ${{ matrix.branch }}
-          cargo-vendor: ${{ matrix.cargo_vendor }}
-          self-bin: ${{ steps.sandbox.outputs.path }}
-          remote: ${{ github.server_url }}/${{ github.repository }}.git
-          output-dir: ${{ runner.temp }}/pixi-sandbox-transport
-          push-token: ${{ github.token }}
-"#;
-    template
-        .replace("__VERSION__", version)
-        .replace("__ACTION_SHA__", action_sha)
+fn powershell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
-fn posix_restore(branch: &str) -> String {
+fn posix_config(config: &Path) -> String {
+    let quoted = shell_quote(&config.to_string_lossy());
+    if config.is_absolute() {
+        quoted
+    } else {
+        format!("$ROOT/{quoted}")
+    }
+}
+
+fn powershell_config(config: &Path) -> String {
+    let quoted = powershell_quote(&config.to_string_lossy());
+    if config.is_absolute() {
+        quoted
+    } else {
+        format!("Join-Path $Root {quoted}")
+    }
+}
+
+fn posix_restore(branch: &str, config: &Path) -> String {
     // The launcher stays a bootstrap: POSIX sh, no downloads, and no dependency on the tool it
-    // is about to unpack. It prefers the branch declared in `.pixi-sandbox.toml` so a config
-    // change (new bundle, renamed prefix) reaches every checkout without regenerating this file,
-    // and falls back to the branch reviewed at init time when the config cannot decide.
+    // is about to unpack. Branch identity comes from the same selected config as the publisher,
+    // with the branch reviewed at init time as a fallback when the config cannot decide.
     let template = r#"#!/bin/sh
+# __GENERATED_MARKER__
 set -eu
 ROOT=$(git rev-parse --show-toplevel)
 case $(uname -s)-$(uname -m) in
@@ -181,7 +212,7 @@ esac
 DEFAULT_BRANCH=__BRANCH__
 case $DEFAULT_BRANCH in *linux-64) DEFAULT_BRANCH=${DEFAULT_BRANCH%linux-64}$PLATFORM ;; esac
 BRANCH=${PIXI_SANDBOX_BRANCH:-}
-CONFIG=$ROOT/.pixi-sandbox.toml
+CONFIG=__CONFIG__
 if [ -z "$BRANCH" ] && [ -r "$CONFIG" ]; then
   # <branch_prefix>/<bundle>-<platform>, read off the same reviewed plan the publisher uses.
   PREFIX=$(sed -n "s/^[[:space:]]*branch_prefix[[:space:]]*=[[:space:]]*[\"']\([^\"']*\).*/\1/p" "$CONFIG" | sed 1q)
@@ -206,7 +237,10 @@ git -C "$ROOT" archive "$BRANCH" | tar -x -C "$TRANSPORT"
 BIN="$TRANSPORT/.pixi-sandbox/tools/$PLATFORM/pixi-sandbox"
 exec "$BIN" restore --branch-location "$TRANSPORT" --output-path "$ROOT" --force "$@"
 "#;
-    template.replace("__BRANCH__", branch)
+    template
+        .replace("__GENERATED_MARKER__", GENERATED_MARKER)
+        .replace("__BRANCH__", branch)
+        .replace("__CONFIG__", &posix_config(config))
 }
 
 fn windows_branch(branch: &str) -> String {
@@ -215,12 +249,13 @@ fn windows_branch(branch: &str) -> String {
         .map_or_else(|| branch.to_string(), |prefix| format!("{prefix}win-64"))
 }
 
-fn powershell_restore(branch: &str) -> String {
-    let template = r#"$ErrorActionPreference = 'Stop'
+fn powershell_restore(branch: &str, config: &Path) -> String {
+    let template = r#"# __GENERATED_MARKER__
+$ErrorActionPreference = 'Stop'
 $Root = (git rev-parse --show-toplevel).Trim()
 $DefaultBranch = '__BRANCH__'
 $Branch = $env:PIXI_SANDBOX_BRANCH
-$Config = Join-Path $Root '.pixi-sandbox.toml'
+$Config = __CONFIG__
 if (-not $Branch -and (Test-Path $Config)) {
     # <branch_prefix>/<bundle>-win-64, read off the same reviewed plan the publisher uses.
     $Text = Get-Content -Raw $Config
@@ -252,19 +287,45 @@ $Binary = Join-Path $Transport '.pixi-sandbox/tools/win-64/pixi-sandbox.exe'
 & $Binary restore --branch-location $Transport --output-path $Root --force @args
 exit $LASTEXITCODE
 "#;
-    template.replace("__BRANCH__", branch)
+    template
+        .replace("__GENERATED_MARKER__", GENERATED_MARKER)
+        .replace("__BRANCH__", branch)
+        .replace("__CONFIG__", &powershell_config(config))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{posix_restore, powershell_restore, windows_branch};
+    use super::{
+        LEGACY_CONFIG, PREFERRED_CONFIG, posix_restore, powershell_restore, select_config,
+        windows_branch,
+    };
+    use std::fs;
+    use std::path::Path;
+
+    #[test]
+    fn config_resolution_prefers_explicit_then_new_then_legacy() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = root.path().join(LEGACY_CONFIG);
+        fs::write(&legacy, "legacy").unwrap();
+        assert_eq!(select_config(root.path(), None), legacy);
+
+        let preferred = root.path().join(PREFERRED_CONFIG);
+        fs::write(&preferred, "preferred").unwrap();
+        assert_eq!(select_config(root.path(), None), preferred);
+
+        assert_eq!(
+            select_config(root.path(), Some(Path::new("config/custom.toml"))),
+            root.path().join("config/custom.toml")
+        );
+    }
 
     #[test]
     fn launchers_are_offline_bootstraps_not_installers() {
-        let shell = posix_restore("sandbox/developer-linux-64");
+        let shell = posix_restore("sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
         assert!(shell.contains("git -C \"$ROOT\" archive"));
         assert!(!shell.contains("curl"));
-        let powershell = powershell_restore("sandbox/developer-win-64");
+        let powershell =
+            powershell_restore("sandbox/developer-win-64", Path::new(PREFERRED_CONFIG));
         assert!(powershell.contains("git -C $Root archive"));
         assert!(!powershell.contains("Invoke-WebRequest"));
     }
@@ -278,18 +339,22 @@ mod tests {
     }
 
     #[test]
-    fn launchers_read_the_branch_off_the_reviewed_plan() {
-        let shell = posix_restore("sandbox/developer-linux-64");
-        // Branch identity comes from the config so it cannot drift from the publisher, while the
-        // reviewed init-time branch stays as the fallback.
-        assert!(shell.contains("CONFIG=$ROOT/.pixi-sandbox.toml"));
+    fn launchers_read_the_branch_off_the_selected_plan() {
+        let shell = posix_restore(
+            "sandbox/developer-linux-64",
+            Path::new("config/sandbox plan.toml"),
+        );
+        assert!(shell.contains("CONFIG=$ROOT/'config/sandbox plan.toml'"));
         assert!(shell.contains("branch_prefix"));
         assert!(shell.contains("BRANCH=${PREFIX:-sandbox}/$BUNDLES-$PLATFORM"));
         assert!(shell.contains("BRANCH=${BRANCH:-$DEFAULT_BRANCH}"));
         assert!(shell.contains("DEFAULT_BRANCH=sandbox/developer-linux-64"));
 
-        let powershell = powershell_restore("sandbox/developer-win-64");
-        assert!(powershell.contains(".pixi-sandbox.toml"));
+        let powershell = powershell_restore(
+            "sandbox/developer-win-64",
+            Path::new("config/sandbox plan.toml"),
+        );
+        assert!(powershell.contains("Join-Path $Root 'config/sandbox plan.toml'"));
         assert!(powershell.contains("branch_prefix"));
         assert!(powershell.contains("$Branch = \"$Prefix/$($Bundles[0])-win-64\""));
         assert!(powershell.contains("if (-not $Branch) { $Branch = $DefaultBranch }"));
@@ -298,10 +363,9 @@ mod tests {
 
     #[test]
     fn an_explicit_branch_still_wins_over_the_config() {
-        let shell = posix_restore("sandbox/developer-linux-64");
-        // PIXI_SANDBOX_BRANCH is read before the config is consulted.
+        let shell = posix_restore("sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
         let override_at = shell.find("BRANCH=${PIXI_SANDBOX_BRANCH:-}").unwrap();
-        let derive_at = shell.find("CONFIG=$ROOT/.pixi-sandbox.toml").unwrap();
+        let derive_at = shell.find("CONFIG=$ROOT/pixi-sandbox.toml").unwrap();
         assert!(override_at < derive_at);
         assert!(shell.contains("if [ -z \"$BRANCH\" ] && [ -r \"$CONFIG\" ]; then"));
     }

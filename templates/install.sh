@@ -36,5 +36,5 @@ fi
 [ "$actual" = "$expected" ] || { echo "checksum mismatch for $asset" >&2; exit 1; }
 
 chmod +x "$work/$asset"
-"$work/$asset" init github --project-root "$PROJECT_ROOT" "$@"
+"$work/$asset" init --project-root "$PROJECT_ROOT" "$@"
 printf '%s\n' "Scaffold complete. Commit the generated files and push to publish the sandbox branch."
