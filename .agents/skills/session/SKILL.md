@@ -85,7 +85,7 @@ Facts about this sandbox that shape every command:
   <task>` so pixi never tries to solve online. A restore is the only way to get a toolchain
   here; there is no rustup fallback.
 - `pixi run --frozen test` runs in seconds once built — baseline it at session start and write
-  the number down (206 passing / 1 skipped on 0.3.7; it must rise with new work, never fall).
+  the number down (222 passing / 1 skipped on 0.3.7; it must rise with new work, never fall).
   The first build after a restore costs about a minute.
 - The airlock claim has a local proof and a CI proof, and they are not the same thing. Locally,
   `crates/pixi-sandbox/tests/e2e.rs` is the fixture-backed lifecycle (doctor → publish → restore

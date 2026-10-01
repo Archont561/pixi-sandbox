@@ -302,11 +302,19 @@ fn no_test_targets_the_repository_root() {
                 checked += 1;
                 continue;
             }
-            // The gate test is the one sanctioned exception: `scripts/airlock-gate.sh` is not
-            // fixture data but the artifact under test (task-10 — the gate must be proven to
-            // reject a forged conda-meta record), so the test reaches the real script in this
-            // repository rather than a copy that would prove nothing about the gate CI runs.
-            if statement.contains("airlock-gate.sh") {
+            // Two sanctioned exceptions, both the same shape: the repository's own shell
+            // scripts are not fixture data, they are the artifact under test, and a copy of a
+            // script proves nothing about the script that actually runs.
+            //
+            //   scripts/airlock-gate.sh — task-10: the gate must be proven to reject a forged
+            //     conda-meta record, and CI runs this file.
+            //   scripts/restore.sh — the repository's own airlock bootstrap, which no test
+            //     executed until `tests/restore_script.rs`: both defects fixed on 2026-10-01
+            //     were behavioural, and a developer runs this file verbatim.
+            //
+            // Neither exception lets a test touch the repository as a *project*: they execute
+            // a script against tempdirs and the transport fixture, never against this tree.
+            if statement.contains("airlock-gate.sh") || statement.contains("restore.sh") {
                 continue;
             }
             let escapes = statement.contains("\"..\"") || statement.contains(".parent()");
