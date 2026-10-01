@@ -6,7 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.3.6](https://github.com/Archont561/pixi-sandbox/compare/v0.3.5...279d748cfd3ade87badf0d81645803fd274e3b47) (2026-10-01)
+### [v0.3.7](https://github.com/Archont561/pixi-sandbox/compare/v0.3.6...910df8f2ff39412d62df82ac81563e17ffd45f92) (2026-10-01)
+
+#### Fixes
+
+* **release:** replace repo-targeting shell scripts with tested xtask commands (#46)
+([910df8f](https://github.com/Archont561/pixi-sandbox/commit/910df8f2ff39412d62df82ac81563e17ffd45f92)),
+closes [#46](https://github.com/Archont561/pixi-sandbox/issues/46)
+
+### [v0.3.6](https://github.com/Archont561/pixi-sandbox/compare/v0.3.5...v0.3.6) (2026-10-01)
 
 #### Features
 
