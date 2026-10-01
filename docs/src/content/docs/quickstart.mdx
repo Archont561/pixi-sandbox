@@ -99,7 +99,7 @@ The launcher archives the local platform branch and invokes its manifest-verifie
 Don't infer every env from `pixi.toml` — projects have private test/bench envs.
 
 ```toml
-# .pixi-sandbox.toml
+# pixi-sandbox.toml
 schema = 1
 branch_prefix = "sandbox"
 cargo_vendor = true
@@ -113,8 +113,8 @@ platforms = ["linux-64", "osx-arm64", "win-64"]
 Validate locally:
 
 ```bash
-pixi-sandbox plan --config .pixi-sandbox.toml
-pixi-sandbox plan --config .pixi-sandbox.toml --json  # GitHub Actions matrix
+pixi-sandbox plan --config pixi-sandbox.toml
+pixi-sandbox plan --config pixi-sandbox.toml --json  # GitHub Actions matrix
 ```
 
 Your workflow just uses the two actions — your `uses: @v__VERSION__` pin is the version, no `release-repository` needed.
@@ -135,7 +135,7 @@ Your workflow just uses the two actions — your `uses: @v__VERSION__` pin is th
             id: setup
             with: { version: v__VERSION__ }
           - id: plan
-            run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
+            run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
       publish:
         needs: plan
         strategy:
@@ -189,7 +189,7 @@ jobs:
   sandbox:
     uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@<sha>
     with:
-      config: .pixi-sandbox.toml
+      config: pixi-sandbox.toml
       release-repository: Archont561/pixi-sandbox
       release-version: v__VERSION__
     secrets:
@@ -202,7 +202,7 @@ Needs duplicate `release-*` inputs — prefer two actions above.
 
 <div style="display: flex; gap: 0.5rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; margin: 1rem 0;">
   <Icon name="lucide:info" size={18} />
-  <span>A matrix job only publishes its matching native platform. <code>osx-arm64</code> must use Apple-Silicon runner; publish rejects mismatched runner rather than cross-packing unproven transport. Use <code>[runners]</code> in <code>.pixi-sandbox.toml</code> for self-hosted labels. Runner override must have embedded pins for <code>pixi</code>, <code>pixi-pack</code>, <code>pixi-unpack</code>.</span>
+  <span>A matrix job only publishes its matching native platform. <code>osx-arm64</code> must use Apple-Silicon runner; publish rejects mismatched runner rather than cross-packing unproven transport. Use <code>[runners]</code> in <code>pixi-sandbox.toml</code> for self-hosted labels. Runner override must have embedded pins for <code>pixi</code>, <code>pixi-pack</code>, <code>pixi-unpack</code>.</span>
 </div>
 
 ## Direct actions (like setup-pixi)

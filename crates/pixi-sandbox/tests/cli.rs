@@ -974,168 +974,149 @@ fn pack_keeps_the_self_binary_only_in_tools_and_the_branch_root_documentation_on
     assert_eq!(root_files, ["AGENTS.md", "README.md"]);
 }
 
+fn init_command(project: &Path) -> Command {
+    let mut command = bin();
+    command.args(["init", "--project-root", project.to_str().unwrap()]);
+    command
+}
+
 #[test]
-fn init_github_generates_minimal_project_launchers_and_workflow() {
+fn init_is_provider_neutral_and_generates_only_this_platforms_launcher() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");
     fs::create_dir_all(&project).unwrap();
 
-    let action_sha = "0123456789abcdef0123456789abcdef01234567";
-    bin()
-        .env("PIXI_SANDBOX_ACTION_SHA", action_sha)
-        .args([
-            "init",
-            "github",
-            "--project-root",
-            project.to_str().unwrap(),
-            "--branch",
-            "sandbox/developer-linux-64",
-        ])
+    init_command(&project)
+        .args(["--branch", "sandbox/developer-linux-64"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "generated GitHub sandbox workflow",
-        ));
+        .stdout(predicate::str::contains("generated offline launcher"));
 
-    let shell = fs::read_to_string(project.join("restore.sh")).unwrap();
-    assert!(shell.contains("git -C \"$ROOT\" archive"));
-    assert!(shell.contains("sandbox/developer-linux-64"));
-    assert!(shell.contains(".pixi-sandbox/tools/$PLATFORM/pixi-sandbox"));
-    assert!(!shell.contains("curl"));
-    // The launcher resolves the branch from the generated plan instead of trusting only the
-    // branch baked in at init time.
-    assert!(shell.contains("CONFIG=$ROOT/.pixi-sandbox.toml"));
-    assert!(shell.contains("branch_prefix"));
-
-    let powershell = fs::read_to_string(project.join("restore.ps1")).unwrap();
-    assert!(powershell.contains("git -C $Root archive"));
-    assert!(powershell.contains(".pixi-sandbox/tools/win-64/pixi-sandbox.exe"));
-    assert!(!powershell.contains("Invoke-WebRequest"));
-    assert!(powershell.contains(".pixi-sandbox.toml"));
-    assert!(powershell.contains("branch_prefix"));
+    #[cfg(unix)]
+    {
+        let shell = fs::read_to_string(project.join("restore.sh")).unwrap();
+        assert!(shell.contains("git -C \"$ROOT\" archive"));
+        assert!(shell.contains("sandbox/developer-linux-64"));
+        assert!(shell.contains(".pixi-sandbox/tools/$PLATFORM/pixi-sandbox"));
+        assert!(shell.contains("CONFIG=$ROOT/pixi-sandbox.toml"));
+        assert!(!shell.contains("curl"));
+        assert!(!project.join("restore.ps1").exists());
+    }
+    #[cfg(windows)]
+    {
+        let powershell = fs::read_to_string(project.join("restore.ps1")).unwrap();
+        assert!(powershell.contains("git -C $Root archive"));
+        assert!(powershell.contains(".pixi-sandbox/tools/win-64/pixi-sandbox.exe"));
+        assert!(powershell.contains("Join-Path $Root 'pixi-sandbox.toml'"));
+        assert!(!powershell.contains("Invoke-WebRequest"));
+        assert!(!project.join("restore.sh").exists());
+    }
 
     let workflow =
         fs::read_to_string(project.join(".github/workflows/publish-sandbox.yml")).unwrap();
-    assert!(workflow.contains(&format!("uses: Archont561/pixi-sandbox/setup@{action_sha}")));
+    assert!(!workflow.contains("uses: Archont561/pixi-sandbox"));
+    assert!(workflow.contains("https://prefix.dev/archont561/pixi-sandbox"));
     assert!(workflow.contains(&format!(
-        "uses: Archont561/pixi-sandbox/publish@{action_sha}"
+        "PIXI_SANDBOX_VERSION: {}",
+        env!("CARGO_PKG_VERSION")
     )));
-    assert!(workflow.contains(&format!("version: v{}", env!("CARGO_PKG_VERSION"))));
-    assert!(!workflow.contains(".github/workflows/publish-sandbox.yml@"));
-    assert!(project.join(".pixi-sandbox.toml").is_file());
+    assert!(workflow.contains("--config pixi-sandbox.toml"));
+    assert!(workflow.contains("pixi-sandbox doctor --branch-location \"$TRANSPORT\" --verify"));
+    assert!(project.join("pixi-sandbox.toml").is_file());
+    assert!(!project.join(".pixi-sandbox.toml").exists());
 }
 
-/// Generate a project with `init github` and hand back (project dir, workflow text).
-///
-/// The tempdir is returned too: dropping it deletes the project, so the caller has to keep it.
-fn generated_github_project() -> (tempfile::TempDir, PathBuf, String) {
+#[test]
+fn init_honours_path_overrides_and_safely_regenerates_owned_files() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");
     fs::create_dir_all(&project).unwrap();
+    let extra = [
+        "--github-workflow-path",
+        "ci/generated.yml",
+        "--script-path",
+        "bin/airlock launcher",
+        "--config",
+        "config/sandbox plan.toml",
+    ];
 
-    bin()
-        // No network in a test (and none in the airlock): this is the documented way to pin the
-        // action commit `init` would otherwise resolve from api.github.com.
-        .env(
-            "PIXI_SANDBOX_ACTION_SHA",
-            "0123456789abcdef0123456789abcdef01234567",
-        )
-        .args([
-            "init",
-            "github",
-            "--project-root",
-            project.to_str().unwrap(),
-            "--branch",
-            "sandbox/developer-linux-64",
-        ])
+    init_command(&project).args(extra).assert().success();
+    let workflow_path = project.join("ci/generated.yml");
+    let script_path = project.join("bin/airlock launcher");
+    let config_path = project.join("config/sandbox plan.toml");
+    let workflow = fs::read_to_string(&workflow_path).unwrap();
+    assert!(workflow.contains("--config 'config/sandbox plan.toml'"));
+    let script = fs::read_to_string(&script_path).unwrap();
+    #[cfg(unix)]
+    assert!(script.contains("CONFIG=$ROOT/'config/sandbox plan.toml'"));
+    #[cfg(windows)]
+    assert!(script.contains("Join-Path $Root 'config/sandbox plan.toml'"));
+    assert!(config_path.is_file());
+    assert!(
+        !project
+            .join(".github/workflows/publish-sandbox.yml")
+            .exists()
+    );
+
+    // Generated markers make an unchanged invocation safely regenerable without --force. The
+    // config is user-owned after creation and must never be reset by regeneration.
+    fs::write(&config_path, "user-edited config\n").unwrap();
+    init_command(&project).args(extra).assert().success();
+    assert_eq!(
+        fs::read_to_string(&config_path).unwrap(),
+        "user-edited config\n"
+    );
+
+    // An unmarked file is protected unless the user explicitly selects --force.
+    fs::write(&workflow_path, "user-owned workflow\n").unwrap();
+    init_command(&project)
+        .args(extra)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("is not owned by pixi-sandbox"));
+    assert_eq!(
+        fs::read_to_string(&workflow_path).unwrap(),
+        "user-owned workflow\n"
+    );
+    init_command(&project)
+        .args(extra)
+        .arg("--force")
         .assert()
         .success();
-
-    let workflow =
-        fs::read_to_string(project.join(".github/workflows/publish-sandbox.yml")).unwrap();
-    (temp, project, workflow)
-}
-
-/// Issue #37 / task-12: `strategy.matrix` must be an *object*, so the `include` array goes one
-/// level down.
-///
-/// `plan --json` emits `{"schema":1,"include":[...]}`. v0.3.1 generated
-/// `matrix: ${{ fromJSON(needs.plan.outputs.matrix).include }}`, which hands `strategy.matrix`
-/// the array itself — a shape Actions will not expand, so the plan job succeeded and the publish
-/// job was never instantiated. The failure is silent (a green run that published nothing), and
-/// actionlint does not see it: it accepts both forms, because it will not evaluate the
-/// expression. Hence a text assertion here, on the exact block the generator emits.
-#[test]
-fn init_github_generates_an_object_shaped_publish_matrix() {
-    let (_temp, _project, workflow) = generated_github_project();
-
     assert!(
-        workflow.contains(
-            "    strategy:\n      fail-fast: false\n      # `include:` nested under `matrix:`"
-        ),
-        "the publish job must declare a strategy with a nested matrix:\n{workflow}"
+        fs::read_to_string(&workflow_path)
+            .unwrap()
+            .contains("Generated by pixi-sandbox init")
     );
-    assert!(
-        workflow.contains(
-            "      matrix:\n        include: ${{ fromJSON(needs.plan.outputs.matrix).include }}\n"
-        ),
-        "`include:` must be nested under `matrix:`, not passed as the matrix itself:\n{workflow}"
-    );
-    // The v0.3.1 regression, spelled out so it cannot come back in a reworded template.
-    assert!(
-        !workflow.contains("matrix: ${{ fromJSON("),
-        "strategy.matrix must never be handed the include array directly (issue #37):\n{workflow}"
+    assert_eq!(
+        fs::read_to_string(&config_path).unwrap(),
+        "user-edited config\n"
     );
 }
 
-/// The generated workflow and `plan --json` are one contract: every `matrix.<key>` the workflow
-/// reads has to be a key the planner actually emits on each `include` entry. A rename on either
-/// side turns into an empty string at run time — `runs-on: ` with no value, or a publish that
-/// packs the wrong environments — so it is pinned from both ends at once.
 #[test]
-fn the_generated_workflow_only_reads_matrix_keys_the_plan_emits() {
-    let (_temp, project, workflow) = generated_github_project();
+fn init_prefers_the_new_config_name_and_falls_back_to_the_legacy_name() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join(".pixi-sandbox.toml"), "legacy config\n").unwrap();
 
-    let config = project.join(".pixi-sandbox.toml");
-    let output = bin()
-        .args(["plan", "--config", config.to_str().unwrap(), "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let plan: Value = serde_json::from_slice(&output).expect("plan --json emits JSON");
-
-    // The workflow consumes `fromJSON(...).include`, so that is the field that must exist.
-    let include = plan["include"]
-        .as_array()
-        .expect("plan --json emits an include array");
-    assert!(!include.is_empty(), "the generated plan publishes nothing");
-
-    let mut referenced: Vec<String> = Vec::new();
-    for (index, _) in workflow.match_indices("matrix.") {
-        let key: String = workflow[index + "matrix.".len()..]
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .collect();
-        if !key.is_empty() && !referenced.contains(&key) {
-            referenced.push(key);
-        }
-    }
+    init_command(&project).assert().success();
+    let workflow_path = project.join(".github/workflows/publish-sandbox.yml");
     assert!(
-        referenced.len() >= 4,
-        "expected the workflow to read several matrix keys, found {referenced:?}"
+        fs::read_to_string(&workflow_path)
+            .unwrap()
+            .contains("--config .pixi-sandbox.toml")
     );
+    assert!(!project.join("pixi-sandbox.toml").exists());
 
-    for entry in include {
-        let entry = entry.as_object().expect("each include entry is an object");
-        for key in &referenced {
-            assert!(
-                entry.contains_key(key),
-                "the generated workflow reads matrix.{key}, which plan --json does not emit: {entry:?}"
-            );
-        }
-    }
+    fs::write(project.join("pixi-sandbox.toml"), "preferred config\n").unwrap();
+    init_command(&project).assert().success();
+    assert!(
+        fs::read_to_string(&workflow_path)
+            .unwrap()
+            .contains("--config pixi-sandbox.toml")
+    );
 }
 
 #[cfg(unix)]
@@ -1257,13 +1238,8 @@ fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary(
     fs::create_dir_all(&project).unwrap();
 
     bin()
-        .env(
-            "PIXI_SANDBOX_ACTION_SHA",
-            "0123456789abcdef0123456789abcdef01234567",
-        )
         .args([
             "init",
-            "github",
             "--project-root",
             project.to_str().unwrap(),
             "--branch",
@@ -1325,7 +1301,7 @@ fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary(
 }
 
 /// A project can rename its bundle or branch prefix without regenerating `restore.sh`: the
-/// launcher reads `.pixi-sandbox.toml` at run time. Here the branch baked in at init time does
+/// launcher reads the selected `pixi-sandbox.toml` at run time. Here the branch baked in at init time does
 /// not exist, so only a launcher that consults the config can find the transport.
 #[cfg(unix)]
 #[test]
@@ -1335,13 +1311,8 @@ fn generated_restore_prefers_the_branch_declared_in_the_config() {
     fs::create_dir_all(&project).unwrap();
 
     bin()
-        .env(
-            "PIXI_SANDBOX_ACTION_SHA",
-            "0123456789abcdef0123456789abcdef01234567",
-        )
         .args([
             "init",
-            "github",
             "--project-root",
             project.to_str().unwrap(),
             "--branch",
@@ -1352,7 +1323,7 @@ fn generated_restore_prefers_the_branch_declared_in_the_config() {
 
     let platform = host_platform();
     fs::write(
-        project.join(".pixi-sandbox.toml"),
+        project.join("pixi-sandbox.toml"),
         format!(
             "schema = 1\nbranch_prefix = \"envs\"\ncargo_vendor = true\n\n\
              [[bundle]]\nname = \"tools\"\nenvironments = [\"default\"]\nplatforms = [\"{platform}\"]\n"
@@ -1413,7 +1384,7 @@ fn generated_restore_prefers_the_branch_declared_in_the_config() {
         .unwrap();
     assert!(
         status.success(),
-        "the launcher must resolve envs/tools-{platform} from .pixi-sandbox.toml"
+        "the launcher must resolve envs/tools-{platform} from pixi-sandbox.toml"
     );
     assert!(project.join("restored-by-config").is_file());
 }

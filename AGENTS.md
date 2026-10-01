@@ -28,7 +28,7 @@ opinion.
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
 | `feature.utils.actionlint` | runs `actionlint` from conda directly when validating workflows in the `default` environment |
 | `action.yml` | the only action implementation (setup + publish via `subpath`). `setup/action.yml` and `publish/action.yml` are **generated** full copies — edit the root, then run `bash scripts/render-action-shims.sh`. A relative `uses:` in a published action path cannot resolve from a remote ref (issue #37) |
-| `scripts/lint-generated-workflow.sh` | actionlint over the workflow `init github` *generates*; the matrix shape itself is pinned in `tests/cli.rs`, because actionlint accepts both shapes |
+| `crates/xtask` | typed repository automation invoked by Pixi tasks; `lint-generated-workflow` renders through the product library and runs actionlint, while Rust tests pin workflow structure and planner contracts |
 | `scripts/restore.sh` | one-liner offline reconstruction from orphan branch with PATH aliases; derives the branch from `.pixi-sandbox.toml` for the host platform |
 | `scripts/lint-repo-consistency.sh` | the repo-level lints a cargo test may not perform (D10): no prototype references under `crates/`, one platform story across README badge / `pixi.toml` / `.pixi-sandbox.toml`. Opt out of the first with `stale-ref-allowed` on (or above) the line |
 | `scripts/smoke-conda-package.sh` | installs the just-built `.conda` and runs the packaged binary on this runner, checking it reports the workspace version; the `package-smoke` task and every `release.yml` build matrix leg |

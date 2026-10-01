@@ -28,7 +28,7 @@ The implementation consists of four pieces:
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical helper-tool pins compiled into every Rust binary |
 | `.pixi-sandbox.toml` | project-owned declaration of publishable bundles, platforms, and optional runner overrides |
 | `pixi-sandbox plan --json` | validates that declaration and emits an Actions-compatible matrix (consume `.include`; the scalar `schema` is not a matrix dimension) |
-| `setup-pixi-sandbox` + `publish-sandboxes.yml` | download/verify a release binary, then pack/verify/publish one native branch per matrix entry |
+| generated `publish-sandbox.yml` | install the exact channel CLI, download and verify the matching standalone bootstrap, then pack/verify/publish one native branch per matrix entry |
 
 ## Embedded helper-tool pins
 
@@ -96,19 +96,20 @@ that cannot download its verified helper tools. Runner labels cannot contain con
 outer whitespace, and every `[runners]` entry must be used by at least one bundle; a stale typo is
 therefore a configuration error instead of dormant CI policy.
 
-## `setup-pixi-sandbox` action
+## Generated direct CLI workflow
 
-Both composite behaviours live in the repository-root `action.yml`, selected by its `subpath` input. `setup/action.yml` and `publish/action.yml` exist so `owner/repo/{setup,publish}@ref` resolves, and each is a **complete copy** of that root action with its own marketplace header and `subpath` default, rendered by `scripts/render-action-shims.sh` and re-rendered by check 7 of `scripts/lint-repo-consistency.sh`.
+`pixi-sandbox init` renders the consumer publisher without referring to any Archont561-owned
+Action. The only `uses:` entries are full-commit pins for `actions/checkout` and
+`prefix-dev/setup-pixi`. Each job installs the exact generator version from
+`https://prefix.dev/archont561/pixi-sandbox`, with `conda-forge` as the supporting channel, and
+then invokes `pixi-sandbox` directly.
 
-They are copies because a shim cannot reference its own repository. Until v0.3.1 each contained a single step, `uses: ../action.yml`; a relative `uses:` inside a *remote* composite action is resolved against the workflow run's workspace rather than the repository that defines the action, and a `../` prefix is rejected by the reference parser outright (`Expected format {org}/{repo}[/path]@ref. Actual '../action.yml'`), so every remote `setup@ref` caller failed during job setup (issue #37, task-12). `./action.yml` is not a fix — it resolves in the consumer's checkout, so it fails or silently runs the consumer's own same-named file. The proposed `$/` same-repo syntax has not shipped, and hardcoding `Archont561/pixi-sandbox@<sha>` inside the shim would override the ref the caller pinned. Duplication, generated and lint-verified, is the only option that keeps a pinned SHA meaning one thing.
-They use only bash/pwsh + core utils and therefore run before Pixi or Rust is installed. The setup action:
-
-1. maps the current runner OS/architecture to a Rust target triple;
-2. resolves a GitHub release tag (`latest` is allowed but warned about);
-3. downloads the binary release asset and `SHA256SUMS`;
-4. verifies SHA-256 before making anything executable;
-5. runs `pixi-sandbox --version` and exposes the executable path, resolved tag, digest, and
-   target as Action outputs.
+The connected CLI and the transport bootstrap are intentionally separate artifacts. A native
+channel package may use normal system linkage, so the workflow downloads the matching standalone
+GitHub release binary and `SHA256SUMS`, maps each planned platform to its release target, verifies
+the checksum, and passes that path to `pack --self-bin`. Linux and macOS use bash; Windows uses
+PowerShell. The bootstrap is stored under runner temporary storage and is not executed before its
+checksum has been verified.
 
 Release asset contract for a Linux x86_64 build:
 
@@ -124,31 +125,16 @@ uploaded:
 (cd release && sha256sum pixi-sandbox-* > SHA256SUMS && sha256sum -c SHA256SUMS)
 ```
 
-Entries must match `pixi-sandbox-{target}{exe}`. The setup action requires exactly one matching
-checksum entry, confines automatic installation below runner temporary storage, and rejects
-path-like repository, target, tag, or asset-name inputs. It does not build, upload, or certify an
-artifact; those remain deliberately separate from platform-specific bootstrap proof.
-
-Use immutable references in production:
-
-```yaml
-- uses: OWNER/pixi-sandbox@<commit-sha>
-  with:
-    subpath: setup
-    repository: OWNER/pixi-sandbox
-    version: v0.2.0
-```
-
-`latest` is only suitable for an explicitly accepted development workflow. It remains mutable
-even though its selected bytes are checksum-verified after resolution.
+Entries must match `pixi-sandbox-{target}{exe}`. The generated workflow requires a matching
+checksum entry and fails before packing if the asset is missing or has changed.
 
 ## Immutable workflow dependencies
 
-Every third-party `uses:` reference in `.github/workflows/` is pinned to a full commit SHA; the
-trailing `# v…` comment records the human-facing upstream release label only. The release-driven
-workflow separately requires its `release-ref` input to be a 40-character SHA before checking
-out the custom composite Actions. This prevents a moving tag from silently changing code that can
-download executables or write sandbox branches.
+Every third-party `uses:` reference in the generated workflow is pinned to a full commit SHA; the
+trailing `# v…` comment records the human-facing upstream release label only. No custom publish
+Action is fetched. The generated package constraint and standalone release URL both use the exact
+`pixi-sandbox` version that rendered the workflow, preventing an unreviewed moving version from
+changing code that downloads executables or writes sandbox branches.
 
 When updating a dependency, resolve the intended upstream tag to its Git commit through the
 upstream GitHub release/ref API, replace the SHA and label together, run `actionlint`, and review
@@ -157,15 +143,15 @@ workflow shorter.
 
 ## Native publish workflow
 
-`publish-sandbox.yml` is the unified publisher (replaces separate source-driven + release-driven workflows).
-It is callable as `workflow_call`, runnable via `workflow_dispatch`, and auto-runs after `ci.yml` success.
-It:
+The generated `.github/workflows/publish-sandbox.yml` is the consumer publisher. It runs on a
+push to `main` or by `workflow_dispatch`. It:
 
-1. Validates `.pixi-sandbox.toml` via `pixi-sandbox plan --json` (or falls back to single default bundle).
-2. For each (bundle × platform) with native runner available, runs on that runner:
-   - `setup-pixi-sandbox` (verified download, checksum verified, like `prefix-dev/setup-pixi`)
-   - `publish-pixi-sandbox` composite: `pixi install --frozen -e <envs>` → `pack --self-bin <verified release>` → `doctor --verify` → `publish`
-3. The same verified standalone release is embedded as the branch bootstrap executable.
+1. Passes the configured config path to `pixi-sandbox plan --json` and consumes the returned
+   `include` array as the matrix.
+2. Runs every bundle/platform entry on its native planned runner.
+3. Installs each selected environment, packs with the checksum-verified standalone release as
+   `--self-bin`, runs `doctor --verify`, and publishes the branch directly.
+4. Uses separate bash and PowerShell implementations while retaining the same command contract.
 
 Each native job:
 
@@ -177,17 +163,16 @@ pixi install --frozen -e <each selected environment>
 ```
 
 A GitHub token is supplied to `git` through an in-memory `http.*.extraheader`; it is not put in
-the remote URL or command arguments. The workflow uses a concurrency group keyed by repository
-and branch so competing publishes cannot race. The publisher invokes the exact verified setup
-output as `self-bin`, rather than resolving `pixi-sandbox` through `PATH`; the hermetic action
-test covers a malicious PATH-shadow regression. `publish` scratch repo now lives outside the
-transport (same filesystem, never /tmp) to avoid leaking `.pixi-sandbox-publish-<pid>/`.
+the remote URL or command arguments. The publisher invokes the checksum-verified download as
+`self-bin`, rather than embedding the channel executable found through `PATH`. `publish` scratch
+repo lives outside the transport (same filesystem, never `/tmp`) to avoid leaking
+`.pixi-sandbox-publish-<pid>/`.
 
 ## Release acceptance and limits
 
 `release.yml` now builds 5 tier-1 static binaries (musl Linux x86_64/aarch64, macOS x86_64/aarch64,
-Windows x86_64), strips, generates `SHA256SUMS`, and creates GitHub Release. `setup-pixi-sandbox`
-verifies SHA-256 before executing.
+Windows x86_64), strips, generates `SHA256SUMS`, and creates a GitHub Release. The generated
+publisher verifies SHA-256 before supplying the standalone binary to `pack`.
 
 The embedded helper pins cover Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows x86_64
 for Pixi, pixi-pack, and pixi-unpack. That makes planning/fetching possible; native release and

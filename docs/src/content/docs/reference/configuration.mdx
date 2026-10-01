@@ -1,13 +1,15 @@
 ---
 title: Configuration Reference
-description: .pixi-sandbox.toml schema and options for reviewed native publishing.
+description: pixi-sandbox.toml schema and options for reviewed native publishing.
 ---
 
 import { Icon } from 'astro-icon/components';
 
 ## File location
 
-`.pixi-sandbox.toml` at repo root. Validated by `pixi-sandbox plan --config .pixi-sandbox.toml`.
+`pixi-sandbox.toml` at the repository root is preferred. `pixi-sandbox init` falls back to an
+existing `.pixi-sandbox.toml` for compatibility, and `--config PATH` selects any other location.
+Validate the selected file with `pixi-sandbox plan --config pixi-sandbox.toml`.
 
 ## Schema
 
