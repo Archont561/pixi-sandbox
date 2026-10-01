@@ -37,10 +37,15 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
   - Runs on `ubuntu-latest` in the `default` pixi environment.
   - Leverages `Swatinem/rust-cache` to cache `~/.cargo/` and `./target` across commits.
   - Sequentially runs `lint` (fmt, clippy, deny, actionlint, taplo, biome), `test` (nextest), `test-doc`, `coverage` (llvm-cov), and `docs-build`.
-- **Publish Workflow (`.github/workflows/publish-sandbox.yml`)**:
-  - Automatically triggered via `workflow_run` once `ci` completes with `success`.
-  - Also callable manually (`workflow_dispatch`) or as a reusable workflow (`workflow_call`).
-  - Packs, verifies with `doctor`, and force-pushes the orphan branch.
+- **Transport publishing (manual since task-29 retired the reusable publisher)**: the developer
+  transport (`sandbox/developer-linux-64`) is packed and published by hand — `pixi run
+  sandbox-pack` (which builds `target/release/pixi-sandbox` first and packs it via `--self-bin`,
+  so the transport embeds the tree's own binary, not the operator's installed one), then
+  `sandbox-doctor`, then `sandbox-publish`. `.github/workflows/airlock.yml` never touches the
+  real branch: it packs to a throwaway bare repo under the runner's temp dir, deliberately with
+  the *released* binary (a real airlock starts from a released asset), as the cross-platform
+  proof. `publish-sandbox.yml` is now only the workflow `pixi-sandbox init` generates for
+  consumer projects.
 
 ---
 
@@ -241,6 +246,11 @@ jobs:
 `peter-evans/create-pull-request` (the shape prefix.dev documents, needs "Allow GitHub Actions
 to create and approve pull requests" and a non-default token for CI to run on it).
 
+**Decided 2026-10-01, and graduated:** method A — the bot pushes onto the PR branch, identity
+`pixi-sandbox-lockbot`, conventional `chore(lock):` commits; now backlog **task-39**. The
+scheduled `pixi update` flavour stays unbuilt on purpose: it needs the opens-its-own-PR shape,
+not this one.
+
 ### 2026-10-01 — session close
 
 **Landed** (PR #50, nine commits, rebased onto `main`): pre-push cargo gates; the honest
@@ -278,3 +288,29 @@ mandatory on a restored host.
 > Propose the slice and stop. House rules are in `AGENTS.md` (note invariant 10: anything you
 > do not implement goes in `CONTEXT.md`, not into the files it speculates about), the session
 > procedure and its templates are in `.agents/skills/session/`.
+
+### 2026-10-01 — proposal: pack the developer transport from the tree, on a trigger
+
+**Anatomy of the 0.3.6 skew** (why `--user-tools` is missing from every restore today), measured
+from the published branch and the releases API: the transport's manifest was created
+2026-10-01T14:20:49Z from commit `910df8f` (PR #46's merge), which *declares 0.3.6* — the
+v0.3.7 tag commit (`a7b4109`) did not exist until 14:22:18Z. The published transport is stale on
+two independent axes: it was packed from a pre-release tree, and it embeds a 0.3.6 binary. Even
+a self-build from that tree would have shipped 0.3.6; even a released-binary pack five minutes
+later would have shipped 0.3.7. "Use the tree's own build" fixes only the second axis.
+
+**What already exists:** `pixi run sandbox-pack` builds `target/release/pixi-sandbox` first and
+packs it via `--self-bin`, so the manual pipeline cannot pick up an operator's installed binary.
+What has no automation is the *timing*: nothing re-packs after a release lands, so the transport
+tracks "whenever a maintainer last ran it by hand", not main.
+
+**Proposal (not agreed):** a small repack job — `workflow_dispatch` (and optionally
+`workflow_run` after `release.yml` succeeds) that checks out main and runs `pixi run
+sandbox-pack` → `sandbox-doctor` → `sandbox-publish`: one-line steps, house rule, `contents:
+write` for the orphan-branch force-push. Two properties: the transport is always packed from the
+tree's own build, and the standing "0.3.7 repack" open item becomes a click instead of a
+machine-bound manual op. The force-push means the trigger stays a maintainer's call — automation
+of the *pack*, not of the *decision*. `sandbox-doctor` and `sandbox-publish` also run the freshly
+built self-bin, so the whole lane is one binary. Deliberately separate and unchanged:
+`airlock.yml` packs with the *released* channel binary because it is the proof of published
+assets, not the publisher of the developer transport.
