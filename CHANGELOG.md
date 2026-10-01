@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.3.4](https://github.com/Archont561/pixi-sandbox/compare/v0.3.3...b2544982d7b47056de49d5d32f084f46bdb89910) (2026-10-01)
+### [v0.3.5](https://github.com/Archont561/pixi-sandbox/compare/v0.3.4...83d6dd5f97c045916eeaedd02d2505ea65dc7f70) (2026-10-01)
+
+#### Fixes
+
+* **release:** use canonical prefix channel
+([0a91159](https://github.com/Archont561/pixi-sandbox/commit/0a91159a51a93cff53272b51c6dbd38a14fbfac9))
+
+### [v0.3.4](https://github.com/Archont561/pixi-sandbox/compare/v0.3.3...v0.3.4) (2026-10-01)
 
 #### Fixes
 

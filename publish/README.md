@@ -14,7 +14,7 @@ publish behaviour via its `subpath` input. It deliberately publishes **one**
 4. Force-pushes the requested orphan branch to the remote repository.
 
 ```yaml
-- uses: Archont561/pixi-sandbox/publish@v0.3.4
+- uses: Archont561/pixi-sandbox/publish@v0.3.5
   with:
     project: .
     environments: dev
@@ -41,11 +41,11 @@ Or drive the root action directly, pinning an immutable commit SHA:
 Pair with setup:
 
 ```yaml
-- uses: Archont561/pixi-sandbox/setup@v0.3.4
+- uses: Archont561/pixi-sandbox/setup@v0.3.5
   id: setup
   with:
-    version: v0.3.4
-- uses: Archont561/pixi-sandbox/publish@v0.3.4
+    version: v0.3.5
+- uses: Archont561/pixi-sandbox/publish@v0.3.5
   with:
     project: .
     environments: dev
