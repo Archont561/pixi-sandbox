@@ -44,5 +44,5 @@ Root cause confirmed by local reproduction: pixi 0.81.0 panicked at crates/pixi_
 
 Verification: pixi run package now passes argument validation and proceeds into build-backend initialisation - the panic is gone. The run then stops in THIS sandbox at the conda gateway (prefix.dev/conda-forge repodata: tls handshake eof) because the host has the airlock egress profile; an online CI runner does not. So the .conda build itself must be proven by the release re-run, not here.
 
-Watch-out for the re-run: the NEW step after the build (pixi upload prefix --channel @archont561/pixi-sandbox with OIDC attestation) requires prefix.dev Repository Access to be configured for the release.yml workflow of this repository - the workflow comment says so explicitly. If that is not configured, the release will get past the build and fail at the prefix.dev upload instead.
+Watch-out for the re-run: the NEW step after the build (pixi upload prefix --channel archont561/pixi-sandbox with OIDC attestation) requires prefix.dev Repository Access to be configured for the release.yml workflow of this repository - the workflow comment says so explicitly. If that is not configured, the release will get past the build and fail at the prefix.dev upload instead.
 <!-- SECTION:NOTES:END -->
