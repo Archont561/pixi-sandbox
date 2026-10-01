@@ -18,8 +18,7 @@
 //!     README, installation guide, and generated publishing workflow (task-32).
 //!  6. no workflow pins a literal `vX.Y.Z` release tag, so no proof silently keeps running
 //!     against the previous release after a cut.
-//!  7. task-12 — every published action path is a self-contained composite action and the two
-//!     generated copies still match the root they are rendered from.
+//!  7. retired with the composite Action surfaces in TASK-29.
 //!  8. the surviving shell scripts stay on the Bash 3.2 surface: the darwin runners execute
 //!     them with macOS's /bin/bash 3.2, and v0.3.6's release died 127 on both darwin legs
 //!     over one Bash-4 builtin (run 36865921206) — the regression that moved everything else
@@ -63,7 +62,6 @@ pub fn check_repository(root: &Path) -> Result<Vec<Failure>> {
     action_pins(root, &mut failures)?; // 4
     canonical_channel_install(root, &mut failures)?; // 5
     workflow_literal_tags(root, &mut failures)?; // 6
-    published_actions(root, &mut failures)?; // 7
     bash32_surface(root, &mut failures)?; // 8
     Ok(failures)
 }
@@ -84,7 +82,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; every published action path is self-contained and matches action.yml; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners" // stale-ref-allowed
     );
     Ok(())
 }
@@ -305,7 +303,6 @@ fn version_references(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
 /// syntax and inputs but says nothing about what a `uses:` resolves to, so this is the only
 /// thing standing between a mutable tag and the release pipeline.
 ///
-/// Same-repository actions (`./setup`, `../action.yml`) are not third-party and carry no ref
 /// to pin. A deliberate exception opts out with the marker on the line.
 fn action_pins(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
     let label = Regex::new(r"#[\t ]*v[0-9]").expect("static regex");
@@ -435,75 +432,6 @@ fn workflow_literal_tags(root: &Path, failures: &mut Vec<Failure>) -> Result<()>
     Ok(())
 }
 
-// ---------------------------------------------------------------- 7. self-contained actions
-
-/// task-12 / issue #37: v0.3.1 published two action paths that could not run, because a
-/// relative `uses:` inside a *remote* composite action does not resolve against the
-/// repository that defines it. Each published path must be a complete composite action, and
-/// the two generated copies must still re-render byte-identically from the root.
-fn published_actions(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
-    for action in ["action.yml", "setup/action.yml", "publish/action.yml"] {
-        let path = root.join(action);
-        if !path.is_file() {
-            failures.push(Failure::new(format!(
-                "{action} is missing — it is a published action path (owner/repo[/path]@ref) (task-12)"
-            )));
-            continue;
-        }
-        let text = crate::util::read(&path)?;
-        if let Some(relative) = crate::action_shims::relative_uses(&text) {
-            failures.push(Failure::with(
-                format!("{action} uses a relative action reference, which cannot resolve from a remote ref (task-12):"),
-                vec![relative],
-                "a published action path must be self-contained; edit action.yml and run 'pixi run render-action-shims'",
-            ));
-        }
-        if !text.lines().any(|l| l == "  using: composite") {
-            failures.push(Failure::new(format!(
-                "{action} is not a composite action — a published action path must run on its own (task-12)"
-            )));
-        }
-    }
-
-    let root_action_path = root.join("action.yml");
-    if root_action_path.is_file() {
-        let root_action = crate::util::read(&root_action_path)?;
-        for variant in [
-            crate::action_shims::Variant::Setup,
-            crate::action_shims::Variant::Publish,
-        ] {
-            let generated_path = root.join(format!("{variant}/action.yml"));
-            if !generated_path.is_file() {
-                continue; // already reported above
-            }
-            match crate::action_shims::render(&root_action, variant) {
-                Err(error) => failures.push(Failure::new(format!(
-                    "cannot render {variant}/action.yml from action.yml (task-12): {error:#}"
-                ))),
-                Ok(rendered) => {
-                    let committed = crate::util::read(&generated_path)?;
-                    if committed != rendered {
-                        let first_diff = committed
-                            .lines()
-                            .zip(rendered.lines())
-                            .position(|(a, b)| a != b)
-                            .map(|at| at + 1)
-                            .unwrap_or_else(|| {
-                                committed.lines().count().min(rendered.lines().count()) + 1
-                            });
-                        failures.push(Failure::with(
-                            format!("{variant}/action.yml has drifted from action.yml (task-12):"),
-                            vec![format!("first difference at line {first_diff}")],
-                            "regenerate with 'pixi run render-action-shims'",
-                        ));
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 // ---------------------------------------------------------------- 8. Bash 3.2 for the macOS runners
 
 /// The scripts that remain shell (`restore.sh` bootstraps hosts that have nothing but sh and
@@ -603,16 +531,6 @@ mod tests {
             "#!/usr/bin/env bash\nset -euo pipefail\necho restore\n",
         );
 
-        // A root action plus generated copies rendered by the same renderer the check uses.
-        let root_action = "name: fixture\ndescription: root\n\ninputs:\n  subpath:\n    required: false\n    default: setup\n  repository:\n    description: where\n    default: Example/widget\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo hi\n";
-        write("action.yml", root_action);
-        for variant in [
-            crate::action_shims::Variant::Setup,
-            crate::action_shims::Variant::Publish,
-        ] {
-            let rendered = crate::action_shims::render(root_action, variant).expect("render");
-            write(&format!("{variant}/action.yml"), &rendered);
-        }
         dir
     }
 
@@ -711,7 +629,7 @@ mod tests {
         let readme = fs::read_to_string(dir.path().join("README.md")).expect("readme");
         fs::write(
             dir.path().join("README.md"),
-            format!("{readme}\nuses: Example/widget/setup@v0.1.0\n"),
+            format!("{readme}\nuses: Archont561/pixi-sandbox/setup@v0.1.0\n"),
         )
         .expect("readme");
         let found = headlines(dir.path());
@@ -766,27 +684,6 @@ mod tests {
             found
                 .iter()
                 .any(|h| h.contains("pins a literal release tag")),
-            "{found:?}"
-        );
-    }
-
-    #[test]
-    fn a_drifted_or_relative_generated_action_fires_check_7() {
-        let dir = valid_fixture();
-        fs::write(
-            dir.path().join("setup/action.yml"),
-            "name: stale copy\nruns:\n  using: composite\n  steps:\n    - uses: ../action.yml\n",
-        )
-        .expect("action");
-        let found = headlines(dir.path());
-        assert!(
-            found
-                .iter()
-                .any(|h| h.contains("relative action reference")),
-            "{found:?}"
-        );
-        assert!(
-            found.iter().any(|h| h.contains("drifted from action.yml")),
             "{found:?}"
         );
     }

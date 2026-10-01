@@ -37,35 +37,11 @@ pixi-sandbox init
 
 The package-specific channel installs this CLI. `pixi-sandbox init` separately configures the Archont561 namespace root for project dependencies.
 
-## Via Release Binary (verified)
+## Via Release Binary (transport bootstrap)
 
-Standalone binaries and checksums remain available for transport bootstrap and pinned CI actions; they are not the connected-host installation path.
-
-<Tabs>
-  <TabItem label="GitHub Action">
-    ```yaml
-    - uses: Archont561/pixi-sandbox@v__VERSION__
-      with:
-        version: v__VERSION__
-    - run: pixi-sandbox --version
-
-    # Short alias
-    - uses: Archont561/pixi-sandbox/setup@v__VERSION__
-      with:
-        version: v__VERSION__
-    ```
-  </TabItem>
-  <TabItem label="Shell">
-    ```bash
-    # Download verified binary
-    curl -sSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSION__/pixi-sandbox-x86_64-unknown-linux-musl -o pixi-sandbox
-    curl -sSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSION__/SHA256SUMS -o SHA256SUMS
-    sha256sum -c SHA256SUMS --ignore-missing
-    chmod +x pixi-sandbox
-    ./pixi-sandbox --version
-    ```
-  </TabItem>
-</Tabs>
+Standalone binaries and `SHA256SUMS` remain available for verified transport bootstrap. Download the
+matching binary and checksum file, verify it with your platform's SHA-256 tool, then mark it
+executable. Connected hosts should use the canonical Pixi package above.
 
 ### Asset contract
 

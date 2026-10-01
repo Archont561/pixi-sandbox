@@ -81,7 +81,7 @@ pixi-sandbox init
 | 🛡️ | **Strict Verification** | SHA-256 verified against embedded pins before writing; dynamic tools rejected |
 | 🦀 | **Cargo Vendoring** | Bundles `cargo vendor --versioned-dirs` alongside conda envs |
 | ⚡ | **Pure Rust CLI** | Static musl Linux, native macOS/Windows, no Python; `pixi sandbox` extension |
-| 🤖 | **Short Action Refs** | `owner/repo@vX`, `owner/repo/setup@vX`, `owner/repo/publish@vX` in same repo |
+| 🤖 | **Generated Native CI** | Project-owned workflow calls the installed CLI directly on native runners |
 | 📚 | **Docs like astro-icon** | Starlight + astro-icon + Iconify (lucide, mdi, tabler, simple-icons) |
 
 Docs site uses [Astro Icon](https://www.astroicon.dev/) + [Iconify](https://iconify.design/) — 300k+ icons: https://icon-sets.iconify.design/
@@ -198,142 +198,17 @@ Full guide: https://archont561.github.io/pixi-sandbox/guides/using-in-your-proje
 
 ---
 
-## 🤖 GitHub Actions (like `setup-pixi`)
+## 🤖 Generated GitHub Actions publisher
 
-Both actions live in **same repo** with short references.
+Run `pixi-sandbox init` to generate a reviewed, project-owned `.github/workflows/publish-sandbox.yml`.
+The generated workflow installs the native package from the canonical prefix.dev channel and calls
+`plan`, `pack`, `doctor`, and `publish` directly on native runners. Commit that workflow with
+`pixi-sandbox.toml`; no repository-owned composite Action or reusable workflow is required.
 
-### Setup (download verified release binary)
-
-```yaml
-# Root = setup (like prefix-dev/setup-pixi)
-- uses: Archont561/pixi-sandbox@v0.3.7
-  with:
-    version: v0.3.7
-- run: pixi-sandbox --version
-
-# Explicit short path
-- uses: Archont561/pixi-sandbox/setup@v0.3.7
-  id: setup
-  with:
-    version: v0.3.7
-```
-
-Pinned SHA (supply-chain secure):
-
-```yaml
-- uses: Archont561/pixi-sandbox@<sha>
-- uses: Archont561/pixi-sandbox/setup@<sha>
-- uses: Archont561/pixi-sandbox@<sha>
-```
-
-### Publish (pack + doctor + publish one native bundle)
-
-```yaml
-- uses: Archont561/pixi-sandbox/publish@v0.3.7
-  with:
-    project: .
-    environments: dev,docs
-    platform: linux-64
-    branch: sandbox/dev-linux-64
-    self-bin: ${{ steps.setup.outputs.path }}
-    remote: https://github.com/OWNER/REPO.git
-    output-dir: /tmp/transport
-    cargo-vendor: "true"
-    push-token: ${{ secrets.GITHUB_TOKEN }}
-```
-
-### Full workflow — just two actions (recommended)
-
-No `release-repository`/`release-version` inputs. Your `uses: @v0.3.7` pin *is* the version.
-
-```yaml
-# .github/workflows/publish-sandbox.yml in your project
-name: publish sandbox
-on:
-  push: { branches: [main] }
-  workflow_dispatch:
-
-jobs:
-  plan:
-    runs-on: ubuntu-latest
-    outputs: { matrix: ${{ steps.plan.outputs.matrix }} }
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: Archont561/pixi-sandbox/setup@v0.3.7
-        id: setup
-        with: { version: v0.3.7 }
-      - id: plan
-        run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
-
-  publish:
-    needs: plan
-    # `.include` only — feeding the whole `plan --json` object yields zero jobs,
-    # because its scalar `schema` is read as a matrix dimension (see PublishPlan).
-    strategy:
-      matrix:
-        include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
-      fail-fast: false
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: prefix-dev/setup-pixi@v0.10.2
-      - uses: Archont561/pixi-sandbox/setup@v0.3.7
-        id: setup
-        with: { version: v0.3.7 }
-      - uses: Archont561/pixi-sandbox/publish@v0.3.7
-        with:
-          project: .
-          environments: ${{ matrix.environments }}
-          platform: ${{ matrix.platform }}
-          branch: ${{ matrix.branch }}
-          self-bin: ${{ steps.setup.outputs.path }}
-          remote: https://github.com/${{ github.repository }}.git
-          output-dir: /tmp/transport
-          push-token: ${{ secrets.GITHUB_TOKEN }}
-```
-
-Single-platform without `plan`:
-
-```yaml
-- uses: Archont561/pixi-sandbox/setup@v0.3.7
-  id: setup
-  with: { version: v0.3.7 }
-- uses: Archont561/pixi-sandbox/publish@v0.3.7
-  with:
-    project: .
-    environments: dev,docs
-    platform: linux-64
-    branch: sandbox/developer-linux-64
-    self-bin: ${{ steps.setup.outputs.path }}
-    remote: https://github.com/${{ github.repository }}.git
-    output-dir: /tmp/transport
-    push-token: ${{ secrets.GITHUB_TOKEN }}
-```
-
-- `plan --json` validates `.pixi-sandbox.toml` and gives native `runner` per `bundle × platform`
-- `setup` verifies `SHA256SUMS` before `chmod +x`; `publish` verifies `doctor --verify` before push
-- Token via `http.extraheader` (never URL), rejects cross-packing
-
-<details>
-<summary>Alternative: reusable workflow</summary>
-
-```yaml
-jobs:
-  publish:
-    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.3.7
-    with:
-      config: .pixi-sandbox.toml
-      release-repository: Archont561/pixi-sandbox
-      release-version: v0.3.7
-    secrets:
-      SANDBOX_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-</details>
-
-Docs: https://archont561.github.io/pixi-sandbox/guides/ci-publishing/ and https://archont561.github.io/pixi-sandbox/guides/actions/
-
----
+> **Migration from v0.3.x Actions:** new refs no longer contain `Archont561/pixi-sandbox@…`,
+> `Archont561/pixi-sandbox/setup@…`, `Archont561/pixi-sandbox/publish@…`, or the reusable
+> `.github/workflows/publish-sandbox.yml`. Immutable older tags and commit SHAs retain those files.
+> Regenerate and commit the direct CLI workflow with `pixi-sandbox init`.
 
 ## ⚙️ Configuration Reference
 
@@ -430,11 +305,8 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `crates/pixi-sandbox-git` | Trait-based Git: `ShellGit` + `FakeGit`/`RecordingRunner` |
 | `crates/pixi-sandbox` | CLI binary + fixtures |
 | `crates/pixi-sandbox/tests/fixtures/` | Synthetic transport (15 KB, split blob) — tests never point at repo root |
-| `action.yml` | The one action implementation — setup and publish, selected by `subpath` (short ref `owner/repo@vX`) |
-| `setup/action.yml`, `publish/action.yml` | Generated complete copies of it, so `owner/repo/setup@vX` and `owner/repo/publish@vX` run from the ref you pinned |
-| `crates/xtask` | Typed repository automation (`pixi run render-action-shims`, `lint-repo-consistency`, `prepare-release`, the release artifact gates); the repo-consistency check re-renders the generated action copies and fails on drift |
+| `crates/xtask` | Typed repository automation (`lint-repo-consistency`, `prepare-release`, and release artifact gates) |
 | `.github/workflows/ci.yml` | CI: lint + test + coverage + docs-build |
-| `.github/workflows/publish-sandbox.yml` | Unified publisher: workflow_run + dispatch + call, native runners |
 | `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + prefix.dev Conda package + GitHub Release |
 | `.github/workflows/docs.yml` | Docs → GitHub Pages |
 | `.github/dependabot.yml` | Dependabot: cargo, gha, npm (convco prefixes) |
@@ -566,7 +438,7 @@ Full docs: **https://archont561.github.io/pixi-sandbox/**
 - [Using in your project](https://archont561.github.io/pixi-sandbox/guides/using-in-your-project/)
 - [CI Publishing](https://archont561.github.io/pixi-sandbox/guides/ci-publishing/)
 - [Airlock Restore](https://archont561.github.io/pixi-sandbox/restore/)
-- [GitHub Actions](https://archont561.github.io/pixi-sandbox/guides/actions/)
+- [CI publishing](https://archont561.github.io/pixi-sandbox/guides/ci-publishing/)
 - [Configuration](https://archont561.github.io/pixi-sandbox/reference/configuration/)
 - [CLI](https://archont561.github.io/pixi-sandbox/reference/cli/)
 - [Actions API](https://archont561.github.io/pixi-sandbox/reference/actions/)

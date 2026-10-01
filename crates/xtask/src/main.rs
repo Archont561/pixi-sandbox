@@ -10,7 +10,6 @@
 //! root under `pixi run`); the policy logic lives in per-module pure functions that tests
 //! drive against tempdir fixtures, never against this checkout (D10).
 
-mod action_shims;
 mod conda_platforms;
 mod prepare_release;
 mod release_refs;
@@ -61,14 +60,6 @@ enum Command {
         #[arg(default_value = ".publish/out")]
         out_dir: PathBuf,
     },
-    /// Render setup/action.yml and publish/action.yml from the root action.yml.
-    RenderActionShims {
-        /// Render only this variant (`setup` or `publish`) to stdout or OUTPUT;
-        /// omitted, both generated copies are rewritten in place.
-        variant: Option<String>,
-        /// Where to write the single requested variant (stdout when omitted).
-        output: Option<PathBuf>,
-    },
     /// Resolve the next release version and stamp it into the repository (no git actions).
     PrepareRelease {
         /// auto | major | minor | patch | vX.Y.Z | X.Y.Z (default: $PIXI_SANDBOX_RELEASE or auto).
@@ -108,9 +99,6 @@ fn run() -> Result<()> {
         Command::CheckCondaPlatforms { dir } => conda_platforms::check(&root.join(dir)),
         Command::SmokeCondaPackage { out_dir } => {
             smoke::smoke_conda_package(&root, &root.join(out_dir))
-        }
-        Command::RenderActionShims { variant, output } => {
-            action_shims::emit(&root, variant.as_deref(), output.as_deref())
         }
         Command::PrepareRelease { selector } => {
             let selector = selector

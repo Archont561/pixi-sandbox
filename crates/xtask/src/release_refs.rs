@@ -34,30 +34,9 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-/// The canonical project identity. `action.yml`'s `repository` input default is the
-/// authority: it is what the setup action downloads from, so a fork that changes the input
-/// has already changed which repository the docs are *supposed* to point at.
-pub fn project_root_ident(root: &Path) -> Result<String> {
-    let action = crate::util::read(&root.join("action.yml"))?;
-    let mut in_repository_input = false;
-    for line in action.lines() {
-        if line == "  repository:" {
-            in_repository_input = true;
-            continue;
-        }
-        if in_repository_input {
-            if let Some(default) = line.strip_prefix("    default: ") {
-                return Ok(default.trim().to_string());
-            }
-            // The next input key ends the block, exactly like the sed range did.
-            if line.starts_with("  ") && !line.starts_with("    ") && line.ends_with(':') {
-                break;
-            }
-        }
-    }
-    bail!(
-        "action.yml has no parsable 'repository' default — cannot tell our refs from a third party's"
-    )
+/// Canonical upstream identity, independent of interfaces that releases may retire.
+pub fn project_root_ident(_root: &Path) -> Result<String> {
+    Ok("Archont561/pixi-sandbox".to_string())
 }
 
 /// Does this line name our project? (See the module comment for the full inventory.)
@@ -219,7 +198,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    const ROOT_IDENT: &str = "Example/widget";
+    const ROOT_IDENT: &str = "Archont561/pixi-sandbox";
 
     fn fixture() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -228,11 +207,6 @@ mod tests {
             "[workspace.package]\nversion = \"2.0.0\"\n",
         )
         .expect("cargo manifest");
-        fs::write(
-            dir.path().join("action.yml"),
-            "inputs:\n  repository:\n    description: where\n    default: Example/widget\n  version:\n",
-        )
-        .expect("action");
         dir
     }
 
@@ -243,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn the_project_identity_comes_from_the_repository_input_default() {
+    fn the_project_identity_is_the_explicit_upstream_constant() {
         let dir = fixture();
         assert_eq!(project_root_ident(dir.path()).expect("ident"), ROOT_IDENT);
     }
@@ -254,7 +228,7 @@ mod tests {
         write(
             dir.path(),
             "README.md",
-            "uses: Example/widget/setup@v1.0.0\nuses: actions/checkout@v7.0.1\n",
+            "uses: Archont561/pixi-sandbox/setup@v1.0.0\nuses: actions/checkout@v7.0.1\n",
         );
         let findings = scan(dir.path()).expect("scan");
         assert_eq!(findings.len(), 1, "{findings:?}");
@@ -267,7 +241,7 @@ mod tests {
         write(
             dir.path(),
             "README.md",
-            "<!-- stale-ref-allowed -->\nupgrading from Example/widget@v1.0.0\n",
+            "<!-- stale-ref-allowed -->\nupgrading from Archont561/pixi-sandbox@v1.0.0\n",
         );
         assert!(scan(dir.path()).expect("scan").is_empty());
     }
@@ -291,9 +265,13 @@ mod tests {
         write(
             dir.path(),
             "backlog/tasks/old.md",
-            "shipped Example/widget@v0.1.0\n",
+            "shipped Archont561/pixi-sandbox@v0.1.0\n",
         );
-        write(dir.path(), "CHANGELOG.md", "Example/widget@v0.1.0\n");
+        write(
+            dir.path(),
+            "CHANGELOG.md",
+            "Archont561/pixi-sandbox@v0.1.0\n",
+        );
         assert!(scan(dir.path()).expect("scan").is_empty());
     }
 
@@ -304,14 +282,14 @@ mod tests {
         write(
             dir.path(),
             "README.md",
-            "uses: Example/widget/setup@v1.0.0\nuses: actions/checkout@v7.0.1 # v7.0.1",
+            "uses: Archont561/pixi-sandbox/setup@v1.0.0\nuses: actions/checkout@v7.0.1 # v7.0.1",
         );
         let touched = rewrite(dir.path(), "v2.0.0").expect("rewrite");
         assert_eq!(touched, 1);
         let text = fs::read_to_string(dir.path().join("README.md")).expect("readback");
         assert_eq!(
             text,
-            "uses: Example/widget/setup@v2.0.0\nuses: actions/checkout@v7.0.1 # v7.0.1"
+            "uses: Archont561/pixi-sandbox/setup@v2.0.0\nuses: actions/checkout@v7.0.1 # v7.0.1"
         );
         // Idempotent: a second run touches nothing.
         assert_eq!(rewrite(dir.path(), "v2.0.0").expect("rewrite again"), 0);
