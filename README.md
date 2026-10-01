@@ -361,6 +361,9 @@ pixi run test              # fixture-backed doctor → publish → offline resto
 
 # Changelog via convco
 pixi run xtask prepare-release auto   # stamps CHANGELOG.md and every version reference
+pixi run xtask stage-release-binary   # strip + stage the release asset (host triple by default)
+pixi run xtask release-checksums      # SHA256SUMS over the standalone binaries, verified complete
+pixi run build-release-binary         # cargo build -p pixi-sandbox --release (host; --target in CI)
 
 # CI variants (env vars: SANDBOX_PROJECT, ENVS, TRANSPORT, PLATFORM, BRANCH, REMOTE, SELF_BIN)
 pixi run sandbox-pack "$PROJECT" "$ENVS" "$TRANSPORT" "$PLATFORM" && pixi run sandbox-doctor "$TRANSPORT"

@@ -2,9 +2,15 @@ name: release
 
 # Build standalone static binaries across tier-1 platforms, build the conda package for each of
 # those platforms on its own native runner, and publish a GitHub Release with SHA256SUMS. The
-# asset contract matches `setup/README.md`:
+# asset contract matches docs/src/content/docs/installation.mdx (§ Asset contract):
 #   pixi-sandbox-{target}{exe}
-#   SHA256SUMS (standard `sha256sum` lines)
+#   SHA256SUMS (standard `sha256sum` lines, every platform binary)
+#
+# Every step is a pinned `uses:`, a one-line `pixi run -e package …` task, or a one-line host
+# bootstrap (task-36). Staging and checksum logic is tested Rust (`pixi run xtask
+# stage-release-binary` / `release-checksums`), so one runtime covers all five runners — this
+# workflow used to carry a bash dialect on Unix and a PowerShell dialect on Windows for what
+# is the same copy step, and per-platform shell is where the v0.3.6 release died.
 
 on:
   push:
@@ -55,61 +61,28 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # Before the build steps, because every remaining step is `pixi run -e package …`: the
+      # empty `package` environment is the only one that resolves on every native runner
+      # (win-64 included — `default` cannot solve there), and its tasks need only the pixi
+      # binary and the Rust toolchain the job already installed.
+      - name: Install Pixi
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+          cache: false
+
       - name: Install Rust target
-        shell: bash
         run: rustup target add ${{ matrix.target }}
 
       - name: Install musl tools (Linux)
         if: contains(matrix.target, 'musl')
-        shell: bash
-        run: |
-          set -euo pipefail
-          if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y musl-tools
-          fi
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build release binary
-        shell: bash
-        run: cargo build -p pixi-sandbox --release --target ${{ matrix.target }}
+        run: pixi run -e package build-release-binary --target ${{ matrix.target }}
 
-      - name: Strip and stage binary (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          BIN="target/${TARGET}/release/pixi-sandbox"
-          if [ ! -f "$BIN" ]; then
-            echo "::error::Binary not found at $BIN"
-            exit 1
-          fi
-          # Cargo profile already strips (strip = true), but run strip again for minimal size
-          strip "$BIN" || true
-          ls -lh "$BIN"
-          OUT="pixi-sandbox-${TARGET}"
-          cp "$BIN" "$OUT"
-          chmod +x "$OUT"
-          echo "Staged $OUT"
-          ls -lh "$OUT"
-
-      - name: Stage binary (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $bin = "target/$env:TARGET/release/pixi-sandbox.exe"
-          if (-not (Test-Path $bin)) {
-            Write-Error "Binary not found at $bin"
-            exit 1
-          }
-          $out = "pixi-sandbox-$env:TARGET.exe"
-          Copy-Item $bin $out -Force
-          Get-ChildItem $out | Format-List
-          Write-Host "Staged $out"
+      - name: Strip and stage binary
+        run: pixi run -e package xtask stage-release-binary ${{ matrix.target }}
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -121,22 +94,11 @@ jobs:
           retention-days: 7
 
       # The conda package this release publishes to prefix.dev, built here on the platform's own
-      # runner rather than cross-compiled from one Linux job (task-23). `run-install: false`
-      # because the packaging tasks run in the empty `package` environment: they need the pixi
-      # binary and the Rust toolchain the job already installed, and installing `default` would
-      # make win-64 impossible — conda-forge ships no `bun` build for it (D11, task-7).
-      - name: Install Pixi (packaging only)
-        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
-        with:
-          run-install: false
-          cache: false
-
+      # runner rather than cross-compiled from one Linux job (task-23).
       - name: Build Conda package (${{ matrix.platform }})
-        shell: bash
         run: pixi run -e package package
 
       - name: Smoke-test Conda package (${{ matrix.platform }})
-        shell: bash
         run: pixi run -e package xtask smoke-conda-package
 
       - name: Upload Conda package
@@ -165,11 +127,16 @@ jobs:
         with:
           ref: ${{ inputs.version || github.ref }}
 
-      # The artifact gate and the install-asset render are xtask commands (one Rust runtime on
-      # every runner instead of per-platform shell dialects), so this job compiles xtask once
-      # with the runner's toolchain; the cache keeps that to seconds on repeat runs.
+      # The artifact gates and the checksums below are xtask commands, so this job compiles
+      # xtask once with the runner's toolchain; the cache keeps that to seconds on repeat runs.
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install Pixi
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+          cache: false
 
       - name: Download all binaries
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -190,83 +157,40 @@ jobs:
           path: dist/conda
           pattern: conda-*
 
-      # prefix.dev uses the job's short-lived GitHub OIDC identity. Configure Repository
-      # Access for this repository's `release.yml` workflow on archont561/pixi-sandbox;
-      # no PREFIX_API_KEY or other long-lived publishing secret is needed.
-      - name: Install Pixi
-        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
-        with:
-          run-install: false
-          cache: false
-
       # A platform that silently produced nothing must fail the release, not ship four packages
       # and a GitHub Release that looks complete (task-23 AC#4). The build matrix has
       # fail-fast: false so one broken platform does not hide the others' results — this is where
       # that turns into a red build instead of a quiet gap.
       - name: Require one Conda package per platform
-        shell: bash
-        run: pixi run xtask check-conda-platforms dist/conda
+        run: pixi run -e package xtask check-conda-platforms dist/conda
 
+      # SHA256SUMS covers every standalone binary (the `.conda` packages have their own
+      # prefix.dev/GitHub Release integrity path), and the xtask re-reads the written file to
+      # prove every binary has a line — the completeness check the shell did with grep.
       - name: Generate SHA256SUMS
-        shell: bash
-        run: |
-          set -euo pipefail
-          ls -lh dist/
-          # Only standalone release binaries belong in SHA256SUMS; the similarly named .conda
-          # package has its own prefix.dev/GitHub Release integrity path.
-          (cd dist && find . -maxdepth 1 -type f -name 'pixi-sandbox-*unknown-*' -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS)
-          cat dist/SHA256SUMS
-          # Verify that every binary has a checksum line
-          while IFS= read -r bin; do
-            name=$(basename "$bin")
-            grep -q "  $name$" dist/SHA256SUMS || {
-              echo "::error::Missing checksum for $name"
-              exit 1
-            }
-          done < <(find dist -maxdepth 1 -type f -name 'pixi-sandbox-*unknown-*' -print | sort)
-
-      - name: Determine release tag
-        id: tag
-        shell: bash
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          if [ -n "$INPUT_VERSION" ]; then
-            TAG="$INPUT_VERSION"
-          else
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Release tag: $TAG"
+        run: pixi run -e package xtask release-checksums dist
 
       # prefix.dev uses the job's short-lived GitHub OIDC identity. Configure Repository
       # Access for this repository's `release.yml` workflow on archont561/pixi-sandbox;
-      # no PREFIX_API_KEY or other long-lived publishing secret is needed.
+      # no PREFIX_API_KEY or other long-lived publishing secret is needed. The guard turns a
+      # missing permission into a named error before `pixi upload` fails opaquely.
       - name: Verify GitHub OIDC permission
         shell: bash
-        run: |
-          set -euo pipefail
-          : "${ACTIONS_ID_TOKEN_REQUEST_URL:?missing GitHub OIDC request URL; grant permissions.id-token: write}"
-          : "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?missing GitHub OIDC request token; grant permissions.id-token: write}"
+        run: ': "${ACTIONS_ID_TOKEN_REQUEST_URL:?missing GitHub OIDC request URL; grant permissions.id-token: write}" && : "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?missing GitHub OIDC request token; grant permissions.id-token: write}"'
 
       # All five platform variants, from the per-platform artifact directories. One upload of the
       # whole set keeps prefix.dev consistent with the GitHub Release below, which carries the
       # same bytes from the same directories.
       - name: Publish Conda packages to prefix.dev
-        shell: bash
-        run: |
-          set -euo pipefail
-          pixi upload prefix \
-            --channel 'archont561/pixi-sandbox' \
-            --generate-attestation \
-            dist/conda/conda-*/*.conda
+        run: pixi run -e package publish-conda
 
       # GitHub Release is created only after the canonical prefix.dev package upload succeeds.
+      # The tag is `inputs.version` on a dispatch, the pushed tag's own name on a tag push —
+      # the release job only runs when one of the two is present.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
+          tag_name: ${{ inputs.version || github.ref_name }}
           files: |
             dist/pixi-sandbox-*
             dist/conda/**/*.conda
@@ -274,19 +198,14 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
 
+      # The release commit repins every version reference across docs/** and README, but that
+      # commit is pushed with GITHUB_TOKEN, and GitHub suppresses workflow triggers on
+      # GITHUB_TOKEN pushes — so docs.yml's `push: [main]` trigger never fires for it and GitHub
+      # Pages keeps serving the previous version. Publishing a release is exactly when the site
+      # should catch up, so dispatch docs.yml on main here. A workflow_dispatch via the API is
+      # not subject to the push-recursion suppression, so GITHUB_TOKEN + actions:write is enough.
       - name: Trigger docs rebuild for the released version
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          # The release commit repins every version reference across docs/** and README, but that
-          # commit is pushed with GITHUB_TOKEN, and GitHub suppresses workflow triggers on
-          # GITHUB_TOKEN pushes — so docs.yml's `push: [main]` trigger never fires for it and GitHub
-          # Pages keeps serving the previous version. Publishing a release is exactly when the site
-          # should catch up, so dispatch docs.yml on main here. A workflow_dispatch via the API is
-          # not subject to the push-recursion suppression, so GITHUB_TOKEN + actions:write is enough.
-          gh workflow run docs.yml --ref main
-          echo "::notice::dispatched docs.yml on main to republish the site for $TAG"
-          echo "Dispatched **docs.yml** on \`main\` — GitHub Pages will refresh for \`$TAG\`." >> "$GITHUB_STEP_SUMMARY"
+        run: pixi run -e package dispatch-docs

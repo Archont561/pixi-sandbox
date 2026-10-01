@@ -12,6 +12,7 @@
 
 mod conda_platforms;
 mod prepare_release;
+mod release_assets;
 mod release_refs;
 mod repo_checks;
 mod smoke;
@@ -65,6 +66,28 @@ enum Command {
         /// auto | major | minor | patch | vX.Y.Z | X.Y.Z (default: $PIXI_SANDBOX_RELEASE or auto).
         selector: Option<String>,
     },
+    /// Copy the built release binary to its `pixi-sandbox-<target>[.exe]` asset name.
+    StageReleaseBinary {
+        /// Rust target triple; defaults to the host triple from `rustc -vV`. Positional, so
+        /// the release workflow's one-liner carries no `--flag value` pair (pixi task args
+        /// take one token per placeholder; anything flag-shaped goes after a `--`).
+        target: Option<String>,
+        /// Cargo target directory the binary was built into.
+        #[arg(long, default_value = "target")]
+        target_dir: PathBuf,
+        /// Directory the asset is staged into.
+        #[arg(long, default_value = ".")]
+        out_dir: PathBuf,
+        /// Strip executable; best-effort, the release profile already strips.
+        #[arg(long, default_value = "strip")]
+        strip: String,
+    },
+    /// Write SHA256SUMS over the standalone release binaries and verify it covers every one.
+    ReleaseChecksums {
+        /// Directory holding the downloaded binary artifacts.
+        #[arg(default_value = "dist")]
+        dir: PathBuf,
+    },
 }
 
 fn main() {
@@ -109,6 +132,21 @@ fn run() -> Result<()> {
             // plain command substitution.
             println!("{tag}");
             Ok(())
+        }
+        Command::StageReleaseBinary {
+            target,
+            target_dir,
+            out_dir,
+            strip,
+        } => release_assets::stage_release_binary(
+            target.as_deref(),
+            &root.join(target_dir),
+            &root.join(out_dir),
+            &strip,
+        )
+        .map(|_| ()),
+        Command::ReleaseChecksums { dir } => {
+            release_assets::release_checksums(&root.join(dir)).map(|_| ())
         }
     }
 }

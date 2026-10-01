@@ -1,10 +1,10 @@
 ---
 id: TASK-36
 title: Reduce every workflow step to an action or a one-line pixi task
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-01 19:10'
-updated_date: '2026-10-01 18:20'
+updated_date: '2026-10-01 19:24'
 labels:
   - ci
   - tooling
@@ -73,9 +73,12 @@ Work one workflow per commit, in this order — `release.yml` first because its 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
+Slice 1 (release.yml) done: all eight multi-line run: blocks are gone. New tested xtask subcommands stage-release-binary (positional target, host triple default, best-effort strip, host-vs-cross build path distinction) and release-checksums (every standalone pixi-sandbox-* binary, .conda excluded, written-then-verified completeness); new one-line tasks build-release-binary, publish-conda, dispatch-docs; musl step collapsed to one line; Determine-release-tag deleted (inputs.version || github.ref_name at its two consumers); OIDC guard one line; setup-pixi moved ahead of the build so every step is pixi run -e package (win-64 cannot solve default). Deliberate AC#6 exception, agreed with the owner: SHA256SUMS now covers all five platform binaries — the v0.3.7 file carried only the two musl lines (211 bytes) because the *unknown-* glob excluded both Apple binaries and the Windows exe, and the old completeness grep used the same wrong pattern so it could never fire. Local proof: pixi run build-release-binary, then staging via the -e package form and release-checksums, then sha256sum -c on the result; the real five-runner dispatch (AC#6) still needs a throwaway tag. Slice 2 is auto-release.yml (commit-release), slice 3 airlock.yml (after task-35), then the workflow_shape guard (AC#5) last.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
 <!-- SECTION:SUMMARY:BEGIN -->
 <!-- SECTION:SUMMARY:END -->
+<!-- SECTION:FINAL_SUMMARY:END -->

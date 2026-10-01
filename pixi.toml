@@ -164,6 +164,31 @@ lint = { depends-on = [
 package = "pixi publish --path crates/pixi-sandbox --build-dir $PIXI_PROJECT_ROOT/.publish/build --target-dir $PIXI_PROJECT_ROOT/.publish/out"
 
 # ---------------------------------------------------------------------------
+# The release pipeline (task-36). `release.yml` calls each of these through `-e package` on
+# every native runner: the empty packaging environment resolves everywhere (win-64 included,
+# where `default` cannot), and the tasks need only the pixi binary and the Rust toolchain the
+# runner already has. Anything that was more than one line of workflow shell is an xtask
+# subcommand instead (crates/xtask/src/release_assets.rs), so one runtime covers all five
+# runners; these three are genuinely one command each.
+# ---------------------------------------------------------------------------
+
+# `--target <triple>` (and any other cargo flags) pass through; locally with no flags it is a
+# plain host build, which is also what `stage-release-binary` defaults to staging.
+build-release-binary = { args = [
+  { arg = "flags", default = "" },
+], cmd = "cargo build -p pixi-sandbox --release {{ flags }}" }
+
+# The prefix.dev upload the release job runs; the default is the artifact layout that job
+# downloads (`dist/conda/conda-<platform>/*.conda`), so the glob stays out of the workflow.
+publish-conda = { args = [
+  { arg = "files", default = "dist/conda/conda-*/*.conda" },
+], cmd = "pixi upload prefix --channel 'archont561/pixi-sandbox' --generate-attestation {{ files }}" }
+
+# GITHUB_TOKEN pushes (the release commit) trigger no workflows, so the release dispatches the
+# docs rebuild explicitly; `GH_TOKEN` reaches gh through the step's `env:`.
+dispatch-docs = "gh workflow run docs.yml --ref main"
+
+# ---------------------------------------------------------------------------
 # The transport pipeline, locally: plan → pack → doctor → publish. These tasks exercise the
 # Rust CLI directly, so local runs and CI share the exact command surface. Every path is an
 # argument with the local default baked in, which is what replaced the `ci-*` twins: CI passes
