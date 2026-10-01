@@ -49,6 +49,8 @@ enum Command {
     Version,
     /// Run every repository consistency check and report all failures in one pass.
     CheckRepository,
+    /// Rewrite this repository's committed render of the generated relock workflow.
+    RenderRelock,
     /// Report every documented release reference that disagrees with the declared version.
     CheckReleaseRefs,
     /// Fail unless every supported platform contributed exactly one conda package.
@@ -187,6 +189,7 @@ fn run() -> Result<()> {
         Command::LintGeneratedWorkflow { actionlint } => {
             workflow::lint_generated_workflow(&actionlint)
         }
+        Command::RenderRelock => workflow::render_relock(&root),
         Command::Version => version::print_version(&root),
         Command::CheckRepository => repo_checks::run(&root),
         Command::CheckReleaseRefs => {

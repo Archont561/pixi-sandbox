@@ -359,6 +359,9 @@ pixi run sandbox-publish
 pixi run sandbox-restore   # one-liner from orphan branch
 pixi run test              # fixture-backed doctor → publish → offline restore lifecycle
 
+# Generated artifacts
+pixi run xtask render-relock          # rewrite the committed render of .github/workflows/relock.yml
+
 # Changelog via convco
 pixi run xtask prepare-release auto   # stamps CHANGELOG.md and every version reference
 pixi run xtask commit-release v0.3.8  # commits, tags and pushes a prepared release (--dry-run shows the diff)
@@ -370,6 +373,34 @@ pixi run build-release-binary         # cargo build -p pixi-sandbox --release (h
 # CI variants (env vars: SANDBOX_PROJECT, ENVS, TRANSPORT, PLATFORM, BRANCH, REMOTE, SELF_BIN)
 pixi run sandbox-pack "$PROJECT" "$ENVS" "$TRANSPORT" "$PLATFORM" && pixi run sandbox-doctor "$TRANSPORT"
 ```
+
+### Adding a dependency from an airlocked machine
+
+Editing `pixi.toml` or a `Cargo.toml` is a text edit any disconnected host can make; the solve
+behind it is not, because prefix.dev and the crates.io index are exactly what an airlock cannot
+reach (and `pixi add` solves before it writes). So the solve belongs to the connected side:
+
+1. **Edit the manifest and push** a pull request with the lock left stale.
+2. **The guard reports.** `relock.yml`'s first job runs `pixi lock --check` before any
+   environment is installed, so a stale lock fails with a message about the manifest rather
+   than `setup-pixi`'s message about installation.
+3. **The bot relocks.** When the guard fails, the second job refreshes `pixi.lock` and
+   `Cargo.lock` onto your branch as `pixi-sandbox[bot]` with a `chore(lock):` commit, then
+   dispatches `ci.yml` explicitly — a `GITHUB_TOKEN` push triggers no workflow, so that
+   dispatch is the only verdict the lock commit gets.
+4. **Merge** once CI is green.
+
+> [!IMPORTANT]
+> **A merged lockfile does not make a dependency usable in the airlock.** A restored host
+> builds against the packed conda environments and `.pixi-sandbox/vendor`, so the new crate or
+> package exists for it only once a transport carrying it has been packed and published
+> (`pixi run sandbox-pack` → `sandbox-doctor` → `sandbox-publish`). Until then the dependency
+> is connected-side only, and an offline `cargo build --offline` will still fail on it.
+
+The workflow is generated, not hand-written: it is the render of
+`crates/pixi-sandbox/src/generated/relock_workflow.rs` that `pixi-sandbox init` also writes for
+consumers, byte-checked by `pixi run xtask check-repository`. Change the template and run
+`pixi run xtask render-relock`; never edit `.github/workflows/relock.yml` directly.
 
 > [!IMPORTANT]
 > Integration tests run against synthetic fixtures in `crates/pixi-sandbox/tests/fixtures/`, **never** against this repo itself, ensuring hermetic offline isolation. Two tests enforce it: the fixture must not depend on pixi-pack, and no test may walk out via `..`/`.parent()` — with two reviewed exceptions, `scripts/airlock-gate.sh` and `scripts/restore.sh`, which are artifacts under test rather than fixture data (`tests/restore_script.rs` runs the real bootstrap against a throwaway git repo and the transport fixture).

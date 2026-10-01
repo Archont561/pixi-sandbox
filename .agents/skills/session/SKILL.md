@@ -1,13 +1,19 @@
 ---
 name: session
-description: Start a pixi-sandbox work session on an airlocked machine — bring the offline environment up, survey the backlog, and propose what to do this session. Use at the start of any session on this repository, when the user says to initialize/bootstrap the environment, pick up tasks from the backlog, or asks what to work on.
+description: Run a pixi-sandbox work session on an airlocked machine, start to finish — bring the offline environment up, survey the backlog, propose the session, and after the PR merges report it and write the next session's opening prompt. Use at the start of any session on this repository, when the user says to initialize/bootstrap the environment, pick up tasks from the backlog, or asks what to work on; and again at the end, when a pull request has merged or the user asks for a session report, a hand-off, or what the next session should start with.
 ---
 
-# Session startup for pixi-sandbox
+# Session lifecycle for pixi-sandbox
 
-Two jobs, in this order: **(1)** bring the environment up, **(2)** survey the backlog and
-propose the session. Never propose work you cannot execute — an environment that is down
-changes what is possible.
+A session is a loop with five phases, and this file sequences all of them: **(1)** bring the
+environment up, **(2)** survey the backlog, **(3)** propose the session and stop, **(4)** work
+the tasks under the house rules, **(5)** after the PR merges, report and hand the next session
+its opening prompt. The four artifacts those phases produce have templates in
+[`standup-template.md`](standup-template.md), cited below as *template §1* … *template §4*.
+
+Two rules span the whole loop. Never propose work you cannot execute — an environment that is
+down changes what is possible. And never close on an unproven claim: the proof an airlocked
+machine cannot produce is an open item, not a checked box.
 
 ## 1. Bring the environment up (airlocked machine)
 
@@ -122,9 +128,16 @@ Facts about this sandbox that shape every command:
 
 ## 3. Propose the session, then stop
 
-Fill in the **Session proposal** template in [`standup-template.md`](standup-template.md) and
-**wait for the user to pick** — do not start implementing. That file also carries the task
-hand-off and session-close templates; use them at those points rather than inventing a shape.
+Fill in the **Session standup** (template §2) in [`standup-template.md`](standup-template.md)
+and **wait for the user to pick** — do not start implementing.
+
+That file carries all four phases of the lifecycle, and a session is only closed when every one
+of them has been produced: the **opening prompt** (template §1) that started this session,
+the **standup** (template §2) you are writing now, a **task hand-off** (template §3) at the end
+of each task, and the **session report** (template §4) after the PR merges — which ends by
+emitting the next opening prompt.
+Use them at those points rather than inventing a shape; the templates are the hand-off protocol
+between sessions, and the loop only closes because the last artifact is the first one.
 
 ## 4. While you work — house rules (AGENTS.md is the full list)
 
@@ -145,4 +158,39 @@ hand-off and session-close templates; use them at those points rather than inven
   (D10; isolate `HOME`/`USERPROFILE`/`SHELL` per test).
 - **Pull requests**: push the working branch, squash-merge, conventional title ending
   `(#N)`. Watch the required checks; when a platform job fails, read that job's log before
-  changing code. After merge, watch the post-merge CI and docs runs.
+  changing code. What happens after the merge is § 5, not an afterthought.
+
+## 5. After the PR merges — report, then hand the next session its prompt
+
+A merge is not the end of a session; it is the first moment you can tell the truth about it.
+Do these in order, and do not skip to the report:
+
+1. **Watch the post-merge runs.** `gh run list --branch main --limit 5`, then read the verdict
+   of every workflow the merge triggered (`ci`, `docs`, anything path-triggered). A red
+   post-merge run belongs to **this** session — fix it before reporting, never leave it as the
+   next session's surprise. `gh run view <id> --log` often cannot stream from this sandbox;
+   `gh run view <id>` alone still gives job verdicts and annotations, which is usually enough
+   to tell a real failure from a flake.
+2. **Close the task files** in house format — in the pull request itself when the evidence is
+   already in hand, in a follow-up commit when the proof only arrives after the merge: every AC `[x]`, status `Done`, `updated_date`
+   bumped, `SECTION:NOTES` and `SECTION:SUMMARY` appended, no PLAN edits. **An AC you could not
+   prove is not a checked AC.** When the remaining proof needs a native runner, a cut release
+   or a maintainer's click, leave the task `In Progress`, name the AC and the missing proof in
+   the notes, and carry that same sentence into the report — a task closed on an unproven AC
+   is how a stale claim enters the record.
+3. **Re-baseline on the merged tree.** `git fetch origin && git log --oneline origin/main -1`
+   to confirm what merged, then `pixi run --frozen test`. The number goes in the report and
+   into the next opening prompt; it must rise with new work, never fall.
+4. **Record what you did not implement** in `CONTEXT.md` § Session scratchpad, under a dated
+   heading, newest last (invariant 10) — proposals, alternatives weighed, measurements worth
+   keeping — and end that entry with the next session's opening prompt, so the file in the tree
+   and the message in the chat say the same thing. That entry is its own commit
+   (`docs(context): …`), so the repository carries its own session summary.
+5. **Print both artifacts in the final message**: the **Session report** (template §4) and,
+   inside it, the **Session opening prompt** (template §1). Printing them *is* the hand-off.
+   The test is literal:
+   the user should be able to paste that prompt back as the first message of the next session
+   and have an agent reach the same understanding you have now, without reading the diff.
+
+A session that merged nothing still reports — "Merged: nothing", the ideas in the scratchpad,
+and an opening prompt that says what to decide first.

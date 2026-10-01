@@ -4,8 +4,11 @@ Instructions for coding agents working **in this repository**. For the agent-fac
 ships *inside a sandbox branch*, see the generated `AGENTS.md` under `.pixi-sandbox/` in that
 branch — different audience, different file.
 
-**Start of session?** Follow `.agents/skills/session/SKILL.md` — it sequences the environment
-bootstrap on an airlocked machine, the backlog survey, and the session proposal.
+**Start of session?** Follow `.agents/skills/session/SKILL.md` — it sequences the whole loop:
+the environment bootstrap on an airlocked machine, the backlog survey, the session proposal,
+and, after the pull request merges, the session report that closes the task files and writes
+the next session's opening prompt. Its four templates are in
+`.agents/skills/session/standup-template.md`.
 
 ## What this project is
 
@@ -25,6 +28,7 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
 | `crates/pixi-sandbox-core/src/files_manifest.rs` | the per-file oracle (D13): `scan_prefix` records the unpacked prefix at pack time, canonicalising either side's path spellings to a sentinel so relocation cannot defeat the digests |
 | `crates/pixi-sandbox/src/commands/*` | `init`, `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, and `tools list` — pure Rust, no Python |
 | `crates/pixi-sandbox-git` | **all** git access: `GitProtocol` + `ShellGit` (real git, with a swappable `Runner`) + `FakeGit` (in-memory mock). Never run `git` from anywhere else |
+| `.github/workflows/relock.yml` | **generated, not written**: the committed render of `generated/relock_workflow.rs`, the lockfile bot `pixi-sandbox init` also hands consumers. `check-repository` (check 10) fails when it drifts from a fresh render, so it is edited through the template and `pixi run xtask render-relock`, never by hand. Unlike the publisher template it is house-shaped — one-line steps throughout — which is what makes committing it possible |
 | `crates/pixi-sandbox/tests/fixtures/` | the fixture project and the synthetic transport. **Tests must not point at this repository** — see `.knowledge/decisions.md` D10 |
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical embedded helper-tool pins; edit as reviewed data and keep the embedded-lock tests green |
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
@@ -95,7 +99,8 @@ pixi run bun <args>     # bun itself, in the web environment, args pass through
 # every repository-automation subcommand goes through ONE task (crates/xtask); extra arguments
 # follow the subcommand, and `--` separates them when there is more than one.
 pixi run xtask check-repository            # the D10-exempt repo lints
-pixi run xtask lint-generated-workflow     # actionlint over the workflow `init` generates
+pixi run xtask lint-generated-workflow     # actionlint over both workflows `init` generates
+pixi run xtask render-relock               # rewrite the committed render of .github/workflows/relock.yml
 pixi run xtask prepare-release auto        # stamp the next version everywhere (no git actions)
 pixi run xtask commit-release v0.3.8       # commit + tag + push a prepared release (--dry-run shows the diff)
 pixi run xtask check-release-refs          # documented release references vs the declared version
