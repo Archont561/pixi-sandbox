@@ -11,5 +11,5 @@ publish = false
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
-pixi-sandbox = { path = "../pixi-sandbox", version = "0.3.5" }
+pixi-sandbox = { path = "../pixi-sandbox", version = "0.3.6" }
 tempfile = { workspace = true }

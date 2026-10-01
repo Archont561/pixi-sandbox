@@ -9,16 +9,16 @@ setup behaviour via its `subpath` input.
 
 ```yaml
 # Short reference (same repo, like prefix-dev/setup-pixi)
-- uses: Archont561/pixi-sandbox/setup@v0.3.5
+- uses: Archont561/pixi-sandbox/setup@v0.3.6
   id: sandbox
   with:
-    version: v0.3.5
+    version: v0.3.6
 - run: pixi-sandbox --version
 
 # The repo root has always meant setup, so this works too
-- uses: Archont561/pixi-sandbox@v0.3.5
+- uses: Archont561/pixi-sandbox@v0.3.6
   with:
-    version: v0.3.5
+    version: v0.3.6
 ```
 
 Or drive the root action directly, pinning an immutable commit SHA for supply-chain security:
@@ -29,11 +29,11 @@ Or drive the root action directly, pinning an immutable commit SHA for supply-ch
   with:
     subpath: setup
     repository: Archont561/pixi-sandbox
-    version: v0.3.5
+    version: v0.3.6
 ```
 
 `repository` defaults to `Archont561/pixi-sandbox` and `version` defaults to `latest` (warns),
-so minimal usage is just `uses: Archont561/pixi-sandbox@v0.3.5`.
+so minimal usage is just `uses: Archont561/pixi-sandbox@v0.3.6`.
 
 The publish counterpart is `Archont561/pixi-sandbox/publish@vX` (see `publish/README.md`).
 

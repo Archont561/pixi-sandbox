@@ -6,7 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.3.5](https://github.com/Archont561/pixi-sandbox/compare/v0.3.4...83d6dd5f97c045916eeaedd02d2505ea65dc7f70) (2026-10-01)
+### [v0.3.6](https://github.com/Archont561/pixi-sandbox/compare/v0.3.5...279d748cfd3ade87badf0d81645803fd274e3b47) (2026-10-01)
+
+#### Features
+
+* generate provider-neutral direct publish workflows (#45)
+([279d748](https://github.com/Archont561/pixi-sandbox/commit/279d748cfd3ade87badf0d81645803fd274e3b47)),
+closes [#45](https://github.com/Archont561/pixi-sandbox/issues/45)
+* publish conda packages per platform and keep bun out of the default env
+([cdf60b7](https://github.com/Archont561/pixi-sandbox/commit/cdf60b796f2155db650363dacf031da9605c5e81))
+
+#### Fixes
+
+* **dev:** install the JS workspace before linting it
+([3f28c26](https://github.com/Archont561/pixi-sandbox/commit/3f28c26766659ea4e7cf4046644bd47103b5f3c6))
+
+#### Documentation
+
+* organize v1 planning and network boundaries
+([375577c](https://github.com/Archont561/pixi-sandbox/commit/375577c75335c17684a085f4bdad88cbce4ce4f0))
+
+### [v0.3.5](https://github.com/Archont561/pixi-sandbox/compare/v0.3.4...v0.3.5) (2026-10-01)
 
 #### Fixes
 
