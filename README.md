@@ -64,7 +64,7 @@ curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.4/i
 
 # Connected alternative: install the same CLI from the prefix.dev channel
 pixi global install \
-  --channel https://prefix.dev/@archont561/pixi-sandbox \
+  --channel https://prefix.dev/archont561/pixi-sandbox \
   --channel conda-forge \
   pixi-sandbox
 
@@ -544,7 +544,7 @@ tooling into the published sandbox branch.
 ## 🔖 Changelog & Release
 
 - **Changelog**: `CHANGELOG.md` generated via `convco changelog` from conventional commits. Tasks: `pixi run changelog`.
-- **Release**: Tag `v*.*.*` → `release.yml` builds 5 static binaries, renders `install.sh`, builds `pixi-sandbox` as a Conda package, publishes it to [`@archont561/pixi-sandbox`](https://prefix.dev/channels/@archont561/pixi-sandbox) with GitHub OIDC, then creates the GitHub Release. Configure prefix.dev Repository Access for this repository's `release.yml` workflow; no long-lived token is stored in GitHub.
+- **Release**: Tag `v*.*.*` → `release.yml` builds 5 static binaries, renders `install.sh`, builds `pixi-sandbox` as a Conda package, publishes it to [`archont561/pixi-sandbox`](https://prefix.dev/channels/@archont561/pixi-sandbox) with GitHub OIDC, then creates the GitHub Release. Configure prefix.dev Repository Access for this repository's `release.yml` workflow; no long-lived token is stored in GitHub.
   ```bash
   gh workflow run auto-release.yml -f version=vX.Y.Z
   ```
