@@ -212,8 +212,14 @@ impl ShellGit {
         ShellGit {
             runner: Box::new(ProcessRunner),
             program: "git".to_string(),
-            name: "pixi-sandbox".to_string(),
-            email: "pixi-sandbox@invalid".to_string(),
+            // Transport commits are tool-authored, and GitHub's convention for that is the
+            // `[bot]` suffix (github-actions[bot], dependabot[bot]). The email is the
+            // github-actions app's noreply address — the same one auto-release.yml configures —
+            // so a CI push renders the bot avatar while the name keeps the pixi-sandbox
+            // identity; a locally published transport carries the same authorship instead of
+            // silently falling back to the publishing human's git config.
+            name: "pixi-sandbox[bot]".to_string(),
+            email: "41898282+github-actions[bot]@users.noreply.github.com".to_string(),
             scratch_name: DEFAULT_SCRATCH_NAME.to_string(),
             log: Mutex::new(Vec::new()),
         }
