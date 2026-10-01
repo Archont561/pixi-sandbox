@@ -236,8 +236,11 @@ fn register_user_tools(
         let detected = user_tools::detect_profile(&home, std::env::var_os("SHELL").as_deref());
         (Some(detected.0), detected.1)
     };
+    // `None::<String>` is load-bearing: the only use of `notice` is `println!("{notice}")`,
+    // which leaves the element type unconstrained, so a bare `None` only fails to infer on the
+    // targets that compile this branch — the Windows leg of the release, and nothing else.
     #[cfg(not(unix))]
-    let (profile, notice) = (None::<PathBuf>, None);
+    let (profile, notice) = (None::<PathBuf>, None::<String>);
 
     let service = UserTools {
         bin_dir: &bin_dir,

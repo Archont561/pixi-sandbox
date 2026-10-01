@@ -11,9 +11,9 @@ publish = false
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
-pixi-sandbox = { path = "../pixi-sandbox", version = "0.3.7" }
-pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.3.7" }
-pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.3.7" }
+pixi-sandbox = { path = "../pixi-sandbox", version = "0.4.0" }
+pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.4.0" }
+pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.4.0" }
 regex = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

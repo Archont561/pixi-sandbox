@@ -123,7 +123,7 @@ pixi run -e package xtask smoke-conda-package      # install it and run the pack
 
 # the release pipeline: release.yml drives these on every native runner through `-e package`
 # (the empty environment resolves on win-64 too); locally the same tasks run in `default`
-pixi run build-release-binary                      # cargo build -p pixi-sandbox --release (--target <triple> in CI)
+pixi run build-release-binary                      # cargo build -p pixi-sandbox --release (-- --target <triple> in CI)
 pixi run xtask stage-release-binary                # strip + stage pixi-sandbox-<target>[.exe], host triple by default
 pixi run xtask release-checksums                   # SHA256SUMS over the standalone binaries + completeness check
 pixi run dispatch-release v0.3.8                   # hand a fresh tag to release.yml (a GITHUB_TOKEN tag push starts nothing)

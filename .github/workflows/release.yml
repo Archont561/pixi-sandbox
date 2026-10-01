@@ -78,8 +78,11 @@ jobs:
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
+      # The `--` is load-bearing: the task takes one positional `flags` arg, so a bare
+      # `--target <triple>` is two args and pixi refuses it ("received more arguments than
+      # expected") — which is exactly how v0.4.0's build died on all five runners.
       - name: Build release binary
-        run: pixi run -e package build-release-binary --target ${{ matrix.target }}
+        run: pixi run -e package build-release-binary -- --target ${{ matrix.target }}
 
       - name: Strip and stage binary
         run: pixi run -e package xtask stage-release-binary ${{ matrix.target }}

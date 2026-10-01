@@ -77,7 +77,7 @@ pub fn stage_release_binary(
     let source = built_binary_path(target_dir, target, &host);
     if !source.is_file() {
         let remedy = match target {
-            Some(_) => format!("pixi run build-release-binary --target {triple}"),
+            Some(_) => format!("pixi run build-release-binary -- --target {triple}"),
             None => "pixi run build-release-binary".to_string(),
         };
         bail!(

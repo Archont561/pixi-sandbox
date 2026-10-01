@@ -6,7 +6,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.3.7](https://github.com/Archont561/pixi-sandbox/compare/v0.3.6...910df8f2ff39412d62df82ac81563e17ffd45f92) (2026-10-01)
+## [v0.4.0](https://github.com/Archont561/pixi-sandbox/compare/v0.3.7...99c3e178d53e8452087f3a89329d1a310a11238a) (2026-10-01)
+
+### Features
+
+* **ci:** generate the relock lane and commit this repository's render (#52)
+([b2e028f](https://github.com/Archont561/pixi-sandbox/commit/b2e028f4cdcf49b0f66cf49e5928a4313214914e)),
+closes [#52](https://github.com/Archont561/pixi-sandbox/issues/52)
+* **ci:** move workflow shell into xtask and enforce the one-line step rule (#51)
+([be83194](https://github.com/Archont561/pixi-sandbox/commit/be831948f74bfd395a214a2aae67a3fe7768d919)),
+closes [#51](https://github.com/Archont561/pixi-sandbox/issues/51)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+[#51](https://github.com/Archont561/pixi-sandbox/issues/51)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+* **restore:** persist verified pixi tools on the user PATH (#48)
+([5aa6ecd](https://github.com/Archont561/pixi-sandbox/commit/5aa6ecd091fe64725851bcf65a7b3df534eabac5)),
+closes [#48](https://github.com/Archont561/pixi-sandbox/issues/48)
+* **actions:** retire composite publishing interfaces (#47)
+([5a0f0c1](https://github.com/Archont561/pixi-sandbox/commit/5a0f0c1b7a6a703907976b7f2782834bdb82a66e)),
+closes [#47](https://github.com/Archont561/pixi-sandbox/issues/47)
+
+### Fixes
+
+* **core:** replace a running tool by staging and renaming, not copying onto it
+([50c03b1](https://github.com/Archont561/pixi-sandbox/commit/50c03b180b0ce691dbf84537493d52f114de5d9a))
+* **restore:** report the user-tool registration that happened, not the one requested
+([fb6bc8a](https://github.com/Archont561/pixi-sandbox/commit/fb6bc8a8824fd41bce99fc2364bc90c4f352bdb0))
+
+### Refactoring
+
+* **tasks:** front xtask with one task and collapse the pixi task table
+([fb1f47c](https://github.com/Archont561/pixi-sandbox/commit/fb1f47c84d0a232df3e14a1816b17fe6c2a91028))
+
+### Documentation
+
+* **context:** record the relock session and the next session's starting prompt (#53)
+([99c3e17](https://github.com/Archont561/pixi-sandbox/commit/99c3e178d53e8452087f3a89329d1a310a11238a)),
+closes [#53](https://github.com/Archont561/pixi-sandbox/issues/53)
+* **context:** record the session close and the next session's starting point
+([4b18be9](https://github.com/Archont561/pixi-sandbox/commit/4b18be9b9b0d67ca5604d62d7f538781a649f65c))
+* **backlog:** add task-38 for an rstest/proptest test refactor, and draft the relock bot
+([6493df9](https://github.com/Archont561/pixi-sandbox/commit/6493df92226e6c4069760671a1ca2aafe69ecf37))
+* **ci:** state the workflow step rule and plan the shell migration
+([3fd938b](https://github.com/Archont561/pixi-sandbox/commit/3fd938bbb1639027df5e0bd345e4dc35a3be23f5))
+* **skills:** drop env sourcing from the session skill and plan the gate move
+([d1af2fe](https://github.com/Archont561/pixi-sandbox/commit/d1af2fe878a2e8a4f649ec8b79684d82e3e8f4b9))
+* **backlog:** close release package task (#49)
+([8e2b99f](https://github.com/Archont561/pixi-sandbox/commit/8e2b99f065cf111b50efba86fcbc9951bb17508c)),
+closes [#49](https://github.com/Archont561/pixi-sandbox/issues/49)
+
+### [v0.3.7](https://github.com/Archont561/pixi-sandbox/compare/v0.3.6...v0.3.7) (2026-10-01)
 
 #### Fixes
 
