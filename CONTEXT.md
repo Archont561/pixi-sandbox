@@ -96,7 +96,9 @@ The current redesign is planned in Backlog milestone **m-0 — v1 standalone cro
 - **TASK-25** — move npm-compatible tooling such as Biome and Astro to `package.json`/`bun.lock`, keep Bun in a separate web environment, and decide the Windows Node/Bun fallback.
 - **TASK-26** — evaluate Turbo only after multiple JavaScript workspaces justify dependency-aware orchestration and caching.
 
-The v1 proposal is **not yet an accepted architectural decision**. Backlog `decision-1` is proposed; existing `.knowledge/decisions.md` remains authoritative until TASK-24 produces measurements and an explicit decision.
+The v1 proposal is now an accepted architectural decision: backlog `decision-1` is accepted
+(through task-24's measurements, recorded in `decision-2` and `doc-7`), with the boundary that
+`pixi-pack`/`pixi-unpack` remain pinned helper subprocesses (D2/D3/D4/D12, reaffirmed as D14).
 
 ### Work that requires an online Codespace or native CI
 

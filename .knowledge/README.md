@@ -6,7 +6,7 @@ Actionable specifications, research summaries, and spikes now live in Backlog.md
 
 | File | Purpose |
 |:---|:---|
-| [`decisions.md`](decisions.md) | Historical load-bearing transport and restore decisions (D1–D12); proposed changes are tracked through Backlog decisions |
+| [`decisions.md`](decisions.md) | Historical load-bearing transport and restore decisions (D1–D14); new decisions land through Backlog decisions (decision-1, decision-2) and are mirrored here |
 | [`design.md`](design.md) | Pointer to Backlog document `doc-2`, the canonical transport and restore specification |
 | [`rust-bootstrap.md`](rust-bootstrap.md) | Pointer to Backlog document `doc-4`, the canonical bootstrap specification |
 | [`publish-automation.md`](publish-automation.md) | Pointer to Backlog document `doc-3`, the canonical publish automation specification |
