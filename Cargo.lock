@@ -562,7 +562,6 @@ dependencies = [
 name = "pixi-sandbox-git"
 version = "0.3.7"
 dependencies = [
- "serde_json",
  "tempfile",
  "thiserror",
 ]

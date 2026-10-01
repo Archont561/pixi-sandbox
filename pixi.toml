@@ -36,9 +36,6 @@ cargo-deny = "=0.20.2"
 bun = "=1.3.11"
 
 [feature.utils.dependencies]
-# RELOCK DEMO (task-39 AC#7) — reverted before merge. Added with the lock left stale on
-# purpose, so the relock bot has to refresh pixi.lock.
-jq = "=1.7.1"
 actionlint = "=1.7.12"
 lefthook = "=2.1.14"
 taplo = "=0.10.0"
