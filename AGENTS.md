@@ -53,10 +53,20 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
 
 ## Commands
 
-Source-driven GitHub Actions commands are one of these lines (design.md §6): **if a
-source-driven workflow command needs more than one line, add a task to `pixi.toml` instead.**
-The checksum-verified release publisher is implemented as reviewed composite-action shell
-(POSIX + PowerShell), not Python.
+**Workflow step rule.** A step under `.github/workflows/` is one of three things: `uses:` a
+pinned action, a single `pixi run <task>` line, or a one-line host bootstrap that pixi cannot
+provide (`rustup target add …`). Nothing else. A workflow command that needs more than one
+line is a task in `pixi.toml`; a task whose body needs more than one command is an `xtask`
+subcommand with tempdir-fixture tests — one Rust runtime instead of five shell dialects, and a
+reviewer reads intent instead of bash. Paths and flags reach the task through `env:` (the
+`SANDBOX_*` convention `ci-pack`/`ci-doctor`/`ci-publish` use), and an xtask that produces a
+value writes it to `GITHUB_OUTPUT`/`GITHUB_STEP_SUMMARY` itself, falling back to stdout when
+those are unset so the same invocation works locally.
+
+`ci.yml` and `docs.yml` are the reference shape. `release.yml`, `auto-release.yml` and
+`airlock.yml` still carry ~280 lines of embedded shell (and one PowerShell dialect of a step
+that already exists in bash); **task-36** is that migration, and it ends with a
+`check-repository` rule that fails any new multi-line `run:` block.
 
 ```bash
 # one development environment, so every task is `pixi run <task>` with no -e flag. The bun tasks
