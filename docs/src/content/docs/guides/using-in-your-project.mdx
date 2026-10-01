@@ -222,3 +222,11 @@ pixi-sandbox pack --repo-root . --envs dev --output-dir .sandbox-out --platform 
     <div><strong>Verify before write</strong> — <code>doctor --verify</code> is the same code as restore's preflight. CI must run it.</div>
   </div>
 </div>
+
+## Channel configured by init
+
+Init preserves the order of the project's existing Pixi channels and adds the fixed Archont561
+namespace root, `https://prefix.dev/archont561`, once. This does not depend on your Git host or
+repository owner. The namespace root is for project dependencies; the package-specific
+`https://prefix.dev/archont561/pixi-sandbox` channel in the install command is only for installing
+the CLI on the connected host.

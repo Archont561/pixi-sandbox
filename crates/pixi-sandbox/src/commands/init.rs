@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 const PREFERRED_CONFIG: &str = "pixi-sandbox.toml";
 const LEGACY_CONFIG: &str = ".pixi-sandbox.toml";
+const ARCHONT561_CHANNEL: &str = "https://prefix.dev/archont561";
 
 #[derive(Debug, Clone, Copy)]
 enum LauncherKind {
@@ -64,6 +65,8 @@ pub fn run(args: InitArgs) -> Result<()> {
         ensure_replaceable(path, args.force)?;
     }
 
+    ensure_archont561_channel(&root)?;
+
     write(
         &workflow,
         &render_github_workflow(GithubWorkflowOptions {
@@ -89,6 +92,64 @@ pub fn run(args: InitArgs) -> Result<()> {
     println!("using sandbox config at {}", config.display());
     println!("generated offline launcher at {}", script.display());
     Ok(())
+}
+
+fn normalized_channel(value: &str) -> String {
+    value.trim().trim_end_matches('/').to_ascii_lowercase()
+}
+
+/// Add the publisher namespace to project-local Pixi configuration through TOML values rather
+/// than text splicing. Existing channel priority is retained and the namespace is appended once.
+fn ensure_archont561_channel(root: &Path) -> Result<()> {
+    let path = root.join("pixi.toml");
+    let text = fs::read_to_string(&path).with_context(|| {
+        format!(
+            "reading project Pixi configuration {}; run init from a Pixi project",
+            path.display()
+        )
+    })?;
+    let mut manifest: toml::Table = text.parse().with_context(|| {
+        format!(
+            "parsing project Pixi configuration {}; fix the TOML before running init",
+            path.display()
+        )
+    })?;
+    let workspace = manifest
+        .get_mut("workspace")
+        .and_then(toml::Value::as_table_mut)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} has no [workspace] table; cannot safely configure the Archont561 channel",
+                path.display()
+            )
+        })?;
+    let channels = workspace
+        .entry("channels")
+        .or_insert_with(|| toml::Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{}.workspace.channels must be an array of channel URLs",
+                path.display()
+            )
+        })?;
+    let canonical = normalized_channel(ARCHONT561_CHANNEL);
+    for channel in channels.iter() {
+        let value = channel.as_str().ok_or_else(|| {
+            anyhow::anyhow!(
+                "{}.workspace.channels contains a non-string entry; cannot safely update it",
+                path.display()
+            )
+        })?;
+        if normalized_channel(value) == canonical {
+            return Ok(());
+        }
+    }
+    channels.push(toml::Value::String(ARCHONT561_CHANNEL.to_string()));
+    let rendered = toml::to_string_pretty(&manifest)
+        .context("serializing project Pixi configuration after adding the Archont561 channel")?;
+    write(&path, &rendered)
+        .with_context(|| format!("updating project Pixi configuration {}", path.display()))
 }
 
 fn resolve(root: &Path, path: &Path) -> PathBuf {
