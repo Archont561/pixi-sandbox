@@ -4,13 +4,15 @@ Instructions for coding agents working **in this repository**. For the agent-fac
 ships *inside a sandbox branch*, see the generated `AGENTS.md` under `.pixi-sandbox/` in that
 branch — different audience, different file.
 
+**Start of session?** Follow `.agents/skills/session/SKILL.md` — it sequences the environment
+bootstrap on an airlocked machine, the backlog survey, and the session proposal.
+
 ## What this project is
 
 `pixi-sandbox` packs pixi environments into a git orphan branch and restores them on machines
 with no network. The design is settled and measured: **read `.knowledge/design.md` before
-proposing a different one**, and `.knowledge/decisions.md` for the short form. The eight
-decisions (D1–D11) are load-bearing; if you think one is wrong, bring a measurement, not an
-opinion.
+proposing a different one**, and `.knowledge/decisions.md` for the short form. The recorded
+decisions are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
 
 ## Repo map
 
