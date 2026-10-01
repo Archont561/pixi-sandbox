@@ -17,7 +17,7 @@ platforms = ["linux-64", "osx-arm64"]
 
 [package]
 name = "pixi-sandbox"
-version = "0.3.3"
+version = "0.3.4"
 
 [package.build]
 # Rust build backend (prefix-dev/pixi-build-backends). Pin the major version.

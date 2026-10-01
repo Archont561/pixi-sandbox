@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.3.3](https://github.com/Archont561/pixi-sandbox/compare/v0.3.2...b509f065b50642be95bddc6389f3b9a04721a28f) (2026-09-30)
+### [v0.3.4](https://github.com/Archont561/pixi-sandbox/compare/v0.3.3...b2544982d7b47056de49d5d32f084f46bdb89910) (2026-10-01)
+
+#### Fixes
+
+* **release:** pass absolute build/target dirs to pixi publish
+([b80fe41](https://github.com/Archont561/pixi-sandbox/commit/b80fe417e84fb0a1ecaa3616917d5847501571fd))
+
+### [v0.3.3](https://github.com/Archont561/pixi-sandbox/compare/v0.3.2...v0.3.3) (2026-09-30)
 
 #### Features
 

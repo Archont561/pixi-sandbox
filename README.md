@@ -59,7 +59,7 @@ so "builds here" and "restores offline there" are tracked separately —
 **Generate publishing and one-command airlock restoration:**
 
 ```bash
-curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.3/install.sh | sh
+curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v0.3.4/install.sh | sh
 # commit .github/workflows/publish-sandbox.yml, .pixi-sandbox.toml, restore.sh, restore.ps1
 
 # Connected alternative: install the same CLI from the prefix.dev channel
@@ -207,16 +207,16 @@ Both actions live in **same repo** with short references.
 
 ```yaml
 # Root = setup (like prefix-dev/setup-pixi)
-- uses: Archont561/pixi-sandbox@v0.3.3
+- uses: Archont561/pixi-sandbox@v0.3.4
   with:
-    version: v0.3.3
+    version: v0.3.4
 - run: pixi-sandbox --version
 
 # Explicit short path
-- uses: Archont561/pixi-sandbox/setup@v0.3.3
+- uses: Archont561/pixi-sandbox/setup@v0.3.4
   id: setup
   with:
-    version: v0.3.3
+    version: v0.3.4
 ```
 
 Pinned SHA (supply-chain secure):
@@ -230,7 +230,7 @@ Pinned SHA (supply-chain secure):
 ### Publish (pack + doctor + publish one native bundle)
 
 ```yaml
-- uses: Archont561/pixi-sandbox/publish@v0.3.3
+- uses: Archont561/pixi-sandbox/publish@v0.3.4
   with:
     project: .
     environments: dev,docs
@@ -245,7 +245,7 @@ Pinned SHA (supply-chain secure):
 
 ### Full workflow — just two actions (recommended)
 
-No `release-repository`/`release-version` inputs. Your `uses: @v0.3.3` pin *is* the version.
+No `release-repository`/`release-version` inputs. Your `uses: @v0.3.4` pin *is* the version.
 
 ```yaml
 # .github/workflows/publish-sandbox.yml in your project
@@ -260,9 +260,9 @@ jobs:
     outputs: { matrix: ${{ steps.plan.outputs.matrix }} }
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: Archont561/pixi-sandbox/setup@v0.3.3
+      - uses: Archont561/pixi-sandbox/setup@v0.3.4
         id: setup
-        with: { version: v0.3.3 }
+        with: { version: v0.3.4 }
       - id: plan
         run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config .pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
 
@@ -278,10 +278,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: prefix-dev/setup-pixi@v0.10.2
-      - uses: Archont561/pixi-sandbox/setup@v0.3.3
+      - uses: Archont561/pixi-sandbox/setup@v0.3.4
         id: setup
-        with: { version: v0.3.3 }
-      - uses: Archont561/pixi-sandbox/publish@v0.3.3
+        with: { version: v0.3.4 }
+      - uses: Archont561/pixi-sandbox/publish@v0.3.4
         with:
           project: .
           environments: ${{ matrix.environments }}
@@ -296,10 +296,10 @@ jobs:
 Single-platform without `plan`:
 
 ```yaml
-- uses: Archont561/pixi-sandbox/setup@v0.3.3
+- uses: Archont561/pixi-sandbox/setup@v0.3.4
   id: setup
-  with: { version: v0.3.3 }
-- uses: Archont561/pixi-sandbox/publish@v0.3.3
+  with: { version: v0.3.4 }
+- uses: Archont561/pixi-sandbox/publish@v0.3.4
   with:
     project: .
     environments: dev,docs
@@ -321,11 +321,11 @@ Single-platform without `plan`:
 ```yaml
 jobs:
   publish:
-    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.3.3
+    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@v0.3.4
     with:
       config: .pixi-sandbox.toml
       release-repository: Archont561/pixi-sandbox
-      release-version: v0.3.3
+      release-version: v0.3.4
     secrets:
       SANDBOX_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
