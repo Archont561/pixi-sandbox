@@ -15,28 +15,72 @@ The workspace is a clone of the repository; the pixi environments exist only aft
 Check first, restore only if needed:
 
 ```bash
-test -f .pixi/sandbox-env.sh            # environment already restored?
+test -f .pixi/sandbox-env.sh   # environment already restored?
 # if missing — the one-time bootstrap (idempotent, passes --force itself, never fetches):
-PIXI_SANDBOX_USER_TOOLS=skip bash scripts/restore.sh   # skip = leave HOME untouched
+bash scripts/restore.sh
 ```
 
-Then, in **every** new shell / tool invocation — state does not survive between calls:
+**Let the restore register the user tools** (that is the default, `PIXI_SANDBOX_USER_TOOLS=register`;
+do not pass `skip` here — `skip` is for shared CI runners). A verified restore then writes
+managed `pixi` and `pixi-sandbox` launchers into `~/.local/bin` and adds a marker-delimited
+PATH block to the detected shell profile (task-33). Those launchers exec the *manifest-verified*
+tool copies under `.pixi/tools/<platform>/`.
+
+### When you can stop sourcing `sandbox-env.sh` — and when you still cannot
+
+Dropping `source .pixi/sandbox-env.sh` is safe once all three hold:
+
+1. the bootstrap above completed and registered (not `--user-tools skip`, not refused over an
+   unmanaged `pixi` already sitting in `~/.local/bin` — that refusal needs `--force`);
+2. `~/.local/bin` is on `PATH` in the shell you are actually in;
+3. everything you run is `pixi …` — i.e. every repo-management command goes through the pixi
+   binary, not through a tool you expect to find loose on `PATH`.
+
+Point 2 is the one that bites an agent: the profile block is read by a **new login/interactive**
+shell, and a non-interactive `bash -c …` — which is what every tool invocation here is — reads
+no profile at all. So instead of sourcing a path inside this checkout, prepend the user bin dir:
 
 ```bash
-source .pixi/sandbox-env.sh
+export PATH="$HOME/.local/bin:$PATH"   # once per shell; nothing checkout-specific about it
+pixi --version && pixi sandbox --version
+```
+
+The same applies to the shell that *ran* the restore: a running parent shell cannot be mutated,
+so use the `export` above for the rest of that session.
+
+`.pixi/sandbox-env.sh` is now an **escape hatch, not a step**: it is only needed when you want
+`cargo`, `rustc`, `bun`, `taplo` or `convco` loose on `PATH`. Don't — run them through pixi,
+which is what the hooks and CI do.
+
+### Every repo task goes through the pixi binary
+
+```bash
+pixi run --frozen fmt | lint | test | test-doc | coverage
+pixi run --frozen -- cargo <anything>        # e.g. cargo check --offline, cargo nextest run -p …
+pixi run --frozen -- convco check HEAD~1..HEAD
+pixi run --frozen lint-commit < <file>       # what the commit-msg hook runs
+pixi run docs-install                        # once; then the two below work
+pixi run backlog task list -s "To Do" --plain
+pixi run skills …
+pixi run -- lefthook install                 # installs the git hooks in a fresh clone
 ```
 
 Facts about this sandbox that shape every command:
 
 - **Egress is filtered**: the crates.io index/API and conda channels (prefix.dev) are
-  unreachable; github.com and static file hosts work. Therefore **always** `cargo --offline`,
-  and always `pixi run --frozen <task>` so pixi never tries to solve online.
-- Everything goes through pixi tasks: `pixi run --frozen fmt` / `lint` / `test`. `test` runs
-  in seconds — baseline it at session start and write the number down (it must rise with new
-  work, never fall).
-- `pixi run docs-install` once, then `pixi run backlog …` and `pixi run skills …` work.
-- `convco` (conventional-commit linter) is in the default environment — available after
-  sourcing `sandbox-env.sh`.
+  unreachable; github.com and static file hosts work. Therefore **always** `--offline` for
+  cargo, and always `pixi run --frozen <task>` so pixi never tries to solve online.
+- `pixi run --frozen test` runs in seconds — baseline it at session start and write the number
+  down (it must rise with new work, never fall).
+- The airlock claim has a local proof and a CI proof, and they are not the same thing. Locally,
+  `crates/pixi-sandbox/tests/e2e.rs` is the fixture-backed lifecycle (doctor → publish → restore
+  → `doctor --verify-restored`), it needs no network, and on Linux it re-runs the restore inside
+  `unshare -rn`; it is already part of `pixi run --frozen test`. The egress-denied gate over a
+  *real* packed transport belongs to CI's cross-platform matrix
+  (`.github/workflows/airlock.yml`) — never try to reproduce that tier locally.
+  Today that gate is still `scripts/airlock-gate.sh`, driven from one e2e test; **task-35**
+  moves it into `tests/e2e.rs` behind the `ci` cargo feature (skipped locally, run by the
+  matrix) and deletes the script. Until that lands, add no new logic to the shell script.
 - Missing system tools: no `/usr/bin/time`, no `file(1)` — use `date +%s`, `readelf`.
 - `gh` works against github.com when authenticated; workflow dispatch/rerun may be
   forbidden for the token (`403 … by integration`) — then ask the user to click it.
@@ -83,9 +127,16 @@ Need from you: confirm the scope (or pick differently) before I start.
 
 ## 4. While you work — house rules (AGENTS.md is the full list)
 
-- **One focused conventional commit per task.** Before every commit, run manually:
-  `pixi run --frozen fmt && pixi run --frozen lint && pixi run --frozen test`, then
-  `convco check HEAD~1..HEAD`.
+- **One focused conventional commit per task.** The hooks are split by cost, so match your
+  rhythm to them:
+  - while committing: `pixi run --frozen fmt`. `pre-commit` adds taplo, biome and actionlint
+    over staged files only — no cargo, by design.
+  - before pushing: `pre-push` runs clippy, the repo-consistency and generated-workflow xtask
+    checks, and the whole-workspace test suite, in that order, stopping at the first failure.
+    Run `pixi run --frozen lint && pixi run --frozen test` yourself first when you want the
+    answer sooner, or when the change touches what only the full `lint` covers (`deny`,
+    `lint-sandbox-plan`, `lint-toml`, `lint-docs`).
+  - message check: `pixi run --frozen -- convco check HEAD~1..HEAD`.
 - **Complete the task file in its own format**: every AC `[x]`, status `Done`, bump
   `updated_date`, append `SECTION:NOTES` Implementation Notes and `SECTION:SUMMARY` Final
   Summary — following the task's exact existing section markers (no PLAN edits).
