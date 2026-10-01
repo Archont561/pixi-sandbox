@@ -4,8 +4,9 @@
 //! only then materialise copies under a project-local work directory, unpack them, and rename
 //! complete prefixes into place. The fetched branch is never modified.
 
-use crate::cli::{CargoConfigArg, RestoreArgs};
+use crate::cli::{CargoConfigArg, RestoreArgs, UserToolsPolicy};
 use crate::commands::support;
+use crate::user_tools::{self, LauncherChange, LauncherKind, PathChange, UserTools};
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::manifest::{Blob, Env, MANIFEST_DIR, Manifest, ToolEntry, Vendor};
 use pixi_sandbox_core::shard;
@@ -87,6 +88,22 @@ pub fn run(args: RestoreArgs) -> Result<()> {
     }
 
     write_sandbox_env(&project, &manifest, &environments)?;
+
+    // task-33: registration is gated on *two* verifications. The branch was verified before
+    // anything was written; this checks the tree that came out the other end against the
+    // manifest's per-file oracle (D13) — the same check `doctor --verify-restored` runs, so a
+    // restore that reports success has proven both sides before it touches the user's home.
+    // A failure here is a restore failure: it bails *before* the work dir is cleaned, because
+    // the staged packs are the evidence.
+    let restored = verify::verify_restored(
+        &manifest,
+        &branch,
+        &project,
+        Some(&environments),
+        args.work_dir.as_deref(),
+    );
+    report_restored_tree(&restored)?;
+
     // Everything under the work dir is scratch this command created, and on a success nothing
     // needs it: the installed environment holds its own directory entries and shares inodes
     // with the staged blobs, so removing the stage cannot orphan a byte. Issue #18 measured
@@ -95,12 +112,211 @@ pub fn run(args: RestoreArgs) -> Result<()> {
     // lives here and not in a drop guard.
     clean_work_dir(&work, &environments, vendored)?;
 
+    // The last step, and only after both verifications passed: make the manifest-verified
+    // `pixi` and `pixi-sandbox` copies persistently discoverable. A refusal here (an
+    // unmanaged collision in the user bin directory) does not undo the restore — the message
+    // says so and names the remedies — but it does fail the command, because exit 0 must mean
+    // "the tools are registered, or you asked us not to".
+    register_user_tools(
+        &manifest,
+        &tools_dir,
+        args.user_tools,
+        args.user_bin.as_deref(),
+        args.force,
+    )?;
+
     println!("restore complete");
     println!("  source {}/.pixi/sandbox-env.sh", project.display());
     println!("  pixi install --frozen --offline   # must be a no-op");
     if manifest.vendor.is_some() && !args.no_vendor {
         println!("  cargo build --offline             # must use the restored vendor tree");
     }
+    if matches!(args.user_tools, UserToolsPolicy::Register) {
+        println!(
+            "  pixi and pixi sandbox work in a new shell; sandbox-env.sh is only needed for \
+             direct cargo/rustc/bun use"
+        );
+    }
+    Ok(())
+}
+
+/// Print the restored-tree verdict in the same voice `doctor --verify-restored` uses, and
+/// fail closed on any mismatch. Schema-1 environments are reported `unverifiable`, never
+/// failed (D13): a published branch outlives the tool that packed it, and registration
+/// proceeds on branch verification alone for those.
+fn report_restored_tree(restored: &pixi_sandbox_core::verify::RestoredReport) -> Result<()> {
+    println!("verify restored tree");
+    for name in &restored.verified {
+        println!(
+            "  env {name}: checked against the manifest's file list — {} entry(ies), 0 failure(s)",
+            restored.report.files
+        );
+    }
+    for name in &restored.unverifiable {
+        println!(
+            "  env {name}: no per-file digests in this manifest (schema 1 predates the oracle) \
+             — content not verified; branch verification still passed"
+        );
+    }
+    if !restored.report.failures.is_empty() {
+        for failure in &restored.report.failures {
+            println!(
+                "  {}: {}: {}",
+                failure.path,
+                failure.kind.as_str(),
+                failure.detail
+            );
+        }
+        bail!(
+            "the restored project does not match the manifest ({} failure(s)); the work dir is \
+             kept for inspection",
+            restored.report.failures.len()
+        );
+    }
+    if !restored.verified.is_empty() {
+        println!("  OK — the restored tree matches the manifest");
+    }
+    Ok(())
+}
+
+/// task-33: register the restored `pixi` and `pixi-sandbox` for the user. `pixi` is the entry
+/// point and `pixi sandbox` resolves through PATH, so both get launchers; they point at the
+/// manifest-verified copies under `.pixi/tools/<platform>/` and nothing else (decision-2 §4.1:
+/// the `tools` entry is the canonical executable, never an environment-embedded copy).
+fn register_user_tools(
+    manifest: &Manifest,
+    tools_dir: &Path,
+    policy: UserToolsPolicy,
+    user_bin: Option<&Path>,
+    force: bool,
+) -> Result<()> {
+    if matches!(policy, UserToolsPolicy::Skip) {
+        println!("user tools: none registered (--user-tools skip; the project itself is complete)");
+        return Ok(());
+    }
+
+    let mut tools = Vec::new();
+    for name in user_tools::REGISTERED_TOOLS {
+        if manifest.tools.contains_key(name) {
+            tools.push((
+                name.to_string(),
+                tools_dir.join(tool_file_name(manifest, name)),
+            ));
+        }
+    }
+    if tools.is_empty() {
+        println!(
+            "user tools: none registered (the transport embeds neither pixi nor pixi-sandbox)"
+        );
+        return Ok(());
+    }
+    if !tools.iter().any(|(name, _)| name == "pixi-sandbox") {
+        println!("  note: this transport embeds no pixi-sandbox; `pixi sandbox` needs one on PATH");
+    }
+
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "cannot register user tools: neither HOME nor USERPROFILE is set\n\
+                 the restored project itself is complete; pass --user-tools skip, set HOME, \
+                 or pass --user-bin <dir>"
+            )
+        })?;
+    let bin_dir = match user_bin {
+        Some(dir) => support::absolute(dir)?,
+        None => user_tools::default_bin_dir(&home),
+    };
+
+    // The profile choice follows the detected shell on POSIX; Windows keeps its user PATH in
+    // the registry and gets no profile edit.
+    #[cfg(unix)]
+    let (profile, notice) = {
+        let detected = user_tools::detect_profile(&home, std::env::var_os("SHELL").as_deref());
+        (Some(detected.0), detected.1)
+    };
+    #[cfg(not(unix))]
+    let (profile, notice) = (None::<PathBuf>, None);
+
+    let service = UserTools {
+        bin_dir: &bin_dir,
+        profile: profile.as_deref(),
+        force,
+    };
+    let (launchers, path) = service
+        .register(LauncherKind::current(), &tools)
+        .with_context(
+            || "the restored project itself is complete, but registering user tools was refused",
+        )?;
+
+    println!("register user tools");
+    let mut retargeted = false;
+    for (name, change) in &launchers {
+        let launcher = bin_dir.join(user_tools::launcher_file_name(
+            name,
+            LauncherKind::current(),
+        ));
+        match change {
+            LauncherChange::Created => {
+                println!("  {name} -> {}", launcher.display());
+            }
+            LauncherChange::Retargeted { from } => {
+                retargeted = true;
+                println!(
+                    "  {name}: {} retargeted from {}",
+                    launcher.display(),
+                    from.display()
+                );
+            }
+            LauncherChange::AlreadyCurrent => {
+                println!("  {name}: {} (already current)", launcher.display());
+            }
+        }
+    }
+    if retargeted {
+        println!(
+            "  the most recently registered restore is now the user-level source of these tools"
+        );
+    }
+    match &path {
+        PathChange::Added { profile } => {
+            println!(
+                "  PATH: added {} to {}",
+                bin_dir.display(),
+                profile.display()
+            )
+        }
+        PathChange::Replaced { profile } => println!(
+            "  PATH: {} updated in {} (the bin directory changed)",
+            bin_dir.display(),
+            profile.display()
+        ),
+        PathChange::AlreadyPresent { profile } => {
+            println!(
+                "  PATH: {} already on PATH in {}",
+                bin_dir.display(),
+                profile.display()
+            )
+        }
+        PathChange::RegistryAdded => {
+            println!(
+                "  PATH: {} added to the user PATH (registry)",
+                bin_dir.display()
+            )
+        }
+        PathChange::RegistryAlreadyPresent => {
+            println!("  PATH: {} already on the user PATH", bin_dir.display())
+        }
+    }
+    if let Some(notice) = notice {
+        println!("  note: {notice}");
+    }
+    println!(
+        "  note: an already-running shell cannot be changed; open a new one, or run \
+         `export PATH=\"{}:$PATH\"` in this one",
+        bin_dir.display()
+    );
     Ok(())
 }
 

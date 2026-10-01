@@ -1,6 +1,6 @@
 # Decisions
 
-Twelve load-bearing decisions. Each is referenced by ID from code comments and from
+Fourteen load-bearing decisions. Each is referenced by ID from code comments and from
 `design.md`. If you disagree with one, bring a measurement — the numbers behind each are in
 `research/EVIDENCE.md`.
 
@@ -350,3 +350,77 @@ pixi/restore bookkeeping; and a malicious writer who rewrites payload *and* orac
 manifest consistently is still outside the model (no signatures yet, §7). The oracle costs one
 verification unpack per env at pack time (≈8.5 s and ~2 GiB of scratch, measured on the real
 transport) and a 1895-byte fixture blob.
+
+---
+
+## D14 — The standalone bootstrap is single and the helpers stay (task-24's measured decision)
+
+**Decision.** `pixi-sandbox` is the standalone transport/restore orchestrator and the *single*
+transport bootstrap: the verified binary travels exactly once, under
+`.pixi-sandbox/tools/<platform>/`, and every launcher path (generated `restore.sh`/`restore.ps1`,
+`scripts/restore.sh`, the bare-binary bootstrap, and the user-PATH registration) executes that
+manifest-verified copy — never a `PATH`-discovered or environment-embedded one. `pixi-pack` and
+`pixi-unpack` are not absorbed (D2/D3/D4 stand). The transport schema stays at 2 under the
+compatibility policy recorded in backlog decision-2 (readers accept 1..=N and refuse newer;
+additive `#[serde(default)]` fields may land without a bump; removals/semantic changes are a
+bump that must keep reading every older schema while published branches exist). An environment
+that depends on the `pixi-sandbox` package is payload, restored verbatim; `pack` warns about the
+duplication instead of refusing; promoting the environment's copy to the bootstrap is rejected.
+
+**Why.** One canonical executable per transport is what makes the launchers and the user-PATH
+registration honest: the bytes they run are the bytes the manifest verified. Absorbing the
+unpacker is a bad trade measured end to end, and the schema rule is what lets a published branch
+outlive the binary that packed it.
+
+**Evidence ✅.** Measured 2026-10-01 on the published `sandbox/developer-linux-64` branch
+(backlog doc-7): `pixi-unpack` costs 6.5 MiB **in-pack** of a 503.9 MiB branch (1.3 %) — the
+"15 MiB prize" is the file size, not the branch cost; `pixi` (32.9 MiB in-pack, 6.5 %) cannot be
+removed; absorbing the unpacker grows the binary by roughly what it saves (proxy: `pixi-unpack`
+is a 15.0 MiB static rattler front-end) and adds ~28 rattler crates to this repo's own vendored
+payload at 1.79 MiB raw / 0.17 MiB in-pack per crate; measured peak restore disk 2 746 MiB
+project / 4 098 MiB combined for a 1 830 MiB environment in 16 s — not a reported blocker. The
+bootstrap copy itself costs 1.7 MiB in-pack (0.34 %), so double-shipping it is cheap but
+pointless; git content-dedups the vendor tree (10 254 declared files → 9 663 objects,
+278.1 MiB declared → 142.2 MiB raw → 25.8 MiB in-pack) while restore still materialises every
+declared file.
+
+**What would change it.** The four triggers of doc-5 §5 (an unmaintained `pixi-unpack` pin, a
+real airlock blocked by peak restore disk — then prototype option C only, a supported rattler
+"install this local channel into this prefix" entry point, a versioned pack format), plus one
+new trigger: a real airlock blocked by *combined* disk (git store + checkout + restore), where
+doc-7's option C′ (restore from the git object store, no checkout; −845 MiB measured) is the
+first lever because it changes no binary and no format.
+
+## D15 — Turbo is deferred until the JS workspace graph earns it (task-26's threshold)
+
+**Decision.** No Turbo today. The bun workspace has one JS package (`docs`), no cross-package
+JS edge, and a ~27 s docs CI build job; Pixi already expresses the only task graph that exists
+(`docs-install → docs-build`, `docs-install → lint-docs`, reused by the pre-commit hook as
+`lint-docs-write`). Recorded as backlog decision-3 (deferred), evaluation in backlog doc-8.
+
+**Adoption threshold (all three, doc-8 §2).** (1) ≥ 3 JS packages in the bun workspace —
+two packages still fit two pixi tasks; (2) a real cross-package edge — some package imports
+another workspace package; (3) ≥ ~60 s of repeated JS work on the CI path a cache would
+prune, or a local feedback loop past ~10 s for unchanged packages. Any PR adding a second or
+third JS package re-checks the triggers; a hit reopens the decision rather than silently
+accumulating pixi task duplication.
+
+**If adopted.** Turbo is a root `package.json` devDependency pinned through `bun.lock` (like
+`@biomejs/biome`), never a conda/pixi dependency — the sandbox branch's payload budget is not
+spent on a CI-only tool. Invoked as `bun x turbo …` inside the `web` environment; pixi
+per-package tasks become thin `bun x turbo <task>` facades with `turbo.json` mirroring the
+pixi task names. Local `.turbo` cache for developers; published builds run `--force`; CI
+caches `.turbo` keyed on `bun.lock` + OS; **remote caching stays off** (third-party cache
+round-trips contradict the airlock posture — flipping it on is a new decision, not a config
+change).
+
+**Why.** With one package there is nothing to parallelise, deduplicate, or prune; Turbo would
+add a dependency and a second place where "what runs when" is expressed, in exchange for
+caching a build that already finishes faster than the runner takes to boot.
+
+**Evidence ✅.** Measured 2026-10-01 (doc-8 §1): `package.json` workspaces = `["docs"]`;
+docs workflow build job 27 s wall on `ubuntu-latest` including runner bootstrap (run
+36879920379); recent full runs ~30–80 s including the Pages deploy.
+
+**What would change it.** Meeting the §2 threshold, or committing to the docs site as the
+only JS package forever — then close as rejected instead of deferred.

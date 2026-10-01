@@ -4,13 +4,15 @@ Instructions for coding agents working **in this repository**. For the agent-fac
 ships *inside a sandbox branch*, see the generated `AGENTS.md` under `.pixi-sandbox/` in that
 branch — different audience, different file.
 
+**Start of session?** Follow `.agents/skills/session/SKILL.md` — it sequences the environment
+bootstrap on an airlocked machine, the backlog survey, and the session proposal.
+
 ## What this project is
 
 `pixi-sandbox` packs pixi environments into a git orphan branch and restores them on machines
 with no network. The design is settled and measured: **read `.knowledge/design.md` before
-proposing a different one**, and `.knowledge/decisions.md` for the short form. The eight
-decisions (D1–D11) are load-bearing; if you think one is wrong, bring a measurement, not an
-opinion.
+proposing a different one**, and `.knowledge/decisions.md` for the short form. The recorded
+decisions are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
 
 ## Repo map
 
@@ -28,7 +30,7 @@ opinion.
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
 | `feature.utils.actionlint` | runs `actionlint` from conda directly when validating workflows in the `default` environment |
 | `crates/xtask` | typed repository automation invoked by Pixi tasks — every repo-targeting job that used to be a shell script: `check-repository` (the D10-exempt repo lints; opt out with `stale-ref-allowed` on or above the line), `prepare-release` + `check-release-refs` + `version`, `smoke-conda-package` (the `package-smoke` task on every `release.yml` build leg), `check-conda-platforms` (all five platforms contributed exactly one package; reads `dist/conda/conda-<platform>/`, which is why those artifacts are downloaded *unmerged*), and `lint-generated-workflow`. One Rust runtime on every runner — the v0.3.6 release died on macOS's Bash 3.2 over a single bashism — and every policy is tested against tempdir fixtures, never this checkout |
-| `scripts/restore.sh` | one-liner offline reconstruction from orphan branch with PATH aliases; derives the branch from `.pixi-sandbox.toml` for the host platform. With `scripts/airlock-gate.sh` (which targets a *restored* sandbox under blocked egress, not this repo), the only shell left — both run where no Rust toolchain can be assumed, and `check-repository` holds them to the Bash 3.2 surface |
+| `scripts/restore.sh` | one-liner offline reconstruction from orphan branch with PATH aliases; derives the branch from `.pixi-sandbox.toml` for the host platform. Also selects the task-33 user-tool policy explicitly (`PIXI_SANDBOX_USER_TOOLS`, exported before the restore): a verified restore registers `pixi` + `pixi-sandbox` launchers in the user's home by default, `skip` opts out for CI. The policy travels as an environment variable, never a flag — the binary this script drives comes from the packed branch and may predate `--user-tools` (the airlock workflow proved that skew), while an unknown variable is simply ignored. With `scripts/airlock-gate.sh` (which targets a *restored* sandbox under blocked egress, not this repo), the only shell left — both run where no Rust toolchain can be assumed, and `check-repository` holds them to the Bash 3.2 surface |
 | `package.json` + `bun.lock` | the root bun workspace — `docs` is a member, so `docs-install` runs at the root — plus the repo-wide `backlog.md` / `skills` / `@biomejs/biome` devDependencies (`pixi run backlog`, `skills`, `lint-docs`) |
 
 ## Invariants (do not break these)
