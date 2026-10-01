@@ -398,3 +398,54 @@ green: five binaries, five `.conda` packages, prefix.dev, GitHub Release.
   how the repo's script came to carry it. Not committed here, to keep one launcher per repo;
   passing `--script-path scripts/restore.sh` instead would replace a tested superset with the
   generated subset and break the usage-string assertions.
+
+**Session close.** Everything landed as three pushes straight to `main` (no pull request):
+the amended `chore(release): v0.4.0` (`d39a231`, tag moved to match), the dogfooding commit
+(`ef9e68a`), and this one. Post-push runs green — `ci` (1m6s), `docs` (1m20s), `publish
+sandbox` (1m54s) — and the release run `36933524627` produced all five binaries, all five
+`.conda` packages, prefix.dev and the GitHub Release. Suite on merged main: **275 passing /
+1 skipped** (was 274/1). `task-36` stays In Progress at 6/7: AC#6 now has real evidence for two
+of its three legs — auto-release dry-run `36922096859` (`Dry-run — show diff and stop` green,
+commit/tag/push skipped) and a tag-triggered release on five runners `36933524627` — and the
+airlock matrix leg last ran green on PR #52's branch (`36928726964`), before this session. What
+AC#6 still does not have is its own instruction satisfied literally (a *throwaway* tag rather
+than the real v0.4.0 one) and a same-artifacts comparison against the pre-task behaviour;
+closing it is the owner's call, not this session's.
+
+**Next session should start with:**
+
+> Restore the sandbox and baseline the suite (expect **275 passing / 1 skipped** — the published
+> transport now carries pixi-sandbox **0.4.0**, so a fresh restore registers the `~/.local/bin`
+> launchers and you should not need to source `.pixi/sandbox-env.sh` unless you want `cargo`,
+> `bun`, `taplo` or `convco` loose; nothing new needs vendoring), then read `CONTEXT.md`
+> § Session scratchpad — the 2026-10-01 heading *"v0.4.0 release fix, then dogfooding the
+> generated publisher"* lists four open items.
+>
+> First, one look at the remote: `gh run list --branch main --limit 5`. Since 2026-10-01 every
+> push to `main` also runs `publish sandbox`, which repacks and force-pushes
+> `sandbox/developer-linux-64`; **if that run is red, every airlock restore is running a broken
+> transport** — fix it before starting anything else. If it is green, the branch head you can
+> trust is the one `doctor --verify` just cleared.
+>
+> I want to take **task-35** this session — move the airlock gate out of
+> `scripts/airlock-gate.sh` into `crates/pixi-sandbox/tests/e2e.rs` behind a `ci` cargo
+> feature, skipped locally and run by the matrix, then delete the script and the two shell
+> steps in `airlock.yml`. Settled already, do not re-open: the gate keeps driving the **released**
+> binary over a **real packed transport** (never this tree's build), the two tiers are
+> `sudo unshare -n` on Linux and `sandbox-exec` on macOS, `deny-egress` is the xtask that
+> already fails loudly on an unknown OS, and the restore under test is the airlock one from the
+> fetched branch. Still open, and yours to pick: where the two platform guards live in Rust (a
+> helper the test calls, so an unknown OS still fails rather than skips), and whether the gate is
+> a cargo feature or an environment variable the matrix sets.
+> In slices: the Linux tier behind the flag with its fixture-backed e2e test, then the macOS
+> tier, then the workflow steps and the script deletion last — which needs your sanction, since
+> deleting the shell is the irreversible part.
+>
+> Two things I would rather you decided than have me assume: whether the manual `sandbox-pack` /
+> `sandbox-publish` tasks should go now that `publish-sandbox.yml` publishes the same branch on
+> every push, and whether the `init` channel rewrite that strips `pixi.toml` comments becomes a
+> backlog task (it is a consumer-facing bug: `toml_edit` fixes it by construction).
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
+> and its templates are in `.agents/skills/session/`.

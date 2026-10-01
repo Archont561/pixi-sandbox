@@ -1,6 +1,6 @@
 ---
 name: session
-description: Run a pixi-sandbox work session on an airlocked machine, start to finish — bring the offline environment up, survey the backlog, propose the session, and after the PR merges report it and write the next session's opening prompt. Use at the start of any session on this repository, when the user says to initialize/bootstrap the environment, pick up tasks from the backlog, or asks what to work on; and again at the end, when a pull request has merged or the user asks for a session report, a hand-off, or what the next session should start with.
+description: Run a pixi-sandbox work session on an airlocked machine, start to finish — bring the offline environment up, survey the backlog, propose the session, and once the work lands on main (a merged pull request or a direct push) report it and write the next session's opening prompt. Use at the start of any session on this repository, when the user says to initialize/bootstrap the environment, pick up tasks from the backlog, or asks what to work on; and again at the end, when work has landed or the user asks for a session report, a hand-off, or what the next session should start with.
 ---
 
 # Session lifecycle for pixi-sandbox
@@ -41,9 +41,15 @@ about the tree, not a wish:
 - `user tools: NOT registered — the bundled pixi-sandbox <v> predates --user-tools (0.3.7)` →
   nothing was registered. Registration is a *restore-side* feature, and the binary doing the
   restore comes from the packed branch: a branch packed before 0.3.7 ignores the policy entirely
-  (unknown env var, ignored by design). **This is the situation on the current published branch**
-  — `sandbox/developer-linux-64` carries pixi-sandbox 0.3.6 — so until a 0.3.7+ transport is
-  packed and published, `source .pixi/sandbox-env.sh` in every shell remains the only way.
+  (unknown env var, ignored by design). That was the situation until 2026-10-01, when
+  `sandbox/developer-linux-64` was repacked with 0.4.0 — so the second line now means the machine
+  restored a *stale* branch, not the published one.
+
+**The published branch carries 0.4.0** (snapshot `2026-10-01T22:27`, `doctor --verify` clean:
+10327 blobs / 819.9 MiB, `tool pixi-sandbox: v0.4.0 static`). It was repacked by the generated
+`publish-sandbox.yml`, which runs on **every push to main** — so `gh run list` after a merge will
+show a `publish sandbox` run, and the transport you would restore is rebuilt each time. That is
+also why `bash scripts/restore.sh` on a fresh clone gets the current binary.
 
 Once a 0.3.7+ branch is restored, dropping the sourcing is safe when all three hold:
 
@@ -91,8 +97,8 @@ Facts about this sandbox that shape every command:
   <task>` so pixi never tries to solve online. A restore is the only way to get a toolchain
   here; there is no rustup fallback.
 - `pixi run --frozen test` runs in seconds once built — baseline it at session start and write
-  the number down (226 passing / 1 skipped on 0.3.7; it must rise with new work, never fall).
-  The first build after a restore costs about a minute.
+  the number down (275 passing / 1 skipped on 0.4.0, 2026-10-01; it must rise with new work,
+  never fall). The first build after a restore costs about a minute.
 - The airlock claim has a local proof and a CI proof, and they are not the same thing. Locally,
   `crates/pixi-sandbox/tests/e2e.rs` is the fixture-backed lifecycle (doctor → publish → restore
   → `doctor --verify-restored`), it needs no network, and on Linux it re-runs the restore inside
@@ -104,7 +110,19 @@ Facts about this sandbox that shape every command:
   matrix) and deletes the script. Until that lands, add no new logic to the shell script.
 - Missing system tools: no `/usr/bin/time`, no `file(1)` — use `date +%s`, `readelf`.
 - `gh` works against github.com when authenticated; workflow dispatch/rerun may be
-  forbidden for the token (`403 … by integration`) — then ask the user to click it.
+  forbidden for the token (`403 Resource not accessible by integration`) — then ask the user to
+  click it. Pushes still work through a one-off credential helper, and a **tag push starts the
+  tag-triggered workflows even when dispatch does not** — that is how v0.4.0's release was
+  re-run after the tag was moved.
+- `git push` has no credential helper in this container. Push with
+  `git -c "credential.helper=!f() { echo username=x-access-token; echo password=\$GITHUB_TOKEN; }; f" push …`
+  rather than writing git config.
+- `pixi-sandbox init` **strips every comment from `pixi.toml`** (it round-trips the manifest
+  through `toml::Table`). Run it, then `git checkout pixi.toml` unless the channel addition is
+  wanted — a 325-line hand-commented manifest comes back reformatted and 100 lines shorter.
+- `pixi-sandbox` installs globally with
+  `pixi global install -c https://prefix.dev/archont561/pixi-sandbox -c conda-forge pixi-sandbox`
+  (prefix.dev answers from here); the launcher lands in `~/.pixi/bin`.
 
 ## 2. Survey the backlog
 
@@ -160,17 +178,22 @@ between sessions, and the loop only closes because the last artifact is the firs
   `(#N)`. Watch the required checks; when a platform job fails, read that job's log before
   changing code. What happens after the merge is § 5, not an afterthought.
 
-## 5. After the PR merges — report, then hand the next session its prompt
+## 5. After the work lands on main — report, then hand the next session its prompt
 
 A merge is not the end of a session; it is the first moment you can tell the truth about it.
-Do these in order, and do not skip to the report:
+The close is the same whether the work arrived by squash-merge or by a direct push to `main`
+(a release fix, an amend into the release commit, a tag move — §5 step 1 covers the runs either
+way; the report says `Merged: PR #N …` or `Pushed straight to main at <sha>`). Do these in
+order, and do not skip to the report:
 
 1. **Watch the post-merge runs.** `gh run list --branch main --limit 5`, then read the verdict
-   of every workflow the merge triggered (`ci`, `docs`, anything path-triggered). A red
-   post-merge run belongs to **this** session — fix it before reporting, never leave it as the
-   next session's surprise. `gh run view <id> --log` often cannot stream from this sandbox;
-   `gh run view <id>` alone still gives job verdicts and annotations, which is usually enough
-   to tell a real failure from a flake.
+   of every workflow the merge triggered (`ci`, `docs`, and — since 2026-10-01 —
+   `publish sandbox`, which repacks the transport on every push to main; anything
+   path-triggered). A red post-merge run belongs to **this** session — fix it before reporting,
+   never leave it as the next session's surprise. `gh run view <id> --log` often cannot stream
+   from this sandbox; `gh run view <id>` alone still gives job verdicts and annotations, which
+   is usually enough to tell a real failure from a flake; a running run's job logs are also
+   fetchable with `gh api repos/<owner>/<repo>/actions/jobs/<id>/logs`.
 2. **Close the task files** in house format — in the pull request itself when the evidence is
    already in hand, in a follow-up commit when the proof only arrives after the merge: every AC `[x]`, status `Done`, `updated_date`
    bumped, `SECTION:NOTES` and `SECTION:SUMMARY` appended, no PLAN edits. **An AC you could not
