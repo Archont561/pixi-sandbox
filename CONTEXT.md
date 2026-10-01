@@ -173,3 +173,70 @@ went from 38 tasks to 23 behind one `xtask` task and argument-carrying tasks.
   would make the egress-denied gate reproducible on a developer's Linux box.
 - **Docs tasks could collapse further** (`docs-dev`/`docs-build` → one `docs <mode>` task). Left
   alone deliberately: both names appear in CI, docs and the README, and the churn buys one line.
+
+### 2026-10-01 — proposal: a relock bot, so a dependency can be declared offline
+
+**Problem.** Adding a dependency means editing `pixi.toml` (or a `Cargo.toml`) *and* re-solving
+the lockfile, and solving needs the network: prefix.dev and the crates.io index are exactly
+what an airlocked host cannot reach. `pixi add` solves before it writes, so it is not an option
+here either. The manifest edit is the part a human wants to make; the solve is machinery.
+
+**Shape.** Hand-edit the manifest, commit it with a stale lock, and let a workflow produce the
+lockfile. Two distinct commands, not one:
+
+| intent | command | churn |
+|:---|:---|:---|
+| make the lock satisfy a manifest I just edited | `pixi lock` | minimal — only what the new constraint forces |
+| move everything to the newest allowed versions | `pixi update` | every dependency that can move |
+| the Rust equivalent of the first | `cargo fetch` | resolves the new entry, leaves the rest pinned |
+| the Rust equivalent of the second | `cargo update` | bumps the workspace |
+
+`pixi lock --check` exits non-zero when the lock does not satisfy the manifest — that is the
+guard CI should carry, because `setup-pixi` defaults to `locked: true` and otherwise fails with
+a message about installation rather than about the manifest.
+
+**Proposed `.github/workflows/relock.yml`** (one line per step, SHA-pinned actions, the house
+rule). `pixi lock` runs as a bare one-liner, *not* `pixi run <task>`: a pixi task would first
+have to solve the very environment whose lock is stale.
+
+```yaml
+name: relock
+on:
+  pull_request:
+    paths: [pixi.toml, Cargo.toml, "crates/**/Cargo.toml"]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 1 * *"        # monthly refresh, the `pixi update` flavour
+concurrency:
+  group: relock-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  relock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<sha>        # v7.0.1 — ref: ${{ github.head_ref }}
+      - uses: prefix-dev/setup-pixi@<sha>   # v0.10.2 — with: run-install: false
+      - run: pixi lock                      # or `pixi update` on the schedule
+      - run: cargo fetch
+      - uses: stefanzweifel/git-auto-commit-action@<sha>   # commits pixi.lock + Cargo.lock
+      - run: gh workflow run ci.yml --ref ${{ github.head_ref }}
+```
+
+**The two traps.**
+
+1. A commit pushed with `GITHUB_TOKEN` does not trigger another workflow — deliberate loop
+   prevention. So the bot's lock commit leaves CI unrun unless the last step dispatches it
+   explicitly (`gh workflow run`, which *is* allowed with `GITHUB_TOKEN` because
+   `workflow_dispatch` is an explicit API call), or the push uses a GitHub App token / PAT.
+2. **A new dependency is not usable in the airlock until a transport carries it.** Merging the
+   lock only fixes the connected side; a restored host builds against `.pixi-sandbox/vendor`
+   and the packed conda envs. The full lane is: edit manifest → bot relocks → merge → pack and
+   publish a transport → restore. Any task that adds a dependency (task-38 and `rstest`, for
+   one) inherits that ordering.
+
+**Not agreed yet:** whether the bot pushes onto the PR branch (simple, single-maintainer, needs
+`contents: write` and breaks for fork PRs) or opens its own PR with
+`peter-evans/create-pull-request` (the shape prefix.dev documents, needs "Allow GitHub Actions
+to create and approve pull requests" and a non-default token for CI to run on it).
