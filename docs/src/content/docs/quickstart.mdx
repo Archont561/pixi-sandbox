@@ -10,8 +10,11 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 Connected project root:
 
+Connected hosts need Pixi installed. Install the CLI from its canonical package channel and initialise the project:
+
 ```bash
-curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSION__/install.sh | sh
+pixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox
+pixi-sandbox init
 ```
 
 After committing the generated files, letting GitHub publish the sandbox branch, and transferring
@@ -21,8 +24,7 @@ that branch into the airlock:
 ./restore.sh
 ```
 
-The first command downloads the proper release binary for the host, verifies `SHA256SUMS`, and
-scaffolds configuration, CI, and both restore launchers. The second performs a local `git archive`
+The connected-side commands install the native channel package and scaffold configuration, CI, and both restore launchers. The second performs a local `git archive`
 and restores without network access.
 
 ## Develop pixi-sandbox itself

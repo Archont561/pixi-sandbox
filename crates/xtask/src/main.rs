@@ -12,7 +12,6 @@
 
 mod action_shims;
 mod conda_platforms;
-mod install_template;
 mod prepare_release;
 mod release_refs;
 mod repo_checks;
@@ -62,13 +61,6 @@ enum Command {
         #[arg(default_value = ".publish/out")]
         out_dir: PathBuf,
     },
-    /// Render templates/install.sh into the `install.sh` release asset at the given tag.
-    RenderInstall {
-        /// The release tag, e.g. v0.4.0 — becomes the script's default VERSION.
-        tag: String,
-        /// Path to write, e.g. dist/install.sh.
-        output: PathBuf,
-    },
     /// Render setup/action.yml and publish/action.yml from the root action.yml.
     RenderActionShims {
         /// Render only this variant (`setup` or `publish`) to stdout or OUTPUT;
@@ -116,9 +108,6 @@ fn run() -> Result<()> {
         Command::CheckCondaPlatforms { dir } => conda_platforms::check(&root.join(dir)),
         Command::SmokeCondaPackage { out_dir } => {
             smoke::smoke_conda_package(&root, &root.join(out_dir))
-        }
-        Command::RenderInstall { tag, output } => {
-            install_template::render_to_file(&root, &tag, &root.join(output))
         }
         Command::RenderActionShims { variant, output } => {
             action_shims::emit(&root, variant.as_deref(), output.as_deref())

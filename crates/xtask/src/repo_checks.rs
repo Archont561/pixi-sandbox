@@ -14,8 +14,8 @@
 //!     manifest (the one file whose format demands a restated literal) equals Cargo.toml.
 //!  4. every third-party `uses:` is a full commit SHA with a trailing release label, so a
 //!     moved tag cannot change what CI runs.
-//!  5. the `install.sh` release asset renders from `templates/install.sh` at the tag, and no
-//!     committed copy exists to drift (task-2).
+//!  5. connected-host installation uses the canonical prefix.dev package channel in the
+//!     README, installation guide, and generated publishing workflow (task-32).
 //!  6. no workflow pins a literal `vX.Y.Z` release tag, so no proof silently keeps running
 //!     against the previous release after a cut.
 //!  7. task-12 — every published action path is a self-contained composite action and the two
@@ -61,7 +61,7 @@ pub fn check_repository(root: &Path) -> Result<Vec<Failure>> {
     platform_claims(root, &mut failures)?; // 2
     version_references(root, &mut failures)?; // 3
     action_pins(root, &mut failures)?; // 4
-    install_template(root, &mut failures)?; // 5
+    canonical_channel_install(root, &mut failures)?; // 5
     workflow_literal_tags(root, &mut failures)?; // 6
     published_actions(root, &mut failures)?; // 7
     bash32_surface(root, &mut failures)?; // 8
@@ -84,7 +84,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; the install one-liner is rendered from templates/; no workflow pins a literal release tag; every published action path is self-contained and matches action.yml; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; every published action path is self-contained and matches action.yml; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners" // stale-ref-allowed
     );
     Ok(())
 }
@@ -371,31 +371,32 @@ fn workflow_files(root: &Path) -> Vec<PathBuf> {
     files
 }
 
-// ---------------------------------------------------------------- 5. install one-liner
+// ---------------------------------------------------------------- 5. canonical connected-host install
 
-/// The `install.sh` release asset is RENDERED from templates/install.sh at the tag, not
-/// copied from a committed script (task-2 — the v0.3.0 asset shipped a v0.2.0 default). The
-/// render itself is a tested pure function now, so what is left to check here is the
-/// repository's half of the bargain: the template still renders for the declared version,
-/// and no committed, ready-to-run copy exists anywhere to drift.
-fn install_template(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
-    let template_path = root.join("templates/install.sh");
-    if !template_path.is_file() {
-        failures.push(Failure::new(
-            "templates/install.sh is missing — release.yml renders the install.sh asset from it",
-        ));
-    } else {
-        let template = crate::util::read(&template_path)?;
-        let declared = format!("v{}", crate::version::workspace_version(root)?);
-        if let Err(error) = crate::install_template::render(&template, &declared) {
+const CANONICAL_INSTALL: &str =
+    "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox";
+const CANONICAL_CHANNEL: &str = "https://prefix.dev/archont561/pixi-sandbox";
+
+/// TASK-32: connected hosts install one native package from the package-specific prefix.dev
+/// channel. Keep the primary README, installation guide, and generated workflow source aligned;
+/// release binaries remain a separate transport-bootstrap surface.
+fn canonical_channel_install(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
+    for path in ["README.md", "docs/src/content/docs/installation.mdx"] {
+        let text = crate::util::read(&root.join(path))?;
+        if !text.contains(CANONICAL_INSTALL) || !text.contains("pixi-sandbox init") {
             failures.push(Failure::new(format!(
-                "templates/install.sh does not render for the declared release ({declared}): {error:#}"
+                "{path} must show the canonical channel install followed by pixi-sandbox init (task-32)"
             )));
         }
     }
-    if root.join("scripts/install.sh").exists() || root.join("init.sh").exists() {
+    let generated =
+        crate::util::read(&root.join("crates/pixi-sandbox/src/generated/github_workflow.rs"))?;
+    if !generated.contains(CANONICAL_CHANNEL)
+        || !generated.contains("pixi global install")
+        || !generated.contains("pixi-sandbox")
+    {
         failures.push(Failure::new(
-            "a committed install.sh exists outside templates/ — it would ship a hardcoded VERSION default that lags the release (task-2)",
+            "the generated publishing workflow does not install pixi-sandbox from the canonical channel (task-32)",
         ));
     }
     Ok(())
@@ -578,7 +579,7 @@ mod tests {
         );
         write(
             "README.md",
-            "<img src=\"https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg\" alt=\"Platforms\">\n\nwin-64 is unsupported: conda-forge ships no bun build (D11).\n",
+            "<img src=\"https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg\" alt=\"Platforms\">\n\nwin-64 is unsupported: conda-forge ships no bun build (D11).\n\npixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox\npixi-sandbox init\n",
         );
         write(
             "crates/pixi-sandbox/pixi.toml",
@@ -586,8 +587,12 @@ mod tests {
         );
         write("crates/pixi-sandbox/src/lib.rs", "// clean\n");
         write(
-            "templates/install.sh",
-            "#!/bin/sh\nVERSION=${PIXI_SANDBOX_VERSION:-__VERSION__}\necho \"$VERSION\"\n",
+            "docs/src/content/docs/installation.mdx",
+            "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox\npixi-sandbox init\n",
+        );
+        write(
+            "crates/pixi-sandbox/src/generated/github_workflow.rs",
+            "https://prefix.dev/archont561/pixi-sandbox\npixi global install pixi-sandbox\n",
         );
         write(
             ".github/workflows/ci.yml",
@@ -732,19 +737,18 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_template_or_committed_installer_fires_check_5() {
+    fn canonical_channel_drift_fires_check_5() {
         let dir = valid_fixture();
-        fs::remove_file(dir.path().join("templates/install.sh")).expect("rm");
-        fs::write(dir.path().join("init.sh"), "#!/bin/sh\n").expect("init");
+        fs::write(
+            dir.path().join("docs/src/content/docs/installation.mdx"),
+            "pixi global install -c conda-forge pixi-sandbox\npixi-sandbox init\n",
+        )
+        .expect("installation docs");
         let found = headlines(dir.path());
         assert!(
             found
                 .iter()
-                .any(|h| h.contains("templates/install.sh is missing")),
-            "{found:?}"
-        );
-        assert!(
-            found.iter().any(|h| h.contains("outside templates/")),
+                .any(|h| h.contains("canonical channel install")),
             "{found:?}"
         );
     }

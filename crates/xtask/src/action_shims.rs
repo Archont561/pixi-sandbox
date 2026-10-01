@@ -13,7 +13,7 @@
 //! That leaves one honest option: each published action path is a complete composite action.
 //! Duplication is the mechanism, not the design — the copies are generated here and
 //! `xtask check-repository` re-renders them and fails on any drift, exactly as
-//! `templates/install.sh` + `render-install` make a stale release asset unconstructible.
+//! release binaries remain checksum-verified transport assets.
 //!
 //! The transform is deliberately tiny, so a reviewer can hold it in their head:
 //!   1. the root's own header (name/description/author/branding + its explanatory comment) is

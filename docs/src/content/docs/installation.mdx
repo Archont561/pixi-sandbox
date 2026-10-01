@@ -26,20 +26,20 @@ Pixi-sandbox is a pure Rust CLI with static musl binaries — no Python, no runt
   </TabItem>
 </Tabs>
 
-## Via Pixi Global (conda package)
+## Via Pixi Global (canonical)
+
+Connected hosts need Pixi installed. The supported installation path is the native package from the pixi-sandbox channel:
 
 ```bash
-# Build channel locally (needs pixi)
-pixi publish --path crates/pixi-sandbox --build-dir .pixi/bld --target-channel file:///tmp/channel
-pixi global install -c file:///tmp/channel -c conda-forge pixi-sandbox
-
-# Or from future conda-forge release
-pixi global install -c conda-forge pixi-sandbox
+pixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox
+pixi-sandbox init
 ```
+
+The package-specific channel installs this CLI. `pixi-sandbox init` separately configures the Archont561 namespace root for project dependencies.
 
 ## Via Release Binary (verified)
 
-Like `prefix-dev/setup-pixi`, we provide a checksum-verified setup action and one-liner.
+Standalone binaries and checksums remain available for transport bootstrap and pinned CI actions; they are not the connected-host installation path.
 
 <Tabs>
   <TabItem label="GitHub Action">
