@@ -156,7 +156,8 @@ Do not attempt package resolution, prefix.dev publication, GitHub Actions dispat
 ### 2026-10-01 — tooling session (lefthook split, workflow rule, restore findings)
 
 **Landed** (so: not proposals) — pre-commit stopped compiling Rust and the cargo gates moved to
-`pre-push`; `scripts/restore.sh` now reports the user-tool registration that actually happened;
+`pre-push`; `scripts/restore.sh` now reports the user-tool registration that actually happened
+**and is executed by 15 tests** (`tests/restore_script.rs`, where it had none);
 `shard::materialise` stages-and-renames so a running tool can be replaced; the pixi task table
 went from 38 tasks to 23 behind one `xtask` task and argument-carrying tasks.
 
@@ -167,11 +168,6 @@ went from 38 tasks to 23 behind one `xtask` task and argument-carrying tasks.
   `pixi` on a developer's PATH and every airlock session still sources `sandbox-env.sh`. A
   repack would switch that on. Not done because `publish` force-pushes the branch — a
   maintainer's call, not an agent's.
-- **Test `scripts/restore.sh` itself.** Nothing executes it: `tests/cli.rs` and
-  `tests/user_tools.rs` cover the launcher `init` *generates*, and `check-repository` only lints
-  the script's Bash-3.2 surface. The two defects fixed on 2026-10-01 were both found by hand.
-  A fixture-driven test (fake remote, fixture transport, `PIXI_SANDBOX_USER_TOOLS` both ways)
-  would cover branch derivation, the doctor/restore/verify sequence and the final report.
 - **`deny-egress` as an xtask** (sketched in task-36): one subcommand that re-execs under
   `unshare -n` / `sandbox-exec` would let the airlock workflow's Tier A be a one-line step and
   would make the egress-denied gate reproducible on a developer's Linux box.
