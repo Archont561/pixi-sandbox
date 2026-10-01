@@ -240,3 +240,41 @@ jobs:
 `contents: write` and breaks for fork PRs) or opens its own PR with
 `peter-evans/create-pull-request` (the shape prefix.dev documents, needs "Allow GitHub Actions
 to create and approve pull requests" and a non-default token for CI to run on it).
+
+### 2026-10-01 — session close
+
+**Landed** (PR #50, nine commits, rebased onto `main`): pre-push cargo gates; the honest
+user-tool report in `scripts/restore.sh`; stage-and-rename in `shard::materialise`; the pixi
+task table at 23 behind one `xtask` task; `tests/restore_script.rs` (15 tests) and the
+`materialise` error-path tests; `AGENTS.md` invariant 10 and this scratchpad; the session
+skill's templates in `standup-template.md`; task-38.
+
+**Open, in the order a session should consider them:** the relock bot above (one decision
+needed: push onto the PR branch, or open its own PR); **task-36** (high — 22 `run: |` blocks
+left, 8 of them in `release.yml`, and its AC#2 is stale because it mandates the `SANDBOX_*`
+convention `ci-pack`/`ci-doctor`/`ci-publish` used before those tasks were deleted);
+**task-35** (medium — airlock gate into `tests/e2e` behind a `ci` feature, which also removes
+the `airlock-gate.sh` exception from `fixtures.rs`); **task-38** (blocked until `rstest` is
+vendored); and the 0.3.7 repack, which is still a maintainer's call because `publish`
+force-pushes `sandbox/developer-linux-64`.
+
+**Baselines for the next session:** 226 tests passing / 1 skipped; `pixi run lint` is nine
+gates; the published transport is still packed by 0.3.6, so sourcing `sandbox-env.sh` remains
+mandatory on a restored host.
+
+**Prompt to start the next session with:**
+
+> Restore the sandbox and baseline the suite (expect 226 passing / 1 skipped), then read
+> `CONTEXT.md` § Session scratchpad — the last session left four open items there and a
+> decision I owe you on the relock bot.
+>
+> I want to take **task-36** this session, in slices, starting with `release.yml`: move the
+> binary staging/stripping, the SHA256SUMS generation and its completeness check into `xtask`
+> subcommands with tempdir-fixture tests, so each workflow step becomes a pinned `uses:` or a
+> one-line `pixi run xtask <subcommand>`. Before you start, rewrite the task's AC#2 — it still
+> mandates the `SANDBOX_*` environment convention that `ci-pack`/`ci-doctor`/`ci-publish` used,
+> and those tasks no longer exist; arguments with local defaults replaced them.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (note invariant 10: anything you
+> do not implement goes in `CONTEXT.md`, not into the files it speculates about), the session
+> procedure and its templates are in `.agents/skills/session/`.
