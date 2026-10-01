@@ -165,6 +165,12 @@ jobs:
         with:
           ref: ${{ inputs.version || github.ref }}
 
+      # The artifact gate and the install-asset render are xtask commands (one Rust runtime on
+      # every runner instead of per-platform shell dialects), so this job compiles xtask once
+      # with the runner's toolchain; the cache keeps that to seconds on repeat runs.
+      - name: Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
       - name: Download all binaries
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -199,7 +205,7 @@ jobs:
       # that turns into a red build instead of a quiet gap.
       - name: Require one Conda package per platform
         shell: bash
-        run: bash scripts/check-conda-platforms.sh dist/conda
+        run: cargo run -q -p xtask -- check-conda-platforms dist/conda
 
       - name: Generate SHA256SUMS
         shell: bash
@@ -238,7 +244,7 @@ jobs:
         shell: bash
         env:
           TAG: ${{ steps.tag.outputs.tag }}
-        run: bash scripts/render-install.sh "$TAG" dist/install.sh
+        run: cargo run -q -p xtask -- render-install "$TAG" dist/install.sh
 
       # prefix.dev uses the job's short-lived GitHub OIDC identity. Configure Repository
       # Access for this repository's `release.yml` workflow on archont561/pixi-sandbox;

@@ -1,10 +1,11 @@
-# GENERATED FILE — do not edit. Source: ../action.yml (rendered by scripts/render-action-shims.sh).
-# Regenerate with: bash scripts/render-action-shims.sh
+# GENERATED FILE — do not edit. Source: ../action.yml (rendered by `pixi run render-action-shims`).
+# Regenerate with: pixi run render-action-shims
 #
 # This is a full copy of the root action, not a shim that calls it: a relative `uses:` inside a
 # remote composite action resolves against the caller's workspace, so `uses: ../action.yml` made
-# every `Archont561/pixi-sandbox/publish@<ref>` caller fail at job setup (issue #37). Check 7 of
-# scripts/lint-repo-consistency.sh re-renders this file and fails if it has drifted from ../action.yml.
+# every `Archont561/pixi-sandbox/publish@<ref>` caller fail at job setup (issue #37). The repository
+# consistency gate (`pixi run lint-repo-consistency`) re-renders this file and fails if it has
+# drifted from ../action.yml.
 name: Publish Pixi sandbox bundle
 description: Install requested Pixi environments, pack with a verified release binary, verify, and publish one orphan branch. Use as Archont561/pixi-sandbox/publish@vX.
 author: pixi-sandbox

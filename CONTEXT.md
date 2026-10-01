@@ -73,7 +73,7 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 3. **Repin the published `init.sh` to v0.3.0 binaries** (backlog **task-11**). The v0.3.0 asset was
    cut before the repin landed, so the one-liner installs v0.2.0 binaries; re-uploading an asset
    needs `uploads.github.com`, which the airlock cannot reach. Superseded for future releases:
-   `templates/install.sh` is now rendered at the tag by `scripts/render-install.sh` rather than
+   `templates/install.sh` is now rendered at the tag by `xtask render-install` rather than
    stamped from a committed copy, so a published one-liner cannot default to a version other
    than its own.
 

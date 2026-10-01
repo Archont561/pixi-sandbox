@@ -8,8 +8,8 @@ branding:
 # One implementation, selected by `subpath`, and the only file to edit. `setup/action.yml` and
 # `publish/action.yml` make the public `owner/repo/{setup,publish}@ref` refs work, and they are
 # *generated copies* of this file with a different header and `subpath` default — run
-# `bash scripts/render-action-shims.sh` after editing here, or check 7 of
-# scripts/lint-repo-consistency.sh fails. They used to be two-line shims doing
+# `pixi run render-action-shims` after editing here, or the repository consistency gate
+# (`pixi run lint-repo-consistency`) fails. They used to be two-line shims doing
 # `uses: ../action.yml`, which can never work from a remote ref: a relative `uses:` inside a
 # composite action resolves against the caller's workspace, and `../` is rejected by the
 # reference parser outright, so every remote `setup@ref` caller died at job setup (issue #37,

@@ -5,9 +5,9 @@ name: auto-release
 # which builds the five static tier-1 binaries, publishes the Conda package to prefix.dev, and publishes the GitHub Release.
 #
 # It is deliberately split from `release.yml` (which stays the pure build-and-publish half) so
-# the version-bump policy lives in one reviewable place. All the file surgery is `scripts/
-# prepare-release.sh` (`pixi run prepare-release`), so the exact bump CI performs is the one a
-# maintainer can run and review locally.
+# the version-bump policy lives in one reviewable place. All the file surgery is the tested
+# `xtask prepare-release` command (`pixi run prepare-release`), so the exact bump CI performs
+# is the one a maintainer can run and review locally.
 #
 # Trigger it remotely — no local checkout required:
 #   gh workflow run auto-release.yml                       # auto bump from conventional commits
@@ -150,7 +150,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Stage what prepare-release.sh reported it changed, not a hand-kept list. The list used
+          # Stage what prepare-release reported it changed, not a hand-kept list. The list used
           # to be literal here, and it was correct right up until the repin step started rewriting
           # documentation: `git add` would have staged the manifests and dropped every one of the
           # ~90 doc references, producing a release commit that contradicts itself. Because the
@@ -159,7 +159,7 @@ jobs:
           # a file the script forgot to record is still a file the script should not have touched,
           # and `lint-repo-consistency` is the backstop for that.
           if [ ! -f .release-touched ]; then
-            echo "::error::prepare-release.sh did not write .release-touched — refusing to guess what to stage" >&2
+            echo "::error::prepare-release did not write .release-touched — refusing to guess what to stage" >&2
             exit 1
           fi
           while IFS= read -r f; do

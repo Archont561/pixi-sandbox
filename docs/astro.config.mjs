@@ -8,13 +8,14 @@ import icon from "astro-icon";
 // ---------------------------------------------------------------------------
 // The version these docs describe. Two sources, in order:
 //
-// 1. SANDBOX_VERSION from the environment — the path the pixi tasks use
-//    (`pixi run docs-build` exports it from scripts/version.sh). The version of
+// 1. SANDBOX_VERSION from the environment — an explicit caller override
+//    (`cargo run -p xtask -- version` prints the same value). The version of
 //    what you are reading about is decided by the tree you built from, never
 //    restated in the site.
-// 2. The root Cargo.toml — the same single source of truth, read directly, so a
-//    build started outside pixi (a bare `bun run build` in docs/) still shows
-//    the real version instead of a placeholder.
+// 2. The root Cargo.toml — the same single source of truth, read directly. This
+//    is the ordinary path for `pixi run docs-build` and a bare `bun run build`
+//    in docs/ alike: the `web` environment carries no cargo, so the config
+//    reads the manifest itself instead of leaning on a wrapper script.
 //
 // If neither resolves, the build throws. A docs site that quietly documents
 // `v__VERSION__` is worse than one that refuses to build.
