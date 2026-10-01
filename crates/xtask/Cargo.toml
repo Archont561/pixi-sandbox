@@ -15,6 +15,7 @@ pixi-sandbox = { path = "../pixi-sandbox", version = "0.3.7" }
 pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.3.7" }
 pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.3.7" }
 regex = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true }
 toml = { workspace = true }
 walkdir = { workspace = true }

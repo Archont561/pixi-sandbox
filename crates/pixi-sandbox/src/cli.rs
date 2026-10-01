@@ -316,8 +316,17 @@ pub struct PlanArgs {
     #[arg(long, requires = "envs", default_value = "sandbox")]
     pub branch_prefix: String,
 
-    /// Cargo-vendor policy for the ad-hoc target.
-    #[arg(long, requires = "envs", default_value_t = true)]
+    /// Cargo-vendor policy for the ad-hoc target. Value-taking (`--cargo-vendor false`) as
+    /// well as bare (`--cargo-vendor`, = true), because a `default_value_t = true` bool is
+    /// otherwise a SetTrue flag that can never be false — the airlock workflow's
+    /// `cargo-vendor: false` input was unreachable through this CLI until task-36 fixed it.
+    #[arg(
+        long,
+        requires = "envs",
+        default_value_t = true,
+        num_args = 0..=1,
+        default_missing_value = "true"
+    )]
     pub cargo_vendor: bool,
 }
 

@@ -1358,6 +1358,7 @@ dependencies = [
  "pixi-sandbox-core",
  "pixi-sandbox-git",
  "regex",
+ "serde_json",
  "tempfile",
  "toml",
  "walkdir",

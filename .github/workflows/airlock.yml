@@ -18,6 +18,12 @@
 #
 # Nothing here touches a real branch or a real remote: the publish step targets a bare repo
 # under the runner's own temp directory, so the proof is self-contained and safe on a PR.
+#
+# Every step is a pinned `uses:` or a one-line `pixi run` (task-36): the matrix emission, the
+# release-tag resolution, the pack orchestration, the branch fetch and the egress denial are
+# tested xtask commands (crates/xtask/src/airlock.rs). The two `scripts/airlock-gate.sh`
+# tiers are the last shell steps and the last multi-line exception — task-35 moves the gate
+# into the e2e suite and deletes them.
 
 name: airlock
 
@@ -110,15 +116,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      tag: ${{ steps.tag.outputs.resolved }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: project
           persist-credentials: false
 
-      # Built from source, not downloaded: the plan is what decides which runner this proof runs
-      # on, so it must be the plan this commit ships. The proof job separately installs the
-      # *released* binary, because a real airlock starts from a released asset.
+      # The plan binary is built from source, not downloaded: the plan is what decides which
+      # runner this proof runs on, so it must be the plan this commit ships. The proof job
+      # separately installs the *released* binary, because a real airlock starts from a
+      # released asset.
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           # The project is checked out into project/, not the job root. This is
@@ -136,30 +144,31 @@ jobs:
         working-directory: project
         run: pixi run -e default cargo build --release -q -p pixi-sandbox
 
+      # airlock-matrix invokes the plan binary (config mode, or override mode when `--envs`
+      # names a target), validates that `.include` is a non-empty array, and writes
+      # `matrix=` to $GITHUB_OUTPUT itself — the whole plan object, because the proof job
+      # reads `fromJSON(...).include` and every other key would become an illegal dimension.
       - name: Emit the native matrix
         id: plan
-        shell: bash
+        working-directory: project
+        run: pixi run xtask airlock-matrix -- --envs "${{ inputs.envs || '' }}" --platform "${{ inputs.platform || '' }}" --bundle "${{ inputs.bundle || '' }}" --branch-prefix "${{ inputs.branch-prefix || '' }}" --cargo-vendor "${{ inputs.cargo-vendor || '' }}"
+
+      # Resolved here, once, on the one job that already has the toolchain: the proof job
+      # consumes `needs.plan.outputs.tag` and stays free of a Rust build for everything the
+      # released binary can do itself.
+      #
+      # The tag is derived, not hardcoded. A literal here (`'v0.3.0'`) is stale the moment a release
+      # lands and nobody notices: the proof keeps exercising old binaries and reports green, which
+      # is the worst failure mode a proof can have. It is read from the checked-out Cargo.toml, the
+      # same declaration `prepare-release` stamps, so the two cannot disagree — confirmed against
+      # the releases API, because `auto-release` pushes the bump to main before the build exists.
+      # `vars.SANDBOX_RELEASE_VERSION` overrides it when a specific release should be exercised.
+      - name: Resolve the release tag to prove
+        id: tag
         working-directory: project
         env:
-          PLATFORM: ${{ inputs.platform || '' }}
-          ENVS: ${{ inputs.envs || '' }}
-          BUNDLE: ${{ inputs.bundle || '' }}
-          BRANCH_PREFIX: ${{ inputs.branch-prefix || '' }}
-          CARGO_VENDOR: ${{ inputs.cargo-vendor || '' }}
-        run: |
-          BIN=target/release/pixi-sandbox
-          if [ -n "$PLATFORM" ]; then
-            # Override mode: same binary, same runner table, same validation as a config plan.
-            # This is the only place a platform->runner mapping is written down, and it is not
-            # written down here.
-            matrix=$("$BIN" plan --bundle "${BUNDLE:-custom}" --envs "$ENVS" \
-              --platform "$PLATFORM" --branch-prefix "${BRANCH_PREFIX:-sandbox}" \
-              --cargo-vendor "${CARGO_VENDOR:-true}" --json)
-          else
-            matrix=$("$BIN" plan --json)
-          fi
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          echo "Airlock matrix: $matrix"
+          GH_TOKEN: ${{ github.token }}
+        run: pixi run xtask resolve-release-tag -- --repo "${{ github.repository }}" --override "${{ vars.SANDBOX_RELEASE_VERSION }}"
 
   proof:
     name: airlock ${{ matrix.platform }}
@@ -174,10 +183,6 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
     env:
-      PLATFORM: ${{ matrix.platform }}
-      ENVS: ${{ matrix.environments }}
-      BRANCH: ${{ matrix.branch }}
-      CARGO_VENDOR: ${{ matrix.cargo_vendor }}
       # `inputs` is null on `pull_request` and `schedule`, and in GitHub expressions
       # `null == false` is true — so the previous spelling, `inputs.block-network == false`,
       # resolved to 'false' on exactly the two triggers that actually fire, and Tier A was
@@ -191,111 +196,27 @@ jobs:
           path: project
           persist-credentials: false
 
-      # The publish action drives `pixi install --frozen` inside the project before packing,
-      # so pixi itself must be on PATH. `run-install: false` — the action does its own install,
-      # and this job must not build an environment the transport is then compared against.
+      # run-install: false and the empty `package` environment for every xtask step: the proof
+      # job solves no development environment (win-64 cannot solve `default` at all), and the
+      # xtask runtime needs only the Rust toolchain the runner carries — the same shape the
+      # release matrix's build legs use.
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           run-install: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: project
 
       # A real airlock begins with a checksum-verified released binary, so that is what the
       # proof uses — both to drive the pack and as the self-bootstrap embedded in the transport.
-      #
-      # The tag is derived, not hardcoded. A literal here (`'v0.3.0'`) is stale the moment a release
-      # lands and nobody notices: the proof keeps exercising old binaries and reports green, which
-      # is the worst failure mode a proof can have. It is read from the checked-out Cargo.toml, the
-      # same declaration `prepare-release.sh` stamps, so the two cannot disagree.
-      #
-      # It still cannot be `latest` and it still must be a real tag: `latest` costs an
-      # unauthenticated api.github.com call that hosted runners can share into a rate limit — which
-      # is how the first osx-arm64 proof died, in the resolution step rather than in anything about
-      # macOS. Deriving from Cargo.toml is free and reproducible. SANDBOX_RELEASE_VERSION overrides
-      # it when a specific release should be exercised.
-      - name: Resolve the release tag to prove
-        id: tag
-        shell: bash
-        env:
-          # The override stays a repository *variable*, which is what it was before: that is
-          # settable without editing a workflow, and silently moving it to an env var would break
-          # every existing setting. The step still needs the declared value from the checkout, so
-          # the two are combined here rather than in the expression.
-          OVERRIDE: ${{ vars.SANDBOX_RELEASE_VERSION }}
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          declared="v$(sed -n 's/^version = "\([^"]*\)".*/\1/p' project/Cargo.toml | sed 1q)"
-          if [ -z "$declared" ] || [ "$declared" = "v" ]; then
-            echo "::error::could not read the declared version from project/Cargo.toml" >&2
-            exit 1
-          fi
-
-          # An explicit override is a request, not a guess: honour it and let a 404 be a real error.
-          if [ -n "$OVERRIDE" ]; then
-            echo "resolved=$OVERRIDE" >>"$GITHUB_OUTPUT"
-            echo "proving $OVERRIDE (SANDBOX_RELEASE_VERSION override)" >>"$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          # `auto-release` pushes the version bump to main BEFORE it dispatches the release build,
-          # so for as long as that build takes the checkout declares a tag whose assets do not
-          # exist yet. Resolving to it would 404 and fail the proof for a reason that has nothing
-          # to do with the airlock. So confirm the tag against the releases API — one authenticated
-          # call, which the job token keeps clear of the shared rate limit that killed the first
-          # osx-arm64 proof — and fall back to the newest release that IS published.
-          # Capture-then-check, not `… || true`: on a 404 `gh api` prints the JSON error body
-          # to STDOUT (only the summary goes to stderr), so the old `$(… || true)` spelling
-          # captured `{"message":"Not Found",…}` as the resolved tag and the fallback below
-          # never ran — the proof then curl'd a URL with braces in it ("Malformed input to a
-          # URL function"). Unexercised until v0.3.6: that failed release was the first time a
-          # PR ran this step while the declared tag had no published release (PR #46).
-          published() {
-            local tag
-            if tag="$(gh api "repos/$REPO/releases/tags/$1" --jq '.tag_name' 2>/dev/null)"; then
-              printf '%s\n' "$tag"
-            fi
-          }
-          latest() {
-            local tag
-            if tag="$(gh api "repos/$REPO/releases/latest" --jq '.tag_name' 2>/dev/null)"; then
-              printf '%s\n' "$tag"
-            fi
-          }
-
-          resolved="$(published "$declared")"
-          if [ -z "$resolved" ]; then
-            resolved="$(latest)"
-            if [ -z "$resolved" ]; then
-              echo "::error::could not reach the releases API for $REPO" >&2
-              exit 1
-            fi
-            echo "::notice::$declared is declared but not published yet (mid-release?); proving the newest published release $resolved" >&2
-          fi
-          # A tag flows into a download URL; refuse anything that is not shaped like one.
-          case "$resolved" in
-            v[0-9]*) ;;
-            *)
-              echo "::error::resolved release tag '$resolved' is not a vX.Y.Z tag" >&2
-              exit 1
-              ;;
-          esac
-          echo "resolved=$resolved" >>"$GITHUB_OUTPUT"
-          echo "proving $resolved (declared $declared)" >>"$GITHUB_STEP_SUMMARY"
-
+      # The channel install is the documented installation path, and the version proof is the
+      # first thing the released binary does on this runner.
       - name: Install the released pixi-sandbox package
-        shell: bash
-        run: |
-          set -euo pipefail
-          pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox
-          pixi-sandbox --version
+        working-directory: project
+        run: pixi run -e package airlock-install-released
 
-      - name: Report the platform contract
-        run: |
-          echo "platform:  $PLATFORM"
-          echo "envs:      $ENVS"
-          echo "branch:    $BRANCH"
-          echo "vendor:    $CARGO_VENDOR"
-          echo "runner:    ${{ matrix.runner }}"
+      - name: Prove the released binary runs
+        run: pixi-sandbox --version
 
       # ---------------------------------------------------------------- pack and publish
       # Into a bare repo under the runner's temp dir. `publish` force-pushes an orphan branch,
@@ -304,37 +225,30 @@ jobs:
       - name: Create the throwaway remote
         run: git init -q --bare "${{ runner.temp }}/airlock-remote.git"
 
-      - name: Pack, verify, and publish to the throwaway remote
-        shell: bash
+      # airlock-pack installs every named environment frozen (the loop the shell did), finds
+      # the released binary on PATH, and packs with it as the self-bootstrap — the vendor flag
+      # is data from the matrix, which is why this is an xtask and not a plain task.
+      - name: Pack the transport with the released binary
         working-directory: project
-        env:
-          OUTPUT: ${{ runner.temp }}/airlock-transport
-          REMOTE: ${{ runner.temp }}/airlock-remote.git
-        run: |
-          set -euo pipefail
-          SELF_BIN=$(command -v pixi-sandbox)
-          if [ "$CARGO_VENDOR" = true ]; then
-            pixi-sandbox pack --repo-root . --envs "$ENVS" --output-dir "$OUTPUT" --fetch-tools --self-bin "$SELF_BIN" --cargo-vendor
-          else
-            pixi-sandbox pack --repo-root . --envs "$ENVS" --output-dir "$OUTPUT" --fetch-tools --self-bin "$SELF_BIN"
-          fi
-          pixi-sandbox doctor --branch-location "$OUTPUT" --verify
-          pixi-sandbox publish --input-dir "$OUTPUT" --branch-name "$BRANCH" --remote "$REMOTE"
+        run: pixi run -e package xtask airlock-pack -- --envs "${{ matrix.environments }}" --out "${{ runner.temp }}/airlock-transport" --cargo-vendor "${{ matrix.cargo_vendor }}"
 
+      - name: Verify the transport
+        working-directory: project
+        run: pixi run -e package airlock-doctor "${{ runner.temp }}/airlock-transport"
+
+      - name: Publish to the throwaway remote
+        working-directory: project
+        run: pixi run -e package airlock-publish "${{ runner.temp }}/airlock-transport" "${{ matrix.branch }}" "${{ runner.temp }}/airlock-remote.git"
+
+      # The developer-shaped fetch: fresh host repo, remote, one shallow fetch, linked
+      # worktree — git through pixi-sandbox-git inside the xtask (D9).
       - name: Fetch the published branch the way a developer would
-        shell: bash
-        run: |
-          set -euo pipefail
-          HOST="${{ runner.temp }}/airlock-host"
-          rm -rf "$HOST" && mkdir -p "$HOST"
-          cd "$HOST"
-          git init -q
-          git remote add origin "${{ runner.temp }}/airlock-remote.git"
-          git fetch -q --depth 1 origin "$BRANCH:$BRANCH"
-          git worktree add -q ../airlock-checkout "$BRANCH" --force
+        working-directory: project
+        run: pixi run -e package xtask airlock-fetch -- --remote "${{ runner.temp }}/airlock-remote.git" --branch "${{ matrix.branch }}" --host-dir "${{ runner.temp }}/airlock-host" --worktree "${{ runner.temp }}/airlock-checkout"
 
       - name: Verify every declared byte before trusting the checkout
-        run: 'pixi-sandbox doctor --branch-location "${{ runner.temp }}/airlock-checkout" --verify'
+        working-directory: project
+        run: pixi run -e package airlock-doctor "${{ runner.temp }}/airlock-checkout"
 
       # ---------------------------------------------------------------- restore
       # `restore` in place over a copy of the project, which is the situation the airlock page
@@ -342,57 +256,30 @@ jobs:
       # `PIXI_SANDBOX_USER_TOOLS=skip` is explicit (task-33): this is a shared CI runner, and
       # the proof must not edit the runner's home or profile. The policy travels as an
       # environment variable, not a flag, because the `pixi-sandbox` driven here is the one
-      # the published branch ships — it may predate `--user-tools`, and an unknown variable
-      # is ignored where an unknown flag is a hard error. The restore output must be
+      # the published branch ships — it may predate `--user-tools`, and an unknown variable is
+      # ignored where an unknown flag is a hard error. The restore output must be
       # identical either way — registration is a post-verification step, not payload.
+      - name: Copy the project for the restore
+        run: cp -r project "${{ runner.temp }}/restored"
+
       - name: Restore into a copy of the project
-        shell: bash
+        working-directory: project
         env:
           PIXI_SANDBOX_USER_TOOLS: skip
-        run: |
-          set -euo pipefail
-          cp -r project "${{ runner.temp }}/restored"
-          pixi-sandbox restore \
-            --branch-location "${{ runner.temp }}/airlock-checkout" \
-            --output-path "${{ runner.temp }}/restored" \
-            --envs "$ENVS" --force
+        run: pixi run -e package airlock-restore "${{ runner.temp }}/airlock-checkout" "${{ runner.temp }}/restored" "${{ matrix.environments }}"
 
       # ---------------------------------------------------------------- the gate
       # --transport hands the gate the extracted branch, so its integrity section can compare
       # the restored tree against the manifest's per-file digests (D13) instead of shape only.
+      # The two tiers are the last shell steps in any workflow: task-35 moves the gate into
+      # the e2e suite behind the `ci` feature and deletes both.
       - name: Tier B — gate with the network reachable
-        run: bash project/scripts/airlock-gate.sh "${{ runner.temp }}/restored" "$ENVS" --transport "${{ runner.temp }}/airlock-checkout"
+        run: bash project/scripts/airlock-gate.sh "${{ runner.temp }}/restored" "${{ matrix.environments }}" --transport "${{ runner.temp }}/airlock-checkout"
 
+      # deny-egress re-execs the gate under `sudo unshare -n` on Linux and `sudo sandbox-exec`
+      # with outbound denied on macOS, and fails loudly on any other OS — a proof that ran
+      # with the network reachable would be a green build that proves nothing.
       - name: Tier A — gate with egress denied
         if: ${{ env.BLOCK_NETWORK == 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          RESTORED="${{ runner.temp }}/restored"
-          case "$(uname -s)" in
-            Linux)
-              # A private network namespace: no route, no DNS, nothing to fall back to.
-              sudo unshare -n -- bash project/scripts/airlock-gate.sh "$RESTORED" "$ENVS" --transport "${{ runner.temp }}/airlock-checkout"
-              ;;
-            Darwin)
-              # macOS has no unshare; sandbox-exec with outbound denied is the equivalent.
-              sudo sandbox-exec -p '(version 1)(allow default)(deny network-outbound)' \
-                /bin/bash project/scripts/airlock-gate.sh "$RESTORED" "$ENVS" --transport "${{ runner.temp }}/airlock-checkout"
-              ;;
-            *)
-              echo "::error::no egress-denial mechanism known for $(uname -s)"
-              exit 1
-              ;;
-          esac
-
-      - name: Summarise
-        if: always()
-        run: |
-          {
-            echo "### airlock $PLATFORM"
-            echo ""
-            echo "- runner: \`${{ matrix.runner }}\`"
-            echo "- branch: \`$BRANCH\` (throwaway remote, discarded)"
-            echo "- tier B: gate with network reachable"
-            echo "- tier A: gate with egress denied"
-          } >> "$GITHUB_STEP_SUMMARY"
+        working-directory: project
+        run: pixi run -e package xtask deny-egress -- bash scripts/airlock-gate.sh "${{ runner.temp }}/restored" "${{ matrix.environments }}" --transport "${{ runner.temp }}/airlock-checkout"

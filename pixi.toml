@@ -196,6 +196,28 @@ dispatch-release = { args = [
 ], cmd = "gh workflow run release.yml --ref {{ tag }} -f version={{ tag }}" }
 
 # ---------------------------------------------------------------------------
+# The airlock proof (.github/workflows/airlock.yml, task-36): these run the RELEASED
+# pixi-sandbox — the proof is about published assets, not this tree's build — so they invoke
+# the global binary the job installs from the package channel, unlike the `sandbox-*` tasks
+# above, which build and run this tree. Arguments carry the workflow's paths (runner temp),
+# with the same shapes as the sandbox-* twins.
+# ---------------------------------------------------------------------------
+airlock-install-released = "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox"
+airlock-doctor = { args = [
+  { arg = "transport" },
+], cmd = "pixi-sandbox doctor --branch-location {{ transport }} --verify" }
+airlock-publish = { args = [
+  { arg = "transport" },
+  { arg = "branch" },
+  { arg = "remote" },
+], cmd = "pixi-sandbox publish --input-dir {{ transport }} --branch-name {{ branch }} --remote {{ remote }}" }
+airlock-restore = { args = [
+  { arg = "checkout" },
+  { arg = "dest" },
+  { arg = "envs" },
+], cmd = "pixi-sandbox restore --branch-location {{ checkout }} --output-path {{ dest }} --envs {{ envs }} --force" }
+
+# ---------------------------------------------------------------------------
 # The transport pipeline, locally: plan → pack → doctor → publish. These tasks exercise the
 # Rust CLI directly, so local runs and CI share the exact command surface. Every path is an
 # argument with the local default baked in, which is what replaced the `ci-*` twins: CI passes

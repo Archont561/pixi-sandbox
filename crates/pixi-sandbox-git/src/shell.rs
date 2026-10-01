@@ -499,6 +499,47 @@ impl ShellGit {
         self.run_text(&self.git(["--no-pager", "diff"]).cwd(root))
     }
 
+    /// Initialise a fresh repository at `root` — the airlock host starts as an empty repo
+    /// and only ever fetches into it (task-36 `airlock-fetch`).
+    pub fn init_repo(&self, root: &Path) -> Result<()> {
+        self.run(&self.git(["init", "-q"]).cwd(root)).map(|_| ())
+    }
+
+    /// Register `url` under `name` in the repository at `root`.
+    pub fn remote_add(&self, root: &Path, name: &str, url: &str) -> Result<()> {
+        self.run(&self.git(["remote", "add"]).arg(name).arg(url).cwd(root))
+            .map(|_| ())
+    }
+
+    /// Fetch `refspec` from `remote` at depth 1 into the repository at `root` — the shallow
+    /// fetch a developer's machine makes, which is the path the airlock proof exercises.
+    pub fn fetch_shallow(&self, root: &Path, remote: &str, refspec: &str) -> Result<()> {
+        self.run(
+            &self
+                .git(["fetch", "-q", "--depth", "1"])
+                .arg(remote)
+                .arg(refspec)
+                .cwd(root),
+        )
+        .map(|_| ())
+    }
+
+    /// Check `branch` out as a linked worktree at `target`.
+    pub fn worktree_add(
+        &self,
+        root: &Path,
+        target: &Path,
+        branch: &str,
+        force: bool,
+    ) -> Result<()> {
+        let mut command = self.git(["worktree", "add", "-q"]);
+        if force {
+            command = command.arg("--force");
+        }
+        self.run(&command.arg(path(target)).arg(branch).cwd(root))
+            .map(|_| ())
+    }
+
     /// `--stat` form of [`Self::worktree_diff`], for summaries.
     pub fn worktree_diff_stat(&self, root: &Path) -> Result<String> {
         self.run_text(&self.git(["--no-pager", "diff", "--stat"]).cwd(root))
