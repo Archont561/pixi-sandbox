@@ -4,7 +4,7 @@ title: Reduce every workflow step to an action or a one-line pixi task
 status: In Progress
 assignee: []
 created_date: '2026-10-01 19:10'
-updated_date: '2026-10-01 20:08'
+updated_date: '2026-10-01 20:16'
 labels:
   - ci
   - tooling
@@ -82,6 +82,8 @@ Slice 3 (airlock.yml) done: all nine multi-line run: blocks are gone; the only s
 New tested xtask subcommands in crates/xtask/src/airlock.rs: airlock-matrix (plan binary invoked with config or override argv, include-array validated, matrix= to GITHUB_OUTPUT, stdout locally), resolve-release-tag (override honored without API calls, declared-but-published confirmed via gh, newest-published fallback, shape guard, capture-then-check), airlock-pack (frozen env installs per matrix entry, released binary resolved on PATH, conditional vendor flag), airlock-fetch (init, remote add, shallow fetch, worktree through new pixi-sandbox-git primitives, D9), deny-egress (sudo unshare -n on Linux, sudo sandbox-exec with the outbound-denied profile on macOS, loud error otherwise). New pixi tasks: airlock-install-released, airlock-doctor, airlock-publish, airlock-restore. resolve-release-tag moved to the plan job so the toolchain is needed once on ubuntu, not per proof leg; the proof job runs every pixi step through -e package like the release matrix, so no development environment is ever solved on a proof runner.
 
 Slice 4 (the guard, AC#5) done: check-repository check 9 fails any run: block holding more than one logical command line. Text-based on purpose - a YAML parser would be a new registry dependency the airlock cannot take until a transport carries it, and the shape being policed is visible without one. What counts as one command: folded scalars (run: >-) fold to a single command and are never flagged; inside literal blocks, blanks and # comments are not commands and a trailing backslash continues a line, so a wrapped single command stays legal. The reviewed exception marker is multiline-run-allowed, honoured on the run: line, the line above it, or a comment inside the block. Four fixture tests cover firing, every legal single-command spelling, comments-not-commands, and all three marker placements; verified live against the real tree (passes: the three migration slices leave no multi-line block anywhere) and against a sabotaged ci.yml (fires with file, line, count and remedy). ACs 1-5 and 7 are checked; AC#6 stays open for the throwaway-tag dispatch on a real runner - the one proof this sandbox cannot produce.
+
+PR #51 evidence (real runners, not the sandbox): ci green in 1m12s; the airlock workflow ran on the PR via the crates/** trigger and its whole rewritten path passed on a native linux-64 runner in 3m13s - released-binary install, airlock-pack, doctor, publish to the throwaway remote, the developer-shaped airlock-fetch, restore, Tier B, and Tier A with egress actually denied through deny-egress/unshare. That is the airlock half of AC#6 on a real runner. What remains of AC#6 is the release/auto-release half: a throwaway-tag dispatch of release.yml (maintainer click, the release environment publishes real artifacts).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
