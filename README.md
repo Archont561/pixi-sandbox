@@ -61,7 +61,7 @@ so "builds here" and "restores offline there" are tracked separately —
 Connected hosts need [Pixi](https://pixi.sh) installed. Install from the canonical channel, then initialise the project:
 
 ```bash
-pixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox
+pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox
 pixi-sandbox init
 # commit .github/workflows/publish-sandbox.yml, pixi-sandbox.toml, and restore.sh (restore.ps1 on Windows)
 

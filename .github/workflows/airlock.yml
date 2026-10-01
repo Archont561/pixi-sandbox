@@ -286,7 +286,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox
+          pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox
           pixi-sandbox --version
 
       - name: Report the platform contract

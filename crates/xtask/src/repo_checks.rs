@@ -370,8 +370,7 @@ fn workflow_files(root: &Path) -> Vec<PathBuf> {
 
 // ---------------------------------------------------------------- 5. canonical connected-host install
 
-const CANONICAL_INSTALL: &str =
-    "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox";
+const CANONICAL_INSTALL: &str = "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox";
 const CANONICAL_CHANNEL: &str = "https://prefix.dev/archont561/pixi-sandbox";
 
 /// TASK-32: connected hosts install one native package from the package-specific prefix.dev
@@ -507,7 +506,7 @@ mod tests {
         );
         write(
             "README.md",
-            "<img src=\"https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg\" alt=\"Platforms\">\n\nwin-64 is unsupported: conda-forge ships no bun build (D11).\n\npixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox\npixi-sandbox init\n",
+            "<img src=\"https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg\" alt=\"Platforms\">\n\nwin-64 is unsupported: conda-forge ships no bun build (D11).\n\npixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox\npixi-sandbox init\n",
         );
         write(
             "crates/pixi-sandbox/pixi.toml",
@@ -516,7 +515,7 @@ mod tests {
         write("crates/pixi-sandbox/src/lib.rs", "// clean\n");
         write(
             "docs/src/content/docs/installation.mdx",
-            "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox pixi-sandbox\npixi-sandbox init\n",
+            "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox\npixi-sandbox init\n",
         );
         write(
             "crates/pixi-sandbox/src/generated/github_workflow.rs",
