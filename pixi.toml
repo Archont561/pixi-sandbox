@@ -182,10 +182,19 @@ ci-publish = "cargo run -p pixi-sandbox -- publish --input-dir $SANDBOX_TRANSPOR
 # directory" exactly like the `bun x backlog` task below. Handing the shim to bun explicitly runs it
 # with the bun runtime and needs nothing on PATH, and biome only ever execs the native binary from
 # it anyway.
-lint-docs = "bun node_modules/@biomejs/biome/bin/biome check docs"
+#
+# Both forms depend on `docs-install` because biome now arrives from bun.lock rather than from
+# conda: a fresh CI runner (or a fresh clone) has no node_modules at all, and the first version of
+# this task assumed conda would have laid the binary down. `bun install --frozen-lockfile` is a
+# no-op once installed, so the dependency costs the pre-commit hook milliseconds.
+lint-docs = { depends-on = [
+  "docs-install",
+], cmd = "bun node_modules/@biomejs/biome/bin/biome check docs" }
 # The write form the pre-commit hook uses (`lefthook.yml`), so the hook and the lint gate cannot
 # drift onto different biome invocations. `{staged_files}` becomes the task's arguments.
-lint-docs-write = "bun node_modules/@biomejs/biome/bin/biome check --write"
+lint-docs-write = { depends-on = [
+  "docs-install",
+], cmd = "bun node_modules/@biomejs/biome/bin/biome check --write" }
 
 # docs. One bun workspace at the repo root (package.json workspaces: ["docs"]), so the install
 # runs there and hoists into the root node_modules; `docs/` has no lockfile of its own any more.
