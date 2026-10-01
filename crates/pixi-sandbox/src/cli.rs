@@ -268,6 +268,17 @@ pub struct InitArgs {
     #[arg(long, default_value = ".github/workflows/publish-sandbox.yml")]
     pub github_workflow_path: PathBuf,
 
+    /// Lockfile-refresh workflow path, relative to the project root. The bot it generates
+    /// solves on the connected side for manifests edited where the network is not.
+    #[arg(long, default_value = ".github/workflows/relock.yml")]
+    pub relock_workflow_path: PathBuf,
+
+    /// Workflow the relock bot dispatches after pushing a lock commit, relative to
+    /// .github/workflows/. A GITHUB_TOKEN push triggers nothing, so this dispatch is the only
+    /// verdict the lock commit gets.
+    #[arg(long, default_value = "ci.yml")]
+    pub relock_ci_workflow: String,
+
     /// Airlock launcher path, relative to the project root. Defaults to restore.sh on Unix and
     /// restore.ps1 on Windows.
     #[arg(long)]

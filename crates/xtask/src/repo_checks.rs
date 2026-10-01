@@ -28,6 +28,9 @@
 //!     one command is embedded shell, which belongs in a pixi task (or an xtask subcommand
 //!     when it carries logic) — the rule exists so the workflows cannot re-grow the ~280
 //!     lines of per-dialect shell task-36 removed.
+//! 10. task-39 — `.github/workflows/relock.yml` is the committed render of the generator
+//!     `pixi-sandbox init` hands consumers, so the lane this repository runs is provably the
+//!     lane it ships; `xtask render-relock` is the only way to change it.
 
 use crate::util::{lines_without_opt_out, version_tag_re};
 use anyhow::{Result, bail};
@@ -69,6 +72,7 @@ pub fn check_repository(root: &Path) -> Result<Vec<Failure>> {
     workflow_literal_tags(root, &mut failures)?; // 6
     bash32_surface(root, &mut failures)?; // 8
     workflow_shape(root, &mut failures)?; // 9
+    generated_relock_is_current(root, &mut failures)?; // 10
     Ok(failures)
 }
 
@@ -88,7 +92,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render" // stale-ref-allowed
     );
     Ok(())
 }
@@ -587,6 +591,42 @@ fn count_commands(body: &[&str]) -> usize {
     commands
 }
 
+// ---------------------------------------------------------------- 10. the relock render is current
+
+/// task-39: the relock lane is generated, and this repository commits its own render so the
+/// artifact it runs is provably the artifact `pixi-sandbox init` writes for a consumer. Without
+/// this check the committed copy would drift the moment the pixi pin moves or the template
+/// changes, and the dogfooding claim would quietly become false — the v0.3.1 class of bug
+/// (issue #37), where a generated workflow nobody ran was broken for a whole release.
+fn generated_relock_is_current(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
+    let path = root.join(crate::workflow::RELOCK_PATH);
+    let expected = crate::workflow::relock_render(root)?;
+    let actual = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) => {
+            failures.push(Failure::with(
+                "the committed relock workflow is missing:",
+                vec![format!("{}: {error}", rel(root, &path))],
+                "run `pixi run xtask render-relock` to write it",
+            ));
+            return Ok(());
+        }
+    };
+    if actual != expected {
+        failures.push(Failure::with(
+            "the committed relock workflow is not the generator's current render:",
+            vec![format!(
+                "{}: {} line(s) committed vs {} rendered",
+                rel(root, &path),
+                actual.lines().count(),
+                expected.lines().count()
+            )],
+            "edit crates/pixi-sandbox/src/generated/relock_workflow.rs, never the workflow, then run `pixi run xtask render-relock`",
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{MULTI_RUN_ALLOWED, check_repository};
@@ -639,6 +679,10 @@ mod tests {
             "scripts/restore.sh",
             "#!/usr/bin/env bash\nset -euo pipefail\necho restore\n",
         );
+        write(
+            crate::workflow::RELOCK_PATH,
+            &crate::workflow::relock_render(root).expect("render the relock workflow"),
+        );
 
         dir
     }
@@ -649,6 +693,60 @@ mod tests {
             .into_iter()
             .map(|f| f.headline)
             .collect()
+    }
+
+    #[test]
+    fn a_stale_committed_relock_workflow_fires_check_10() {
+        let dir = valid_fixture();
+        let path = dir.path().join(crate::workflow::RELOCK_PATH);
+        let current = fs::read_to_string(&path).expect("render");
+        // The drift that matters in practice: someone edits the workflow instead of the
+        // template it is rendered from.
+        fs::write(
+            &path,
+            current.replace("- run: pixi lock\n", "- run: pixi lock --json\n"),
+        )
+        .expect("sabotage");
+
+        let found = headlines(dir.path());
+        assert!(
+            found
+                .iter()
+                .any(|h| h.contains("not the generator's current render")),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_missing_relock_workflow_names_the_command_that_writes_it() {
+        let dir = valid_fixture();
+        fs::remove_file(dir.path().join(crate::workflow::RELOCK_PATH)).expect("remove");
+
+        let failures = check_repository(dir.path()).expect("checks run");
+        let failure = failures
+            .iter()
+            .find(|f| f.headline.contains("committed relock workflow is missing"))
+            .expect("check 10 fires");
+        assert!(
+            failure
+                .hint
+                .as_ref()
+                .is_some_and(|hint| hint.contains("xtask render-relock")),
+            "{}",
+            failure.headline
+        );
+    }
+
+    /// The render must satisfy check 9 unaided: that is the property that lets this repository
+    /// commit a generated workflow at all, and it is the reason the relock template is written
+    /// as one-line steps instead of the publisher's blocks.
+    #[test]
+    fn the_committed_render_needs_no_multiline_exemption() {
+        let dir = valid_fixture();
+        let render =
+            fs::read_to_string(dir.path().join(crate::workflow::RELOCK_PATH)).expect("render");
+        assert!(!render.contains(MULTI_RUN_ALLOWED), "{render}");
+        assert_eq!(headlines(dir.path()), Vec::<String>::new());
     }
 
     #[test]

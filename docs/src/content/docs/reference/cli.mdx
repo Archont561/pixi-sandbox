@@ -192,17 +192,31 @@ Accepts transport dir, `.pixi-sandbox/envs/<env>/pack` dir, or bare pack dir. Le
 
 ## init
 
-Generate the reviewed project configuration, a reusable GitHub Actions publisher, and exactly
-one launcher for the current platform (`restore.sh` on Unix, `restore.ps1` on Windows):
+Generate the reviewed project configuration, a reusable GitHub Actions publisher, a lockfile
+relock bot, and exactly one launcher for the current platform (`restore.sh` on Unix,
+`restore.ps1` on Windows):
 
 ```bash
 pixi-sandbox init
 pixi-sandbox init \
   --github-workflow-path .github/workflows/publish-sandbox.yml \
+  --relock-workflow-path .github/workflows/relock.yml \
+  --relock-ci-workflow ci.yml \
   --script-path restore.sh \
   --config pixi-sandbox.toml
 pixi-sandbox init --branch sandbox/developer-linux-64 --force
 ```
+
+`relock.yml` closes the one gap an airlock cannot close itself: a manifest edit is a text edit
+any disconnected host can make, but the solve behind it needs prefix.dev and the crates.io
+index. On a pull request its guard job runs `pixi lock --check` ahead of any environment
+install, and when the lock has drifted the second job refreshes `pixi.lock` (and `Cargo.lock`,
+when the plan vendors crates) onto the branch as `pixi-sandbox[bot]` with a conventional
+`chore(lock):` commit, then dispatches `--relock-ci-workflow` explicitly — a `GITHUB_TOKEN`
+push starts no workflow, so without that dispatch the lock commit would never be tested. It
+solves with the pixi version pinned in the embedded tool catalogue, so the lockfile it writes
+is one the pixi inside a transport can read. A fork pull request cannot be pushed to and the
+job says so instead of failing obscurely.
 
 Without `--config`, init prefers `pixi-sandbox.toml`, falls back to an existing
 `.pixi-sandbox.toml`, and creates the preferred name when neither exists. Generated workflow and

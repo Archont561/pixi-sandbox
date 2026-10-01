@@ -3,7 +3,10 @@
 use crate::cli::InitArgs;
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
-use pixi_sandbox::generated::{GENERATED_MARKER, GithubWorkflowOptions, render_github_workflow};
+use pixi_sandbox::generated::{
+    GENERATED_MARKER, GithubWorkflowOptions, RelockWorkflowOptions, embedded_pixi_pin,
+    plan_vendors_cargo, render_github_workflow, render_relock_workflow,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -44,6 +47,7 @@ impl LauncherKind {
 pub fn run(args: InitArgs) -> Result<()> {
     let root = support::existing_dir(&args.project_root, "--project-root")?;
     let workflow = resolve(&root, &args.github_workflow_path);
+    let relock = resolve(&root, &args.relock_workflow_path);
     let config = select_config(&root, args.config.as_deref());
     let config_reference = project_reference(&root, &config);
     let launcher_kind = LauncherKind::current();
@@ -53,15 +57,21 @@ pub fn run(args: InitArgs) -> Result<()> {
         .unwrap_or_else(|| launcher_kind.default_path());
     let script = resolve(&root, script_argument);
 
-    if workflow == script || workflow == config || script == config {
+    let generated = [&workflow, &relock, &script, &config];
+    if generated
+        .iter()
+        .enumerate()
+        .any(|(index, path)| generated[index + 1..].contains(path))
+    {
         bail!(
-            "generated workflow, launcher, and config paths must be distinct (workflow {}, launcher {}, config {})",
+            "generated workflow, relock workflow, launcher, and config paths must be distinct (workflow {}, relock {}, launcher {}, config {})",
             workflow.display(),
+            relock.display(),
             script.display(),
             config.display()
         );
     }
-    for path in [&workflow, &script] {
+    for path in [&workflow, &relock, &script] {
         ensure_replaceable(path, args.force)?;
     }
 
@@ -78,6 +88,15 @@ pub fn run(args: InitArgs) -> Result<()> {
         write(&config, &default_config(current_platform()?))?;
     }
     write(
+        &relock,
+        &render_relock_workflow(RelockWorkflowOptions {
+            pixi_version: &embedded_pixi_pin()
+                .context("the embedded tools lock declares no pixi pin")?,
+            cargo: plan_vendors_cargo(&config),
+            ci_workflow: &args.relock_ci_workflow,
+        }),
+    )?;
+    write(
         &script,
         &launcher_kind.render(&args.branch, &config_reference),
     )?;
@@ -88,6 +107,10 @@ pub fn run(args: InitArgs) -> Result<()> {
     println!(
         "generated GitHub sandbox workflow at {}",
         workflow.display()
+    );
+    println!(
+        "generated lockfile-refresh workflow at {}",
+        relock.display()
     );
     println!("using sandbox config at {}", config.display());
     println!("generated offline launcher at {}", script.display());
