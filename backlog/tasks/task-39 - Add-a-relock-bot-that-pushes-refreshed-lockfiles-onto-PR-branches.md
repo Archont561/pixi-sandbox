@@ -4,7 +4,7 @@ title: Add a relock bot that pushes refreshed lockfiles onto PR branches
 status: To Do
 assignee: []
 created_date: '2026-10-01 18:36'
-updated_date: '2026-10-01 18:40'
+updated_date: '2026-10-01 21:05'
 labels:
   - ci
   - tooling
@@ -13,6 +13,9 @@ dependencies: []
 references:
   - .github/workflows/relock.yml
   - .github/workflows/ci.yml
+  - crates/pixi-sandbox/src/generated/relock_workflow.rs
+  - crates/pixi-sandbox/src/commands/init.rs
+  - crates/xtask/src/repo_checks.rs
   - pixi.toml
   - Cargo.toml
   - CONTEXT.md
@@ -31,11 +34,11 @@ Adding a dependency means editing pixi.toml (or a Cargo.toml) and re-solving the
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 .github/workflows/relock.yml exists and obeys the house step rule: every step is a SHA-pinned uses: or a one-line run:, and pixi lock runs as a bare one-liner rather than pixi run <task> — a pixi task would first have to solve the very environment whose lock is stale; triggers on pull_request with paths pixi.toml, Cargo.toml, crates/**/Cargo.toml, plus workflow_dispatch
+- [ ] #1 .github/workflows/relock.yml is the committed render of a new pixi-sandbox generator (render_relock_workflow, beside the publisher template that pixi-sandbox init already writes), and check-repository fails when the committed file and a fresh render differ, with a remedy naming the command that re-renders it; the render obeys the house step rule unaided — every step is a SHA-pinned uses: or a one-line run:, with pixi lock as a bare one-liner rather than pixi run <task> (a pixi task would first have to solve the very environment whose lock is stale) — so unlike the publisher it needs no multiline-run-allowed exemption; it stamps the pixi version from the embedded tools lock, so the bot cannot write a lockfile the pixi a transport carries is unable to read; it triggers on pull_request and workflow_dispatch, and the relock job is gated on the guard job's verdict rather than on a paths list, so a stale lock arriving by any route is caught
 - [ ] #2 a PR that changes a manifest and leaves the lock unsatisfied gets one commit pushed onto its branch refreshing pixi.lock and Cargo.lock (cargo fetch for the Cargo side), authored as pixi-sandbox[bot] <41898282+github-actions[bot]@users.noreply.github.com> (the github-actions app's noreply address, so the commit renders with the bot avatar) with a conventional chore(lock) message so convco accepts it when it lands on main; a PR whose lock already satisfies the manifest gets no commit, and a per-PR concurrency group with cancel-in-progress prevents a raced push
 - [ ] #3 after pushing, the bot dispatches ci.yml on the PR head (gh workflow run) — the GITHUB_TOKEN push itself triggers nothing, so the explicit dispatch is the only red or green signal the lock commit ever gets
 - [ ] #4 on a fork PR the token cannot push to the head branch; the workflow fails loudly with an error naming that limitation rather than silently leaving a stale lock
-- [ ] #5 ci.yml gains a pixi lock --check guard so a stale lock fails with a message about the manifest — setup-pixi otherwise fails with a message about installation, verified once by pushing a throwaway branch that edits a manifest without its lock
+- [ ] #5 the lock guard is a job of its own in relock.yml, running pixi lock --check on every pull request behind a setup-pixi with run-install: false, so it reports before any environment is installed and a stale lock fails with a message about the manifest rather than setup-pixi's message about installation; being a separate job is what buys that ordering, so ci.yml itself stays unchanged; verified once by pushing a throwaway branch that edits a manifest without its lock
 - [ ] #6 the dependency lane is documented once for contributors: edit the manifest, push, let the bot relock, merge — and a new dependency is still not usable on an airlocked host until a transport that carries it is packed and published
 - [ ] #7 pixi run lint and pixi run test are green, and one real PR demonstrates the three paths: lock refreshed and pushed, no-op on an already-satisfied lock, and the explicit ci.yml dispatch
 <!-- AC:END -->
