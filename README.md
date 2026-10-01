@@ -322,7 +322,7 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `scripts/restore.sh` | One-liner offline reconstruction with PATH aliases; branch derived from `.pixi-sandbox.toml`; selects the user-tool registration policy explicitly |
 | `.pixi-sandbox.toml` | Reviewed publish plan: bundles, platforms, branch prefix, runner overrides |
 | `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals, opencode via `setup-opencode` |
-| `lefthook.yml` | Git hooks — every hook calls a pixi task so hooks and CI cannot drift |
+| `lefthook.yml` | Git hooks — every hook calls a pixi task so hooks and CI cannot drift; `pre-commit` stays formatter-only (no cargo), every Rust gate runs once at `pre-push` |
 | `docs/` | Starlight + astro-icon + Iconify docs (12 pages) |
 | `package.json` + `bun.lock` | Root bun workspace: `docs` member + repo-wide `backlog.md` / `skills` devDependencies |
 | `.knowledge/` | Open Knowledge Format: decisions D1–D11, design, benchmarks |
