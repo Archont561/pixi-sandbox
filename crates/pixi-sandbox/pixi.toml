@@ -13,7 +13,12 @@
 name = "pixi-sandbox-build"
 preview = ["pixi-build"]
 channels = ["https://prefix.dev/conda-forge"]
-platforms = ["linux-64", "osx-arm64"]
+# One entry per platform the release matrix has a native runner for (task-23). `pixi publish`
+# builds for its *current* platform, so a missing entry would make a native runner refuse the
+# build rather than silently ship nothing. This is deliberately NOT the root `[workspace]
+# platforms` list: the root environment carries the conda-forge `bun` dependency, which has no
+# win-64 build, so the root list stays narrower than what the packaged binary supports.
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"]
 
 [package]
 name = "pixi-sandbox"

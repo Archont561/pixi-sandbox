@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@arena'
 created_date: '2026-10-01 08:33'
-updated_date: '2026-10-01 08:35'
+updated_date: '2026-10-01 10:25'
 labels:
   - release
   - ci
@@ -26,7 +26,7 @@ The v0.3.3 release workflow failed at the Build Conda package step (exit 101, 17
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The package task passes absolute build and target dirs (PIXI_PROJECT_ROOT form, per the design 6 paths-from-environment rule)
-- [ ] #2 pixi run package completes locally in the restored environment and produces .publish/out/*.conda
+- [x] #2 pixi run package completes locally in the restored environment and produces .publish/out/*.conda
 - [x] #3 The task output dirs are gitignored so a local run leaves nothing committable
 - [ ] #4 A release re-run on a ref containing the fix can complete without the panic (verified by the local run plus the workflow steps that consume dist/*.conda)
 <!-- AC:END -->
@@ -45,4 +45,6 @@ Root cause confirmed by local reproduction: pixi 0.81.0 panicked at crates/pixi_
 Verification: pixi run package now passes argument validation and proceeds into build-backend initialisation - the panic is gone. The run then stops in THIS sandbox at the conda gateway (prefix.dev/conda-forge repodata: tls handshake eof) because the host has the airlock egress profile; an online CI runner does not. So the .conda build itself must be proven by the release re-run, not here.
 
 Watch-out for the re-run: the NEW step after the build (pixi upload prefix --channel archont561/pixi-sandbox with OIDC attestation) requires prefix.dev Repository Access to be configured for the release.yml workflow of this repository - the workflow comment says so explicitly. If that is not configured, the release will get past the build and fail at the prefix.dev upload instead.
+
+AC#2 proven in this environment on 2026-10-01: prefix.dev/conda-forge reachable (HEAD 200) and pixi run package completed end-to-end in ~89s, publishing .publish/out/pixi-sandbox-0.3.5-ha35fb5c_0.conda (3.32 MiB). The earlier TLS handshake eof blocker does not reproduce. AC#4 still needs the tagged release re-run on CI.
 <!-- SECTION:NOTES:END -->

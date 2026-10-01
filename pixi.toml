@@ -6,9 +6,12 @@ channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64"]
 
 # ---------------------------------------------------------------------------
-# One environment (`default`) built from layered features: a change to the rust
-# toolchain, the docs toolchain or the lint utilities stays reviewable on its own.
-# Everything below was checked against conda-forge (see .knowledge/decisions.md D8).
+# One development environment (`default`) built from layered features: a change to the rust
+# toolchain, the docs toolchain or the lint utilities stays reviewable on its own. Everything
+# below was checked against conda-forge (see .knowledge/decisions.md D8).
+#
+# The second environment, `package`, is deliberately empty and is the only exception — see
+# `[environments]` below for why packaging needs an environment that resolves nowhere.
 #
 # Direct dependencies are pinned exactly (`=version`, not `*`). The sandbox branch is
 # published from `pixi.lock` and airlock-restored offline, so a wildcard would let the
@@ -22,11 +25,14 @@ cargo-nextest = "=0.9.144"
 cargo-llvm-cov = "=0.9.1"
 cargo-deny = "=0.20.2"
 
-[feature.docs.dependencies]
-biome = "=2.5.14"
-# `bun` has no win-64 build on conda-forge (verified with `pixi lock`: "No candidates were
-# found for bun *"). That used to force a per-target dependency block; now that win-64 is out
-# of `[workspace] platforms`, bun resolves for every platform we build on and can stay here.
+[feature.web.dependencies]
+# The JavaScript toolchain (`bun` plus the docs site and repo dev tools it installs) lives in
+# its own feature so the cross-platform `default` environment never has to solve it. `bun` has
+# no win-64 build on conda-forge (verified with `pixi lock`: "No candidates were found for bun
+# *"), and even on the platforms that do have it, an airlock restoring the published bundle has
+# no use for a docs toolchain. `biome` is no longer a conda dependency at all: it is a
+# `package.json` devDependency, so the JS tools install from the committed `bun.lock` instead
+# of a second, separately-pinned conda source.
 bun = "=1.3.11"
 
 [feature.utils.dependencies]
@@ -47,14 +53,29 @@ rattler-index = "=0.31.5"
 
 [environments]
 # `default` is pixi's implicit environment, so a task runs as `pixi run <task>` —
-# no `-e` flag in a shell, a git hook or a workflow step. It carries every feature,
-# which is also what the published sandbox branch packs (`--envs default`).
-default = ["rust", "utils", "docs", "sandbox"]
+# no `-e` flag in a shell, a git hook or a workflow step. It carries the features a developer
+# or the published sandbox branch actually needs, and deliberately NOT `web`: bun (and the node
+# tooling it installs) is a win-64 gap and dead weight in the airlock, so it must not be part of
+# the environment `--envs default` packs.
+default = ["rust", "utils", "sandbox"]
+# The JavaScript toolchain. Bun-consuming tasks are declared under `[feature.web.tasks]`, so
+# pixi runs them here even when invoked from `default` (e.g. `lint` -> `lint-docs`); callers who
+# want the environment explicitly can still write `pixi run -e web <task>`. Not named `docs`
+# any more because it also carries the repo-wide dev tools (`backlog`, `skills`) and opencode.
+web = ["web"]
+# Deliberately empty, and the only reason it exists is that an empty environment needs no
+# solve: `pixi run -e package <task>` therefore runs on any runner, including win-64, where
+# `default` cannot resolve at all (conda-forge ships no `bun` build — the gap `.knowledge/
+# decisions.md` D11 and task-7 record). The release matrix builds one conda package per
+# platform (task-23); packaging needs the pixi binary and a Rust toolchain, both of which the
+# runner already has, so resolving the development environment would only add a failure mode.
+package = []
 
 # ---------------------------------------------------------------------------
 # Tasks. Everything a human, a git hook or a CI job does is one of these, so a
 # GitHub Actions step can be a single line: `pixi run <task>`. Logic lives here
-# (reviewable, runnable locally), not in workflow YAML.
+# (reviewable, runnable locally), not in workflow YAML. The packaging pair is the one
+# exception and says so with `-e package` (see `[environments]`).
 #
 # `ci-*` variants read their paths from the environment (the workflow sets them)
 # because pixi tasks have no `${VAR:-default}` — plain `$VAR` expands, but a
@@ -81,7 +102,6 @@ lint-generated-workflow = "bash scripts/lint-generated-workflow.sh"
 # Keep the checked-in release matrix valid against this binary's embedded helper-tool catalogue.
 lint-sandbox-plan = "cargo run -q -p pixi-sandbox -- plan --config .pixi-sandbox.toml --json"
 lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pixi-sandbox-core/Cargo.toml crates/pixi-sandbox/Cargo.toml crates/pixi-sandbox/pixi.toml crates/pixi-sandbox-git/Cargo.toml deny.toml"
-lint-docs = "biome check docs"
 # Claims this repository makes about itself that no cargo test may check (D10 keeps tests on the
 # fixtures): crates/ free of references to the deleted prototype, and one platform story across
 # the README badge, `pixi.toml` and `.pixi-sandbox.toml`.
@@ -96,7 +116,8 @@ changelog-preview = "convco changelog"
 # job (or a reviewer's). Optional selector: `pixi run prepare-release auto|major|minor|patch|vX.Y.Z`
 # (default auto).
 prepare-release = "bash scripts/prepare-release.sh"
-# one line for the whole lint gate (rust + utils + docs, all in `default`)
+# one line for the whole lint gate. `lint-docs` is declared under `[feature.web.tasks]`, so pixi
+# runs that dependency in the `web` environment while the rest run in `default`.
 lint = { depends-on = [
   "fmt-check",
   "lint-rust",
@@ -109,69 +130,16 @@ lint = { depends-on = [
   "lint-repo-consistency",
 ] }
 
-# docs
-# One bun workspace at the repo root (package.json workspaces: ["docs"]), so the
-# install runs there and hoists into the root node_modules; `docs/` has no lockfile
-# of its own any more.
-#
-# SANDBOX_VERSION is exported by these tasks and read by the site, so the documented
-# version is decided by the tree that built it and never written into the pages:
-# scripts/version.sh reads `[workspace.package] version` from the root Cargo.toml — the
-# one place the version exists — and docs/astro.config.mjs substitutes it for every
-# `__VERSION__` at build time. That is what lets a release rewrite zero documentation
-# lines (release-refs.sh now stamps only the README family, which GitHub renders raw).
-# A bare `bun run build` in docs/ still works: the config falls back to reading the
-# same Cargo.toml directly.
-docs-install = "bun install --frozen-lockfile"
-docs-dev = { cmd = "SANDBOX_VERSION=$(bash \"$PIXI_PROJECT_ROOT/scripts/version.sh\") bun run dev", cwd = "docs" }
-docs-build = { depends-on = [
-  "docs-install",
-], cmd = "SANDBOX_VERSION=$(bash \"$PIXI_PROJECT_ROOT/scripts/version.sh\") bun run build", cwd = "docs" }
-
 # the conda package this project ships, installed with
 # `pixi global install -c <target-dir> -c conda-forge pixi-sandbox` (decision D8)
+#
+# Runs in the empty `package` environment (see `[environments]`), which is how the release
+# matrix builds one variant per native runner: the task is the command CI runs, on every
+# platform, and the development environment is not a precondition for producing a package.
 package = "pixi publish --path crates/pixi-sandbox --build-dir $PIXI_PROJECT_ROOT/.publish/build --target-dir $PIXI_PROJECT_ROOT/.publish/out"
-
-# ---------------------------------------------------------------------------
-# opencode: the agent binary. Installed globally with bun, not as a conda
-# dependency, so it is on PATH outside a task too and the sandbox branch
-# stays free of a 185 MB blob it would only carry for a developer tool.
-#
-# bun's global bin dir (`bun pm bin -g`, which follows $BUN_INSTALL rather than a
-# hardcoded $HOME/.bun/bin) is on nobody's PATH — not the pixi task shell, not a
-# fresh terminal in the dev container — so a plain `bun add -g` would leave a
-# binary nobody can invoke. Linking it into a directory that already is makes it a
-# global command. /usr/local/bin is tried first (the container is root),
-# ~/.local/bin second for a machine where the first needs sudo; when neither is
-# writable the install itself still succeeded, so report where it landed rather
-# than failing the container over a $PATH detail.
-# ---------------------------------------------------------------------------
-opencode-install = 'BUN_BIN="$(bun pm bin -g)" && bun add -g opencode-ai@latest && (ln -sfn "$BUN_BIN/opencode" /usr/local/bin/opencode 2> /dev/null || (mkdir -p "$HOME/.local/bin" 2> /dev/null && ln -sfn "$BUN_BIN/opencode" "$HOME/.local/bin/opencode" 2> /dev/null) || echo "opencode installed to $BUN_BIN, which is not on PATH: neither /usr/local/bin nor ~/.local/bin is writable")'
-# The model catalogue is a separate cache (`~/.cache/opencode/models.json`, rebuilt
-# from models.dev) and a binary upgrade does not invalidate it, so refreshing is a
-# separate step — otherwise a new release lists stale models. The absolute path
-# stands: the task shell resolves `opencode` only if the link above landed on a
-# PATH entry the shell has, and this one must work without it.
-setup-opencode = { depends-on = [
-  "opencode-install",
-], cmd = "\"$(bun pm bin -g)/opencode\" models --refresh" }
-
-# ---------------------------------------------------------------------------
-# Repo-wide dev tooling from the root bun workspace (`backlog.md`, `skills`).
-# `bun x`, not the `bunx` spelling: the conda `bun` package ships no `bunx` shim, so in
-# this environment the subcommand is the only form that resolves (it is what `bunx`
-# execs). `bun x` prefers the workspace install over the registry — `bun x astro
-# --version` reports the locked 7.3.5, not the newest published — so the committed
-# lockfile still pins what these tasks run.
-#
-# They have to run under bun at all: both bins carry a `#!/usr/bin/env node` shebang and
-# `default` carries no node. Adding one would put ~50 MB of developer tooling into the
-# published sandbox branch to carry nothing an airlock restores, so a bare
-# `node_modules/.bin/backlog` in a shell fails with "env: node: No such file or
-# directory" — go through the task.
-# ---------------------------------------------------------------------------
-backlog = "bun x backlog"
-skills = "bun x skills"
+# Install what `package` just built and run it here (task-23 AC#2). A package that builds on
+# five runners and runs on four is the failure a single-platform build can never see.
+package-smoke = "bash scripts/smoke-conda-package.sh"
 
 # ---------------------------------------------------------------------------
 # The transport pipeline, locally: pack → doctor → publish. These tasks exercise the
@@ -200,3 +168,76 @@ sandbox-restore = "bash scripts/restore.sh"
 ci-pack = "cargo run -p pixi-sandbox -- pack --repo-root $SANDBOX_PROJECT --envs $SANDBOX_ENVS --output-dir $SANDBOX_TRANSPORT --platform $SANDBOX_PLATFORM $SANDBOX_CARGO_VENDOR --fetch-tools --self-bin $SANDBOX_SELF_BIN"
 ci-doctor = "cargo run -p pixi-sandbox -- doctor --branch-location $SANDBOX_TRANSPORT --verify"
 ci-publish = "cargo run -p pixi-sandbox -- publish --input-dir $SANDBOX_TRANSPORT --branch-name $SANDBOX_BRANCH --remote $SANDBOX_REMOTE"
+
+# ---------------------------------------------------------------------------
+# Everything that needs bun. Declared on the `web` feature so pixi runs these in the `web`
+# environment — including when they are reached as a `depends-on` of a `default` task, which is
+# how `pixi run lint` still covers `lint-docs` without dragging bun into `default`.
+# ---------------------------------------------------------------------------
+[feature.web.tasks]
+# biome is a package.json devDependency (not a conda any more), so the version that runs is the
+# one in `bun.lock`. It is invoked through its path rather than `bun x biome` on purpose: the npm
+# package's bin is a `#!/usr/bin/env node` shim that execs the platform-native binary, and no conda
+# environment in this repo carries node — so `bun x biome` dies with "env: node: No such file or
+# directory" exactly like the `bun x backlog` task below. Handing the shim to bun explicitly runs it
+# with the bun runtime and needs nothing on PATH, and biome only ever execs the native binary from
+# it anyway.
+lint-docs = "bun node_modules/@biomejs/biome/bin/biome check docs"
+# The write form the pre-commit hook uses (`lefthook.yml`), so the hook and the lint gate cannot
+# drift onto different biome invocations. `{staged_files}` becomes the task's arguments.
+lint-docs-write = "bun node_modules/@biomejs/biome/bin/biome check --write"
+
+# docs. One bun workspace at the repo root (package.json workspaces: ["docs"]), so the install
+# runs there and hoists into the root node_modules; `docs/` has no lockfile of its own any more.
+#
+# SANDBOX_VERSION is exported by these tasks and read by the site, so the documented version is
+# decided by the tree that built it and never written into the pages: scripts/version.sh reads
+# `[workspace.package] version` from the root Cargo.toml — the one place the version exists —
+# and docs/astro.config.mjs substitutes it for every `__VERSION__` at build time. That is what
+# lets a release rewrite zero documentation lines (release-refs.sh now stamps only the README
+# family, which GitHub renders raw). A bare `bun run build` in docs/ still works: the config
+# falls back to reading the same Cargo.toml directly.
+docs-install = "bun install --frozen-lockfile"
+docs-dev = { cmd = "SANDBOX_VERSION=$(bash \"$PIXI_PROJECT_ROOT/scripts/version.sh\") bun run dev", cwd = "docs" }
+docs-build = { depends-on = [
+  "docs-install",
+], cmd = "SANDBOX_VERSION=$(bash \"$PIXI_PROJECT_ROOT/scripts/version.sh\") bun run build", cwd = "docs" }
+
+# ---------------------------------------------------------------------------
+# opencode: the agent binary. Installed globally with bun, not as a conda dependency, so it is
+# on PATH outside a task too and the sandbox branch stays free of a 185 MB blob it would only
+# carry for a developer tool.
+#
+# bun's global bin dir (`bun pm bin -g`, which follows $BUN_INSTALL rather than a hardcoded
+# $HOME/.bun/bin) is on nobody's PATH — not the pixi task shell, not a fresh terminal in the dev
+# container — so a plain `bun add -g` would leave a binary nobody can invoke. Linking it into a
+# directory that already is makes it a global command. /usr/local/bin is tried first (the
+# container is root), ~/.local/bin second for a machine where the first needs sudo; when neither
+# is writable the install itself still succeeded, so report where it landed rather than failing
+# the container over a $PATH detail.
+# ---------------------------------------------------------------------------
+opencode-install = 'BUN_BIN="$(bun pm bin -g)" && bun add -g opencode-ai@latest && (ln -sfn "$BUN_BIN/opencode" /usr/local/bin/opencode 2> /dev/null || (mkdir -p "$HOME/.local/bin" 2> /dev/null && ln -sfn "$BUN_BIN/opencode" "$HOME/.local/bin/opencode" 2> /dev/null) || echo "opencode installed to $BUN_BIN, which is not on PATH: neither /usr/local/bin nor ~/.local/bin is writable")'
+# The model catalogue is a separate cache (`~/.cache/opencode/models.json`, rebuilt from
+# models.dev) and a binary upgrade does not invalidate it, so refreshing is a separate step —
+# otherwise a new release lists stale models. The absolute path stands: the task shell resolves
+# `opencode` only if the link above landed on a PATH entry the shell has, and this one must work
+# without it.
+setup-opencode = { depends-on = [
+  "opencode-install",
+], cmd = "\"$(bun pm bin -g)/opencode\" models --refresh" }
+
+# ---------------------------------------------------------------------------
+# Repo-wide dev tooling from the root bun workspace (`backlog.md`, `skills`).
+# `bun x`, not the `bunx` spelling: the conda `bun` package ships no `bunx` shim, so in this
+# environment the subcommand is the only form that resolves (it is what `bunx` execs). `bun x`
+# prefers the workspace install over the registry — `bun x astro --version` reports the locked
+# 7.3.5, not the newest published — so the committed lockfile still pins what these tasks run.
+#
+# They have to run under bun at all: both bins carry a `#!/usr/bin/env node` shebang and `web`
+# (and `default`) carry no node. Adding one would put ~50 MB of developer tooling into the
+# published sandbox branch to carry nothing an airlock restores, so a bare
+# `node_modules/.bin/backlog` in a shell fails with "env: node: No such file or directory" — go
+# through the task.
+# ---------------------------------------------------------------------------
+backlog = "bun node_modules/backlog.md/cli.js"
+skills = "bun node_modules/skills/bin/cli.mjs"

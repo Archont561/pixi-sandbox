@@ -25,7 +25,9 @@ pre-commit:
 
     - name: docs-biome
       glob: "docs/**/*.{js,ts,mjs,cjs,json,jsonc,astro}"
-      run: pixi run -- biome check --write {staged_files}
+      # biome lives in the `web` environment (a package.json devDependency), so the hook names it
+      # the same way the `lint-docs` task does rather than assuming it is on the default PATH.
+      run: pixi run lint-docs-write -- {staged_files}
       stage_fixed: true
 
     - name: workflows

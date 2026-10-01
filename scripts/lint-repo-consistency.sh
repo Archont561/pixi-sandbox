@@ -54,8 +54,14 @@ fail() {
 # `stale-ref-allowed` on the offending line, or on the line above it (rustfmt owns where a
 # trailing comment ends up), is the documented opt-out — the test that pins the CLI wording has
 # to spell the forbidden words out to forbid them.
+#
+# The generated trees are pruned rather than left to gitignore: `crates/pixi-sandbox/.pixi/bld`
+# holds the pixi-build backend's vendored cargo registry, so it appears the moment anyone runs
+# `pixi run package` locally, and a scan that walked into it would report hits in vendored
+# third-party Rust. git already refuses to commit it; this scan has to be as blind as git is.
 stale_hits="$(
-  find crates -type f \( -name '*.rs' -o -name '*.md' \) -print0 |
+  find crates -type d \( -name .pixi -o -name target -o -name node_modules -o -name vendor \) -prune -o \
+    -type f \( -name '*.rs' -o -name '*.md' \) -print0 |
     xargs -0 awk '
       FNR == 1 { prev = "" }
       {

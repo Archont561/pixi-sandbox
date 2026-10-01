@@ -35,7 +35,7 @@ so "builds here" and "restores offline there" are tracked separately —
 | `linux-64` | ✅ proven, published | `sandbox/developer-linux-64` is packed, verified and restored offline in CI |
 | `osx-arm64` | ✅ proven, published | Packed, verified and restored on a native `macos-14` runner with **egress denied** (`sandbox-exec`, `network-outbound` refused), then gated against the manifest; `sandbox/developer-osx-arm64` is published by the same plan as linux-64 (task-1) |
 | `linux-aarch64`, `osx-64` | 🟡 release binaries only | Static binaries ship with every release; no bundle published |
-| `win-64` | ❌ not supported | No conda-forge `bun` build (`pixi lock`: "No candidates were found for bun *"), so Windows is out of `[workspace] platforms` and D11 still lists it as unproven |
+| `win-64` | ❌ not supported | `default` itself no longer needs `bun` (task-25 isolated it in the `web` environment), but `pixi lock` solves **every** environment for **every** platform in `pixi.toml`, and conda-forge has no `bun` build (`pixi lock`: "No candidates were found for bun *"), so Windows is out of `[workspace] platforms` and D11 still lists it as unproven. Until that changes the JS toolchain is unsupported on Windows: use the Rust CLI, and run the JS tools through your own Node.js/Bun install outside the pixi environment |
 
 ## 📦 Sandbox Visualization
 

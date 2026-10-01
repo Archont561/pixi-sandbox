@@ -31,7 +31,9 @@ opinion.
 | `scripts/lint-generated-workflow.sh` | actionlint over the workflow `init github` *generates*; the matrix shape itself is pinned in `tests/cli.rs`, because actionlint accepts both shapes |
 | `scripts/restore.sh` | one-liner offline reconstruction from orphan branch with PATH aliases; derives the branch from `.pixi-sandbox.toml` for the host platform |
 | `scripts/lint-repo-consistency.sh` | the repo-level lints a cargo test may not perform (D10): no prototype references under `crates/`, one platform story across README badge / `pixi.toml` / `.pixi-sandbox.toml`. Opt out of the first with `stale-ref-allowed` on (or above) the line |
-| `package.json` + `bun.lock` | the root bun workspace — `docs` is a member, so `docs-install` runs at the root — plus the repo-wide `backlog.md` / `skills` devDependencies (`pixi run backlog`, `pixi run skills`) |
+| `scripts/smoke-conda-package.sh` | installs the just-built `.conda` and runs the packaged binary on this runner, checking it reports the workspace version; the `package-smoke` task and every `release.yml` build matrix leg |
+| `scripts/check-conda-platforms.sh` | fails the release unless all five platforms contributed exactly one package; reads `dist/conda/conda-<platform>/`, which is why those artifacts are downloaded *unmerged* |
+| `package.json` + `bun.lock` | the root bun workspace — `docs` is a member, so `docs-install` runs at the root — plus the repo-wide `backlog.md` / `skills` / `@biomejs/biome` devDependencies (`pixi run backlog`, `skills`, `lint-docs`) |
 
 ## Invariants (do not break these)
 
@@ -59,7 +61,9 @@ The checksum-verified release publisher is implemented as reviewed composite-act
 (POSIX + PowerShell), not Python.
 
 ```bash
-# one environment, so every task is `pixi run <task>` with no -e flag
+# one development environment, so every task is `pixi run <task>` with no -e flag. The bun tasks
+# are declared under `[feature.web.tasks]`, and pixi runs them in the `web` environment anyway —
+# including as a dependency of `lint` — so these lines do not change.
 pixi run lint           # fmt-check + clippy -D warnings + deny + actionlint (committed + generated workflows) + taplo + biome + repo-consistency
 pixi run test           # nextest workspace, including fixture-backed offline lifecycle tests
 pixi run coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
@@ -75,6 +79,11 @@ pixi run sandbox-publish# force-push it as an orphan branch
 
 # the same steps as CI runs them (paths come from the SANDBOX_* environment variables)
 pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
+
+# packaging: the only tasks that name an environment. `package` is empty on purpose, so these
+# run on any native runner — including win-64, where `default` cannot resolve at all.
+pixi run -e package package        # build the .conda for the current platform
+pixi run -e package package-smoke  # install it and run the packaged binary here
 ```
 
 Tests that must exist for any change to sharding or the manifest: a round-trip property test
