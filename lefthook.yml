@@ -37,7 +37,7 @@ pre-commit:
       glob: "docs/**/*.{js,ts,mjs,cjs,json,jsonc,astro}"
       # biome lives in the `web` environment (a package.json devDependency), so the hook names it
       # the same way the `lint-docs` task does rather than assuming it is on the default PATH.
-      run: pixi run lint-docs-write -- {staged_files}
+      run: pixi run lint-docs --write
       stage_fixed: true
 
     - name: workflows
@@ -64,12 +64,12 @@ pre-push:
     - name: repo-consistency
       # the README badge, the workspace platforms and the publish plan tell one platform story,
       # and crates/ never points at the prototype deleted in 0.2.0
-      run: pixi run lint-repo-consistency
+      run: pixi run xtask check-repository
 
     - name: generated-workflow
       # actionlint over the workflow `init` GENERATES — the artifact that shipped broken in
       # v0.3.1 (issue #37). Same xtask binary as the job above, so it is already built by now.
-      run: pixi run lint-generated-workflow
+      run: pixi run xtask lint-generated-workflow
 
     - name: tests
       # The whole workspace, which includes the manifest-schema test that used to have its own

@@ -50,6 +50,12 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
    `pixi-sandbox-git` (D9). Tests use `FakeGit`; `--dry-run` uses a runner, not a second code path.
 9. **Tests target the fixtures, never this repository** (D10): `tests/fixtures/demo-project`
    for project-level work, `tests/fixtures/transport` for payload-level work. Two tests enforce it.
+10. **Anything you did not implement goes in `CONTEXT.md` § Session scratchpad** — suggestions,
+    drafts, alternatives considered, "we should probably…", measurements worth keeping. Under a
+    dated heading, newest last. Never into `AGENTS.md`, `README.md`, `.knowledge/`, a
+    `backlog/docs/` spec or a code comment: those state what *is*, and a proposal mixed into
+    them reads as a decision nobody made. A scratchpad entry graduates only by becoming a
+    backlog task, a decision in `.knowledge/decisions.md`, or a deletion.
 
 ## Commands
 
@@ -72,26 +78,37 @@ that already exists in bash); **task-36** is that migration, and it ends with a
 # one development environment, so every task is `pixi run <task>` with no -e flag. The bun tasks
 # are declared under `[feature.web.tasks]`, and pixi runs them in the `web` environment anyway —
 # including as a dependency of `lint` — so these lines do not change.
-pixi run lint           # fmt-check + clippy -D warnings + deny + actionlint (committed + generated workflows) + taplo + biome + repo-consistency
+pixi run lint           # fmt --check + clippy -D warnings + deny + actionlint (committed + generated workflows) + taplo + biome + repo-consistency
 pixi run test           # nextest workspace, including fixture-backed offline lifecycle tests
 pixi run coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
+pixi run fmt            # rewrite; `pixi run fmt --check` is the gate form
 pixi run docs-dev       # Astro dev server for docs/
 pixi run docs-install   # bun install --frozen-lockfile at the root of the bun workspace
 pixi run backlog        # repo backlog (needs one docs-install)
 pixi run skills         # agent skills CLI (needs one docs-install)
-pixi run sandbox-plan   # validate .pixi-sandbox.toml and show native publish jobs
-pixi run lint-sandbox-plan # CI form: validate root plan plus embedded tool coverage
-pixi run sandbox-pack   # pack the transport (Rust CLI; embeds the chosen self-bootstrap binary)
-pixi run sandbox-doctor # verify a transport: every sha256, nothing written
-pixi run sandbox-publish# force-push it as an orphan branch
 
-# the same steps as CI runs them (paths come from the SANDBOX_* environment variables)
-pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
+# every repository-automation subcommand goes through ONE task (crates/xtask); extra arguments
+# follow the subcommand, and `--` separates them when there is more than one.
+pixi run xtask check-repository            # the D10-exempt repo lints
+pixi run xtask lint-generated-workflow     # actionlint over the workflow `init` generates
+pixi run xtask prepare-release auto        # stamp the next version everywhere (no git actions)
+pixi run xtask check-release-refs          # documented release references vs the declared version
+pixi run xtask check-conda-platforms dist/conda
+pixi run xtask version
+
+# the transport pipeline. Every path is an argument with the local default baked in, so CI runs
+# the same task with its own values instead of a second `ci-*` twin reading the environment.
+pixi run sandbox-plan              # validate .pixi-sandbox.toml and show native publish jobs
+pixi run sandbox-plan --json       # CI form: machine-readable, also what `lint` runs
+pixi run sandbox-pack              # build the self-bin, then pack (defaults: . / default / .sandbox-out / linux-64)
+pixi run sandbox-doctor            # verify a transport: every sha256, nothing written
+pixi run sandbox-publish           # force-push it as an orphan branch
+pixi run sandbox-restore           # scripts/restore.sh
 
 # packaging: the only tasks that name an environment. `package` is empty on purpose, so these
 # run on any native runner — including win-64, where `default` cannot resolve at all.
-pixi run -e package package        # build the .conda for the current platform
-pixi run -e package package-smoke  # install it and run the packaged binary here
+pixi run -e package package                        # build the .conda for the current platform
+pixi run -e package xtask smoke-conda-package      # install it and run the packaged binary here
 ```
 
 Git hooks (`lefthook.yml`, installed with `pixi run -- lefthook install`) are split by cost:

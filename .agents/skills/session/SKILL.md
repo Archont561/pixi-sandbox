@@ -122,23 +122,9 @@ Facts about this sandbox that shape every command:
 
 ## 3. Propose the session, then stop
 
-Present a short proposal and **wait for the user to pick** — do not start implementing.
-
-```
-Session proposal — <date>
-
-Environment: restored; baseline <N> tests passing, <M> skipped.
-
-Backlog: <X> To Do, <Y> unblocked. Candidates, in recommended order:
-1. task-<n> (<priority>, <type>) — <one line: what it delivers and why now>
-2. task-<m> …
-   …
-Not this session: task-<k> (blocked by task-<j>); task-<l> (deferred — <one-line reason>).
-
-Per task, "done" means: its acceptance criteria checked, one focused conventional commit,
-gates green (fmt, lint, test), task file completed in house format.
-Need from you: confirm the scope (or pick differently) before I start.
-```
+Fill in the **Session proposal** template in [`standup-template.md`](standup-template.md) and
+**wait for the user to pick** — do not start implementing. That file also carries the task
+hand-off and session-close templates; use them at those points rather than inventing a shape.
 
 ## 4. While you work — house rules (AGENTS.md is the full list)
 
@@ -150,7 +136,7 @@ Need from you: confirm the scope (or pick differently) before I start.
     checks, and the whole-workspace test suite, in that order, stopping at the first failure.
     Run `pixi run --frozen lint && pixi run --frozen test` yourself first when you want the
     answer sooner, or when the change touches what only the full `lint` covers (`deny`,
-    `lint-sandbox-plan`, `lint-toml`, `lint-docs`).
+    `sandbox-plan --json`, `lint-toml`, `lint-docs`).
   - message check: `pixi run --frozen -- convco check HEAD~1..HEAD`.
 - **Complete the task file in its own format**: every AC `[x]`, status `Done`, bump
   `updated_date`, append `SECTION:NOTES` Implementation Notes and `SECTION:SUMMARY` Final

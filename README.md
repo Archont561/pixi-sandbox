@@ -28,7 +28,7 @@
 The badge above mirrors `[workspace] platforms` in `pixi.toml`. A platform only gets a published
 bundle in `.pixi-sandbox.toml` once a native runner has passed the airlock proof (decision D11),
 so "builds here" and "restores offline there" are tracked separately —
-`pixi run lint-repo-consistency` keeps the badge, `pixi.toml` and the publish plan in agreement.
+`pixi run xtask check-repository` keeps the badge, `pixi.toml` and the publish plan in agreement.
 
 | Platform | Status | Notes |
 |----------|--------|-------|
@@ -314,14 +314,14 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `crates/pixi-sandbox-git` | Trait-based Git: `ShellGit` + `FakeGit`/`RecordingRunner` |
 | `crates/pixi-sandbox` | CLI binary + fixtures |
 | `crates/pixi-sandbox/tests/fixtures/` | Synthetic transport (15 KB, split blob) — tests never point at repo root |
-| `crates/xtask` | Typed repository automation (`lint-repo-consistency`, `prepare-release`, and release artifact gates) |
+| `crates/xtask` | Typed repository automation behind one `pixi run xtask <subcommand>` task (`check-repository`, `prepare-release`, release artifact gates) |
 | `.github/workflows/ci.yml` | CI: lint + test + coverage + docs-build |
 | `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + prefix.dev Conda package + GitHub Release |
 | `.github/workflows/docs.yml` | Docs → GitHub Pages |
 | `.github/dependabot.yml` | Dependabot: cargo, gha, npm (convco prefixes) |
 | `scripts/restore.sh` | One-liner offline reconstruction with PATH aliases; branch derived from `.pixi-sandbox.toml`; selects the user-tool registration policy explicitly |
 | `.pixi-sandbox.toml` | Reviewed publish plan: bundles, platforms, branch prefix, runner overrides |
-| `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals, opencode via `setup-opencode` |
+| `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals, opencode installed by `.devcontainer/setup.sh` with a global `bun add` |
 | `lefthook.yml` | Git hooks — every hook calls a pixi task so hooks and CI cannot drift; `pre-commit` stays formatter-only (no cargo), every Rust gate runs once at `pre-push` |
 | `docs/` | Starlight + astro-icon + Iconify docs (12 pages) |
 | `package.json` + `bun.lock` | Root bun workspace: `docs` member + repo-wide `backlog.md` / `skills` devDependencies |
@@ -348,7 +348,6 @@ pixi run docs-dev
 pixi run docs-build
 
 # Agent CLI + repo tooling
-pixi run setup-opencode
 pixi run backlog           # markdown backlog, from the root bun workspace
 pixi run skills            # agent skills CLI, same workspace
 
@@ -361,11 +360,10 @@ pixi run sandbox-restore   # one-liner from orphan branch
 pixi run test              # fixture-backed doctor → publish → offline restore lifecycle
 
 # Changelog via convco
-pixi run changelog-preview
-pixi run changelog
+pixi run xtask prepare-release auto   # stamps CHANGELOG.md and every version reference
 
 # CI variants (env vars: SANDBOX_PROJECT, ENVS, TRANSPORT, PLATFORM, BRANCH, REMOTE, SELF_BIN)
-pixi run ci-pack && pixi run ci-doctor && pixi run ci-publish
+pixi run sandbox-pack "$PROJECT" "$ENVS" "$TRANSPORT" "$PLATFORM" && pixi run sandbox-doctor "$TRANSPORT"
 ```
 
 > [!IMPORTANT]
@@ -398,11 +396,18 @@ no unprefixed `ar`; `pixi global list` is the check that `cc`, `gcc` and `ar` ar
 The last two steps go through `pixi run` rather than a bare `bun install`: `bun` lives in the
 materialised environment, which is on `PATH` inside a pixi task and nowhere else.
 
-`pixi run setup-opencode` runs last, because it needs `bun` from the materialised
-environment. It installs opencode globally with bun, links the binary into `/usr/local/bin`
-(bun's own global bin dir is on nobody's `PATH`), so `opencode` is a command in every shell
-of the container, and then refreshes the model catalogue (`~/.cache/opencode/models.json`),
-which a binary upgrade does not invalidate.
+opencode runs last and is **not** a pixi task: `.devcontainer/setup.sh` installs it with a
+global `bun add opencode-ai@latest` (bun from the materialised `web` environment), links the
+binary into `/usr/local/bin` — bun's own global bin dir is on nobody's `PATH` — refreshes the
+model catalogue (`~/.cache/opencode/models.json`, which a binary upgrade does not invalidate),
+and prints the command a Codespace user starts with:
+
+```bash
+opencode -m opencode/big-pickle
+```
+
+It lives in the container setup rather than `pixi.toml` because `pixi.toml` describes what the
+repository is built, tested and released with, and a 185 MB agent binary is none of those.
 
 ### Bun workspace
 
@@ -422,7 +427,7 @@ tooling into the published sandbox branch.
 
 ## 🔖 Changelog & Release
 
-- **Changelog**: `CHANGELOG.md` generated via `convco changelog` from conventional commits. Tasks: `pixi run changelog`.
+- **Changelog**: `CHANGELOG.md` generated from conventional commits by `pixi run xtask prepare-release`, which stamps it together with every version reference (a bare preview is `pixi run -- convco changelog`).
 - **Release**: Tag `v*.*.*` → `release.yml` builds 5 static binaries, builds `pixi-sandbox` as a Conda package, publishes it to [`archont561/pixi-sandbox`](https://prefix.dev/channels/@archont561/pixi-sandbox) with GitHub OIDC, then creates the GitHub Release. Configure prefix.dev Repository Access for this repository's `release.yml` workflow; no long-lived token is stored in GitHub.
   ```bash
   gh workflow run auto-release.yml -f version=vX.Y.Z
