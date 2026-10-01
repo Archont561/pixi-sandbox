@@ -212,8 +212,14 @@ impl ShellGit {
         ShellGit {
             runner: Box::new(ProcessRunner),
             program: "git".to_string(),
-            name: "pixi-sandbox".to_string(),
-            email: "pixi-sandbox@invalid".to_string(),
+            // Transport commits are tool-authored, and GitHub's convention for that is the
+            // `[bot]` suffix (github-actions[bot], dependabot[bot]). The email is the
+            // github-actions app's noreply address — the same one auto-release.yml configures —
+            // so a CI push renders the bot avatar while the name keeps the pixi-sandbox
+            // identity; a locally published transport carries the same authorship instead of
+            // silently falling back to the publishing human's git config.
+            name: "pixi-sandbox[bot]".to_string(),
+            email: "41898282+github-actions[bot]@users.noreply.github.com".to_string(),
             scratch_name: DEFAULT_SCRATCH_NAME.to_string(),
             log: Mutex::new(Vec::new()),
         }
@@ -404,6 +410,139 @@ impl ShellGit {
             }),
             other => other.map(|_| ()),
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Working-tree primitives for repository automation (xtask `commit-release`). These are
+    // NOT transport operations — the GitProtocol trait below stays the transport surface —
+    // but they are still git, so they live here rather than as bare `Command::new("git")`
+    // calls in a consumer crate (D9). Every command carries the caller's `root` as cwd and
+    // this instance's identity through the `-c` pair, so an automation commit never depends
+    // on the invoking user's git config.
+    // ------------------------------------------------------------------
+
+    /// Run a command and return its raw output, for git invocations whose non-zero exit is
+    /// an answer rather than an error (`ls-remote --exit-code` reports "no such ref" as 2).
+    fn run_raw(&self, command: &Command) -> Result<Output> {
+        self.log
+            .lock()
+            .expect("git log lock")
+            .push(command.rendered());
+        self.runner.run(command)
+    }
+
+    /// Does `tag` already exist on `remote`?
+    pub fn remote_tag_exists(&self, remote: &str, tag: &str) -> Result<bool> {
+        let command = self
+            .git(["ls-remote", "--exit-code", "--tags"])
+            .arg(remote)
+            .arg(format!("refs/tags/{tag}"));
+        let output = self.run_raw(&command)?;
+        match output.status {
+            0 => Ok(true),
+            2 => Ok(false),
+            _ => Err(Error::Command {
+                command: command.rendered(),
+                status: output.status,
+                stderr: output.stderr.trim().to_string(),
+            }),
+        }
+    }
+
+    /// Stage exactly the listed files in the working tree at `root`.
+    pub fn add_files(&self, root: &Path, files: &[impl AsRef<Path>]) -> Result<()> {
+        let mut command = self.git(["add", "--"]).cwd(root);
+        for file in files {
+            command = command.arg(path(file.as_ref()));
+        }
+        self.run(&command).map(|_| ())
+    }
+
+    /// Files modified in the working tree but not staged — `git diff --name-only`, which is
+    /// worktree-against-index and therefore clean of the staged entries themselves. The
+    /// near-equivalents are not equivalent: `git status --porcelain` and `git diff-index
+    /// HEAD` also report *staged* changes, so run after a `git add` they name every file
+    /// just staged and reject every release. Automation that just staged a list and asks
+    /// "what is modified and unaccounted for?" wants this question and no other.
+    pub fn unstaged_modifications(&self, root: &Path) -> Result<Vec<String>> {
+        let text = self.run_text(&self.git(["diff", "--name-only"]).cwd(root))?;
+        Ok(text.lines().map(str::to_string).collect())
+    }
+
+    /// Commit the staged changes under the instance's identity.
+    pub fn commit(&self, root: &Path, message: &str) -> Result<()> {
+        self.run(&self.git(["commit", "-m"]).arg(message).cwd(root))
+            .map(|_| ())
+    }
+
+    /// An annotated tag whose message is its own name, the release convention.
+    pub fn tag_annotated(&self, root: &Path, tag: &str) -> Result<()> {
+        self.run(
+            &self
+                .git(["tag", "-a"])
+                .arg(tag)
+                .arg("-m")
+                .arg(tag)
+                .cwd(root),
+        )
+        .map(|_| ())
+    }
+
+    /// Push one refspec to `remote` from the working tree at `root`.
+    pub fn push_refspec(&self, root: &Path, remote: &str, refspec: &str) -> Result<()> {
+        self.run(&self.git(["push"]).arg(remote).arg(refspec).cwd(root))
+            .map(|_| ())
+    }
+
+    /// The unstaged diff of the working tree at `root`, unpaged.
+    pub fn worktree_diff(&self, root: &Path) -> Result<String> {
+        self.run_text(&self.git(["--no-pager", "diff"]).cwd(root))
+    }
+
+    /// Initialise a fresh repository at `root` — the airlock host starts as an empty repo
+    /// and only ever fetches into it (task-36 `airlock-fetch`).
+    pub fn init_repo(&self, root: &Path) -> Result<()> {
+        self.run(&self.git(["init", "-q"]).cwd(root)).map(|_| ())
+    }
+
+    /// Register `url` under `name` in the repository at `root`.
+    pub fn remote_add(&self, root: &Path, name: &str, url: &str) -> Result<()> {
+        self.run(&self.git(["remote", "add"]).arg(name).arg(url).cwd(root))
+            .map(|_| ())
+    }
+
+    /// Fetch `refspec` from `remote` at depth 1 into the repository at `root` — the shallow
+    /// fetch a developer's machine makes, which is the path the airlock proof exercises.
+    pub fn fetch_shallow(&self, root: &Path, remote: &str, refspec: &str) -> Result<()> {
+        self.run(
+            &self
+                .git(["fetch", "-q", "--depth", "1"])
+                .arg(remote)
+                .arg(refspec)
+                .cwd(root),
+        )
+        .map(|_| ())
+    }
+
+    /// Check `branch` out as a linked worktree at `target`.
+    pub fn worktree_add(
+        &self,
+        root: &Path,
+        target: &Path,
+        branch: &str,
+        force: bool,
+    ) -> Result<()> {
+        let mut command = self.git(["worktree", "add", "-q"]);
+        if force {
+            command = command.arg("--force");
+        }
+        self.run(&command.arg(path(target)).arg(branch).cwd(root))
+            .map(|_| ())
+    }
+
+    /// `--stat` form of [`Self::worktree_diff`], for summaries.
+    pub fn worktree_diff_stat(&self, root: &Path) -> Result<String> {
+        self.run_text(&self.git(["--no-pager", "diff", "--stat"]).cwd(root))
     }
 }
 

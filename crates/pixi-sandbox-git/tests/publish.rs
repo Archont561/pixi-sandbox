@@ -555,6 +555,32 @@ fn a_preview_run_reports_the_commands_and_touches_nothing() {
 }
 
 #[test]
+fn transport_commits_are_authored_by_the_bot_identity() {
+    let transport = snapshot(&[("payload.txt", b"payload")]);
+    let git = ShellGit::preview();
+    let published = git.publish(&request(transport.path(), "snapshot")).unwrap();
+
+    assert!(!published.commands.is_empty());
+    assert!(
+        published
+            .commands
+            .iter()
+            .all(|c| c.contains("-c user.name=pixi-sandbox[bot]")),
+        "every git invocation must carry the bot name: {:?}",
+        published.commands
+    );
+    assert!(
+        published
+            .commands
+            .iter()
+            .all(|c| c
+                .contains("-c user.email=41898282+github-actions[bot]@users.noreply.github.com")),
+        "every git invocation must carry the github-actions noreply address: {:?}",
+        published.commands
+    );
+}
+
+#[test]
 fn the_remote_size_is_knowable_for_a_local_remote_and_not_for_a_url() {
     let (_tmp, remote) = bare_remote();
     let transport = snapshot(&[("payload.txt", b"payload payload payload")]);

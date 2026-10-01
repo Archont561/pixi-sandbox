@@ -29,7 +29,7 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical embedded helper-tool pins; edit as reviewed data and keep the embedded-lock tests green |
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
 | `feature.utils.actionlint` | runs `actionlint` from conda directly when validating workflows in the `default` environment |
-| `crates/xtask` | typed repository automation invoked by Pixi tasks — every repo-targeting job that used to be a shell script: `check-repository` (the D10-exempt repo lints; opt out with `stale-ref-allowed` on or above the line), `prepare-release` + `check-release-refs` + `version`, `smoke-conda-package` (the `package-smoke` task on every `release.yml` build leg), `check-conda-platforms` (all five platforms contributed exactly one package; reads `dist/conda/conda-<platform>/`, which is why those artifacts are downloaded *unmerged*), and `lint-generated-workflow`. One Rust runtime on every runner — the v0.3.6 release died on macOS's Bash 3.2 over a single bashism — and every policy is tested against tempdir fixtures, never this checkout |
+| `crates/xtask` | typed repository automation invoked by Pixi tasks — every repo-targeting job that used to be a shell script: `check-repository` (the D10-exempt repo lints; opt out with `stale-ref-allowed` on or above the line), `prepare-release` + `check-release-refs` + `version`, `smoke-conda-package` (the `package-smoke` task on every `release.yml` build leg), `check-conda-platforms` (all five platforms contributed exactly one package; reads `dist/conda/conda-<platform>/`, which is why those artifacts are downloaded *unmerged*), and `lint-generated-workflow`, plus `stage-release-binary` and `release-checksums` (the release matrix's asset staging and SHA256SUMS — the `*unknown-*` glob this replaced had silently checksummed only the two musl binaries of five), and `commit-release` (auto-release's commit/tag/push half: stage exactly what `.release-touched` reports, refuse unaccounted modifications, refuse an existing remote tag, then commit, tag and push — git through `pixi-sandbox-git`, D9). The airlock workflow's machinery lives there too: `airlock-matrix` (plan JSON validated, `matrix=` written to `GITHUB_OUTPUT`), `resolve-release-tag` (override → declared-but-published → newest-published, each branch an incident), `airlock-pack` (frozen env installs + the released-binary pack), `airlock-fetch` (the developer-shaped fetch, D9), and `deny-egress` (`sudo unshare -n` / `sudo sandbox-exec`, loud on unknown OS). One Rust runtime on every runner — the v0.3.6 release died on macOS's Bash 3.2 over a single bashism — and every policy is tested against tempdir fixtures, never this checkout |
 | `scripts/restore.sh` | one-liner offline reconstruction from orphan branch with PATH aliases; derives the branch from `.pixi-sandbox.toml` for the host platform. Also selects the task-33 user-tool policy explicitly (`PIXI_SANDBOX_USER_TOOLS`, exported before the restore): a verified restore registers `pixi` + `pixi-sandbox` launchers in the user's home by default, `skip` opts out for CI. The policy travels as an environment variable, never a flag — the binary this script drives comes from the packed branch and may predate `--user-tools` (the airlock workflow proved that skew), while an unknown variable is simply ignored. With `scripts/airlock-gate.sh` (which targets a *restored* sandbox under blocked egress, not this repo), the only shell left — both run where no Rust toolchain can be assumed, and `check-repository` holds them to the Bash 3.2 surface |
 | `package.json` + `bun.lock` | the root bun workspace — `docs` is a member, so `docs-install` runs at the root — plus the repo-wide `backlog.md` / `skills` / `@biomejs/biome` devDependencies (`pixi run backlog`, `skills`, `lint-docs`) |
 
@@ -64,15 +64,19 @@ pinned action, a single `pixi run <task>` line, or a one-line host bootstrap tha
 provide (`rustup target add …`). Nothing else. A workflow command that needs more than one
 line is a task in `pixi.toml`; a task whose body needs more than one command is an `xtask`
 subcommand with tempdir-fixture tests — one Rust runtime instead of five shell dialects, and a
-reviewer reads intent instead of bash. Paths and flags reach the task through `env:` (the
-`SANDBOX_*` convention `ci-pack`/`ci-doctor`/`ci-publish` use), and an xtask that produces a
-value writes it to `GITHUB_OUTPUT`/`GITHUB_STEP_SUMMARY` itself, falling back to stdout when
-those are unset so the same invocation works locally.
+reviewer reads intent instead of bash. Paths and flags reach the task as arguments with local defaults, so CI passes its own
+values on the same one-line `pixi run` a developer runs (`env:` is reserved for runner-provided
+values the invoked tool reads natively — `GH_TOKEN`, `CARGO_BUILD_TARGET`), and an xtask that
+produces a value writes it to `GITHUB_OUTPUT`/`GITHUB_STEP_SUMMARY` itself, falling back to
+stdout when those are unset so the same invocation works locally.
 
-`ci.yml` and `docs.yml` are the reference shape. `release.yml`, `auto-release.yml` and
-`airlock.yml` still carry ~280 lines of embedded shell (and one PowerShell dialect of a step
-that already exists in bash); **task-36** is that migration, and it ends with a
-`check-repository` rule that fails any new multi-line `run:` block.
+`ci.yml`, `docs.yml`, `release.yml`, `auto-release.yml` and `airlock.yml` are the reference
+shape — no multi-line `run:` block remains in any workflow, and `xtask check-repository`
+(check 9) fails any new one: a step must be `uses:`, a single `pixi run <task>` line, or a
+one-line host bootstrap. The last shell steps are the two `scripts/airlock-gate.sh` tiers in
+`airlock.yml` (one-line invocations; **task-35** moves the gate into the e2e suite and deletes
+them), plus the sanctioned bootstrap scripts. A reviewed exception (a generated consumer
+artifact, say) carries `multiline-run-allowed` on the step.
 
 ```bash
 # one development environment, so every task is `pixi run <task>` with no -e flag. The bun tasks
@@ -84,14 +88,16 @@ pixi run coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
 pixi run fmt            # rewrite; `pixi run fmt --check` is the gate form
 pixi run docs-dev       # Astro dev server for docs/
 pixi run docs-install   # bun install --frozen-lockfile at the root of the bun workspace
-pixi run backlog        # repo backlog (needs one docs-install)
-pixi run skills         # agent skills CLI (needs one docs-install)
+pixi run bunx backlog   # repo backlog (the bunx task runs docs-install itself)
+pixi run bunx skills    # agent skills CLI, same workspace
+pixi run bun <args>     # bun itself, in the web environment, args pass through
 
 # every repository-automation subcommand goes through ONE task (crates/xtask); extra arguments
 # follow the subcommand, and `--` separates them when there is more than one.
 pixi run xtask check-repository            # the D10-exempt repo lints
 pixi run xtask lint-generated-workflow     # actionlint over the workflow `init` generates
 pixi run xtask prepare-release auto        # stamp the next version everywhere (no git actions)
+pixi run xtask commit-release v0.3.8       # commit + tag + push a prepared release (--dry-run shows the diff)
 pixi run xtask check-release-refs          # documented release references vs the declared version
 pixi run xtask check-conda-platforms dist/conda
 pixi run xtask version
@@ -109,6 +115,20 @@ pixi run sandbox-restore           # scripts/restore.sh
 # run on any native runner — including win-64, where `default` cannot resolve at all.
 pixi run -e package package                        # build the .conda for the current platform
 pixi run -e package xtask smoke-conda-package      # install it and run the packaged binary here
+
+# the release pipeline: release.yml drives these on every native runner through `-e package`
+# (the empty environment resolves on win-64 too); locally the same tasks run in `default`
+pixi run build-release-binary                      # cargo build -p pixi-sandbox --release (--target <triple> in CI)
+pixi run xtask stage-release-binary                # strip + stage pixi-sandbox-<target>[.exe], host triple by default
+pixi run xtask release-checksums                   # SHA256SUMS over the standalone binaries + completeness check
+pixi run dispatch-release v0.3.8                   # hand a fresh tag to release.yml (a GITHUB_TOKEN tag push starts nothing)
+
+# the airlock proof (.github/workflows/airlock.yml): these drive the RELEASED binary, so the
+# proof is about published assets; airlock-install-released puts it on PATH first
+pixi run xtask airlock-matrix                       # plan JSON → matrix= (validated), stdout locally
+pixi run xtask resolve-release-tag -- --repo <owner/name>   # which release to prove, and why
+pixi run airlock-doctor <transport>                 # verify a transport with the installed binary
+pixi run xtask deny-egress -- <cmd>                 # re-exec a command with egress denied
 ```
 
 Git hooks (`lefthook.yml`, installed with `pixi run -- lefthook install`) are split by cost:

@@ -164,6 +164,60 @@ lint = { depends-on = [
 package = "pixi publish --path crates/pixi-sandbox --build-dir $PIXI_PROJECT_ROOT/.publish/build --target-dir $PIXI_PROJECT_ROOT/.publish/out"
 
 # ---------------------------------------------------------------------------
+# The release pipeline (task-36). `release.yml` calls each of these through `-e package` on
+# every native runner: the empty packaging environment resolves everywhere (win-64 included,
+# where `default` cannot), and the tasks need only the pixi binary and the Rust toolchain the
+# runner already has. Anything that was more than one line of workflow shell is an xtask
+# subcommand instead (crates/xtask/src/release_assets.rs), so one runtime covers all five
+# runners; these three are genuinely one command each.
+# ---------------------------------------------------------------------------
+
+# `--target <triple>` (and any other cargo flags) pass through; locally with no flags it is a
+# plain host build, which is also what `stage-release-binary` defaults to staging.
+build-release-binary = { args = [
+  { arg = "flags", default = "" },
+], cmd = "cargo build -p pixi-sandbox --release {{ flags }}" }
+
+# The prefix.dev upload the release job runs; the default is the artifact layout that job
+# downloads (`dist/conda/conda-<platform>/*.conda`), so the glob stays out of the workflow.
+publish-conda = { args = [
+  { arg = "files", default = "dist/conda/conda-*/*.conda" },
+], cmd = "pixi upload prefix --channel 'archont561/pixi-sandbox' --generate-attestation {{ files }}" }
+
+# GITHUB_TOKEN pushes (the release commit) trigger no workflows, so the release dispatches the
+# docs rebuild explicitly; `GH_TOKEN` reaches gh through the step's `env:`.
+dispatch-docs = "gh workflow run docs.yml --ref main"
+
+# auto-release's hand-off to the build half: the release tag is pushed with GITHUB_TOKEN,
+# which starts no workflow, so the release build is dispatched explicitly on the new tag.
+# One argument fills both the ref and the version input.
+dispatch-release = { args = [
+  { arg = "tag" },
+], cmd = "gh workflow run release.yml --ref {{ tag }} -f version={{ tag }}" }
+
+# ---------------------------------------------------------------------------
+# The airlock proof (.github/workflows/airlock.yml, task-36): these run the RELEASED
+# pixi-sandbox — the proof is about published assets, not this tree's build — so they invoke
+# the global binary the job installs from the package channel, unlike the `sandbox-*` tasks
+# above, which build and run this tree. Arguments carry the workflow's paths (runner temp),
+# with the same shapes as the sandbox-* twins.
+# ---------------------------------------------------------------------------
+airlock-install-released = "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox"
+airlock-doctor = { args = [
+  { arg = "transport" },
+], cmd = "pixi-sandbox doctor --branch-location {{ transport }} --verify" }
+airlock-publish = { args = [
+  { arg = "transport" },
+  { arg = "branch" },
+  { arg = "remote" },
+], cmd = "pixi-sandbox publish --input-dir {{ transport }} --branch-name {{ branch }} --remote {{ remote }}" }
+airlock-restore = { args = [
+  { arg = "checkout" },
+  { arg = "dest" },
+  { arg = "envs" },
+], cmd = "pixi-sandbox restore --branch-location {{ checkout }} --output-path {{ dest }} --envs {{ envs }} --force" }
+
+# ---------------------------------------------------------------------------
 # The transport pipeline, locally: plan → pack → doctor → publish. These tasks exercise the
 # Rust CLI directly, so local runs and CI share the exact command surface. Every path is an
 # argument with the local default baked in, which is what replaced the `ci-*` twins: CI passes
@@ -244,21 +298,28 @@ docs-build = { depends-on = [
 ], cmd = "bun run build", cwd = "docs" }
 
 # ---------------------------------------------------------------------------
-# Repo-wide dev tooling from the root bun workspace (`backlog.md`, `skills`).
-# `bun x`, not the `bunx` spelling: the conda `bun` package ships no `bunx` shim, so in this
-# environment the subcommand is the only form that resolves (it is what `bunx` execs). `bun x`
-# prefers the workspace install over the registry — `bun x astro --version` reports the locked
-# 7.3.5, not the newest published — so the committed lockfile still pins what these tasks run.
+# Bun itself, generically. The repo-wide dev tooling from the root bun workspace
+# (`backlog.md`, `skills`) and anything added to `package.json` later needs no dedicated task
+# line: `pixi run bunx backlog …`, `pixi run bunx skills …` — everything after the task name
+# passes through, which is the append-only shape the per-tool tasks here already used.
 #
-# They have to run under bun at all: both bins carry a `#!/usr/bin/env node` shebang and `web`
-# (and `default`) carry no node. Adding one would put ~50 MB of developer tooling into the
-# published sandbox branch to carry nothing an airlock restores, so a bare
-# `node_modules/.bin/backlog` in a shell fails with "env: node: No such file or directory" — go
-# through the task.
+# `bun x`, never the `bunx` spelling of the command: the conda `bun` package ships no
+# `bunx` shim, so the subcommand is the only form that resolves in this environment (it is
+# what `bunx` execs elsewhere). `--bun` because these bins carry a `#!/usr/bin/env node`
+# shebang and no environment here carries node — the flag hands the bin to the bun runtime
+# whatever its shebang says, which is what the per-tool tasks this replaces achieved by
+# running the entry files (`node_modules/backlog.md/cli.js`) under bun directly. A bare
+# `node_modules/.bin/backlog` in a shell still fails with "env: node: No such file or
+# directory" — go through the task.
+#
+# `bun x` resolves the workspace install before the registry, so the committed `bun.lock`
+# still pins what runs — but only once an install exists: `bunx` depends on `docs-install`
+# (a no-op once installed) so a fresh clone cannot silently float to npm's latest. `bun`
+# stays bare because `pixi run bun install` IS the installer — a self-dependency would loop.
 #
 # opencode is NOT here: it is a developer tool installed by `.devcontainer/setup.sh` with a
 # global `bun add`, so the sandbox branch never carries a 185 MB blob for it and this table
 # keeps only what the repository itself is built, tested and released with.
 # ---------------------------------------------------------------------------
-backlog = "bun node_modules/backlog.md/cli.js"
-skills = "bun node_modules/skills/bin/cli.mjs"
+bun = "bun"
+bunx = { depends-on = ["docs-install"], cmd = "bun x --bun" }

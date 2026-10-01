@@ -70,9 +70,9 @@ pixi run --frozen fmt | lint | test | test-doc | coverage
 pixi run --frozen -- cargo <anything>        # e.g. cargo check --offline, cargo nextest run -p …
 pixi run --frozen -- convco check HEAD~1..HEAD
 pixi run --frozen lint-commit < <file>       # what the commit-msg hook runs
-pixi run docs-install                        # once; then the two below work
-pixi run backlog task list -s "To Do" --plain
-pixi run skills …
+pixi run docs-install                        # once; the bunx lines depend on it too
+pixi run bunx backlog task list -s "To Do" --plain
+pixi run bunx skills …
 pixi run -- lefthook install                 # installs the git hooks in a fresh clone
 ```
 
@@ -109,7 +109,7 @@ Facts about this sandbox that shape every command:
    invariants, task commands), `CONTEXT.md`, and `.knowledge/decisions.md` — the decisions
    D1–D15 are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
 3. **List the open work**:
-   `pixi run backlog task list -s "To Do" --plain` — or read `backlog/tasks/*.md` directly;
+   `pixi run bunx backlog task list -s "To Do" --plain` — or read `backlog/tasks/*.md` directly;
    tasks are markdown files whose frontmatter carries `dependencies`, `priority`, `ordinal`,
    `type`, and `documentation` links (spec docs live under `backlog/docs/`).
 4. **Filter honestly.** A task is a candidate only when every dependency has status `Done`.

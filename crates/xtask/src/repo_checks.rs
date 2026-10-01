@@ -23,6 +23,11 @@
 //!     them with macOS's /bin/bash 3.2, and v0.3.6's release died 127 on both darwin legs
 //!     over one Bash-4 builtin (run 36865921206) — the regression that moved everything else
 //!     into this xtask.
+//!  9. task-36 — every workflow `run:` is a single command line: a step is `uses:`, one
+//!     `pixi run <task>` line, or a one-line host bootstrap. A `run: |` block with more than
+//!     one command is embedded shell, which belongs in a pixi task (or an xtask subcommand
+//!     when it carries logic) — the rule exists so the workflows cannot re-grow the ~280
+//!     lines of per-dialect shell task-36 removed.
 
 use crate::util::{lines_without_opt_out, version_tag_re};
 use anyhow::{Result, bail};
@@ -63,6 +68,7 @@ pub fn check_repository(root: &Path) -> Result<Vec<Failure>> {
     canonical_channel_install(root, &mut failures)?; // 5
     workflow_literal_tags(root, &mut failures)?; // 6
     bash32_surface(root, &mut failures)?; // 8
+    workflow_shape(root, &mut failures)?; // 9
     Ok(failures)
 }
 
@@ -82,7 +88,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line" // stale-ref-allowed
     );
     Ok(())
 }
@@ -477,9 +483,113 @@ fn bash32_surface(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------- 9. workflow step shape
+
+/// The reviewed exception marker: a step that deliberately carries a multi-line `run:` block
+/// (a generated consumer artifact, say) states so with this on the step, the line above it,
+/// or a comment inside the block.
+const MULTI_RUN_ALLOWED: &str = "multiline-run-allowed";
+
+/// task-36: no workflow step carries more than one command line. The house rule is that a
+/// step is `uses:`, a single `pixi run <task>` line, or a one-line host bootstrap; anything
+/// longer is a pixi task, and anything with logic in it is an xtask subcommand. Without a
+/// guard the workflows re-grow embedded shell — they carried ~280 lines of it, in three
+/// dialects, when this task started — and per-platform shell is exactly what killed the
+/// v0.3.6 release on macOS.
+///
+/// Text-based on purpose (like every check here): a YAML parser would be a new dependency
+/// the airlock cannot take until a transport carries it, and the shape being policed — a
+/// `run:` block scalar — is visible without one.
+///
+/// What counts as one command: a folded scalar (`run: >-`) folds its lines into a single
+/// command and is never flagged; inside a literal block (`run: |`), blank lines and `#`
+/// comments are not commands, and a line ending in `\\` continues onto the next — so a
+/// wrapped single command stays legal. Only two or more logical commands in one literal
+/// block fire the check.
+fn workflow_shape(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
+    let block_intro =
+        Regex::new(r"^(\s*)(?:-\s+)?run:\s*([|>])[+-]?\s*(#.*)?$").expect("static regex");
+    let mut findings = Vec::new();
+    for file in workflow_files(root) {
+        let text = crate::util::read(&file)?;
+        let lines: Vec<&str> = text.lines().collect();
+        let mut index = 0;
+        while index < lines.len() {
+            let Some(caps) = block_intro.captures(lines[index]) else {
+                index += 1;
+                continue;
+            };
+            let intro = index;
+            let indent = caps.get(1).map_or(0, |m| m.as_str().len());
+            let folded = &caps[2] == ">";
+
+            // The block body: every following line that is blank or more indented than the
+            // `run:` key. A block scalar must be the last key of its step, so the first
+            // less-indented non-blank line ends it.
+            let mut end = intro + 1;
+            while end < lines.len() {
+                let line = lines[end];
+                let line_indent = line.len() - line.trim_start().len();
+                if !line.trim().is_empty() && line_indent <= indent {
+                    break;
+                }
+                end += 1;
+            }
+
+            // The reviewed exception: the marker on the `run:` line, the line above it, or
+            // any comment inside the block.
+            let opted_out = lines[intro].contains(MULTI_RUN_ALLOWED)
+                || intro > 0 && lines[intro - 1].contains(MULTI_RUN_ALLOWED)
+                || lines[intro + 1..end].iter().any(|line| {
+                    line.trim_start().starts_with('#') && line.contains(MULTI_RUN_ALLOWED)
+                });
+
+            if !folded && !opted_out {
+                let body = &lines[intro + 1..end];
+                let commands = count_commands(body);
+                if commands > 1 {
+                    findings.push(format!(
+                        "{}:{}: `run:` block holds {} command lines",
+                        rel(root, &file),
+                        intro + 1,
+                        commands
+                    ));
+                }
+            }
+            index = end;
+        }
+    }
+    if !findings.is_empty() {
+        failures.push(Failure::with(
+            "a workflow step runs a multi-line command block, which the house rule keeps out of workflows:",
+            findings,
+            "make the step a single `pixi run <task>` line (a task in pixi.toml, or an xtask subcommand when it carries logic); a reviewed exception carries `multiline-run-allowed` on the step",
+        ));
+    }
+    Ok(())
+}
+
+/// Logical command count of a literal block body: comments and blanks are not commands, and
+/// a trailing backslash joins a line to the next one.
+fn count_commands(body: &[&str]) -> usize {
+    let mut commands = 0;
+    let mut continuing = false;
+    for line in body {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if !continuing {
+            commands += 1;
+        }
+        continuing = trimmed.ends_with('\\');
+    }
+    commands
+}
+
 #[cfg(test)]
 mod tests {
-    use super::check_repository;
+    use super::{MULTI_RUN_ALLOWED, check_repository};
     use std::fs;
     use std::path::Path;
 
@@ -721,6 +831,88 @@ mod tests {
                 .any(|h| h.contains("pins a literal release tag")),
             "{found:?}"
         );
+    }
+
+    #[test]
+    fn a_multi_line_run_block_fires_check_9() {
+        let dir = valid_fixture();
+        fs::write(
+            dir.path().join(".github/workflows/shape.yml"),
+            "jobs:\n  x:\n    steps:\n      - name: two commands\n        run: |\n          pixi run build\n          pixi run test\n",
+        )
+        .expect("workflow");
+        let found = headlines(dir.path());
+        assert!(
+            found.iter().any(|h| h.contains("multi-line command block")),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn every_single_command_spelling_passes_check_9() {
+        let dir = valid_fixture();
+        // One literal command, a folded scalar (folds to one command however it wraps), a
+        // backslash-continued single command, and plain one-line runs: all legal.
+        let workflow = concat!(
+            "jobs:\n  x:\n    steps:\n",
+            "      - name: one literal\n        run: |\n          pixi run test\n",
+            "      - name: folded\n        run: >-\n          pixi global install\n          --channel conda-forge\n          pixi-sandbox\n",
+            "      - name: continued\n        run: |\n          pixi upload prefix \\\n            --channel example \\\n            dist/*.conda\n",
+            "      - run: pixi run lint\n",
+            "      - run: rustup target add x86_64-unknown-linux-musl\n",
+        );
+        fs::write(dir.path().join(".github/workflows/shape.yml"), workflow).expect("workflow");
+        let found = headlines(dir.path());
+        assert!(
+            !found.iter().any(|h| h.contains("multi-line command block")),
+            "single commands in every spelling must pass: {found:?}"
+        );
+    }
+
+    #[test]
+    fn comments_and_blank_lines_inside_a_block_are_not_commands() {
+        let dir = valid_fixture();
+        fs::write(
+            dir.path().join(".github/workflows/shape.yml"),
+            "jobs:\n  x:\n    steps:\n      - run: |\n          # why this is fine\n\n          pixi run test\n",
+        )
+        .expect("workflow");
+        let found = headlines(dir.path());
+        assert!(
+            !found.iter().any(|h| h.contains("multi-line command block")),
+            "a commented single command is one command: {found:?}"
+        );
+    }
+
+    #[test]
+    fn the_opt_out_marker_silences_a_reviewed_multi_line_step() {
+        let block = "          pixi run build\n          pixi run test\n";
+        for (name, workflow) in [
+            (
+                "above",
+                "jobs:\n  x:\n    steps:\n      # multiline-run-allowed: generated artifact\n      - run: |\n{block}".to_string(),
+            ),
+            (
+                "inline",
+                format!("jobs:\n  x:\n    steps:\n      - run: | # {MULTI_RUN_ALLOWED}\n{{block}}"),
+            ),
+            (
+                "inside",
+                format!("jobs:\n  x:\n    steps:\n      - run: |\n          # {MULTI_RUN_ALLOWED}\n{{block}}"),
+            ),
+        ] {
+            let dir = valid_fixture();
+            fs::write(
+                dir.path().join(".github/workflows/shape.yml"),
+                workflow.replace("{block}", block),
+            )
+            .expect("workflow");
+            let found = headlines(dir.path());
+            assert!(
+                !found.iter().any(|h| h.contains("multi-line command block")),
+                "the {name} marker placement must silence the step: {found:?}"
+            );
+        }
     }
 
     #[test]

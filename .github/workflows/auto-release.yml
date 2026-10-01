@@ -5,9 +5,13 @@ name: auto-release
 # which builds the five static tier-1 binaries, publishes the Conda package to prefix.dev, and publishes the GitHub Release.
 #
 # It is deliberately split from `release.yml` (which stays the pure build-and-publish half) so
-# the version-bump policy lives in one reviewable place. All the file surgery is the tested
-# `xtask prepare-release` command (`pixi run prepare-release`), so the exact bump CI performs
-# is the one a maintainer can run and review locally.
+# the version-bump policy lives in one reviewable place. Both halves are tested xtask
+# commands: `pixi run xtask prepare-release` stamps the tree and records what it touched
+# (`.release-touched`), and `pixi run xtask commit-release <tag>` turns that prepared tree
+# into the release commit, the annotated tag, and the two pushes — its guards (stage exactly
+# the reported files, refuse unaccounted modifications, refuse an existing remote tag) are
+# tempdir-fixture tested against a real git and a bare remote, so the exact routine CI
+# performs is the one a maintainer can run and review locally.
 #
 # Trigger it remotely — no local checkout required:
 #   gh workflow run auto-release.yml                       # auto bump from conventional commits
@@ -35,7 +39,7 @@ on:
           - major
         default: auto
       version:
-        description: Explicit version to cut (e.g. v1.2.3); overrides `bump` when set
+        description: Explicit version to cut (e.g., v1.2.3); overrides `bump` when set
         type: string
         default: ""
       dry-run:
@@ -50,7 +54,7 @@ on:
         type: string
         default: auto
       version:
-        description: Explicit version to cut (e.g. v1.2.3); overrides `bump` when set
+        description: Explicit version to cut (e.g., v1.2.3); overrides `bump` when set
         required: false
         type: string
         default: ""
@@ -88,7 +92,7 @@ jobs:
         with:
           ref: main
           # convco derives the next version from the whole commit history, so a shallow
-          # checkout would miscount the bump.
+          # checkout would miscount the bump. commit-release pushes with these credentials.
           fetch-depth: 0
           persist-credentials: true
           token: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
@@ -99,100 +103,29 @@ jobs:
           environments: default
           cache: true
 
+      # prepare-release prints the resolved vX.Y.Z as its last stdout line and, when GitHub
+      # sets GITHUB_OUTPUT, writes it as the `version` output with the diff stat as the step
+      # summary — the same command reports the same things locally.
       - name: Prepare release (bump + changelog + lock)
         id: prep
-        shell: bash
-        env:
-          # Explicit version wins; otherwise the chosen bump level.
-          SELECTOR: ${{ inputs.version != '' && inputs.version || inputs.bump }}
-        run: |
-          set -euo pipefail
-          VERSION="$(pixi run xtask prepare-release "$SELECTOR" | tail -n1)"
-          case "$VERSION" in
-            v[0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "::error::prepare-release did not return a vX.Y.Z version (got '$VERSION')"; exit 1 ;;
-          esac
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Prepared \`$VERSION\`"
-            echo
-            echo '```'
-            git --no-pager diff --stat
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: pixi run xtask prepare-release ${{ inputs.version != '' && inputs.version || inputs.bump }}
 
-      - name: Refuse to overwrite an existing tag
-        shell: bash
-        env:
-          TAG: ${{ steps.prep.outputs.version }}
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "::error::tag $TAG already exists on origin — nothing released"
-            exit 1
-          fi
-
+      # commit-release checks the remote tag first, then prints the prepared diff and stops:
+      # no staging, no commit, no tag, no push.
       - name: Dry-run — show diff and stop
         if: ${{ inputs.dry-run }}
-        shell: bash
-        env:
-          TAG: ${{ steps.prep.outputs.version }}
-        run: |
-          echo "::notice::dry-run: prepared $TAG but not committing, tagging, or releasing"
-          git --no-pager diff
+        run: pixi run xtask commit-release -- ${{ steps.prep.outputs.version }} --dry-run
 
+      # Stages exactly what .release-touched lists, refuses any unaccounted modification,
+      # commits as pixi-sandbox[bot], tags, and pushes main + the tag. The release commit's
+      # author is the bot identity ShellGit carries, so it never depends on the runner's git
+      # config.
       - name: Commit, tag, and push
         if: ${{ ! inputs.dry-run }}
-        shell: bash
-        env:
-          TAG: ${{ steps.prep.outputs.version }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Stage what prepare-release reported it changed, not a hand-kept list. The list used
-          # to be literal here, and it was correct right up until the repin step started rewriting
-          # documentation: `git add` would have staged the manifests and dropped every one of the
-          # ~90 doc references, producing a release commit that contradicts itself. Because the
-          # commit is pushed with the GITHUB_TOKEN it starts no CI run, so that contradiction would
-          # have landed on main without a single red check. Derived from the working tree instead:
-          # a file the script forgot to record is still a file the script should not have touched,
-          # and `lint-repo-consistency` is the backstop for that.
-          if [ ! -f .release-touched ]; then
-            echo "::error::prepare-release did not write .release-touched — refusing to guess what to stage" >&2
-            exit 1
-          fi
-          while IFS= read -r f; do
-            [ -n "$f" ] && git add -- "$f"
-          done <.release-touched
-          # The list is a report, not a licence: anything the run left modified but failed to
-          # record would otherwise go uncommitted and be lost on the next checkout.
-          #
-          # `git diff --name-only`, not `git status --porcelain` or `git diff-index HEAD`. Both of
-          # those report *staged* changes as well, so run after the `git add` they name every file
-          # just staged and the guard fires unconditionally — it looked correct and rejected every
-          # release. Worktree-against-index is the question actually being asked: what is modified
-          # and not accounted for.
-          unaccounted="$(git diff --name-only | LC_ALL=C sort)"
-          if [ -n "$unaccounted" ]; then
-            echo "::error::modified files missing from .release-touched:" >&2
-            printf '%s\n' "$unaccounted" >&2
-            exit 1
-          fi
-          git commit -m "chore(release): $TAG"
-          git tag -a "$TAG" -m "$TAG"
-          git push origin HEAD:main
-          git push origin "refs/tags/$TAG"
+        run: pixi run xtask commit-release ${{ steps.prep.outputs.version }}
 
       - name: Dispatch release build for the new tag
         if: ${{ ! inputs.dry-run }}
-        shell: bash
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
-          TAG: ${{ steps.prep.outputs.version }}
-        run: |
-          set -euo pipefail
-          # A GITHUB_TOKEN tag push does not auto-start release.yml, so trigger it on the new tag.
-          gh workflow run release.yml --ref "$TAG" -f version="$TAG"
-          echo "::notice::dispatched release.yml for $TAG"
-          echo "Dispatched **release.yml** for \`$TAG\` — binaries + prefix.dev package + GitHub Release will follow." >> "$GITHUB_STEP_SUMMARY"
+        run: pixi run dispatch-release ${{ steps.prep.outputs.version }}
