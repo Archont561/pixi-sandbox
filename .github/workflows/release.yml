@@ -137,7 +137,7 @@ jobs:
 
       - name: Smoke-test Conda package (${{ matrix.platform }})
         shell: bash
-        run: pixi run -e package package-smoke
+        run: pixi run -e package xtask smoke-conda-package
 
       - name: Upload Conda package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -205,7 +205,7 @@ jobs:
       # that turns into a red build instead of a quiet gap.
       - name: Require one Conda package per platform
         shell: bash
-        run: cargo run -q -p xtask -- check-conda-platforms dist/conda
+        run: pixi run xtask check-conda-platforms dist/conda
 
       - name: Generate SHA256SUMS
         shell: bash

@@ -81,9 +81,9 @@ publisher uses auditable composite actions in bash/pwsh with checksum verificati
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
         with: { environments: default, cache: true }
-      - run: pixi run ci-pack      # pack + vendor + embed the pinned tools
-      - run: pixi run ci-doctor    # verify every blob, write nothing
-      - run: pixi run ci-publish   # one orphan commit, force-pushed
+      - run: pixi run sandbox-pack . default "$TRANSPORT" linux-64   # pack + vendor + pinned tools
+      - run: pixi run sandbox-doctor "$TRANSPORT"                     # verify every blob, write nothing
+      - run: pixi run sandbox-publish "$BRANCH" origin "$TRANSPORT"   # one orphan commit, force-pushed
 ```
 
 The unified `publish-sandbox.yml` workflow (replaces `publish-sandbox` + `publish-sandboxes`) validates

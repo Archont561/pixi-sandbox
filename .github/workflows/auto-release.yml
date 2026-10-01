@@ -107,7 +107,7 @@ jobs:
           SELECTOR: ${{ inputs.version != '' && inputs.version || inputs.bump }}
         run: |
           set -euo pipefail
-          VERSION="$(pixi run prepare-release "$SELECTOR" | tail -n1)"
+          VERSION="$(pixi run xtask prepare-release "$SELECTOR" | tail -n1)"
           case "$VERSION" in
             v[0-9]*.[0-9]*.[0-9]*) ;;
             *) echo "::error::prepare-release did not return a vX.Y.Z version (got '$VERSION')"; exit 1 ;;

@@ -266,7 +266,7 @@ fn version_references(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
             "documentation pins a version the manifests do not declare (task-2):",
             findings,
             format!(
-                "README-family drift: run 'pixi run prepare-release v{workspace_version}' (or mark the line stale-ref-allowed); docs/ literals: replace the tag with v__VERSION__ — the site derives the version at build time"
+                "README-family drift: run 'pixi run xtask prepare-release v{workspace_version}' (or mark the line stale-ref-allowed); docs/ literals: replace the tag with v__VERSION__ — the site derives the version at build time"
             ),
         )),
         Ok(_) => {}

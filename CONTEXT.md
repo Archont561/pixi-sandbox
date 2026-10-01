@@ -78,7 +78,7 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
    than its own.
 
 The dev container that provides this online environment is `.devcontainer/devcontainer.json`
-(`ghcr.io/prefix-dev/pixi`, with `pixi install --locked --all` + `docs-install` + `setup-opencode`
+(`ghcr.io/prefix-dev/pixi`, with `pixi install --locked --all` + `docs-install` + a global `bun add` of opencode
 on create).
 
 ---
@@ -136,3 +136,44 @@ Do not attempt package resolution, prefix.dev publication, GitHub Actions dispat
 | [`.knowledge/design.md`](.knowledge/design.md) | In-depth design specification and airlock invariants |
 | [`.knowledge/rust-bootstrap.md`](.knowledge/rust-bootstrap.md) | Rust static bootstrap binary strategy and validation checklist |
 | [`.knowledge/README.md`](.knowledge/README.md) | Open Knowledge Format index |
+
+---
+
+## 🗒️ Session scratchpad (agent proposals, drafts, open questions)
+
+> [!IMPORTANT]
+> **This is the only place an agent records something it did not implement.** Suggestions,
+> half-finished designs, alternatives considered, measurements worth keeping, "we should
+> probably…" — they go here, newest section last, each under a dated heading. They do **not**
+> go into `AGENTS.md`, `README.md`, `.knowledge/`, a spec under `backlog/docs/`, or a comment
+> in the code they speculate about: those files state what *is*, and a proposal mixed into them
+> reads as a decision nobody made.
+>
+> Promotion out of here is deliberate: a proposal becomes a backlog task (it will be built), a
+> decision in `.knowledge/decisions.md` (it was decided, with evidence), or it is deleted.
+> Anything still sitting here is explicitly **not** agreed.
+
+### 2026-10-01 — tooling session (lefthook split, workflow rule, restore findings)
+
+**Landed** (so: not proposals) — pre-commit stopped compiling Rust and the cargo gates moved to
+`pre-push`; `scripts/restore.sh` now reports the user-tool registration that actually happened;
+`shard::materialise` stages-and-renames so a running tool can be replaced; the pixi task table
+went from 38 tasks to 23 behind one `xtask` task and argument-carrying tasks.
+
+**Open proposals, not agreed:**
+
+- **Pack and publish a 0.3.7 transport.** The published `sandbox/developer-linux-64` branch
+  carries pixi-sandbox **0.3.6**, which predates `--user-tools`, so no restore from it can put
+  `pixi` on a developer's PATH and every airlock session still sources `sandbox-env.sh`. A
+  repack would switch that on. Not done because `publish` force-pushes the branch — a
+  maintainer's call, not an agent's.
+- **Test `scripts/restore.sh` itself.** Nothing executes it: `tests/cli.rs` and
+  `tests/user_tools.rs` cover the launcher `init` *generates*, and `check-repository` only lints
+  the script's Bash-3.2 surface. The two defects fixed on 2026-10-01 were both found by hand.
+  A fixture-driven test (fake remote, fixture transport, `PIXI_SANDBOX_USER_TOOLS` both ways)
+  would cover branch derivation, the doctor/restore/verify sequence and the final report.
+- **`deny-egress` as an xtask** (sketched in task-36): one subcommand that re-execs under
+  `unshare -n` / `sandbox-exec` would let the airlock workflow's Tier A be a one-line step and
+  would make the egress-denied gate reproducible on a developer's Linux box.
+- **Docs tasks could collapse further** (`docs-dev`/`docs-build` → one `docs <mode>` task). Left
+  alone deliberately: both names appear in CI, docs and the README, and the churn buys one line.

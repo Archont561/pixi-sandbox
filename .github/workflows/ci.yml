@@ -35,15 +35,15 @@ jobs:
           environments: default web
           cache: true
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: pixi run fmt-check
+      - run: pixi run fmt --check
       - run: pixi run lint-rust
       - run: pixi run deny
       - run: pixi run lint-actions
-      - run: pixi run lint-generated-workflow
-      - run: pixi run lint-sandbox-plan
+      - run: pixi run xtask lint-generated-workflow
+      - run: pixi run sandbox-plan --json
       - run: pixi run lint-toml
       - run: pixi run lint-docs
-      - run: pixi run lint-repo-consistency
+      - run: pixi run xtask check-repository
       - run: pixi run test
       - run: pixi run test-doc
       - run: pixi run coverage
