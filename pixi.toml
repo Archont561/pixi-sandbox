@@ -103,19 +103,26 @@ lint-generated-workflow = "cargo run -q -p xtask -- lint-generated-workflow"
 lint-sandbox-plan = "cargo run -q -p pixi-sandbox -- plan --config .pixi-sandbox.toml --json"
 lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pixi-sandbox-core/Cargo.toml crates/pixi-sandbox/Cargo.toml crates/pixi-sandbox/pixi.toml crates/pixi-sandbox-git/Cargo.toml crates/xtask/Cargo.toml deny.toml"
 # Claims this repository makes about itself that no cargo test may check (D10 keeps tests on the
-# fixtures): crates/ free of references to the deleted prototype, and one platform story across
-# the README badge, `pixi.toml` and `.pixi-sandbox.toml`.
-lint-repo-consistency = "bash scripts/lint-repo-consistency.sh"
+# fixtures): crates/ free of references to the deleted prototype, one platform story across
+# the README badge, `pixi.toml` and `.pixi-sandbox.toml`, immutable action pins, agreeing
+# version references, self-contained published actions. An xtask (crates/xtask/src/repo_checks.rs),
+# not a shell script: only the xtask receives the real repository root at runtime; its tests run
+# against tempdir fixtures, and one Rust runtime covers every runner (the v0.3.6 release died on
+# macOS's Bash 3.2 over a bashism one layer below what actionlint can see).
+lint-repo-consistency = "cargo run -q -p xtask -- check-repository"
+# The two generated action copies (`setup/action.yml`, `publish/action.yml`), re-rendered from
+# the root action.yml. Run after editing action.yml, or lint-repo-consistency fails on the drift.
+render-action-shims = "cargo run -q -p xtask -- render-action-shims"
 # conventional-commit check for the `commit-msg` hook; reads the proposed message from stdin
 lint-commit = "convco check --from-stdin"
 # changelog via convco (conventional commits -> CHANGELOG.md)
 changelog = "convco changelog > CHANGELOG.md"
 changelog-preview = "convco changelog"
 # Resolve the next release version (convco) and stamp Cargo.toml + pixi.toml + internal crate
-# pins + Cargo.lock + CHANGELOG.md. Never commits or tags — that is the `auto-release` workflow's
-# job (or a reviewer's). Optional selector: `pixi run prepare-release auto|major|minor|patch|vX.Y.Z`
-# (default auto).
-prepare-release = "bash scripts/prepare-release.sh"
+# pins + Cargo.lock + CHANGELOG.md + the documented release references. Never commits or tags —
+# that is the `auto-release` workflow's job (or a reviewer's). Optional selector:
+# `pixi run prepare-release auto|major|minor|patch|vX.Y.Z` (default auto).
+prepare-release = "cargo run -q -p xtask -- prepare-release"
 # one line for the whole lint gate. `lint-docs` is declared under `[feature.web.tasks]`, so pixi
 # runs that dependency in the `web` environment while the rest run in `default`.
 lint = { depends-on = [
@@ -138,8 +145,11 @@ lint = { depends-on = [
 # platform, and the development environment is not a precondition for producing a package.
 package = "pixi publish --path crates/pixi-sandbox --build-dir $PIXI_PROJECT_ROOT/.publish/build --target-dir $PIXI_PROJECT_ROOT/.publish/out"
 # Install what `package` just built and run it here (task-23 AC#2). A package that builds on
-# five runners and runs on four is the failure a single-platform build can never see.
-package-smoke = "bash scripts/smoke-conda-package.sh"
+# five runners and runs on four is the failure a single-platform build can never see. An xtask,
+# not a script: the runner's Rust toolchain (the same one `package` just used) is the one
+# runtime all five platforms share — macOS ships Bash 3.2, and one Bash-4 builtin in the old
+# script 127'd both darwin legs of the v0.3.6 release.
+package-smoke = "cargo run -q -p xtask -- smoke-conda-package"
 
 # ---------------------------------------------------------------------------
 # The transport pipeline, locally: pack → doctor → publish. These tasks exercise the
@@ -199,18 +209,19 @@ lint-docs-write = { depends-on = [
 # docs. One bun workspace at the repo root (package.json workspaces: ["docs"]), so the install
 # runs there and hoists into the root node_modules; `docs/` has no lockfile of its own any more.
 #
-# SANDBOX_VERSION is exported by these tasks and read by the site, so the documented version is
-# decided by the tree that built it and never written into the pages: scripts/version.sh reads
-# `[workspace.package] version` from the root Cargo.toml — the one place the version exists —
-# and docs/astro.config.mjs substitutes it for every `__VERSION__` at build time. That is what
-# lets a release rewrite zero documentation lines (release-refs.sh now stamps only the README
-# family, which GitHub renders raw). A bare `bun run build` in docs/ still works: the config
-# falls back to reading the same Cargo.toml directly.
+# The documented version is decided by the tree being built and never written into the pages:
+# docs/astro.config.mjs walks up to the root Cargo.toml and reads `[workspace.package] version`
+# — the one place the version exists — then substitutes it for every `__VERSION__` at build
+# time. That is what lets a release rewrite zero documentation lines (the release repin stamps
+# only the README family, which GitHub renders raw). No SANDBOX_VERSION plumbing here any more:
+# the config's own Cargo.toml fallback IS the path, in and outside pixi alike, and the `web`
+# environment deliberately carries no cargo for a wrapper script to lean on. The env var still
+# wins when a caller must override (`xtask version` prints the same value).
 docs-install = "bun install --frozen-lockfile"
-docs-dev = { cmd = "SANDBOX_VERSION=$(bash \"$PIXI_PROJECT_ROOT/scripts/version.sh\") bun run dev", cwd = "docs" }
+docs-dev = { cmd = "bun run dev", cwd = "docs" }
 docs-build = { depends-on = [
   "docs-install",
-], cmd = "SANDBOX_VERSION=$(bash \"$PIXI_PROJECT_ROOT/scripts/version.sh\") bun run build", cwd = "docs" }
+], cmd = "bun run build", cwd = "docs" }
 
 # ---------------------------------------------------------------------------
 # opencode: the agent binary. Installed globally with bun, not as a conda dependency, so it is
