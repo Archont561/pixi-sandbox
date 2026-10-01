@@ -314,3 +314,38 @@ of the *pack*, not of the *decision*. `sandbox-doctor` and `sandbox-publish` als
 built self-bin, so the whole lane is one binary. Deliberately separate and unchanged:
 `airlock.yml` packs with the *released* channel binary because it is the proof of published
 assets, not the publisher of the developer transport.
+
+**Owner direction, same day — dogfood the generated publisher instead of a bespoke job.** The
+repo should publish its own transport through the exact workflow `pixi-sandbox init` generates,
+with a binary-path override carried in an environment variable, and the automation identities
+unified as `pixi-sandbox[bot]`. The identity half is landed: transport commits are now authored
+`pixi-sandbox[bot] <41898282+github-actions[bot]@users.noreply.github.com>` (the github-actions
+app's noreply address, so CI pushes render the bot avatar), and task-39's relock bot carries the
+same identity. The dogfood half has a workable shape:
+
+- The generated template (`crates/pixi-sandbox/src/generated/github_workflow.rs`) gains one knob:
+  a `PIXI_SANDBOX_BIN` env read from a repository *variable* (`${{ vars.PIXI_SANDBOX_BIN || '' }}`),
+  empty for every consumer. When set, the channel-install and bootstrap-download steps are
+  skipped (`if:` guards) and the one binary drives `plan`/`pack`/`doctor`/`publish` AND is the
+  embedded self-bin — the same one-binary-lane semantics as the manual `sandbox-*` tasks, so no
+  driver/embedded version skew. The value `build` means "build it from this repository first" (a
+  conditional `pixi run cargo build --release -p pixi-sandbox` step, inert for consumers); a path
+  means "use exactly this binary".
+- The repo commits a pristine render at `.github/workflows/publish-sandbox.yml`, and
+  `check-repository` gains a byte-equality check: the committed file must equal
+  `render_github_workflow(<current version>, .pixi-sandbox.toml)`. That makes the dogfooding
+  total — the artifact this repo runs is provably the artifact consumers get, and the v0.3.1
+  broken-generated-workflow class (issue #37) cannot recur silently.
+- Consequence to accept before building: the generated trigger is `push: [main]` +
+  `workflow_dispatch`, and byte-equality forbids the repo's copy from differing — so every push
+  to main re-packs and force-pushes the transport (keep-N rotation is the designed behavior,
+  task-3), and the "repack is a maintainer's call" stance from the proposal above is superseded.
+  The transport then tracks main continuously, which is what the `--user-tools` skew was about
+  in the first place.
+- Open before this graduates to a task: (1) confirm the on-push trigger is wanted, or drop
+  byte-equality and keep a dispatch-only repo copy; (2) task-36's future `workflow_shape` check
+  must exempt generated files (they carry multi-line `run:` blocks by design — a consumer
+  artifact, not a house workflow); (3) the repo's own runs exercise the override path, not the
+  channel-install/bootstrap-verification path — that consumer path keeps its existing proofs
+  (actionlint + Rust tests in every `lint`, and airlock.yml's released-binary proof), or a
+  second scheduled run with the variable unset could prove it end-to-end.
