@@ -246,8 +246,24 @@ jobs:
           # to do with the airlock. So confirm the tag against the releases API — one authenticated
           # call, which the job token keeps clear of the shared rate limit that killed the first
           # osx-arm64 proof — and fall back to the newest release that IS published.
-          published() { gh api "repos/$REPO/releases/tags/$1" --jq '.tag_name' 2>/dev/null || true; }
-          latest() { gh api "repos/$REPO/releases/latest" --jq '.tag_name' 2>/dev/null || true; }
+          # Capture-then-check, not `… || true`: on a 404 `gh api` prints the JSON error body
+          # to STDOUT (only the summary goes to stderr), so the old `$(… || true)` spelling
+          # captured `{"message":"Not Found",…}` as the resolved tag and the fallback below
+          # never ran — the proof then curl'd a URL with braces in it ("Malformed input to a
+          # URL function"). Unexercised until v0.3.6: that failed release was the first time a
+          # PR ran this step while the declared tag had no published release (PR #46).
+          published() {
+            local tag
+            if tag="$(gh api "repos/$REPO/releases/tags/$1" --jq '.tag_name' 2>/dev/null)"; then
+              printf '%s\n' "$tag"
+            fi
+          }
+          latest() {
+            local tag
+            if tag="$(gh api "repos/$REPO/releases/latest" --jq '.tag_name' 2>/dev/null)"; then
+              printf '%s\n' "$tag"
+            fi
+          }
 
           resolved="$(published "$declared")"
           if [ -z "$resolved" ]; then
@@ -258,6 +274,14 @@ jobs:
             fi
             echo "::notice::$declared is declared but not published yet (mid-release?); proving the newest published release $resolved" >&2
           fi
+          # A tag flows into a download URL; refuse anything that is not shaped like one.
+          case "$resolved" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::resolved release tag '$resolved' is not a vX.Y.Z tag" >&2
+              exit 1
+              ;;
+          esac
           echo "resolved=$resolved" >>"$GITHUB_OUTPUT"
           echo "proving $resolved (declared $declared)" >>"$GITHUB_STEP_SUMMARY"
 
