@@ -123,8 +123,12 @@ jobs:
     # guard alone, which is how the bot turns its own commit green (see the last step).
     if: ${{ always() && needs.guard.result == 'failure' && github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
+    # A job-level `permissions:` block is a replacement, not an addition: every scope left
+    # unlisted becomes `none`. `contents: write` alone therefore pushes the lock commit and
+    # then fails the dispatch below with a 403, which is exactly how this was found.
     permissions:
       contents: write
+      actions: write
     steps:
       # A fork PR downgrades `contents: write` to read, so the push below cannot succeed. Say
       # that, instead of letting a permissions wall read as a flaky push.
