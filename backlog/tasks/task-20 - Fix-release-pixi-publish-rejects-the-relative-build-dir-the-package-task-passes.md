@@ -3,11 +3,11 @@ id: TASK-20
 title: >-
   Fix release: pixi publish rejects the relative --build-dir the package task
   passes
-status: In Progress
+status: Done
 assignee:
   - '@arena'
 created_date: '2026-10-01 08:33'
-updated_date: '2026-10-01 10:25'
+updated_date: '2026-10-01 16:25'
 labels:
   - release
   - ci
@@ -28,7 +28,7 @@ The v0.3.3 release workflow failed at the Build Conda package step (exit 101, 17
 - [x] #1 The package task passes absolute build and target dirs (PIXI_PROJECT_ROOT form, per the design 6 paths-from-environment rule)
 - [x] #2 pixi run package completes locally in the restored environment and produces .publish/out/*.conda
 - [x] #3 The task output dirs are gitignored so a local run leaves nothing committable
-- [ ] #4 A release re-run on a ref containing the fix can complete without the panic (verified by the local run plus the workflow steps that consume dist/*.conda)
+- [x] #4 A release re-run on a ref containing the fix can complete without the panic (verified by the local run plus the workflow steps that consume dist/*.conda)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -46,5 +46,13 @@ Verification: pixi run package now passes argument validation and proceeds into 
 
 Watch-out for the re-run: the NEW step after the build (pixi upload prefix --channel archont561/pixi-sandbox with OIDC attestation) requires prefix.dev Repository Access to be configured for the release.yml workflow of this repository - the workflow comment says so explicitly. If that is not configured, the release will get past the build and fail at the prefix.dev upload instead.
 
-AC#2 proven in this environment on 2026-10-01: prefix.dev/conda-forge reachable (HEAD 200) and pixi run package completed end-to-end in ~89s, publishing .publish/out/pixi-sandbox-0.3.5-ha35fb5c_0.conda (3.32 MiB). The earlier TLS handshake eof blocker does not reproduce. AC#4 still needs the tagged release re-run on CI.
+AC#2 proven in this environment on 2026-10-01: prefix.dev/conda-forge reachable (HEAD 200) and pixi run package completed end-to-end in ~89s, publishing .publish/out/pixi-sandbox-0.3.5-ha35fb5c_0.conda (3.32 MiB). The earlier TLS handshake eof blocker does not reproduce.
+
+AC#4 proven by release workflow re-runs after the fix: v0.3.5 (run 36840672608, ref 7a6651d) completed the release job, including Build Conda package, Publish Conda package to prefix.dev, and Create GitHub Release. The later v0.3.7 release (run 36875815588, ref a7b4109) completed the full native packaging matrix: every platform's Build Conda package, Smoke-test Conda package, and Upload Conda package steps passed, and the release job downloaded the `conda-*` artifacts, required one package per platform, published them to prefix.dev, and created the GitHub Release.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:SUMMARY:BEGIN -->
+The package task now uses `$PIXI_PROJECT_ROOT`-absolute `.publish` paths, `.publish/` and `dist/` are ignored, local packaging reached and later completed the Conda build, and successful release workflow re-runs proved the CI-side package build, artifact consumption, prefix.dev upload, and GitHub Release creation paths no longer hit pixi's relative-build-dir panic.
+<!-- SECTION:SUMMARY:END -->
