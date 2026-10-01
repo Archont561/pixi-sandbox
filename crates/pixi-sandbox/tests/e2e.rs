@@ -15,6 +15,18 @@ fn bin() -> Command {
     Command::cargo_bin("pixi-sandbox").expect("binary builds")
 }
 
+/// task-33: restore registers user tools in a per-user bin directory by default, so every
+/// test that runs a restore points HOME (and the detected shell) at its own tempdir — a test
+/// that touches the developer's real home is a broken test (D10's rule, user level).
+fn isolated_bin(home: &Path) -> Command {
+    let mut command = bin();
+    command
+        .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("SHELL", "/usr/bin/bash");
+    command
+}
+
 fn fixture_transport() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transport")
 }
@@ -97,7 +109,7 @@ fn fixture_doctor_publish_and_restore_is_the_complete_offline_proof() {
         .success()
         .stdout(predicate::str::contains("published"));
 
-    bin()
+    isolated_bin(temp.path())
         .args([
             "restore",
             "--branch-location",
@@ -199,6 +211,10 @@ fn fixture_restore_succeeds_in_a_severed_network_namespace() {
                 .to_str()
                 .unwrap(),
         ])
+        // task-33: registration runs by default inside the namespace too; keep it in the tempdir.
+        .env("HOME", temp.path())
+        .env("USERPROFILE", temp.path())
+        .env("SHELL", "/usr/bin/bash")
         .args([
             "restore",
             "--branch-location",
@@ -258,7 +274,7 @@ fn a_real_packed_environment_restores_with_nothing_pointing_into_restore_scratch
         .success()
         .stdout(predicate::str::contains("OK — every declared byte matches"));
 
-    bin()
+    isolated_bin(temp.path())
         .args([
             "restore",
             "--branch-location",
@@ -306,7 +322,7 @@ fn doctor_verify_restored_checks_the_tree_restore_produced() {
     copy_tree(&fixture_transport(), &transport);
     fs::create_dir_all(&airlock).unwrap();
 
-    bin()
+    isolated_bin(temp.path())
         .args([
             "restore",
             "--branch-location",
@@ -389,7 +405,7 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
     copy_tree(&fixture_transport(), &transport);
     fs::create_dir_all(&airlock).unwrap();
 
-    bin()
+    isolated_bin(temp.path())
         .args([
             "restore",
             "--branch-location",

@@ -339,6 +339,9 @@ jobs:
       # ---------------------------------------------------------------- restore
       # `restore` in place over a copy of the project, which is the situation the airlock page
       # describes: a developer has the repository and reconstructs the environment under it.
+      # `--user-tools skip` is explicit (task-33): this is a shared CI runner, and the proof
+      # must not edit the runner's home or profile. The restore output must be identical
+      # either way — registration is a post-verification step, not part of the payload.
       - name: Restore into a copy of the project
         shell: bash
         run: |
@@ -347,7 +350,7 @@ jobs:
           pixi-sandbox restore \
             --branch-location "${{ runner.temp }}/airlock-checkout" \
             --output-path "${{ runner.temp }}/restored" \
-            --envs "$ENVS" --force
+            --envs "$ENVS" --force --user-tools skip
 
       # ---------------------------------------------------------------- the gate
       # --transport hands the gate the extracted branch, so its integrity section can compare

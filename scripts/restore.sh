@@ -11,6 +11,10 @@
 #   PIXI_SANDBOX_BRANCH   same as the [branch] argument (argument wins)
 #   PIXI_SANDBOX_BUNDLE   choose a bundle when the config declares several for this platform
 #   PIXI_SANDBOX_CONFIG   config path (default: <repo root>/.pixi-sandbox.toml)
+#   PIXI_SANDBOX_USER_TOOLS  user-tool registration policy after a verified restore:
+#                            `register` (default) puts pixi and pixi-sandbox launchers in
+#                            ~/.local/bin and adds it to the shell profile PATH; `skip`
+#                            leaves HOME and every profile untouched (CI, shared accounts).
 #
 # The branch name is never guessed: it is read from the same reviewed publish plan the
 # publisher uses, so a config change (new bundle, renamed prefix) reaches this script for
@@ -224,10 +228,15 @@ echo "→ doctor $BIN"
 "$BIN" doctor --branch-location "$WORKTREE" --verify || true
 
 echo "→ restore to $OUTPUT"
-if "$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force 2>&1; then
+# The policy is explicit here rather than inherited from the CLI default (task-33): this
+# script is the repo's own airlock path, so what it does to the user's home is written down.
+# Later arguments win in the CLI, so an operator can still append --user-tools skip.
+if "$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force \
+  --user-tools "${PIXI_SANDBOX_USER_TOOLS:-register}" 2>&1; then
   :
 else
-  "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force
+  "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force \
+    --user-tools "${PIXI_SANDBOX_USER_TOOLS:-register}"
 fi
 
 # The branch was verified before anything was written and every blob was verified as it was
@@ -264,6 +273,9 @@ if [ -f "$OUTPUT/.pixi/sandbox-env.sh" ]; then
   esac
   echo "  pixi() function → bundled pixi"
   echo "Try: pixi --version; cargo --version; cargo check --offline"
+  echo "user tools: the restore also registered pixi and pixi-sandbox for new shells"
+  echo "  (per-user bin on PATH — see the 'register user tools' lines above; set"
+  echo "   PIXI_SANDBOX_USER_TOOLS=skip to disable that on the next restore)"
 else
   echo "restore complete but no sandbox-env.sh found"
 fi

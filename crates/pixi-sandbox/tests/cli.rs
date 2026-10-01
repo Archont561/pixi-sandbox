@@ -7,8 +7,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
-#[cfg(unix)]
-use serde_json::json;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -775,6 +773,11 @@ fn sourcing_the_generated_sandbox_env_resolves_restored_environment_binaries() {
     fs::create_dir_all(&project).unwrap();
 
     bin()
+        // task-33: restore registers user tools by default, so every restoring test points
+        // HOME at a tempdir — a test that touches the developer's real home is a broken test.
+        .env("HOME", temp.path())
+        .env("USERPROFILE", temp.path())
+        .env("SHELL", "/usr/bin/bash")
         .args([
             "restore",
             "--branch-location",
@@ -907,6 +910,10 @@ fn pack_unpack_and_restore_a_verified_synthetic_environment() {
 
     bin()
         .env("PATH", &path)
+        // task-33: registration runs by default; keep it inside the tempdir.
+        .env("HOME", temp.path())
+        .env("USERPROFILE", temp.path())
+        .env("SHELL", "/usr/bin/bash")
         .args([
             "restore",
             "--branch-location",
@@ -1202,44 +1209,20 @@ fn a_bare_root_invocation_verifies_the_branch_and_only_prints_a_hint() {
 #[cfg(unix)]
 #[test]
 fn restore_materialises_the_fixture_vendor_tree_and_writes_relative_cargo_config() {
+    // The fixture transport is used exactly as checked in — including its real unpacker stub.
+    // task-33 made restore verify the tree it produced against the manifest's per-file oracle
+    // before registering user tools, and a hand-rolled fake unpacker (this test used to swap
+    // one in) cannot reproduce the oracle by construction; the genuine fixture can.
     let transport = transport_copy();
-    let unpacker = transport
-        .path()
-        .join(".pixi-sandbox/tools/linux-64/pixi-unpack");
-    write_executable(
-        &unpacker,
-        r#"#!/bin/sh
-set -eu
-out=''
-env=''
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -o) out="$2"; shift 2 ;;
-    -e) env="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-mkdir -p "$out/$env/conda-meta"
-printf '{}\n' > "$out/$env/conda-meta/fake.json"
-"#,
-    );
-
-    // This fixture intentionally leaves tools unpinned, so changing its shell stub only needs
-    // the declared size updated; all environment/vendor blob hashes remain the checked-in ones.
-    let manifest_path = transport.path().join(".pixi-sandbox/manifest.json");
-    let mut manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
-    manifest["tools"]["pixi-unpack"]["size_bytes"] = json!(fs::metadata(&unpacker).unwrap().len());
-    manifest["tools"]["pixi-unpack"]["pinned_sha256"] = Value::Null;
-    fs::write(
-        &manifest_path,
-        serde_json::to_vec_pretty(&manifest).unwrap(),
-    )
-    .unwrap();
 
     let project_root = tempfile::tempdir().unwrap();
     let project = project_root.path().join("project");
     fs::create_dir_all(&project).unwrap();
     bin()
+        // task-33: registration runs by default; keep it inside the tempdir.
+        .env("HOME", project_root.path())
+        .env("USERPROFILE", project_root.path())
+        .env("SHELL", "/usr/bin/bash")
         .args([
             "restore",
             "--branch-location",
@@ -1248,7 +1231,10 @@ printf '{}\n' > "$out/$env/conda-meta/fake.json"
             project.to_str().unwrap(),
         ])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::contains(
+            "OK — the restored tree matches the manifest",
+        ));
 
     assert!(
         project

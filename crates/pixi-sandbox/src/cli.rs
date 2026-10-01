@@ -132,7 +132,8 @@ pub struct RestoreArgs {
     #[arg(long)]
     pub verify_only: bool,
 
-    /// Replace environments / vendor trees that already exist.
+    /// Replace environments / vendor trees that already exist. Also replaces unmanaged
+    /// `pixi` / `pixi-sandbox` entries in the user bin directory (task-33 collisions).
     #[arg(long)]
     pub force: bool,
 
@@ -147,6 +148,39 @@ pub struct RestoreArgs {
     /// How to wire `.cargo/config.toml` to the vendored sources.
     #[arg(long, value_enum, default_value_t = CargoConfigArg::Auto)]
     pub cargo_config: CargoConfigArg,
+
+    /// Register the restored `pixi` and `pixi-sandbox` tools in a per-user bin directory
+    /// (default `~/.local/bin`, `%USERPROFILE%\.pixi-sandbox\bin` on Windows) and add that
+    /// directory to the shell's persistent PATH — only after the restored tree has been
+    /// verified against the manifest. `skip` makes restore touch nothing outside the project
+    /// (CI, shared accounts, locked-down airlocks).
+    ///
+    /// `overrides_with` itself: the generated launchers pass this flag explicitly *and*
+    /// forward their own arguments, so a later `--user-tools skip` from the operator must win
+    /// over the launcher's choice rather than error out.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = UserToolsPolicy::Register,
+        env = "PIXI_SANDBOX_USER_TOOLS",
+        overrides_with = "user_tools"
+    )]
+    pub user_tools: UserToolsPolicy,
+
+    /// Per-user bin directory for the registered launchers (default: `~/.local/bin` on Unix,
+    /// `%USERPROFILE%\.pixi-sandbox\bin` on Windows). Configurable for airlock policy.
+    #[arg(long, env = "PIXI_SANDBOX_USER_BIN")]
+    pub user_bin: Option<PathBuf>,
+}
+
+/// task-33: whether a successful, verified restore also registers the bundled tools for the
+/// user. The default is what a person restoring an airlock wants; `skip` is what CI wants.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum UserToolsPolicy {
+    /// Write managed launchers and a managed PATH block (or Windows user PATH entry).
+    Register,
+    /// Touch nothing outside the project: no HOME, no profile, no registry.
+    Skip,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

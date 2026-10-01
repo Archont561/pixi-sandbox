@@ -1,4 +1,10 @@
 #!/bin/sh
 # fixture stub for pixi 0.81.0 (tests/fixtures/README.md)
 if [ "$1" = "--version" ]; then echo "pixi 0.81.0"; exit 0; fi
+if [ "$1" = "sandbox" ]; then
+  # The real pixi resolves `pixi-<command>` through PATH (docs reference/cli.mdx); the stub
+  # does the same so tests can prove `pixi sandbox` reaches the registered pixi-sandbox.
+  shift
+  exec pixi-sandbox "$@"
+fi
 echo "pixi stub: $*"

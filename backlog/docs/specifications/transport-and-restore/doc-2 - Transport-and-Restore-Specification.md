@@ -207,11 +207,31 @@ where the bytes went; the same numbers appear in the generated `README.md`.
 7. **Materialise the vendored crates** into `<project>/.pixi-sandbox/vendor/` (same verified
    blob path as everything else) and wire `.cargo/config.toml` with a **relative** directory
    (D6, §11). `--cargo-config auto|write|print|none`.
-8. **Remove the scratch we created** (`tmp`, `pack-<env>`, `stage-<env>`, `vendor-stage`) once
+8. **Write `.pixi/sandbox-env.sh`** (task-5): self-sufficient — bundled tools *and* every
+   restored environment's `bin/` on `PATH`, `CARGO_NET_OFFLINE=true`.
+9. **Verify the restored tree** against the manifest's per-file oracle (D13) — the same check
+   `doctor --verify-restored` runs, executed by `restore` itself so that a success exit means
+   both sides are proven. Schema-1 envs are reported `unverifiable`, never failed; a mismatch
+   fails the restore *before* the scratch is cleaned (the evidence rule of step 10).
+10. **Remove the scratch we created** (`tmp`, `pack-<env>`, `stage-<env>`, `vendor-stage`) once
    every environment is in place, and drop the work dir itself only if that emptied it — an
    explicit `--work-dir` holding anything else survives. A *failed* restore keeps everything:
    the partial materialisation is the evidence ✅.
-9. **Finish with the two assertions the flow exists for:**
+11. **Register the user tools** (task-33), only after both verifications passed:
+    `--user-tools register` (default) writes managed launchers for `pixi` and `pixi-sandbox`
+    — both, because pixi discovers `pixi sandbox` through `PATH` — into a per-user bin
+    directory (`--user-bin`, default `~/.local/bin`; Windows
+    `%USERPROFILE%\.pixi-sandbox\bin`), `exec`-ing the manifest-verified copies under
+    `.pixi/tools/<platform>/` (decision-2 §4.1: the `tools` entry is the canonical
+    executable). The bin directory is added idempotently to the detected shell's profile
+    (`~/.bash_profile`/`~/.profile`/`~/.zshrc`, managed marker block) or, on Windows, to the
+    user `PATH` in the registry — no administrator rights. Managed entries retarget on a
+    re-restore (the most recent restore is the user-level source); unrelated existing
+    `pixi`/`pixi-sandbox` commands are refused unless `--force`. `--user-tools skip`
+    (env `PIXI_SANDBOX_USER_TOOLS`) disables every home/profile/registry change with no
+    effect on verification or project output — the form CI and the generated launchers pass
+    explicitly.
+12. **Finish with the two assertions the flow exists for:**
    `pixi install --frozen --offline` must be a no-op, and `cargo build --offline` must
    succeed on a severed network ✅.
 
@@ -229,7 +249,7 @@ environment.
 
 **What restore does *not* do:** it never writes into the fetched branch, never installs
 anything system-wide, never touches the network, and never deletes a user's environment
-without `--force`.
+without `--force`. With `--user-tools skip` it writes nothing outside the project at all.
 
 ---
 

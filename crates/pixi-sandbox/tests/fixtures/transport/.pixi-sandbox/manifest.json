@@ -17,7 +17,7 @@
       "url": null,
       "pinned_sha256": null,
       "linkage": "script",
-      "size_bytes": 152,
+      "size_bytes": 399,
       "path": "tools/linux-64/pixi"
     },
     "pixi-unpack": {

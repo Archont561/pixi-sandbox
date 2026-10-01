@@ -296,7 +296,12 @@ rm -rf "$TRANSPORT"
 mkdir -p "$TRANSPORT"
 git -C "$ROOT" archive "$BRANCH" | tar -x -C "$TRANSPORT"
 BIN="$TRANSPORT/.pixi-sandbox/tools/$PLATFORM/pixi-sandbox"
-exec "$BIN" restore --branch-location "$TRANSPORT" --output-path "$ROOT" --force "$@"
+# User-tool registration is selected here, explicitly (task-33): a person restoring an
+# airlock gets `pixi` and `pixi sandbox` in a per-user bin by default; a locked-down or
+# shared host opts out with PIXI_SANDBOX_USER_TOOLS=skip. Later arguments win, so an
+# operator can still append --user-tools skip to this script's own invocation.
+exec "$BIN" restore --branch-location "$TRANSPORT" --output-path "$ROOT" --force \
+  --user-tools "${PIXI_SANDBOX_USER_TOOLS:-register}" "$@"
 "#;
     template
         .replace("__GENERATED_MARKER__", GENERATED_MARKER)
@@ -345,7 +350,12 @@ git -C $Root archive --format=tar --output=$Archive $Branch
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 tar -xf $Archive -C $Transport
 $Binary = Join-Path $Transport '.pixi-sandbox/tools/win-64/pixi-sandbox.exe'
-& $Binary restore --branch-location $Transport --output-path $Root --force @args
+# User-tool registration is selected here, explicitly (task-33): a person restoring an
+# airlock gets `pixi` and `pixi sandbox` on the user PATH by default; a locked-down or
+# shared host opts out with PIXI_SANDBOX_USER_TOOLS=skip. Later arguments win, so an
+# operator can still append -UserTools skip to this script's own invocation.
+$UserTools = if ($env:PIXI_SANDBOX_USER_TOOLS) { $env:PIXI_SANDBOX_USER_TOOLS } else { 'register' }
+& $Binary restore --branch-location $Transport --output-path $Root --force --user-tools $UserTools @args
 exit $LASTEXITCODE
 "#;
     template
@@ -385,10 +395,16 @@ mod tests {
         let shell = posix_restore("sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
         assert!(shell.contains("git -C \"$ROOT\" archive"));
         assert!(!shell.contains("curl"));
+        // task-33: the launcher selects the user-tool policy explicitly, and the operator can
+        // still override it — env var through the shell default, or a trailing argument,
+        // which the CLI lets win.
+        assert!(shell.contains("--user-tools \"${PIXI_SANDBOX_USER_TOOLS:-register}\""));
         let powershell =
             powershell_restore("sandbox/developer-win-64", Path::new(PREFERRED_CONFIG));
         assert!(powershell.contains("git -C $Root archive"));
         assert!(!powershell.contains("Invoke-WebRequest"));
+        assert!(powershell.contains("$UserTools = if ($env:PIXI_SANDBOX_USER_TOOLS)"));
+        assert!(powershell.contains("--user-tools $UserTools"));
     }
 
     #[test]
