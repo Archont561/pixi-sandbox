@@ -12,4 +12,6 @@ authors.workspace = true
 thiserror = { workspace = true }
 
 [dev-dependencies]
+# RELOCK DEMO (task-39 AC#7) — reverted before merge.
+serde_json = { workspace = true }
 tempfile = { workspace = true }
