@@ -196,3 +196,106 @@ fn materialise_replaces_a_tool_that_is_currently_executing() {
         .collect();
     assert!(leftovers.is_empty(), "temp siblings left: {leftovers:?}");
 }
+
+/// Staging introduced a second path that can appear in an error, and the bug the staging fix
+/// was about was an error naming the *wrong* one. So the rule is explicit: a blob the branch
+/// does not have is a fact about the branch and must name the branch path, never the hidden
+/// sibling the restore was about to write.
+#[test]
+fn materialise_names_the_branch_path_when_the_blob_is_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("branch");
+    write(&src.join("pack/channel/noarch/pkg.conda"), b"payload");
+    let blob = record_file(&src, "pack/channel/noarch/pkg.conda", 1024).unwrap();
+    fs::remove_file(src.join("pack/channel/noarch/pkg.conda")).unwrap();
+
+    let dst = dir.path().join("out/pkg.conda");
+    let err = materialise(&src, &blob, &dst).expect_err("a missing blob cannot be materialised");
+    let message = err.to_string();
+    assert!(
+        message.contains("branch/pack/channel/noarch/pkg.conda"),
+        "the error must name the source in the branch: {message}"
+    );
+    assert!(
+        !message.contains(".pkg.conda.join"),
+        "the staging sibling is an implementation detail, not the cause: {message}"
+    );
+}
+
+/// All-or-nothing (D7), now that there is a staging step to get it wrong: a blob whose bytes
+/// do not match the manifest must leave the file already on disk exactly as it was — a
+/// half-replaced tool is worse than an un-replaced one — and must not leave the staged copy
+/// lying next to it.
+#[test]
+fn a_blob_that_does_not_verify_leaves_the_destination_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("branch");
+    write(&src.join("tool"), b"the packed bytes");
+    let blob = record_file(&src, "tool", 1 << 20).unwrap();
+    // Same length, different content: the size check passes and the digest does not, which is
+    // the shape a truncated fetch or a tampered branch actually has.
+    write(&src.join("tool"), b"the TAMPERED one");
+
+    let dst = dir.path().join("tools/linux-64/tool");
+    write(&dst, b"the copy already restored here");
+
+    let err = materialise(&src, &blob, &dst).expect_err("a tampered blob must not be installed");
+    assert!(
+        err.to_string().contains("sha256") || err.to_string().contains("does not match"),
+        "the error must be about integrity: {err}"
+    );
+    assert_eq!(
+        fs::read(&dst).unwrap(),
+        b"the copy already restored here",
+        "the destination was replaced by a blob that failed verification"
+    );
+    let leftovers: Vec<_> = fs::read_dir(dst.parent().unwrap())
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with('.'))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "staged copy left behind: {leftovers:?}"
+    );
+}
+
+/// The other half of that rule: everything which is not a missing blob happened on the side
+/// being written, so the error must name the staging path — a "permission denied" pointing at
+/// the read-only *branch* would send an operator to fix the wrong directory.
+#[test]
+#[cfg(unix)]
+fn materialise_names_the_staging_path_when_the_destination_cannot_be_written() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("branch");
+    write(&src.join("tool"), b"the packed bytes");
+    let blob = record_file(&src, "tool", 1 << 20).unwrap();
+
+    let dst_dir = dir.path().join("tools/linux-64");
+    fs::create_dir_all(&dst_dir).unwrap();
+    fs::set_permissions(&dst_dir, fs::Permissions::from_mode(0o555)).unwrap();
+    // root ignores the mode bits, and a suite that silently asserts nothing is worse than one
+    // that is openly skipped here.
+    if fs::write(dst_dir.join(".probe"), b"x").is_ok() {
+        let _ = fs::remove_file(dst_dir.join(".probe"));
+        fs::set_permissions(&dst_dir, fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+
+    let err = materialise(&src, &blob, &dst_dir.join("tool"))
+        .expect_err("an unwritable destination cannot be materialised");
+    let message = err.to_string();
+    fs::set_permissions(&dst_dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert!(
+        message.contains(".tool.join"),
+        "the error must name the staging path it failed to write: {message}"
+    );
+    assert!(
+        !message.contains("branch/tool"),
+        "the branch is readable; blaming it sends the fix to the wrong directory: {message}"
+    );
+}

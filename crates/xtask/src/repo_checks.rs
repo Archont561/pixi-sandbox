@@ -568,6 +568,42 @@ mod tests {
         assert_eq!(headlines(dir.path()), Vec::<String>::new());
     }
 
+    /// Check 3 fires on a documented reference to a release the manifests do not declare —
+    /// and its remedy has to name a task that exists. That hint is the only place a failing
+    /// developer is told how to fix the drift, so when the task was renamed to
+    /// `pixi run xtask prepare-release`, the string became part of the check's behaviour
+    /// rather than decoration around it.
+    #[test]
+    fn a_documented_release_the_manifests_do_not_declare_fires_check_3_with_a_usable_remedy() {
+        let dir = valid_fixture();
+        let readme = dir.path().join("README.md");
+        let mut text = fs::read_to_string(&readme).expect("read");
+        text.push_str(
+            "\ncurl -L https://github.com/Archont561/pixi-sandbox/releases/download/v0.9.9/pixi-sandbox-x86_64-unknown-linux-musl\n",
+        );
+        fs::write(&readme, text).expect("file");
+
+        let failures = check_repository(dir.path()).expect("checks run");
+        let found: Vec<&str> = failures.iter().map(|f| f.headline.as_str()).collect();
+        assert_eq!(failures.len(), 1, "{found:?}");
+        assert!(
+            failures[0]
+                .headline
+                .contains("documentation pins a version"),
+            "{found:?}"
+        );
+        assert!(
+            failures[0].details.iter().any(|d| d.contains("v0.9.9")),
+            "the drifted reference must be named: {:?}",
+            failures[0].details
+        );
+        let hint = failures[0].hint.as_deref().unwrap_or_default();
+        assert!(
+            hint.contains("pixi run xtask prepare-release v1.0.0"),
+            "the remedy must name the task that fixes it, at the version that fixes it: {hint}"
+        );
+    }
+
     #[test]
     fn a_badge_that_disagrees_with_the_workspace_fires_check_2() {
         let dir = valid_fixture();
