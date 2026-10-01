@@ -353,3 +353,48 @@ same identity. The dogfood half has a workable shape:
   channel-install/bootstrap-verification path — that consumer path keeps its existing proofs
   (actionlint + Rust tests in every `lint`, and airlock.yml's released-binary proof), or a
   second scheduled run with the variable unset could prove it end-to-end.
+
+### 2026-10-01 — v0.4.0 release fix, then dogfooding the generated publisher
+
+**Landed.** Two release defects, both from `gh run view`: `release.yml` passed
+`--target <triple>` to a task with one positional `flags` arg (pixi refused it on all five
+runners — the `--` separator was missing), and once that stopped firing, the Windows leg hit
+`E0282` in `restore.rs`'s `#[cfg(not(unix))]` branch, whose `notice: None` is unconstrained
+because its only use is `println!("{notice}")`. Both were folded into the `chore(release): v0.4.0`
+commit (it was already pushed and tagged, and `release.yml` checks out the tag, so a fix on main
+alone would have rebuilt with the broken workflow), then the tag was moved and the run re-fired
+green: five binaries, five `.conda` packages, prefix.dev, GitHub Release.
+
+**Open findings, not acted on:**
+
+- **`pixi-sandbox init` destroys the comments in a consumer's `pixi.toml`.**
+  `ensure_archont561_channel` (`crates/pixi-sandbox/src/commands/init.rs`) parses the manifest
+  into a `toml::Table` and writes it back with `toml::to_string_pretty`, which reformats the
+  whole file and drops every comment. Measured on this repository: a 325-line `pixi.toml` came
+  back as 216 lines with all commentary gone and every table reordered, for a one-line channel
+  addition. The doc comment claims "through TOML values rather than text splicing" — the intent
+  is right, the implementation is the opposite of the claim for any hand-commented manifest.
+  Fix options: edit the `channels` array textually with a line-oriented splice, or use
+  `toml_edit`, which preserves formatting and comments by construction. Reverted here rather
+  than committed; this repo needs no channel addition (it builds the binary itself and the
+  generated workflow installs the CLI globally with explicit channels).
+- **The dogfooded `publish-sandbox.yml` and the manual `sandbox-*` tasks now both own
+  `sandbox/developer-linux-64`.** The generated workflow is `push: [main]`, so every merge
+  repacks and force-pushes the transport; the manual lane in `pixi.toml` still exists and is
+  still documented in `AGENTS.md`. That is the consequence the 2026-10-01 owner note above
+  already accepted, but the redundancy was not resolved: either delete the `sandbox-pack` /
+  `sandbox-publish` / `sandbox-doctor` tasks and let the generated lane be the only publisher,
+  or keep the manual lane as the local reproduction of it and say so in `AGENTS.md`.
+- **No byte-equality check for `publish-sandbox.yml`** (the dogfooding idea the same note
+  proposed). Check 10 does exactly this for `relock.yml`
+  (`generated_relock_is_current`); the publisher render has the same argument — a stale
+  committed copy would make the dogfooding claim false without failing anything. Not written:
+  it needs the same options plumbing `render-relock` uses, and the render depends on
+  `.pixi-sandbox.toml`, so the fixture has to build both.
+- **Two launchers.** `init` writes `restore.sh` at the project root by default; this repo's own
+  launcher is `scripts/restore.sh` (bash, win-64, positional `[branch] [output-path]`, wired
+  into `tests/restore_script.rs` and the `sandbox-restore` task). The generated one is a
+  `/bin/sh` subset — it already carries the task-33 `PIXI_SANDBOX_USER_TOOLS` block, which is
+  how the repo's script came to carry it. Not committed here, to keep one launcher per repo;
+  passing `--script-path scripts/restore.sh` instead would replace a tested superset with the
+  generated subset and break the usage-string assertions.
