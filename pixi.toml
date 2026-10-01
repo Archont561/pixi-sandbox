@@ -188,6 +188,13 @@ publish-conda = { args = [
 # docs rebuild explicitly; `GH_TOKEN` reaches gh through the step's `env:`.
 dispatch-docs = "gh workflow run docs.yml --ref main"
 
+# auto-release's hand-off to the build half: the release tag is pushed with GITHUB_TOKEN,
+# which starts no workflow, so the release build is dispatched explicitly on the new tag.
+# One argument fills both the ref and the version input.
+dispatch-release = { args = [
+  { arg = "tag" },
+], cmd = "gh workflow run release.yml --ref {{ tag }} -f version={{ tag }}" }
+
 # ---------------------------------------------------------------------------
 # The transport pipeline, locally: plan → pack → doctor → publish. These tasks exercise the
 # Rust CLI directly, so local runs and CI share the exact command surface. Every path is an

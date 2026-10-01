@@ -1356,6 +1356,7 @@ dependencies = [
  "clap",
  "pixi-sandbox",
  "pixi-sandbox-core",
+ "pixi-sandbox-git",
  "regex",
  "tempfile",
  "toml",

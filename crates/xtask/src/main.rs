@@ -10,6 +10,7 @@
 //! root under `pixi run`); the policy logic lives in per-module pure functions that tests
 //! drive against tempdir fixtures, never against this checkout (D10).
 
+mod commit_release;
 mod conda_platforms;
 mod prepare_release;
 mod release_assets;
@@ -88,6 +89,18 @@ enum Command {
         #[arg(default_value = "dist")]
         dir: PathBuf,
     },
+    /// Turn a prepared tree into the release commit, tag, and pushes (auto-release's half).
+    CommitRelease {
+        /// Release tag to cut, `vX.Y.Z`. Positional, so the workflow's one-liner carries no
+        /// `--flag value` pair (pixi task args take one token per placeholder).
+        tag: String,
+        /// Print the diff and stop: no staging, commit, tag, or push.
+        #[arg(long)]
+        dry_run: bool,
+        /// Remote to push the branch and tag to.
+        #[arg(long, default_value = "origin")]
+        remote: String,
+    },
 }
 
 fn main() {
@@ -128,11 +141,21 @@ fn run() -> Result<()> {
                 .or_else(|| std::env::var("PIXI_SANDBOX_RELEASE").ok())
                 .unwrap_or_else(|| "auto".to_string());
             let tag = prepare_release::run(&root, &selector)?;
-            // The only value on stdout, so `$(… | tail -n1)` in the release workflow stays a
-            // plain command substitution.
+            // The workflow consumes the version as `steps.<id>.outputs.version`; locally the
+            // tag remains the last line of stdout, which is what a command substitution reads
+            // (task-36 AC#4).
+            util::github_output("version", &tag);
+            if let Ok(stat) = pixi_sandbox_git::ShellGit::new().worktree_diff_stat(&root) {
+                util::github_summary(&format!("## Prepared `{tag}`\n\n```\n{stat}\n```"));
+            }
             println!("{tag}");
             Ok(())
         }
+        Command::CommitRelease {
+            tag,
+            dry_run,
+            remote,
+        } => commit_release::commit_release(&root, &tag, dry_run, &remote),
         Command::StageReleaseBinary {
             target,
             target_dir,

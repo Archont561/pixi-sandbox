@@ -6,7 +6,8 @@
 
 use anyhow::{Context, Result};
 use regex::Regex;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -65,9 +66,54 @@ pub fn write_atomic(path: &Path, contents: &str) -> Result<()> {
     Ok(())
 }
 
+/// Append one line to a workflow file, creating it if needed. Broken out because the file
+/// mechanics are what a test can drive without mutating process-global environment (the
+/// `$GITHUB_*` selection around it is two obvious lines each).
+fn append_line(target: &Path, line: &str) {
+    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(target) else {
+        eprintln!("warning: cannot append to {}", target.display());
+        return;
+    };
+    let _ = writeln!(file, "{line}");
+}
+
+/// Append `key=value` to `$GITHUB_OUTPUT`, so a workflow consumes the value as
+/// `steps.<id>.outputs.<key>` (task-36 AC#4). No-op when the variable is absent: the command
+/// keeps its stdout form, which is what a local run reads.
+pub fn github_output(key: &str, value: &str) {
+    if let Some(target) = std::env::var_os("GITHUB_OUTPUT") {
+        append_line(Path::new(&target), &format!("{key}={value}"));
+    }
+}
+
+/// Append markdown to `$GITHUB_STEP_SUMMARY`; prints to stdout when absent, so the same
+/// invocation reports the same thing locally.
+pub fn github_summary(markdown: &str) {
+    match std::env::var_os("GITHUB_STEP_SUMMARY") {
+        Some(target) => append_line(Path::new(&target), markdown),
+        None => println!("{markdown}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workflow_file_appends_land_as_lines_and_create_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let output = dir.path().join("nested").join("out");
+        fs::create_dir_all(output.parent().expect("parent")).expect("mkdir");
+
+        append_line(&output, "version=v0.3.7");
+        append_line(&output, "later=again");
+
+        assert_eq!(
+            fs::read_to_string(&output).expect("output file"),
+            "version=v0.3.7\nlater=again\n",
+            "one line per call, created on first use"
+        );
+    }
 
     #[test]
     fn opt_out_skips_the_line_and_the_line_below_the_marker() {

@@ -411,6 +411,98 @@ impl ShellGit {
             other => other.map(|_| ()),
         }
     }
+
+    // ------------------------------------------------------------------
+    // Working-tree primitives for repository automation (xtask `commit-release`). These are
+    // NOT transport operations — the GitProtocol trait below stays the transport surface —
+    // but they are still git, so they live here rather than as bare `Command::new("git")`
+    // calls in a consumer crate (D9). Every command carries the caller's `root` as cwd and
+    // this instance's identity through the `-c` pair, so an automation commit never depends
+    // on the invoking user's git config.
+    // ------------------------------------------------------------------
+
+    /// Run a command and return its raw output, for git invocations whose non-zero exit is
+    /// an answer rather than an error (`ls-remote --exit-code` reports "no such ref" as 2).
+    fn run_raw(&self, command: &Command) -> Result<Output> {
+        self.log
+            .lock()
+            .expect("git log lock")
+            .push(command.rendered());
+        self.runner.run(command)
+    }
+
+    /// Does `tag` already exist on `remote`?
+    pub fn remote_tag_exists(&self, remote: &str, tag: &str) -> Result<bool> {
+        let command = self
+            .git(["ls-remote", "--exit-code", "--tags"])
+            .arg(remote)
+            .arg(format!("refs/tags/{tag}"));
+        let output = self.run_raw(&command)?;
+        match output.status {
+            0 => Ok(true),
+            2 => Ok(false),
+            _ => Err(Error::Command {
+                command: command.rendered(),
+                status: output.status,
+                stderr: output.stderr.trim().to_string(),
+            }),
+        }
+    }
+
+    /// Stage exactly the listed files in the working tree at `root`.
+    pub fn add_files(&self, root: &Path, files: &[impl AsRef<Path>]) -> Result<()> {
+        let mut command = self.git(["add", "--"]).cwd(root);
+        for file in files {
+            command = command.arg(path(file.as_ref()));
+        }
+        self.run(&command).map(|_| ())
+    }
+
+    /// Files modified in the working tree but not staged — `git diff --name-only`, which is
+    /// worktree-against-index and therefore clean of the staged entries themselves. The
+    /// near-equivalents are not equivalent: `git status --porcelain` and `git diff-index
+    /// HEAD` also report *staged* changes, so run after a `git add` they name every file
+    /// just staged and reject every release. Automation that just staged a list and asks
+    /// "what is modified and unaccounted for?" wants this question and no other.
+    pub fn unstaged_modifications(&self, root: &Path) -> Result<Vec<String>> {
+        let text = self.run_text(&self.git(["diff", "--name-only"]).cwd(root))?;
+        Ok(text.lines().map(str::to_string).collect())
+    }
+
+    /// Commit the staged changes under the instance's identity.
+    pub fn commit(&self, root: &Path, message: &str) -> Result<()> {
+        self.run(&self.git(["commit", "-m"]).arg(message).cwd(root))
+            .map(|_| ())
+    }
+
+    /// An annotated tag whose message is its own name, the release convention.
+    pub fn tag_annotated(&self, root: &Path, tag: &str) -> Result<()> {
+        self.run(
+            &self
+                .git(["tag", "-a"])
+                .arg(tag)
+                .arg("-m")
+                .arg(tag)
+                .cwd(root),
+        )
+        .map(|_| ())
+    }
+
+    /// Push one refspec to `remote` from the working tree at `root`.
+    pub fn push_refspec(&self, root: &Path, remote: &str, refspec: &str) -> Result<()> {
+        self.run(&self.git(["push"]).arg(remote).arg(refspec).cwd(root))
+            .map(|_| ())
+    }
+
+    /// The unstaged diff of the working tree at `root`, unpaged.
+    pub fn worktree_diff(&self, root: &Path) -> Result<String> {
+        self.run_text(&self.git(["--no-pager", "diff"]).cwd(root))
+    }
+
+    /// `--stat` form of [`Self::worktree_diff`], for summaries.
+    pub fn worktree_diff_stat(&self, root: &Path) -> Result<String> {
+        self.run_text(&self.git(["--no-pager", "diff", "--stat"]).cwd(root))
+    }
 }
 
 /// Everything a transport needs from a checkout of a branch, and nothing else.

@@ -4,7 +4,7 @@ title: Reduce every workflow step to an action or a one-line pixi task
 status: In Progress
 assignee: []
 created_date: '2026-10-01 19:10'
-updated_date: '2026-10-01 19:24'
+updated_date: '2026-10-01 19:41'
 labels:
   - ci
   - tooling
@@ -74,6 +74,8 @@ Work one workflow per commit, in this order — `release.yml` first because its 
 
 <!-- SECTION:NOTES:BEGIN -->
 Slice 1 (release.yml) done: all eight multi-line run: blocks are gone. New tested xtask subcommands stage-release-binary (positional target, host triple default, best-effort strip, host-vs-cross build path distinction) and release-checksums (every standalone pixi-sandbox-* binary, .conda excluded, written-then-verified completeness); new one-line tasks build-release-binary, publish-conda, dispatch-docs; musl step collapsed to one line; Determine-release-tag deleted (inputs.version || github.ref_name at its two consumers); OIDC guard one line; setup-pixi moved ahead of the build so every step is pixi run -e package (win-64 cannot solve default). Deliberate AC#6 exception, agreed with the owner: SHA256SUMS now covers all five platform binaries — the v0.3.7 file carried only the two musl lines (211 bytes) because the *unknown-* glob excluded both Apple binaries and the Windows exe, and the old completeness grep used the same wrong pattern so it could never fire. Local proof: pixi run build-release-binary, then staging via the -e package form and release-checksums, then sha256sum -c on the result; the real five-runner dispatch (AC#6) still needs a throwaway tag. Slice 2 is auto-release.yml (commit-release), slice 3 airlock.yml (after task-35), then the workflow_shape guard (AC#5) last.
+
+Slice 2 (auto-release.yml) done: all five multi-line run: blocks gone. New xtask commit-release <tag> [--dry-run] carries the whole commit/tag/push routine - the .release-touched staging (refuses a missing report), the unaccounted-worktree guard (worktree-against-index, git diff --name-only, via the new unstaged_modifications primitive), the remote-tag refusal (ls-remote --exit-code through pixi-sandbox-git, D9), commit + annotated tag + the two pushes; six tempdir-fixture tests drive it against a real git repo and a bare remote, including the three refusal paths and dry-run touching nothing. prepare-release now writes version= to GITHUB_OUTPUT and the prepared+diff-stat block to GITHUB_STEP_SUMMARY itself (AC#4), degrading to its stdout form locally, so the workflow step is a bare one-liner with id: prep. New ShellGit working-tree primitives (add_files, unstaged_modifications, commit, tag_annotated, push_refspec, worktree_diff[_stat], remote_tag_exists) keep all git inside pixi-sandbox-git. New dispatch-release task (one arg fills both --ref and version=). Deliberate identity change, consistent with the transport-commit rename: release commits are authored pixi-sandbox[bot] <41898282+github-actions[bot]@users.noreply.github.com> instead of github-actions[bot] - same noreply address, same avatar, the name keeps the tool identity. The v[0-9]*.[0-9]*.[0-9]* shape guard moved into commit-release (suffixed tags still refused, like the shell case). Slice 3 is airlock.yml (after task-35), then the workflow_shape guard (AC#5) last.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
