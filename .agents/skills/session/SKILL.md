@@ -21,17 +21,28 @@ bash scripts/restore.sh
 ```
 
 **Let the restore register the user tools** (that is the default, `PIXI_SANDBOX_USER_TOOLS=register`;
-do not pass `skip` here — `skip` is for shared CI runners). A verified restore then writes
-managed `pixi` and `pixi-sandbox` launchers into `~/.local/bin` and adds a marker-delimited
-PATH block to the detected shell profile (task-33). Those launchers exec the *manifest-verified*
-tool copies under `.pixi/tools/<platform>/`.
+do not pass `skip` here — `skip` is for shared CI runners). When it registers, it writes managed
+`pixi` and `pixi-sandbox` launchers into `~/.local/bin` and adds a marker-delimited PATH block to
+the detected shell profile (task-33); the launchers exec the *manifest-verified* tool copies under
+`.pixi/tools/<platform>/`.
 
 ### When you can stop sourcing `sandbox-env.sh` — and when you still cannot
 
-Dropping `source .pixi/sandbox-env.sh` is safe once all three hold:
+**Read the last line the restore printed. It tells you which world you are in**, and it is a fact
+about the tree, not a wish:
 
-1. the bootstrap above completed and registered (not `--user-tools skip`, not refused over an
-   unmanaged `pixi` already sitting in `~/.local/bin` — that refusal needs `--force`);
+- `user tools: registered pixi and pixi-sandbox in <dir>` → the launchers exist.
+- `user tools: NOT registered — the bundled pixi-sandbox <v> predates --user-tools (0.3.7)` →
+  nothing was registered. Registration is a *restore-side* feature, and the binary doing the
+  restore comes from the packed branch: a branch packed before 0.3.7 ignores the policy entirely
+  (unknown env var, ignored by design). **This is the situation on the current published branch**
+  — `sandbox/developer-linux-64` carries pixi-sandbox 0.3.6 — so until a 0.3.7+ transport is
+  packed and published, `source .pixi/sandbox-env.sh` in every shell remains the only way.
+
+Once a 0.3.7+ branch is restored, dropping the sourcing is safe when all three hold:
+
+1. the restore printed the `registered` line (not `skip`, not a refusal over an unmanaged `pixi`
+   already sitting in `~/.local/bin` — that refusal needs `--force`);
 2. `~/.local/bin` is on `PATH` in the shell you are actually in;
 3. everything you run is `pixi …` — i.e. every repo-management command goes through the pixi
    binary, not through a tool you expect to find loose on `PATH`.
@@ -67,11 +78,15 @@ pixi run -- lefthook install                 # installs the git hooks in a fresh
 
 Facts about this sandbox that shape every command:
 
-- **Egress is filtered**: the crates.io index/API and conda channels (prefix.dev) are
-  unreachable; github.com and static file hosts work. Therefore **always** `--offline` for
-  cargo, and always `pixi run --frozen <task>` so pixi never tries to solve online.
-- `pixi run --frozen test` runs in seconds — baseline it at session start and write the number
-  down (it must rise with new work, never fall).
+- **Egress is filtered**, and the exact shape matters: github.com and the npm registry answer
+  (so `git fetch`, `gh`, and `pixi run docs-install` all work), while the crates.io index/API,
+  prefix.dev and static.rust-lang.org do not. Therefore **always** `--offline` for cargo — the
+  vendored tree under `.pixi-sandbox/vendor` is what builds — and always `pixi run --frozen
+  <task>` so pixi never tries to solve online. A restore is the only way to get a toolchain
+  here; there is no rustup fallback.
+- `pixi run --frozen test` runs in seconds once built — baseline it at session start and write
+  the number down (206 passing / 1 skipped on 0.3.7; it must rise with new work, never fall).
+  The first build after a restore costs about a minute.
 - The airlock claim has a local proof and a CI proof, and they are not the same thing. Locally,
   `crates/pixi-sandbox/tests/e2e.rs` is the fixture-backed lifecycle (doctor → publish → restore
   → `doctor --verify-restored`), it needs no network, and on Linux it re-runs the restore inside
