@@ -84,8 +84,9 @@ pixi run coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
 pixi run fmt            # rewrite; `pixi run fmt --check` is the gate form
 pixi run docs-dev       # Astro dev server for docs/
 pixi run docs-install   # bun install --frozen-lockfile at the root of the bun workspace
-pixi run backlog        # repo backlog (needs one docs-install)
-pixi run skills         # agent skills CLI (needs one docs-install)
+pixi run bunx backlog   # repo backlog (the bunx task runs docs-install itself)
+pixi run bunx skills    # agent skills CLI, same workspace
+pixi run bun <args>     # bun itself, in the web environment, args pass through
 
 # every repository-automation subcommand goes through ONE task (crates/xtask); extra arguments
 # follow the subcommand, and `--` separates them when there is more than one.

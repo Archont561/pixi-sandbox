@@ -244,21 +244,28 @@ docs-build = { depends-on = [
 ], cmd = "bun run build", cwd = "docs" }
 
 # ---------------------------------------------------------------------------
-# Repo-wide dev tooling from the root bun workspace (`backlog.md`, `skills`).
-# `bun x`, not the `bunx` spelling: the conda `bun` package ships no `bunx` shim, so in this
-# environment the subcommand is the only form that resolves (it is what `bunx` execs). `bun x`
-# prefers the workspace install over the registry — `bun x astro --version` reports the locked
-# 7.3.5, not the newest published — so the committed lockfile still pins what these tasks run.
+# Bun itself, generically. The repo-wide dev tooling from the root bun workspace
+# (`backlog.md`, `skills`) and anything added to `package.json` later needs no dedicated task
+# line: `pixi run bunx backlog …`, `pixi run bunx skills …` — everything after the task name
+# passes through, which is the append-only shape the per-tool tasks here already used.
 #
-# They have to run under bun at all: both bins carry a `#!/usr/bin/env node` shebang and `web`
-# (and `default`) carry no node. Adding one would put ~50 MB of developer tooling into the
-# published sandbox branch to carry nothing an airlock restores, so a bare
-# `node_modules/.bin/backlog` in a shell fails with "env: node: No such file or directory" — go
-# through the task.
+# `bun x`, never the `bunx` spelling of the command: the conda `bun` package ships no
+# `bunx` shim, so the subcommand is the only form that resolves in this environment (it is
+# what `bunx` execs elsewhere). `--bun` because these bins carry a `#!/usr/bin/env node`
+# shebang and no environment here carries node — the flag hands the bin to the bun runtime
+# whatever its shebang says, which is what the per-tool tasks this replaces achieved by
+# running the entry files (`node_modules/backlog.md/cli.js`) under bun directly. A bare
+# `node_modules/.bin/backlog` in a shell still fails with "env: node: No such file or
+# directory" — go through the task.
+#
+# `bun x` resolves the workspace install before the registry, so the committed `bun.lock`
+# still pins what runs — but only once an install exists: `bunx` depends on `docs-install`
+# (a no-op once installed) so a fresh clone cannot silently float to npm's latest. `bun`
+# stays bare because `pixi run bun install` IS the installer — a self-dependency would loop.
 #
 # opencode is NOT here: it is a developer tool installed by `.devcontainer/setup.sh` with a
 # global `bun add`, so the sandbox branch never carries a 185 MB blob for it and this table
 # keeps only what the repository itself is built, tested and released with.
 # ---------------------------------------------------------------------------
-backlog = "bun node_modules/backlog.md/cli.js"
-skills = "bun node_modules/skills/bin/cli.mjs"
+bun = "bun"
+bunx = { depends-on = ["docs-install"], cmd = "bun x --bun" }

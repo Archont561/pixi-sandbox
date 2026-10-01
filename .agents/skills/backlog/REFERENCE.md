@@ -1,6 +1,6 @@
 # Backlog.md — command reference
 
-Disclosed reference for the [`backlog`](SKILL.md) skill. In this repo every command runs as `pixi run backlog <args>`. Trust `pixi run backlog <command> --help` as the authoritative surface — this table is a convenience cache and can lag the installed version.
+Disclosed reference for the [`backlog`](SKILL.md) skill. In this repo every command runs as `pixi run bunx backlog <args>`. Trust `pixi run bunx backlog <command> --help` as the authoritative surface — this table is a convenience cache and can lag the installed version.
 
 ## Top-level commands
 
@@ -101,9 +101,9 @@ Tasks live under a project-local backlog folder (`backlog/`, `.backlog/`, or a `
 ## Stable JSON examples
 
 ```
-pixi run backlog task list --status "To Do" --json | jq '.tasks[] | .id'
-pixi run backlog task view <id> --json | jq '.task.acceptanceCriteria'
-pixi run backlog search "authentication" --json | jq '.results[] | [.type, .data.id]'
+pixi run bunx backlog task list --status "To Do" --json | jq '.tasks[] | .id'
+pixi run bunx backlog task view <id> --json | jq '.task.acceptanceCriteria'
+pixi run bunx backlog search "authentication" --json | jq '.results[] | [.type, .data.id]'
 ```
 
 ## Sources

@@ -416,12 +416,13 @@ repository is built, tested and released with, and a 185 MB agent binary is none
 no lockfile of its own any more. `bunfig.toml` pins the install to bun's `hoisted` linker
 because the workspace default (`isolated`) hides transitive platform packages that Astro
 prerenders by name — see that file for the failure it prevents. The root also carries the
-repo-wide dev tooling — `backlog.md` and `skills` — reachable as `pixi run backlog` /
-`pixi run skills` after one `pixi run docs-install`. Both tasks are `bun x` (the conda `bun`
-package ships no `bunx` shim), which prefers the workspace install over the registry, so the
-lockfile still decides what they run; they run under `bun` rather than through their `node`
-shebang, because `default` carries no `node` and adding one would put ~50 MB of developer
-tooling into the published sandbox branch.
+repo-wide dev tooling — `backlog.md` and `skills` — reached through one generic `bunx` task:
+`pixi run bunx backlog` / `pixi run bunx skills` (and `pixi run bun <args>` for bun itself, in
+the `web` environment). The task runs `bun x --bun`: `bun x` because the conda `bun` package
+ships no `bunx` shim, `--bun` because the bins carry `node` shebangs and no environment here
+carries `node` — adding one would put ~50 MB of developer tooling into the published sandbox
+branch. It resolves the workspace install before the registry and depends on `docs-install`,
+so the committed lockfile still decides what runs.
 
 ---
 
