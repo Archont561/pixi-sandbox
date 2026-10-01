@@ -1,8 +1,21 @@
 # lefthook — local git hooks. Every hook calls a pixi task so hooks and CI cannot drift.
 # https://lefthook.dev
 #
-# Only *staged* files are considered: the `glob` filters, and `stage_fixed: true`
-# re-stages whatever a formatter rewrote.
+# The split is about wall clock, not about trust:
+#
+#   pre-commit  — nothing that invokes cargo. Only *staged* files are considered (the `glob`
+#                 filters), and `stage_fixed: true` re-stages whatever a formatter rewrote.
+#                 Every job here is a formatter or a parser: milliseconds to a second or two.
+#   pre-push    — every gate that needs a Rust build, run once per push instead of once per
+#                 commit. A clean `cargo clippy --all-targets` plus `cargo nextest run
+#                 --workspace` is minutes of work; paying that on each of five commits in a
+#                 branch bought nothing CI does not already check before merge.
+#
+# Pre-push jobs are deliberately NOT glob-filtered. lefthook builds a pre-push file list from
+# `git diff --name-only HEAD @{push}` and skips a job whose list comes back empty — which
+# happens on a delete-only push and on a branch whose upstream has moved — so a glob here
+# would make the heavy gates silently optional exactly when a push is unusual. These four run
+# on every push, in order, stopping at the first failure (`piped`).
 
 min_version: "2.0.0"
 
@@ -10,13 +23,10 @@ pre-commit:
   parallel: true
   jobs:
     - name: rust-fmt
+      # rustfmt only: it rewrites files and never builds the crate graph.
       glob: "*.rs"
       run: pixi run fmt
       stage_fixed: true
-
-    - name: rust-clippy
-      glob: "{**/*.rs,Cargo.toml,crates/**/Cargo.toml}"
-      run: pixi run lint-rust
 
     - name: toml-fmt
       glob: "*.toml"
@@ -34,17 +44,6 @@ pre-commit:
       glob: ".github/workflows/*.{yml,yaml}"
       run: pixi run lint-actions
 
-    - name: repo-consistency
-      # the README badge, the workspace platforms and the publish plan tell one platform story,
-      # and crates/ never points at the prototype deleted in 0.2.0
-      glob: "{README.md,pixi.toml,.pixi-sandbox.toml,crates/**/*.rs,crates/**/*.md}"
-      run: pixi run lint-repo-consistency
-
-    - name: manifest-schema
-      # the manifest shape is a wire format: changing it needs a schema bump + a fixture update
-      glob: "{crates/pixi-sandbox-core/src/manifest.rs,crates/pixi-sandbox-core/tests/manifest.rs}"
-      run: pixi run cargo test -p pixi-sandbox-core --test manifest
-
 commit-msg:
   jobs:
     - name: convco
@@ -52,6 +51,28 @@ commit-msg:
       run: pixi run lint-commit < {1}
 
 pre-push:
+  # Sequential and fail-fast: these jobs share one cargo target directory, so running them in
+  # parallel would just queue them on the build lock, and there is no point compiling the test
+  # binaries after clippy has already said no.
+  piped: true
   jobs:
+    - name: rust-clippy
+      # `clippy -D warnings` is a full check of the workspace *and* its tests, so a separate
+      # `cargo check` would only re-walk the same graph.
+      run: pixi run lint-rust
+
+    - name: repo-consistency
+      # the README badge, the workspace platforms and the publish plan tell one platform story,
+      # and crates/ never points at the prototype deleted in 0.2.0
+      run: pixi run lint-repo-consistency
+
+    - name: generated-workflow
+      # actionlint over the workflow `init` GENERATES — the artifact that shipped broken in
+      # v0.3.1 (issue #37). Same xtask binary as the job above, so it is already built by now.
+      run: pixi run lint-generated-workflow
+
     - name: tests
+      # The whole workspace, which includes the manifest-schema test that used to have its own
+      # pre-commit job (`cargo test -p pixi-sandbox-core --test manifest`): the wire format is
+      # still guarded, just not by compiling cargo twice per commit.
       run: pixi run test

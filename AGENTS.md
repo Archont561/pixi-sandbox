@@ -84,6 +84,14 @@ pixi run -e package package        # build the .conda for the current platform
 pixi run -e package package-smoke  # install it and run the packaged binary here
 ```
 
+Git hooks (`lefthook.yml`, installed with `pixi run -- lefthook install`) are split by cost:
+`pre-commit` runs only checks that never invoke cargo, over staged files (rustfmt, taplo,
+biome, actionlint), and `commit-msg` runs convco; every gate that needs a Rust build — clippy,
+the `check-repository` and `lint-generated-workflow` xtasks, and the whole-workspace `test` —
+runs once at `pre-push`, in order, stopping at the first failure. Pre-push jobs carry no `glob`
+on purpose: lefthook skips a pre-push job whose push-file list comes back empty, which would
+make the heavy gates silently optional on exactly the unusual pushes.
+
 Tests that must exist for any change to sharding or the manifest: a round-trip property test
 (`tests/shard.rs`), a schema freeze (`tests/manifest.rs`), and a corruption case
 (`tests/verify.rs`). A change to the embedded tool catalogue must keep
