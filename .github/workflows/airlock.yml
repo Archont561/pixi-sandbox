@@ -95,9 +95,6 @@ on:
       - "scripts/airlock-gate.sh"
       - "scripts/restore.sh"
       - ".pixi-sandbox.toml"
-      - "action.yml"
-      - "setup/action.yml"
-      - "publish/action.yml"
       - ".github/workflows/airlock.yml"
 
 permissions:
@@ -285,21 +282,12 @@ jobs:
           echo "resolved=$resolved" >>"$GITHUB_OUTPUT"
           echo "proving $resolved (declared $declared)" >>"$GITHUB_STEP_SUMMARY"
 
-      - name: Install the released pixi-sandbox (checksum-verified)
-        id: sandbox
-        # Local `uses:` must name the directory holding action.yml, and the sub-actions
-        # (`setup/`, `publish/`) are shims whose `../action.yml` reference only resolves
-        # when the repository root action is the entry point — hence `subpath`, the same
-        # spelling publish-sandbox.yml uses for this layout (#16).
-        uses: ./project
-        with:
-          subpath: setup
-          version: ${{ steps.tag.outputs.resolved }}
-          target: auto
-          add-to-path: false
-          # Belt and braces: the job token lifts the API rate limit for any path that still
-          # resolves a tag, and costs nothing here — `contents: read` is all this needs.
-          token: ${{ github.token }}
+      - name: Install the released pixi-sandbox package
+        shell: bash
+        run: |
+          set -euo pipefail
+          pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox
+          pixi-sandbox --version
 
       - name: Report the platform contract
         run: |
@@ -316,20 +304,22 @@ jobs:
       - name: Create the throwaway remote
         run: git init -q --bare "${{ runner.temp }}/airlock-remote.git"
 
-      - name: Publish the transport to the throwaway remote
-        id: publish
-        uses: ./project
-        with:
-          subpath: publish
-          project: project
-          environments: ${{ matrix.environments }}
-          platform: ${{ matrix.platform }}
-          branch: ${{ matrix.branch }}
-          cargo-vendor: ${{ matrix.cargo_vendor }}
-          self-bin: ${{ steps.sandbox.outputs.path }}
-          remote: ${{ runner.temp }}/airlock-remote.git
-          output-dir: ${{ runner.temp }}/airlock-transport
-          push-token: ""
+      - name: Pack, verify, and publish to the throwaway remote
+        shell: bash
+        working-directory: project
+        env:
+          OUTPUT: ${{ runner.temp }}/airlock-transport
+          REMOTE: ${{ runner.temp }}/airlock-remote.git
+        run: |
+          set -euo pipefail
+          SELF_BIN=$(command -v pixi-sandbox)
+          if [ "$CARGO_VENDOR" = true ]; then
+            pixi-sandbox pack --repo-root . --envs "$ENVS" --output-dir "$OUTPUT" --fetch-tools --self-bin "$SELF_BIN" --cargo-vendor
+          else
+            pixi-sandbox pack --repo-root . --envs "$ENVS" --output-dir "$OUTPUT" --fetch-tools --self-bin "$SELF_BIN"
+          fi
+          pixi-sandbox doctor --branch-location "$OUTPUT" --verify
+          pixi-sandbox publish --input-dir "$OUTPUT" --branch-name "$BRANCH" --remote "$REMOTE"
 
       - name: Fetch the published branch the way a developer would
         shell: bash
@@ -344,7 +334,7 @@ jobs:
           git worktree add -q ../airlock-checkout "$BRANCH" --force
 
       - name: Verify every declared byte before trusting the checkout
-        run: '"${{ steps.sandbox.outputs.path }}" doctor --branch-location "${{ runner.temp }}/airlock-checkout" --verify'
+        run: 'pixi-sandbox doctor --branch-location "${{ runner.temp }}/airlock-checkout" --verify'
 
       # ---------------------------------------------------------------- restore
       # `restore` in place over a copy of the project, which is the situation the airlock page
@@ -354,7 +344,7 @@ jobs:
         run: |
           set -euo pipefail
           cp -r project "${{ runner.temp }}/restored"
-          "${{ steps.sandbox.outputs.path }}" restore \
+          pixi-sandbox restore \
             --branch-location "${{ runner.temp }}/airlock-checkout" \
             --output-path "${{ runner.temp }}/restored" \
             --envs "$ENVS" --force

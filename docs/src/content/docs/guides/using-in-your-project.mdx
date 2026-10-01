@@ -12,12 +12,14 @@ This guide is for **project owners** who want to ship their pixi environments to
 
 Run the first command from the root of your Pixi project on the **connected side**:
 
+Connected hosts need Pixi installed. Install the native package from the canonical channel, then initialise:
+
 ```bash
-curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSION__/install.sh | sh
+pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox
+pixi-sandbox init
 ```
 
-The script detects Linux/macOS and CPU architecture, downloads the matching v0.3.0 release asset,
-verifies it against the release's `SHA256SUMS`, and runs `pixi-sandbox init`. It creates the preferred `pixi-sandbox.toml`, the GitHub workflow, and exactly one launcher for
+`pixi-sandbox init` creates the preferred `pixi-sandbox.toml`, the GitHub workflow, and exactly one launcher for
 the connected host:
 
 ```text
@@ -43,25 +45,18 @@ run `.\\restore.ps1` instead.
 > The Git push, workflow completion, and transfer across the air gap are deployment operations,
 > not additional pixi-sandbox commands. The airlock clone must contain the sandbox branch.
 
-### Select a release or mirror
+### Use a mirror
 
-The connected-side script accepts environment overrides:
-
-```bash
-PIXI_SANDBOX_VERSION=v__VERSION__ \
-PIXI_SANDBOX_REPOSITORY=Archont561/pixi-sandbox \
-PIXI_SANDBOX_PROJECT_ROOT=. \
-  sh -c "$(curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSION__/install.sh)"
-```
+Configure Pixi's channel or mirror settings before running the canonical install command when your organisation proxies prefix.dev.
 
 ## 1. Prerequisites
 
 - Your project has `pixi.toml` + `pixi.lock`
 - Optional: `Cargo.toml` + `Cargo.lock` if you want vendored crates
-- On the connected host: `curl`, Git, and either `sha256sum` or `shasum`
+- On the connected host: Pixi and Git
 - On the airlock: Git and `tar`; Pixi and `pixi-sandbox` do not need to be installed
 
-The one-line initializer downloads `pixi-sandbox` temporarily and checksum-verifies it.
+The connected host installs `pixi-sandbox` from the signed native package channel. Standalone release binaries and `SHA256SUMS` remain available for verified transport bootstrap.
 
 ## 2. Decide what to ship
 
@@ -227,3 +222,11 @@ pixi-sandbox pack --repo-root . --envs dev --output-dir .sandbox-out --platform 
     <div><strong>Verify before write</strong> — <code>doctor --verify</code> is the same code as restore's preflight. CI must run it.</div>
   </div>
 </div>
+
+## Channel configured by init
+
+Init preserves the order of the project's existing Pixi channels and adds the fixed Archont561
+namespace root, `https://prefix.dev/archont561`, once. This does not depend on your Git host or
+repository owner. The namespace root is for project dependencies; the package-specific
+`https://prefix.dev/archont561/pixi-sandbox` channel in the install command is only for installing
+the CLI on the connected host.

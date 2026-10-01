@@ -26,46 +26,22 @@ Pixi-sandbox is a pure Rust CLI with static musl binaries — no Python, no runt
   </TabItem>
 </Tabs>
 
-## Via Pixi Global (conda package)
+## Via Pixi Global (canonical)
+
+Connected hosts need Pixi installed. The supported installation path is the native package from the pixi-sandbox channel:
 
 ```bash
-# Build channel locally (needs pixi)
-pixi publish --path crates/pixi-sandbox --build-dir .pixi/bld --target-channel file:///tmp/channel
-pixi global install -c file:///tmp/channel -c conda-forge pixi-sandbox
-
-# Or from future conda-forge release
-pixi global install -c conda-forge pixi-sandbox
+pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox
+pixi-sandbox init
 ```
 
-## Via Release Binary (verified)
+The package-specific channel installs this CLI. `pixi-sandbox init` separately configures the Archont561 namespace root for project dependencies.
 
-Like `prefix-dev/setup-pixi`, we provide a checksum-verified setup action and one-liner.
+## Via Release Binary (transport bootstrap)
 
-<Tabs>
-  <TabItem label="GitHub Action">
-    ```yaml
-    - uses: Archont561/pixi-sandbox@v__VERSION__
-      with:
-        version: v__VERSION__
-    - run: pixi-sandbox --version
-
-    # Short alias
-    - uses: Archont561/pixi-sandbox/setup@v__VERSION__
-      with:
-        version: v__VERSION__
-    ```
-  </TabItem>
-  <TabItem label="Shell">
-    ```bash
-    # Download verified binary
-    curl -sSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSION__/pixi-sandbox-x86_64-unknown-linux-musl -o pixi-sandbox
-    curl -sSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSION__/SHA256SUMS -o SHA256SUMS
-    sha256sum -c SHA256SUMS --ignore-missing
-    chmod +x pixi-sandbox
-    ./pixi-sandbox --version
-    ```
-  </TabItem>
-</Tabs>
+Standalone binaries and `SHA256SUMS` remain available for verified transport bootstrap. Download the
+matching binary and checksum file, verify it with your platform's SHA-256 tool, then mark it
+executable. Connected hosts should use the canonical Pixi package above.
 
 ### Asset contract
 

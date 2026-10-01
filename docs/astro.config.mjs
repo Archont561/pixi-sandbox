@@ -62,8 +62,7 @@ const version = process.env.SANDBOX_VERSION?.trim() || workspaceVersion();
 // fenced code blocks, inline code, prose, link targets. The docs never carry a
 // literal release tag of ours (release-refs.sh scan enforces it), so a release
 // commit rewrites zero documentation lines and a new page cannot ship a stale
-// pin because it never contains one. Same placeholder convention as
-// templates/install.sh, which is rendered the same way at release time.
+// pin because it never contains one.
 //
 // A Sätteri mdast plugin, not `markdown.remarkPlugins`: Astro 7's default
 // Markdown processor is Sätteri, and the remark options are a legacy path that

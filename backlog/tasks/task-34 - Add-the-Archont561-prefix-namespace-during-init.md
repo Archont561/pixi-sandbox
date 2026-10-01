@@ -1,9 +1,10 @@
 ---
 id: TASK-34
 title: Add the Archont561 prefix namespace during init
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-01 17:30'
+updated_date: '2026-10-01 14:52'
 labels:
   - init
   - pixi
@@ -31,13 +32,13 @@ Make `pixi-sandbox init` add the fixed Archont561 prefix.dev namespace root to t
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `pixi-sandbox init` adds `https://prefix.dev/archont561` to the project-local Pixi channel configuration regardless of the owner or host of the user's Git repository
-- [ ] #2 The configured channel is the Archont561 namespace root rather than the package-specific `https://prefix.dev/archont561/pixi-sandbox` channel, so users can consume other Archont561 channels and packages
-- [ ] #3 Init preserves all existing channels and their order, inserts the Archont561 namespace deterministically, and is idempotent across repeated runs
-- [ ] #4 An existing equivalent Archont561 namespace entry is recognized without duplication, including normalized URL spelling and casing where supported by prefix.dev
-- [ ] #5 Init updates configuration through a structured Pixi/TOML mechanism and produces an actionable error if the project configuration cannot be safely updated
-- [ ] #6 Tests cover existing channel preservation, deterministic insertion, equivalent-entry normalization, duplicate avoidance, repeated init, and a user repository owned by an unrelated organization
-- [ ] #7 Documentation explains that init adds the Archont561 namespace for project dependencies and distinguishes it from the package-specific channel used to install `pixi-sandbox`
+- [x] #1 `pixi-sandbox init` adds `https://prefix.dev/archont561` to the project-local Pixi channel configuration regardless of the owner or host of the user's Git repository
+- [x] #2 The configured channel is the Archont561 namespace root rather than the package-specific `https://prefix.dev/archont561/pixi-sandbox` channel, so users can consume other Archont561 channels and packages
+- [x] #3 Init preserves all existing channels and their order, inserts the Archont561 namespace deterministically, and is idempotent across repeated runs
+- [x] #4 An existing equivalent Archont561 namespace entry is recognized without duplication, including normalized URL spelling and casing where supported by prefix.dev
+- [x] #5 Init updates configuration through a structured Pixi/TOML mechanism and produces an actionable error if the project configuration cannot be safely updated
+- [x] #6 Tests cover existing channel preservation, deterministic insertion, equivalent-entry normalization, duplicate avoidance, repeated init, and a user repository owned by an unrelated organization
+- [x] #7 Documentation explains that init adds the Archont561 namespace for project dependencies and distinguishes it from the package-specific channel used to install `pixi-sandbox`
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -45,3 +46,18 @@ Make `pixi-sandbox init` add the fixed Archont561 prefix.dev namespace root to t
 <!-- SECTION:PLAN:BEGIN -->
 Define the canonical Archont561 namespace URL once and have init add it to project-local Pixi configuration through a structured TOML edit or Pixi's supported configuration interface rather than text appending. Retain existing channel priority and comments where practical, normalize equivalent entries before insertion, add fixture-backed CLI tests, and document the namespace-root versus package-specific channel distinction. Do not derive this namespace from the user's Git remote.
 <!-- SECTION:PLAN:END -->
+
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+`pixi-sandbox init` now parses the project-local `pixi.toml`, requires a safe `[workspace].channels` string array, and appends the canonical `https://prefix.dev/archont561` namespace without changing existing channel priority. URL comparison trims whitespace and trailing slashes and is case-insensitive, making repeated init runs and equivalent prefix.dev spellings idempotent. The namespace is a fixed product constant and is never derived from the user's Git remote; malformed TOML, absent workspace configuration, and unsafe non-string channel entries produce path-specific actionable errors.
+
+CLI integration tests cover ordered preservation, deterministic append, repeat invocation, normalized casing and trailing slash, package-channel exclusion, malformed configuration, and a project named for an unrelated owner. The configuration reference and project guide distinguish the Archont561 namespace root used for project dependencies from the package-specific pixi-sandbox channel used to install the CLI.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:SUMMARY:BEGIN -->
+Init now safely and idempotently registers the fixed Archont561 prefix.dev namespace in each project's structured Pixi configuration while preserving existing channel priority and keeping CLI installation on its separate package-specific channel.
+<!-- SECTION:SUMMARY:END -->

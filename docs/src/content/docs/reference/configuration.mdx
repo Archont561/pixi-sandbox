@@ -152,3 +152,15 @@ platforms = ["linux-64", "osx-arm64"]
 - [Using in your project](/pixi-sandbox/guides/using-in-your-project/)
 - [CI Publishing](/pixi-sandbox/guides/ci-publishing/)
 - [GitHub Actions](/pixi-sandbox/guides/actions/)
+
+## Project Pixi channel added by init
+
+`pixi-sandbox init` updates the project-local `pixi.toml` through parsed TOML and appends
+`https://prefix.dev/archont561` to `[workspace].channels` without reordering existing channels.
+This is the fixed publisher namespace root, independent of the owner or host of your project's Git
+remote. Repeated init runs and equivalent URL casing or a trailing slash do not add duplicates.
+
+The namespace root is intentionally different from
+`https://prefix.dev/archont561/pixi-sandbox`: the package-specific channel installs the
+`pixi-sandbox` CLI on a connected host, while the namespace root lets the project consume other
+channels and packages published by Archont561.

@@ -110,9 +110,6 @@ lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pi
 # against tempdir fixtures, and one Rust runtime covers every runner (the v0.3.6 release died on
 # macOS's Bash 3.2 over a bashism one layer below what actionlint can see).
 lint-repo-consistency = "cargo run -q -p xtask -- check-repository"
-# The two generated action copies (`setup/action.yml`, `publish/action.yml`), re-rendered from
-# the root action.yml. Run after editing action.yml, or lint-repo-consistency fails on the drift.
-render-action-shims = "cargo run -q -p xtask -- render-action-shims"
 # conventional-commit check for the `commit-msg` hook; reads the proposed message from stdin
 lint-commit = "convco check --from-stdin"
 # changelog via convco (conventional commits -> CHANGELOG.md)

@@ -975,6 +975,10 @@ fn pack_keeps_the_self_binary_only_in_tools_and_the_branch_root_documentation_on
 }
 
 fn init_command(project: &Path) -> Command {
+    let manifest = project.join("pixi.toml");
+    if !manifest.exists() {
+        fs::write(&manifest, "[workspace]\nname = \"fixture\"\nchannels = [\"conda-forge\"]\nplatforms = [\"linux-64\"]\n").unwrap();
+    }
     let mut command = bin();
     command.args(["init", "--project-root", project.to_str().unwrap()]);
     command
@@ -1024,6 +1028,65 @@ fn init_is_provider_neutral_and_generates_only_this_platforms_launcher() {
     assert!(workflow.contains("pixi-sandbox doctor --branch-location \"$TRANSPORT\" --verify"));
     assert!(project.join("pixi-sandbox.toml").is_file());
     assert!(!project.join(".pixi-sandbox.toml").exists());
+}
+
+#[test]
+fn init_adds_the_fixed_namespace_preserving_channels_and_is_idempotent() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("unrelated-owner-project");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        project.join("pixi.toml"),
+        "[workspace]\nname = \"demo\"\nchannels = [\"internal\", \"conda-forge\"]\nplatforms = [\"linux-64\"]\n",
+    )
+    .unwrap();
+
+    init_command(&project).assert().success();
+    init_command(&project).assert().success();
+    let manifest: toml::Table = fs::read_to_string(project.join("pixi.toml"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    let channels = manifest["workspace"]["channels"].as_array().unwrap();
+    let channels = channels
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        channels,
+        ["internal", "conda-forge", "https://prefix.dev/archont561"]
+    );
+    assert!(
+        !channels
+            .iter()
+            .any(|c| c.contains("archont561/pixi-sandbox"))
+    );
+}
+
+#[test]
+fn init_recognizes_normalized_namespace_and_rejects_unsafe_configuration() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        project.join("pixi.toml"),
+        "[workspace]\nname = \"demo\"\nchannels = [\"HTTPS://PREFIX.DEV/Archont561/\"]\n",
+    )
+    .unwrap();
+    init_command(&project).assert().success();
+    assert_eq!(
+        fs::read_to_string(project.join("pixi.toml"))
+            .unwrap()
+            .matches("Archont561")
+            .count(),
+        1
+    );
+
+    fs::write(project.join("pixi.toml"), "not valid TOML [[[").unwrap();
+    init_command(&project)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("fix the TOML before running init"));
 }
 
 #[test]
@@ -1237,14 +1300,8 @@ fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary(
     let project = temp.path().join("project");
     fs::create_dir_all(&project).unwrap();
 
-    bin()
-        .args([
-            "init",
-            "--project-root",
-            project.to_str().unwrap(),
-            "--branch",
-            "sandbox/developer-linux-64",
-        ])
+    init_command(&project)
+        .args(["--branch", "sandbox/developer-linux-64"])
         .assert()
         .success();
 
@@ -1310,14 +1367,8 @@ fn generated_restore_prefers_the_branch_declared_in_the_config() {
     let project = temp.path().join("project");
     fs::create_dir_all(&project).unwrap();
 
-    bin()
-        .args([
-            "init",
-            "--project-root",
-            project.to_str().unwrap(),
-            "--branch",
-            "sandbox/never-published-linux-64",
-        ])
+    init_command(&project)
+        .args(["--branch", "sandbox/never-published-linux-64"])
         .assert()
         .success();
 

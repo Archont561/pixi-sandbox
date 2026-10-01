@@ -14,12 +14,11 @@
 //!     manifest (the one file whose format demands a restated literal) equals Cargo.toml.
 //!  4. every third-party `uses:` is a full commit SHA with a trailing release label, so a
 //!     moved tag cannot change what CI runs.
-//!  5. the `install.sh` release asset renders from `templates/install.sh` at the tag, and no
-//!     committed copy exists to drift (task-2).
+//!  5. connected-host installation uses the canonical prefix.dev package channel in the
+//!     README, installation guide, and generated publishing workflow (task-32).
 //!  6. no workflow pins a literal `vX.Y.Z` release tag, so no proof silently keeps running
 //!     against the previous release after a cut.
-//!  7. task-12 — every published action path is a self-contained composite action and the two
-//!     generated copies still match the root they are rendered from.
+//!  7. retired with the composite Action surfaces in TASK-29.
 //!  8. the surviving shell scripts stay on the Bash 3.2 surface: the darwin runners execute
 //!     them with macOS's /bin/bash 3.2, and v0.3.6's release died 127 on both darwin legs
 //!     over one Bash-4 builtin (run 36865921206) — the regression that moved everything else
@@ -61,9 +60,8 @@ pub fn check_repository(root: &Path) -> Result<Vec<Failure>> {
     platform_claims(root, &mut failures)?; // 2
     version_references(root, &mut failures)?; // 3
     action_pins(root, &mut failures)?; // 4
-    install_template(root, &mut failures)?; // 5
+    canonical_channel_install(root, &mut failures)?; // 5
     workflow_literal_tags(root, &mut failures)?; // 6
-    published_actions(root, &mut failures)?; // 7
     bash32_surface(root, &mut failures)?; // 8
     Ok(failures)
 }
@@ -84,7 +82,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; the install one-liner is rendered from templates/; no workflow pins a literal release tag; every published action path is self-contained and matches action.yml; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners" // stale-ref-allowed
     );
     Ok(())
 }
@@ -305,7 +303,6 @@ fn version_references(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
 /// syntax and inputs but says nothing about what a `uses:` resolves to, so this is the only
 /// thing standing between a mutable tag and the release pipeline.
 ///
-/// Same-repository actions (`./setup`, `../action.yml`) are not third-party and carry no ref
 /// to pin. A deliberate exception opts out with the marker on the line.
 fn action_pins(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
     let label = Regex::new(r"#[\t ]*v[0-9]").expect("static regex");
@@ -371,31 +368,31 @@ fn workflow_files(root: &Path) -> Vec<PathBuf> {
     files
 }
 
-// ---------------------------------------------------------------- 5. install one-liner
+// ---------------------------------------------------------------- 5. canonical connected-host install
 
-/// The `install.sh` release asset is RENDERED from templates/install.sh at the tag, not
-/// copied from a committed script (task-2 — the v0.3.0 asset shipped a v0.2.0 default). The
-/// render itself is a tested pure function now, so what is left to check here is the
-/// repository's half of the bargain: the template still renders for the declared version,
-/// and no committed, ready-to-run copy exists anywhere to drift.
-fn install_template(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
-    let template_path = root.join("templates/install.sh");
-    if !template_path.is_file() {
-        failures.push(Failure::new(
-            "templates/install.sh is missing — release.yml renders the install.sh asset from it",
-        ));
-    } else {
-        let template = crate::util::read(&template_path)?;
-        let declared = format!("v{}", crate::version::workspace_version(root)?);
-        if let Err(error) = crate::install_template::render(&template, &declared) {
+const CANONICAL_INSTALL: &str = "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox";
+const CANONICAL_CHANNEL: &str = "https://prefix.dev/archont561/pixi-sandbox";
+
+/// TASK-32: connected hosts install one native package from the package-specific prefix.dev
+/// channel. Keep the primary README, installation guide, and generated workflow source aligned;
+/// release binaries remain a separate transport-bootstrap surface.
+fn canonical_channel_install(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
+    for path in ["README.md", "docs/src/content/docs/installation.mdx"] {
+        let text = crate::util::read(&root.join(path))?;
+        if !text.contains(CANONICAL_INSTALL) || !text.contains("pixi-sandbox init") {
             failures.push(Failure::new(format!(
-                "templates/install.sh does not render for the declared release ({declared}): {error:#}"
+                "{path} must show the canonical channel install followed by pixi-sandbox init (task-32)"
             )));
         }
     }
-    if root.join("scripts/install.sh").exists() || root.join("init.sh").exists() {
+    let generated =
+        crate::util::read(&root.join("crates/pixi-sandbox/src/generated/github_workflow.rs"))?;
+    if !generated.contains(CANONICAL_CHANNEL)
+        || !generated.contains("pixi global install")
+        || !generated.contains("pixi-sandbox")
+    {
         failures.push(Failure::new(
-            "a committed install.sh exists outside templates/ — it would ship a hardcoded VERSION default that lags the release (task-2)",
+            "the generated publishing workflow does not install pixi-sandbox from the canonical channel (task-32)",
         ));
     }
     Ok(())
@@ -430,75 +427,6 @@ fn workflow_literal_tags(root: &Path, failures: &mut Vec<Failure>) -> Result<()>
             findings,
             "read the tag from the checked-out Cargo.toml, or take it from a repository variable",
         ));
-    }
-    Ok(())
-}
-
-// ---------------------------------------------------------------- 7. self-contained actions
-
-/// task-12 / issue #37: v0.3.1 published two action paths that could not run, because a
-/// relative `uses:` inside a *remote* composite action does not resolve against the
-/// repository that defines it. Each published path must be a complete composite action, and
-/// the two generated copies must still re-render byte-identically from the root.
-fn published_actions(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
-    for action in ["action.yml", "setup/action.yml", "publish/action.yml"] {
-        let path = root.join(action);
-        if !path.is_file() {
-            failures.push(Failure::new(format!(
-                "{action} is missing — it is a published action path (owner/repo[/path]@ref) (task-12)"
-            )));
-            continue;
-        }
-        let text = crate::util::read(&path)?;
-        if let Some(relative) = crate::action_shims::relative_uses(&text) {
-            failures.push(Failure::with(
-                format!("{action} uses a relative action reference, which cannot resolve from a remote ref (task-12):"),
-                vec![relative],
-                "a published action path must be self-contained; edit action.yml and run 'pixi run render-action-shims'",
-            ));
-        }
-        if !text.lines().any(|l| l == "  using: composite") {
-            failures.push(Failure::new(format!(
-                "{action} is not a composite action — a published action path must run on its own (task-12)"
-            )));
-        }
-    }
-
-    let root_action_path = root.join("action.yml");
-    if root_action_path.is_file() {
-        let root_action = crate::util::read(&root_action_path)?;
-        for variant in [
-            crate::action_shims::Variant::Setup,
-            crate::action_shims::Variant::Publish,
-        ] {
-            let generated_path = root.join(format!("{variant}/action.yml"));
-            if !generated_path.is_file() {
-                continue; // already reported above
-            }
-            match crate::action_shims::render(&root_action, variant) {
-                Err(error) => failures.push(Failure::new(format!(
-                    "cannot render {variant}/action.yml from action.yml (task-12): {error:#}"
-                ))),
-                Ok(rendered) => {
-                    let committed = crate::util::read(&generated_path)?;
-                    if committed != rendered {
-                        let first_diff = committed
-                            .lines()
-                            .zip(rendered.lines())
-                            .position(|(a, b)| a != b)
-                            .map(|at| at + 1)
-                            .unwrap_or_else(|| {
-                                committed.lines().count().min(rendered.lines().count()) + 1
-                            });
-                        failures.push(Failure::with(
-                            format!("{variant}/action.yml has drifted from action.yml (task-12):"),
-                            vec![format!("first difference at line {first_diff}")],
-                            "regenerate with 'pixi run render-action-shims'",
-                        ));
-                    }
-                }
-            }
-        }
     }
     Ok(())
 }
@@ -578,7 +506,7 @@ mod tests {
         );
         write(
             "README.md",
-            "<img src=\"https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg\" alt=\"Platforms\">\n\nwin-64 is unsupported: conda-forge ships no bun build (D11).\n",
+            "<img src=\"https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg\" alt=\"Platforms\">\n\nwin-64 is unsupported: conda-forge ships no bun build (D11).\n\npixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox\npixi-sandbox init\n",
         );
         write(
             "crates/pixi-sandbox/pixi.toml",
@@ -586,8 +514,12 @@ mod tests {
         );
         write("crates/pixi-sandbox/src/lib.rs", "// clean\n");
         write(
-            "templates/install.sh",
-            "#!/bin/sh\nVERSION=${PIXI_SANDBOX_VERSION:-__VERSION__}\necho \"$VERSION\"\n",
+            "docs/src/content/docs/installation.mdx",
+            "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox\npixi-sandbox init\n",
+        );
+        write(
+            "crates/pixi-sandbox/src/generated/github_workflow.rs",
+            "https://prefix.dev/archont561/pixi-sandbox\npixi global install pixi-sandbox\n",
         );
         write(
             ".github/workflows/ci.yml",
@@ -598,16 +530,6 @@ mod tests {
             "#!/usr/bin/env bash\nset -euo pipefail\necho restore\n",
         );
 
-        // A root action plus generated copies rendered by the same renderer the check uses.
-        let root_action = "name: fixture\ndescription: root\n\ninputs:\n  subpath:\n    required: false\n    default: setup\n  repository:\n    description: where\n    default: Example/widget\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo hi\n";
-        write("action.yml", root_action);
-        for variant in [
-            crate::action_shims::Variant::Setup,
-            crate::action_shims::Variant::Publish,
-        ] {
-            let rendered = crate::action_shims::render(root_action, variant).expect("render");
-            write(&format!("{variant}/action.yml"), &rendered);
-        }
         dir
     }
 
@@ -706,7 +628,7 @@ mod tests {
         let readme = fs::read_to_string(dir.path().join("README.md")).expect("readme");
         fs::write(
             dir.path().join("README.md"),
-            format!("{readme}\nuses: Example/widget/setup@v0.1.0\n"),
+            format!("{readme}\nuses: Archont561/pixi-sandbox/setup@v0.1.0\n"),
         )
         .expect("readme");
         let found = headlines(dir.path());
@@ -732,19 +654,18 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_template_or_committed_installer_fires_check_5() {
+    fn canonical_channel_drift_fires_check_5() {
         let dir = valid_fixture();
-        fs::remove_file(dir.path().join("templates/install.sh")).expect("rm");
-        fs::write(dir.path().join("init.sh"), "#!/bin/sh\n").expect("init");
+        fs::write(
+            dir.path().join("docs/src/content/docs/installation.mdx"),
+            "pixi global install -c conda-forge pixi-sandbox\npixi-sandbox init\n",
+        )
+        .expect("installation docs");
         let found = headlines(dir.path());
         assert!(
             found
                 .iter()
-                .any(|h| h.contains("templates/install.sh is missing")),
-            "{found:?}"
-        );
-        assert!(
-            found.iter().any(|h| h.contains("outside templates/")),
+                .any(|h| h.contains("canonical channel install")),
             "{found:?}"
         );
     }
@@ -762,27 +683,6 @@ mod tests {
             found
                 .iter()
                 .any(|h| h.contains("pins a literal release tag")),
-            "{found:?}"
-        );
-    }
-
-    #[test]
-    fn a_drifted_or_relative_generated_action_fires_check_7() {
-        let dir = valid_fixture();
-        fs::write(
-            dir.path().join("setup/action.yml"),
-            "name: stale copy\nruns:\n  using: composite\n  steps:\n    - uses: ../action.yml\n",
-        )
-        .expect("action");
-        let found = headlines(dir.path());
-        assert!(
-            found
-                .iter()
-                .any(|h| h.contains("relative action reference")),
-            "{found:?}"
-        );
-        assert!(
-            found.iter().any(|h| h.contains("drifted from action.yml")),
             "{found:?}"
         );
     }

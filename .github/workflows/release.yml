@@ -240,12 +240,6 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Release tag: $TAG"
 
-      - name: Render the install bootstrap script
-        shell: bash
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: cargo run -q -p xtask -- render-install "$TAG" dist/install.sh
-
       # prefix.dev uses the job's short-lived GitHub OIDC identity. Configure Repository
       # Access for this repository's `release.yml` workflow on archont561/pixi-sandbox;
       # no PREFIX_API_KEY or other long-lived publishing secret is needed.
@@ -277,7 +271,6 @@ jobs:
             dist/pixi-sandbox-*
             dist/conda/**/*.conda
             dist/SHA256SUMS
-            dist/install.sh
           generate_release_notes: true
           fail_on_unmatched_files: true
 

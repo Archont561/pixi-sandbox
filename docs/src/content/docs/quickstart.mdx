@@ -10,8 +10,11 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 Connected project root:
 
+Connected hosts need Pixi installed. Install the CLI from its canonical package channel and initialise the project:
+
 ```bash
-curl -fsSL https://github.com/Archont561/pixi-sandbox/releases/download/v__VERSION__/install.sh | sh
+pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox
+pixi-sandbox init
 ```
 
 After committing the generated files, letting GitHub publish the sandbox branch, and transferring
@@ -21,8 +24,7 @@ that branch into the airlock:
 ./restore.sh
 ```
 
-The first command downloads the proper release binary for the host, verifies `SHA256SUMS`, and
-scaffolds configuration, CI, and both restore launchers. The second performs a local `git archive`
+The connected-side commands install the native channel package and scaffold configuration, CI, and both restore launchers. The second performs a local `git archive`
 and restores without network access.
 
 ## Develop pixi-sandbox itself
@@ -89,158 +91,11 @@ cd /path/to/project
 The launcher archives the local platform branch and invokes its manifest-verified binary under
 `.pixi-sandbox/tools/<platform>/`. The orphan branch itself has only Markdown at its root.
 
-## From CI: reviewed native matrix
+## From CI: generated native workflow
 
-<div style="display: flex; gap: 0.5rem; align-items: center; margin: 1rem 0;">
-  <Icon name="lucide:settings" size={18} />
-  <strong>Declare exactly what to publish</strong>
-</div>
-
-Don't infer every env from `pixi.toml` — projects have private test/bench envs.
-
-```toml
-# pixi-sandbox.toml
-schema = 1
-branch_prefix = "sandbox"
-cargo_vendor = true
-
-[[bundle]]
-name = "developer"
-environments = ["dev", "docs"]
-platforms = ["linux-64", "osx-arm64", "win-64"]
-```
-
-Validate locally:
-
-```bash
-pixi-sandbox plan --config pixi-sandbox.toml
-pixi-sandbox plan --config pixi-sandbox.toml --json  # GitHub Actions matrix
-```
-
-Your workflow just uses the two actions — your `uses: @v__VERSION__` pin is the version, no `release-repository` needed.
-
-<Tabs>
-  <TabItem label="Two actions (recommended)">
-    ```yaml
-    # .github/workflows/publish-sandbox.yml in your project
-    name: publish sandbox
-    on: { push: { branches: [main] }, workflow_dispatch: {} }
-    jobs:
-      plan:
-        runs-on: ubuntu-latest
-        outputs: { matrix: ${{ steps.plan.outputs.matrix }} }
-        steps:
-          - uses: actions/checkout@v7.0.1
-          - uses: Archont561/pixi-sandbox/setup@v__VERSION__
-            id: setup
-            with: { version: v__VERSION__ }
-          - id: plan
-            run: echo "matrix=$(${{ steps.setup.outputs.path }} plan --config pixi-sandbox.toml --json)" >> $GITHUB_OUTPUT
-      publish:
-        needs: plan
-        strategy:
-          # `.include` only — `plan --json` also carries a scalar `schema`, which
-          # Actions reads as a matrix dimension and therefore expands to zero jobs.
-          matrix:
-            include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
-          fail-fast: false
-        runs-on: ${{ matrix.runner }}
-        steps:
-          - uses: actions/checkout@v7.0.1
-          - uses: prefix-dev/setup-pixi@v0.10.2
-          - uses: Archont561/pixi-sandbox/setup@v__VERSION__
-            id: setup
-            with: { version: v__VERSION__ }
-          - uses: Archont561/pixi-sandbox/publish@v__VERSION__
-            with:
-              project: .
-              environments: ${{ matrix.environments }}
-              platform: ${{ matrix.platform }}
-              branch: ${{ matrix.branch }}
-              self-bin: ${{ steps.setup.outputs.path }}
-              remote: https://github.com/${{ github.repository }}.git
-              output-dir: /tmp/transport
-              push-token: ${{ secrets.GITHUB_TOKEN }}
-    ```
-  </TabItem>
-  <TabItem label="Single platform">
-    ```yaml
-    - uses: Archont561/pixi-sandbox/setup@v__VERSION__
-      id: setup
-      with: { version: v__VERSION__ }
-    - uses: Archont561/pixi-sandbox/publish@v__VERSION__
-      with:
-        project: .
-        environments: dev
-        platform: linux-64
-        branch: sandbox/dev-linux-64
-        self-bin: ${{ steps.setup.outputs.path }}
-        remote: https://github.com/OWNER/REPO.git
-        output-dir: /tmp/transport
-    ```
-  </TabItem>
-</Tabs>
-
-<details>
-<summary>Alternative: reusable workflow</summary>
-
-```yaml
-jobs:
-  sandbox:
-    uses: Archont561/pixi-sandbox/.github/workflows/publish-sandbox.yml@<sha>
-    with:
-      config: pixi-sandbox.toml
-      release-repository: Archont561/pixi-sandbox
-      release-version: v__VERSION__
-    secrets:
-      SANDBOX_PUSH_TOKEN: ${{ secrets.SANDBOX_PUSH_TOKEN }}
-```
-
-Needs duplicate `release-*` inputs — prefer two actions above.
-
-</details>
-
-<div style="display: flex; gap: 0.5rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; margin: 1rem 0;">
-  <Icon name="lucide:info" size={18} />
-  <span>A matrix job only publishes its matching native platform. <code>osx-arm64</code> must use Apple-Silicon runner; publish rejects mismatched runner rather than cross-packing unproven transport. Use <code>[runners]</code> in <code>pixi-sandbox.toml</code> for self-hosted labels. Runner override must have embedded pins for <code>pixi</code>, <code>pixi-pack</code>, <code>pixi-unpack</code>.</span>
-</div>
-
-## Direct actions (like setup-pixi)
-
-Both live in same repo:
-
-```yaml
-# Setup
-- uses: Archont561/pixi-sandbox@v__VERSION__
-  with:
-    version: v__VERSION__
-- run: pixi-sandbox --version
-
-# Explicit short paths
-- uses: Archont561/pixi-sandbox/setup@v__VERSION__
-  id: setup
-  with:
-    version: v__VERSION__
-- uses: Archont561/pixi-sandbox/publish@v__VERSION__
-  with:
-    project: .
-    environments: dev
-    platform: linux-64
-    branch: sandbox/dev-linux-64
-    self-bin: ${{ steps.setup.outputs.path }}
-    remote: https://github.com/OWNER/REPO.git
-    output-dir: /tmp/transport
-
-# Long-form (pin SHA for supply-chain)
-- uses: Archont561/pixi-sandbox@<sha>
-  with:
-    subpath: setup
-- uses: Archont561/pixi-sandbox@<sha>
-  with:
-    subpath: publish
-```
-
-Verifies bytes against `SHA256SUMS` before making executable available on PATH. Generate checksums after native proof: `(cd release && sha256sum pixi-sandbox-* > SHA256SUMS)`. `latest` warns; pin in prod.
+`pixi-sandbox init` writes `.github/workflows/publish-sandbox.yml`. Commit that project-owned file;
+it installs the canonical channel package and invokes the CLI directly for each reviewed
+`bundle × platform` matrix entry. The retired composite Actions and reusable publisher are not used.
 
 ## Shipping the tool (.conda)
 
