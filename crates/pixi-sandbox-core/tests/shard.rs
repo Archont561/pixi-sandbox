@@ -143,3 +143,56 @@ fn split_file_rejects_a_pointless_split() {
     let err = split_file(&path, "small.bin", 1 << 20).expect_err("should refuse");
     assert!(err.to_string().contains("pointless"), "got: {err}");
 }
+
+/// The failure a real restore produced: `.pixi/tools/<platform>/pixi` is the binary driving
+/// the session, and copying the new bytes straight onto it is ETXTBSY ("Text file busy") on
+/// Linux — the restore died at `materialise tools`, naming the source path. Staging beside
+/// the destination and renaming replaces the directory entry instead, which the kernel allows
+/// while the old inode is still executing.
+#[test]
+#[cfg(unix)]
+fn materialise_replaces_a_tool_that_is_currently_executing() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::{Command, Stdio};
+
+    // A real ELF binary is required — a `#!` script is not a busy text file — and `sleep` is
+    // the one every Unix runner has. Skipped rather than failed where it is absent.
+    let system_sleep = Path::new("/bin/sleep");
+    if !system_sleep.is_file() {
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let branch = dir.path().join("branch");
+    fs::create_dir_all(&branch).unwrap();
+    fs::copy(system_sleep, branch.join("tool")).unwrap();
+    let blob = record_file(&branch, "tool", 1 << 30).unwrap();
+
+    let dst = dir.path().join("tools/linux-64/tool");
+    fs::create_dir_all(dst.parent().unwrap()).unwrap();
+    fs::copy(system_sleep, &dst).unwrap();
+    fs::set_permissions(&dst, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut running = Command::new(&dst)
+        .arg("30")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the staged tool runs");
+
+    let result = materialise(&branch, &blob, &dst);
+
+    let _ = running.kill();
+    let _ = running.wait();
+    result.expect("a tool being executed must still be replaceable");
+
+    verify_file(&dst, &blob.sha256, blob.size).unwrap();
+    // And nothing staged is left behind next to it.
+    let leftovers: Vec<_> = fs::read_dir(dst.parent().unwrap())
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with('.'))
+        .collect();
+    assert!(leftovers.is_empty(), "temp siblings left: {leftovers:?}");
+}

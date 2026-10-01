@@ -186,12 +186,25 @@ pub fn join_parts(
         let _ = fs::remove_file(&tmp);
         return Err(err);
     }
-    // Windows cannot rename onto an existing file; on Unix this replaces it.
+    replace_with(&tmp, dst)
+}
+
+/// Move the staged file onto `dst`, replacing whatever is already there.
+///
+/// Rename first and unlink only as a fallback. On Unix the rename is atomic *and* it works
+/// when `dst` is a binary this machine is currently executing: it swaps the directory entry
+/// and leaves the busy inode to the running process. Removing first would instead open a
+/// window in which the tool does not exist at all. Windows cannot rename onto an existing
+/// file, so there the fallback is the only way.
+fn replace_with(tmp: &Path, dst: &Path) -> Result<()> {
+    if fs::rename(tmp, dst).is_ok() {
+        return Ok(());
+    }
     if dst.exists() {
         fs::remove_file(dst).map_err(|e| Error::io(dst, e))?;
     }
-    if let Err(e) = fs::rename(&tmp, dst) {
-        let _ = fs::remove_file(&tmp);
+    if let Err(e) = fs::rename(tmp, dst) {
+        let _ = fs::remove_file(tmp);
         return Err(Error::io(dst, e));
     }
     Ok(())
@@ -275,8 +288,27 @@ pub fn materialise(src_root: &Path, blob: &Blob, dst: &Path) -> Result<()> {
         if let Some(parent) = dst.parent() {
             fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         }
-        fs::copy(&src, dst).map_err(|e| Error::io(&src, e))?;
-        return verify_file(dst, &blob.sha256, blob.size);
+        // Staged in a sibling and renamed, exactly like `join_parts` — an unsplit blob deserves
+        // the same all-or-nothing guarantee (D7), and there is a second reason the split path
+        // never had to state: `fs::copy` opens the *destination* for writing, which Linux
+        // refuses with ETXTBSY ("Text file busy") when that destination is a binary currently
+        // being executed. `restore` materialising over a live `.pixi/tools/<platform>/pixi` —
+        // the very binary a running `pixi run` is executing — is exactly that case, and it
+        // failed the restore with an error naming the *source* path.
+        let tmp = temp_sibling(dst);
+        let staged = fs::copy(&src, &tmp)
+            // A missing blob is a fact about the branch, so name the source; everything else
+            // (no space, no permission) happened on the side being written.
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => Error::io(&src, e),
+                _ => Error::io(&tmp, e),
+            })
+            .and_then(|_| verify_file(&tmp, &blob.sha256, blob.size));
+        if let Err(err) = staged {
+            let _ = fs::remove_file(&tmp);
+            return Err(err);
+        }
+        return replace_with(&tmp, dst);
     }
     // The parts sit in the directory the original file lived in, under `src_root`.
     let parts_root = match Path::new(&blob.path).parent() {
