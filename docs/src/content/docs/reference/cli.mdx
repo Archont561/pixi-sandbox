@@ -267,6 +267,86 @@ Upstream does not publish checksums for the bare binaries this catalogue pins (s
 upstream manifest, manifest-does-not-cover-this-asset, or no manifest. Treat a new pin as
 reviewed data: read the diff before committing it.
 
+## self-update
+
+Replaces a **standalone** pixi-sandbox binary with a published release. Needs network; it is
+the one command that does.
+
+```bash
+# the latest release, replacing the running binary
+pixi-sandbox self-update
+
+# an exact release — what every committed workflow and transport should name
+pixi-sandbox self-update --version 0.5.0
+
+# roll back by naming an older release
+pixi-sandbox self-update --version 0.4.3
+
+# resolve and report, writing nothing
+pixi-sandbox self-update --check
+
+# CI: update a disposable binary in runner scratch, not the machine's own tool
+pixi-sandbox self-update --version 0.5.0 --dest "$RUNNER_TEMP/pixi-sandbox"
+```
+
+| flag | meaning |
+| --- | --- |
+| `--version X.Y.Z` | Install this exact release. Accepts `X.Y.Z` or `vX.Y.Z`; anything else is refused before any network access. Without it, the latest release is resolved. |
+| `--check` | Print the current and resolved versions and exit. Downloads no binary and writes nothing. |
+| `--dest PATH` | Update this path instead of the running binary. |
+| `--repo OWNER/NAME` | Repository publishing the release assets. Defaults to `Archont561/pixi-sandbox`. |
+
+### What it verifies
+
+The order is the point: the release is resolved and the destination is classified **before**
+anything is downloaded, so a destination this command will not touch costs no bytes. Then
+`SHA256SUMS` is fetched *before* the binary — there is no reason to hold bytes you cannot
+judge — and the asset is checked against it. A missing entry and a digest mismatch are
+separate refusals, and neither reaches the disk. Nothing downloaded is ever executed.
+
+The host is mapped to one canonical asset (`pixi-sandbox-<target>`, with `.exe` on Windows); an
+unsupported host is an error naming the host rather than a guess.
+
+### What it refuses
+
+Self-update only ever replaces a standalone binary. If pixi-sandbox was installed by a package
+manager, the prefix records the file's digest, and overwriting it in place would leave the
+environment describing bytes that are no longer there. So the destination is classified by where
+it lives, and each refusal names the remedy that actually works:
+
+| destination | remedy |
+| --- | --- |
+| Inside a conda/Pixi prefix (an ancestor `conda-meta/`) | `pixi update pixi-sandbox` |
+| A `pixi global install` trampoline | `pixi global update pixi-sandbox` |
+| A pixi-sandbox-managed launcher in your user bin directory | restore a newer transport, or pass `--dest` |
+| A restored transport tool under `.pixi/tools/<platform>/` | repack and republish the transport |
+
+There is no `--force`. An escape hatch here would reintroduce exactly the corruption the check
+exists to prevent.
+
+### How the replacement is safe
+
+The verified bytes are staged in the destination's **own directory** — never a temp dir, so the
+final move is same-filesystem and therefore atomic — and only then swapped in.
+
+On Unix the staged file is renamed straight over the destination. That is atomic, and it works
+even when the destination is the binary currently running: the rename swaps the directory entry
+and leaves the busy inode to the running process, so there is no window in which the tool is
+missing and no `Text file busy`.
+
+Windows cannot rename onto an existing file and will not delete a running image, but it does
+allow renaming one. So the old binary is moved aside to a `.pixi-sandbox-old-<version>` sibling,
+the new file takes its name, and the leftover is removed at the *start* of the next update —
+deleting it immediately fails by design while the old image is still mapped. If the second
+rename fails, the first is undone.
+
+:::note
+Upgrading a consumer project is more than upgrading the binary: the committed
+`publish-sandbox.yml` and `relock.yml` were rendered by a specific release and are regenerated
+with `pixi-sandbox init`. Production pins stay exact — `latest` is for discovering an upgrade,
+never for a committed workflow or a published transport.
+:::
+
 ## One-command reconstruction
 
 ```bash

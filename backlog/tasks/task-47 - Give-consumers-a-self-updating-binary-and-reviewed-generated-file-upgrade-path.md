@@ -1,10 +1,10 @@
 ---
 id: TASK-47
 title: Give consumers a self-updating binary and reviewed generated-file upgrade path
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-02 20:05'
-updated_date: '2026-10-03'
+updated_date: '2026-10-03 23:15'
 labels:
   - ci
   - init
@@ -59,7 +59,7 @@ lands on main.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `pixi-sandbox self-update` supports latest-by-default and an exact `--version X.Y.Z`; it maps every supported host to the canonical standalone release asset, downloads that asset plus `SHA256SUMS`, refuses a missing checksum entry or digest mismatch, and never executes or installs unverified bytes — resolver, platform-map, checksum, HTTP-failure, and pinned-version paths are fixture-tested without live network access
+- [x] #1 `pixi-sandbox self-update` supports latest-by-default and an exact `--version X.Y.Z`; it maps every supported host to the canonical standalone release asset, downloads that asset plus `SHA256SUMS`, refuses a missing checksum entry or digest mismatch, and never executes or installs unverified bytes — resolver, platform-map, checksum, HTTP-failure, and pinned-version paths are fixture-tested without live network access
 - [ ] #2 Self-update stages beside the destination and replaces atomically on Unix and Windows without leaving a partial executable; `--check` reports the current and resolved versions without writing; package-managed binaries/global-install trampolines are refused with a remedy, while an explicit CI-managed standalone path is supported and covered by tests
 - [ ] #3 Every file `init` writes carries a machine-readable version stamp beside the ownership marker (a `pixi-sandbox-version: X.Y.Z` line, within the first three lines the marker check already reads) for the publisher workflow, the relock workflow, and the launcher; fixture tests cover presence and parsing on every render
 - [ ] #4 `pixi-sandbox init --check` renders fresh, writes nothing, and exits non-zero naming each drifted file with its remedy (`pixi-sandbox init`) and each foreign-owned file separately (`--force`); a clean tree exits 0 — fixture-tested in both directions (D10)
@@ -103,6 +103,62 @@ a binary-native self-update command. CI must update a checksum-verified standalo
 that exact updated binary to regenerate the owned files, and let the reviewed regenerated
 publisher carry the resolved exact version into the next transport. The owner repository remains
 source-built; latest resolution is never part of production publishing.
+
+2026-10-03 slice 1 — the self-update core (v0.5.0 minor feature; the earlier hand-off called
+this v1.0.0, the owner re-scoped it to a minor). Landed: `crates/pixi-sandbox/src/release.rs`
+(the `ReleaseSource` trait, `Asset` and `GitHubReleaseSource` lifted out of
+`commands/tools/update.rs` so the updater and the pin refresher share one injection point and
+one fake, rather than two that drift), and `crates/pixi-sandbox/src/self_update/` with
+`resolver` (latest-by-default / exact `--version`, strict `X.Y.Z`), `assets` (the five-row
+host-to-asset map), `checksums` (`SHA256SUMS` parse + verify), `ownership` (the refusal
+ladder) and `replace` (stage-before-replace). CLI: `self-update [--version X.Y.Z] [--check]
+[--dest PATH] [--repo OWNER/NAME]`.
+
+Order of enforcement is the trust boundary and is tested as such: resolve, classify the
+destination, *then* download. A refused destination costs zero downloads
+(`a_pixi_managed_destination_is_refused_without_downloading_a_single_byte`), and `SHA256SUMS`
+is fetched before the binary so no unjudgeable bytes are ever held.
+
+Ownership is decided on path provenance, never file contents: managed launcher (the
+`user_tools` marker, size-capped so a binary that merely contains the marker string is not
+misread), `pixi global` trampoline (sibling `trampoline_configuration/<name>.json`, the signal
+`xtask airlock` already follows), conda/Pixi prefix (an ancestor `conda-meta/`), restored
+transport tool (`.pixi/tools/<platform>/`), else standalone. First match wins and each refusal
+carries its own remedy. No `--force`: an escape hatch would reintroduce the corruption the
+ladder exists to prevent.
+
+Replacement follows task-37 AC#3. Unix renames straight over the destination (atomic, and
+ETXTBSY-proof because it leaves the busy inode to the running process — asserted by holding an
+open handle across the swap). Windows renames the running image aside to a
+`.pixi-sandbox-old-<version>` sibling, moves the new file in, and sweeps the corpse at the
+*start* of the following update, because the unlink is expected to fail while the old image is
+still mapped; a failed second rename rolls the first one back. `ReplaceStrategy` is a parameter,
+not a `cfg!` read, so both paths run on every host (the `LauncherKind` precedent).
+
+Evidence: suite 404 -> 476 passing / 1 skipped; `pixi run --frozen lint` green (clippy
+`-D warnings`, deny, actionlint, taplo, biome, check-repository). Fixtures and an in-memory
+fake release only — no socket is opened by any test, and no test writes to a real user binary
+(D10). Two defects were found by smoke-testing the built binary rather than by the unit tests:
+clap's propagated `--version` collided with the requested-release `--version` (fixed with
+`disable_version_flag`, and `Cli::command().debug_assert()` is now a test so the whole command
+tree is audited), and the first rollback test passed vacuously on Linux (rewritten to drive
+`windows_swap` directly). Against the real machine, all four refusals fire correctly on the
+restored transport tool, the registered `~/.local/bin` launcher and a synthetic conda prefix.
+The host-to-asset map was diffed against the actual v0.4.3 release and covers exactly the five
+published standalone assets.
+
+AC#2 is deliberately left unchecked. Every behaviour it names is implemented and tested —
+staging beside the destination, atomic replacement under both strategies, non-writing
+`--check`, package-managed refusal with a remedy, an explicit CI-managed standalone path — but
+the Windows half is proven only against the strategy parameter on Linux. The outstanding proof
+is a Windows runner replacing a genuinely running image, which no local run can produce; it
+belongs with the release matrix in a later slice. Live-network resolution is also unproven
+here: this sandbox's egress proxy terminates TLS with a CA `ureq` does not trust, so
+`api.github.com` and the release asset host are unreachable from the binary (the failure is
+reported cleanly, with the URL and cause).
+
+Not built in this slice, by instruction: AC#3-#8 (the version stamp, `init --check`, the
+generated upgrade job and its dispatch) and the v1.0.0 cut. Decision-4 stays `proposed`.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -24,13 +24,13 @@ use std::path::{Path, PathBuf};
 /// Recognition marker for everything this module writes. A file carrying this line belongs to
 /// pixi-sandbox and may be rewritten (retargeted) by a later restore; anything else found
 /// where we want to write is the user's file and is refused unless `--force` says otherwise.
-pub(crate) const MANAGED_MARKER: &str = "managed by pixi-sandbox";
+pub const MANAGED_MARKER: &str = "managed by pixi-sandbox";
 
 /// The tools worth a user-level launcher. `pixi` is the entry point; `pixi-sandbox` is how
 /// `pixi sandbox` resolves, because pixi discovers `pixi-<command>` binaries on `PATH` — so
 /// both must be registered for `pixi sandbox` to work. The unpacker is restore machinery, not
 /// a user command, and stays unregistered.
-pub(crate) const REGISTERED_TOOLS: [&str; 2] = ["pixi", "pixi-sandbox"];
+pub const REGISTERED_TOOLS: [&str; 2] = ["pixi", "pixi-sandbox"];
 
 /// Profile markers for the managed PATH block. The block is replaced as a unit, which is what
 /// makes the edit idempotent and what lets a changed bin directory retarget cleanly.
@@ -41,13 +41,13 @@ const PATH_BLOCK_END: &str = "# <<< pixi-sandbox user tools (managed block) <<<"
 /// single call site (`cfg!(windows)`), and a parameter everywhere else so both flavours are
 /// testable on every platform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LauncherKind {
+pub enum LauncherKind {
     Posix,
     Windows,
 }
 
 impl LauncherKind {
-    pub(crate) fn current() -> Self {
+    pub fn current() -> Self {
         if cfg!(windows) {
             Self::Windows
         } else {
@@ -58,7 +58,7 @@ impl LauncherKind {
 
 /// What happened to one launcher, so the caller can say it precisely.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum LauncherChange {
+pub enum LauncherChange {
     Created,
     /// Rewritten to point at this restore's tools; the previous target is kept for the message
     /// because "the most recently registered restore becomes the user-level tool source" is a
@@ -71,7 +71,7 @@ pub(crate) enum LauncherChange {
 
 /// What happened to the persistent PATH.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PathChange {
+pub enum PathChange {
     /// POSIX: the managed block was appended to this profile file.
     Added { profile: PathBuf },
     /// POSIX: a managed block existed and was replaced (the bin directory changed).
@@ -90,19 +90,19 @@ pub(crate) enum PathChange {
 /// The registration service. Every root is explicit — this is the whole point of the design:
 /// the CLI resolves HOME/SHELL/`--user-bin` once, tests pass tempdirs, and the code below
 /// cannot accidentally reach the real user home.
-pub(crate) struct UserTools<'a> {
+pub struct UserTools<'a> {
     /// Per-user bin directory that receives the launchers, e.g. `~/.local/bin`.
-    pub(crate) bin_dir: &'a Path,
+    pub bin_dir: &'a Path,
     /// POSIX profile file receiving the managed PATH block; `None` on Windows, where the
     /// user PATH lives in the registry instead.
-    pub(crate) profile: Option<&'a Path>,
-    pub(crate) force: bool,
+    pub profile: Option<&'a Path>,
+    pub force: bool,
 }
 
 impl UserTools<'_> {
     /// Write the launchers and update the persistent PATH. Returns what changed; printing is
     /// the caller's job so `restore` keeps one voice.
-    pub(crate) fn register(
+    pub fn register(
         &self,
         kind: LauncherKind,
         tools: &[(String, PathBuf)],
@@ -173,7 +173,7 @@ impl UserTools<'_> {
 }
 
 /// The single launcher file name for a tool on this launcher flavour.
-pub(crate) fn launcher_file_name(name: &str, kind: LauncherKind) -> String {
+pub fn launcher_file_name(name: &str, kind: LauncherKind) -> String {
     match kind {
         LauncherKind::Posix => name.to_string(),
         // `.cmd` rather than `.exe`: a batch file runs from any shell (cmd, PowerShell, Run)
@@ -284,7 +284,7 @@ fn make_executable(path: &Path) -> Result<()> {
 /// The managed PATH block for POSIX profiles. `case`-guarded so sourcing it twice does not
 /// duplicate the entry — the same idempotency `scripts/restore.sh` relies on for its own PATH
 /// work, spelled the portable way so bash, zsh, dash and busybox sh all agree.
-pub(crate) fn path_block(bin_dir: &Path) -> Result<String> {
+pub fn path_block(bin_dir: &Path) -> Result<String> {
     let dir = bin_dir.to_str().ok_or_else(|| {
         anyhow::anyhow!(
             "user bin directory is not valid UTF-8: {}",
@@ -318,7 +318,7 @@ pub(crate) fn path_block(bin_dir: &Path) -> Result<String> {
 /// blocks are removed first — however many there are, from whichever bin directory — and one
 /// fresh block is appended, so the edit is idempotent and a changed `--user-bin` retargets
 /// cleanly instead of stacking.
-pub(crate) fn update_profile_path(profile: &Path, bin_dir: &Path) -> Result<PathChange> {
+pub fn update_profile_path(profile: &Path, bin_dir: &Path) -> Result<PathChange> {
     let block = path_block(bin_dir)?;
     let existing = fs::read_to_string(profile).unwrap_or_default();
     let stripped = strip_path_blocks(&existing);
@@ -409,7 +409,7 @@ const PIXI_SANDBOX_PATH_PRESENT: &str = "pixi-sandbox-user-path-present";
 /// plain Get/SetEnvironmentVariable dance does — would bake every reference open, so when
 /// the raw value carries `%…%` the script refuses and says so instead of guessing.
 #[cfg(any(windows, test))]
-pub(crate) fn powershell_user_path_script(bin_dir: &Path) -> Result<String> {
+pub fn powershell_user_path_script(bin_dir: &Path) -> Result<String> {
     let dir = bin_dir.to_str().ok_or_else(|| {
         anyhow::anyhow!(
             "user bin directory is not valid UTF-8: {}",
@@ -437,7 +437,7 @@ pub(crate) fn powershell_user_path_script(bin_dir: &Path) -> Result<String> {
 /// `~/.local/bin`; Windows gets its own `~\.pixi-sandbox\bin` because `~\.pixi\bin` belongs
 /// to `pixi global install` and its trampolines (D4) — colliding with it would be confusing
 /// by design, and the whole point is a recognisable, pixi-sandbox-owned location.
-pub(crate) fn default_bin_dir(home: &Path) -> PathBuf {
+pub fn default_bin_dir(home: &Path) -> PathBuf {
     if cfg!(windows) {
         home.join(".pixi-sandbox").join("bin")
     } else {
@@ -450,10 +450,7 @@ pub(crate) fn default_bin_dir(home: &Path) -> PathBuf {
 /// POSIX default). `bash` prefers `.bash_profile` when it exists because a login bash reads
 /// it *instead of* `.profile`; `zsh` uses `.zshrc` because that is the one file every
 /// interactive zsh reads, login or not.
-pub(crate) fn detect_profile(
-    home: &Path,
-    shell: Option<&std::ffi::OsStr>,
-) -> (PathBuf, Option<String>) {
+pub fn detect_profile(home: &Path, shell: Option<&std::ffi::OsStr>) -> (PathBuf, Option<String>) {
     let basename = shell
         .map(Path::new)
         .and_then(Path::file_name)

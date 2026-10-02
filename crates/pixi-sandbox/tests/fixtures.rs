@@ -338,9 +338,81 @@ fn shared_test_helpers_are_defined_once_and_exposed_as_fixtures() {
     }
 }
 
+/// Tests live under `tests/`, never in the file they judge.
+///
+/// A `#[cfg(test)] mod tests` beside production code puts the oracle and the thing it judges
+/// in one file, where a refactor can quietly adjust both at once; it also hides the module's
+/// real testable surface, because a unit test reaches privates an outside caller never can.
+/// So a module that deserves tests is promoted to `lib.rs` and tested through its public API
+/// from `tests/`, and anything genuinely private to the binary target (`cli.rs`, `commands/`)
+/// is covered black-box by driving the binary.
+///
+/// The list below is the remaining debt from before the rule, not an escape hatch: it may
+/// shrink, never grow. Adding a file to it in a pull request is the signal to split that
+/// module instead.
+#[test]
+fn production_sources_carry_no_inline_test_modules() {
+    // Pre-rule modules awaiting the same split. Shrink this list; do not extend it.
+    const LEGACY: [&str; 6] = [
+        "commands/init.rs",
+        "commands/pack.rs",
+        "commands/restore.rs",
+        "commands/tools/update.rs",
+        "generated/relock_workflow.rs",
+        "user_tools.rs",
+    ];
+
+    let src = crate_dir().join("src");
+    let mut sources = Vec::new();
+    collect_rust(&src, &mut sources);
+    assert!(!sources.is_empty(), "no production sources found");
+
+    let mut offenders = Vec::new();
+    let mut legacy_seen = Vec::new();
+    for source in sources {
+        let relative = source
+            .strip_prefix(&src)
+            .expect("source sits under src")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let text = std::fs::read_to_string(&source).expect("production source is UTF-8");
+        if !text.contains("#[cfg(test)]") {
+            continue;
+        }
+        if LEGACY.contains(&relative.as_str()) {
+            legacy_seen.push(relative);
+        } else {
+            offenders.push(relative);
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "these production sources carry inline `#[cfg(test)]` tests:\n  {}\n\n\
+         Move them to `crates/pixi-sandbox/tests/`: promote the module to `lib.rs` as `pub mod` \
+         and test it through its public API, or — if it is private to the binary target — \
+         drive the binary black-box from `tests/cli.rs`.",
+        offenders.join("\n  ")
+    );
+
+    let stale: Vec<&str> = LEGACY
+        .iter()
+        .copied()
+        .filter(|path| !legacy_seen.iter().any(|seen| seen == path))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "these entries no longer carry inline tests — delete them from LEGACY so the list \
+         keeps shrinking:\n  {}",
+        stale.join("\n  ")
+    );
+}
+
 /// Keep coverage from silently drifting toward only the CLI's happy path. This is a lightweight
-/// structural guard rather than a replacement for llvm-cov: every production module must either
-/// carry unit tests or have its derived module symbol mentioned by an integration test. `main.rs`
+/// structural guard rather than a replacement for llvm-cov: every production module must have its
+/// derived module symbol mentioned by a test under `tests/`. The inline-`#[cfg(test)]` branch
+/// below survives only for the `LEGACY` modules that have not been split yet; new modules take
+/// the `tests/` route (see `production_sources_carry_no_inline_test_modules`). `main.rs`
 /// is wiring only and deliberately excluded.
 #[test]
 fn coverage_guard_requires_a_test_route_for_every_production_module() {
