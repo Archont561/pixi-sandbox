@@ -481,10 +481,30 @@ pub fn denial_argv(os: &str, command: &[String]) -> Result<Vec<String>> {
     Ok(argv)
 }
 
+fn command_with_absolute_program(
+    command: &[String],
+    path_value: &std::ffi::OsStr,
+) -> Result<Vec<String>> {
+    let Some(program) = command.first() else {
+        bail!("deny-egress needs a command after `--`");
+    };
+    if program.contains('/') || program.contains('\\') {
+        return Ok(command.to_vec());
+    }
+    let Some(path) = resolve_on_path(program, path_value) else {
+        bail!("{program} is not on PATH; deny-egress cannot run it under sudo's sanitized path");
+    };
+    let mut resolved = command.to_vec();
+    resolved[0] = path.display().to_string();
+    Ok(resolved)
+}
+
 /// Re-exec `command` under the platform's egress denial, inheriting stdio, and exit with
 /// whatever it exited with — the gate's failure must look like the gate's failure.
 pub fn deny_egress(command: &[String]) -> Result<()> {
-    let argv = denial_argv(std::env::consts::OS, command)?;
+    let command =
+        command_with_absolute_program(command, &std::env::var_os("PATH").unwrap_or_default())?;
+    let argv = denial_argv(std::env::consts::OS, &command)?;
     eprintln!("egress denied: {}", argv.join(" "));
     let status = StdCommand::new(&argv[0])
         .args(&argv[1..])
@@ -743,6 +763,28 @@ mod tests {
         .expect("write config");
 
         assert_eq!(resolve_pixi_trampoline(&shim), real);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deny_egress_absolutizes_the_program_before_sudo_sanitizes_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pixi = dir.path().join("pixi");
+        fs::write(&pixi, b"#!/bin/true\n").expect("write");
+        fs::set_permissions(&pixi, fs::Permissions::from_mode(0o755)).expect("chmod");
+        let path_value = std::env::join_paths([dir.path()]).expect("join");
+
+        assert_eq!(
+            command_with_absolute_program(&["pixi".into(), "run".into()], &path_value)
+                .expect("resolve"),
+            [pixi.display().to_string(), "run".to_string()]
+        );
+        assert_eq!(
+            command_with_absolute_program(&["/usr/bin/pixi".into()], &path_value)
+                .expect("absolute unchanged"),
+            ["/usr/bin/pixi".to_string()]
+        );
     }
 
     #[test]
