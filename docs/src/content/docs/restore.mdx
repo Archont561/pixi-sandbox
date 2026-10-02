@@ -39,10 +39,11 @@ cd project
 
 The launcher resolves its branch from the config selected by `init` (`pixi-sandbox.toml` is
 preferred and `.pixi-sandbox.toml` is the compatibility fallback), derives
-`<branch_prefix>/<bundle>-<platform>` for the host, calls local `git archive`, extracts into
-project-local scratch, and invokes the verified nested binary. It never fetches or downloads.
-Set `PIXI_SANDBOX_BRANCH` to pin an exact branch, or `PIXI_SANDBOX_BUNDLE` to choose between
-bundles that cover the same platform.
+`<branch_prefix>/<bundle>-<platform>` for the host, calls `git archive`, extracts into
+project-local scratch, and invokes the verified nested binary. When a connected clone lacks the
+sandbox ref, it fetches that one branch into `origin/<branch>`; set `PIXI_SANDBOX_FETCH=skip` to
+require local Git objects only. Set `PIXI_SANDBOX_BRANCH` to pin an exact branch, or
+`PIXI_SANDBOX_BUNDLE` to choose between bundles that cover the same platform.
 
 ## 2. Look before you leap
 
@@ -75,8 +76,9 @@ cd /path/to/project
 
 What it does, in order: verifies the tools, stages a copy of each pack under a work dir on
 the project's filesystem, unpacks with the bundled `pixi-unpack`, moves each environment to
-`.pixi/envs/<env>`, writes pixi's `conda-meta` markers, materialises the vendored crates and
-wires `.cargo/config.toml` to them with a **relative** path, removes any legacy
+`.pixi/envs/<env>`, writes pixi's `conda-meta` markers, materialises the vendored crates, writes
+Cargo source replacement to sandbox-owned `.pixi-sandbox/cargo-home/config.toml`, adds
+per-environment Pixi/Conda activation hooks that set `CARGO_HOME`, removes any legacy
 `.pixi/sandbox-env.sh`, verifies the restored tree against the manifest's per-file digests, and
 — only after that verification — registers the user tools (below).
 
@@ -91,9 +93,10 @@ manifest-verified copies under `<project>/.pixi/tools/<platform>/` and carry a
 recently registered restore is the user-level tool source. An already-running shell cannot be
 mutated — open a new one, or run the `export PATH=...` line the restore prints.
 
-No activation script is generated or supported. Do not source `.pixi/sandbox-env.sh` and do not
-run bare `cargo`, `rustc`, or `bun` from a restored prefix; use `pixi run ...` so pixi selects
-the environment and keeps the lockfile/offline contract visible.
+No project-level activation script is generated or supported. Do not source
+`.pixi/sandbox-env.sh` and do not run bare `cargo`, `rustc`, or `bun` from a restored prefix;
+use `pixi run ...` so pixi selects the environment, loads the restore-owned Cargo activation
+hook, and keeps the lockfile/offline contract visible.
 
 Registration refuses to overwrite a `pixi` or `pixi-sandbox` you already have in the user bin
 directory unless you pass `--force`. For CI runners, shared accounts, or locked-down airlocks,
@@ -136,7 +139,10 @@ registration was skipped, call the manifest-owned binary explicitly:
 `./.pixi/tools/<platform>/pixi run --frozen <task>`.
 
 If `pixi install --frozen --offline` starts doing real work, the environment on disk does
-not match `pixi.lock` — do not let it continue; re-run the restore instead.
+not match `pixi.lock` — do not let it continue; re-run the restore instead. If your project
+already tracks `.cargo/config.toml` for aliases, rustflags, target runners, or `[env]`, the
+default restore leaves it byte-for-byte intact; Cargo's vendor replacement lives in
+`.pixi-sandbox/cargo-home/config.toml` and is selected by Pixi's environment activation.
 
 ## What the bundle does not contain
 

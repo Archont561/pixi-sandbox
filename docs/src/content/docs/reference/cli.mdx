@@ -130,8 +130,9 @@ design §2.
 ## restore
 
 Airlock restore — verify then materialize. `pixi-sandbox init` generates project-side
-`restore` and `restore.ps1` launchers that archive the local sandbox branch and call this explicit
-form using its nested binary:
+`restore` and `restore.ps1` launchers that archive the selected sandbox ref (fetching that one
+branch first when a connected clone lacks it, unless `PIXI_SANDBOX_FETCH=skip`) and call this
+explicit form using its nested binary:
 
 ```bash
 /tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
@@ -160,19 +161,21 @@ read-only: it runs `doctor --verify` and prints the explicit restore command.
 | `--force` | Overwrite existing envs; also replaces unmanaged `pixi`/`pixi-sandbox` entries in the user bin directory |
 | `--no-vendor` | Skip vendor |
 | `--work-dir` | Work dir (default `.pixi/.restore-work`, same FS, TMPDIR redirected) |
-| `--cargo-config` | `auto` (default) / `write` / `print` / `none` — how to wire `.cargo/config.toml` |
+| `--cargo-config` | `auto` (default) / `write` / `print` / `none` — `auto` writes sandbox-owned `.pixi-sandbox/cargo-home/config.toml` plus Pixi activation hooks; `write` overwrites project `.cargo/config.toml`; `print`/`none` do not wire Cargo |
 | `--user-tools` | `register` (default) / `skip` — register `pixi` + `pixi-sandbox` for the user after both verifications pass, or touch nothing outside the project (env: `PIXI_SANDBOX_USER_TOOLS`) |
 | `--user-bin` | Per-user bin directory for the launchers (default `~/.local/bin`, Windows `%USERPROFILE%\.pixi-sandbox\bin`; env: `PIXI_SANDBOX_USER_BIN`) |
 
-Order: load manifest → verify everything → materialize tools (idempotent) → preflight disk → install envs (pixi-unpack → rename) → write markers (`conda-meta/pixi_env_prefix`, fingerprint) → vendor + cargo config → remove any legacy `.pixi/sandbox-env.sh` → verify the restored tree against the manifest's per-file digests → register user tools (launchers + profile/registry PATH, unless `--user-tools skip`) → assertions `pixi install --frozen --offline` no-op, `pixi run --frozen -- cargo build --offline` ok.
+Order: load manifest → verify everything → materialize tools (idempotent) → preflight disk → install envs (pixi-unpack → rename) → write markers (`conda-meta/pixi_env_prefix`, fingerprint) → vendor + Cargo wiring (`auto` uses `.pixi-sandbox/cargo-home` and per-env activation hooks, leaving project `.cargo/config.toml` untouched) → remove any legacy `.pixi/sandbox-env.sh` → verify the restored tree against the manifest's per-file digests → register user tools (launchers + profile/registry PATH, unless `--user-tools skip`) → assertions `pixi install --frozen --offline` no-op, and when Cargo is wired, `pixi run --frozen -- cargo build --offline` uses the vendor tree.
 
 User-tool registration: managed launchers `exec` the manifest-verified copies under
 `.pixi/tools/<platform>/`; a restore of another project retargets them (the most recent
 restore is the user-level source); unrelated existing `pixi`/`pixi-sandbox` commands are
-refused unless `--force`. There is no supported environment activation script: `pixi` is the
+refused unless `--force`. There is no supported `.pixi/sandbox-env.sh`: `pixi` is the
 sole entrypoint, and package/crate commands should run as `pixi run ...` (or through the
 manifest-owned `.pixi/tools/<platform>/pixi` when registration is skipped), never as bare
-`cargo`, `rustc`, or `bun` commands from a sourced prefix.
+`cargo`, `rustc`, or `bun` commands from a sourced prefix. The only activation hooks restore
+writes are per-environment Conda/Pixi hooks that set `CARGO_HOME` to the sandbox-owned cargo
+home when vendored crates are restored in `--cargo-config auto` mode.
 
 ## unpack
 
@@ -268,8 +271,10 @@ reviewed data: read the diff before committing it.
 
 ```bash
 pixi-sandbox init   # connected host; commit the generated files
-./restore.sh               # disconnected host; local Git objects only
+./restore.sh               # disconnected host; local Git objects, or one sandbox-branch fetch if connected
 ```
 
 The generated platform-appropriate launcher contains no installation logic. It archives the
-configured local sandbox branch and delegates verification and restoration to its nested binary.
+configured sandbox branch and delegates verification and restoration to its nested binary; if the
+ref is absent in a connected clone it fetches `refs/heads/<branch>` into `origin/<branch>`, while
+`PIXI_SANDBOX_FETCH=skip` keeps a fully local airlock from attempting any remote access.

@@ -279,9 +279,11 @@ fn powershell_config(config: &Path) -> String {
 }
 
 fn posix_restore(branch: &str, config: &Path) -> String {
-    // The launcher stays a bootstrap: POSIX sh, no downloads, and no dependency on the tool it
-    // is about to unpack. Branch identity comes from the same selected config as the publisher,
-    // with the branch reviewed at init time as a fallback when the config cannot decide.
+    // The launcher stays a bootstrap: POSIX sh and no dependency on the tool it is about to
+    // unpack. Branch identity comes from the same selected config as the publisher, with the
+    // branch reviewed at init time as a fallback when the config cannot decide. If a connected
+    // clone lacks the sandbox refs, it fetches only that namespace; airlocks can opt out with
+    // PIXI_SANDBOX_FETCH=skip and rely on the branch already being present.
     let template = r#"#!/bin/sh
 # __GENERATED_MARKER__
 set -eu
@@ -313,11 +315,23 @@ if [ -z "$BRANCH" ] && [ -r "$CONFIG" ]; then
   fi
 fi
 BRANCH=${BRANCH:-$DEFAULT_BRANCH}
-if ! git -C "$ROOT" rev-parse --verify "$BRANCH^{commit}" >/dev/null 2>&1; then BRANCH=origin/$BRANCH; fi
+REF=$BRANCH
+if ! git -C "$ROOT" rev-parse --verify "$REF^{commit}" >/dev/null 2>&1; then REF=origin/$BRANCH; fi
+if ! git -C "$ROOT" rev-parse --verify "$REF^{commit}" >/dev/null 2>&1; then
+  if [ "${PIXI_SANDBOX_FETCH:-auto}" = skip ]; then
+    echo "sandbox branch $BRANCH is not present locally (PIXI_SANDBOX_FETCH=skip); fetch refs/heads/sandbox/* before restoring" >&2
+    exit 2
+  fi
+  git -C "$ROOT" fetch --depth 1 origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || {
+    echo "cannot fetch $BRANCH from origin; run: git fetch origin 'refs/heads/sandbox/*:refs/remotes/origin/sandbox/*'" >&2
+    exit 2
+  }
+  REF=origin/$BRANCH
+fi
 TRANSPORT="$ROOT/.pixi/.restore-transport"
 rm -rf "$TRANSPORT"
 mkdir -p "$TRANSPORT"
-git -C "$ROOT" archive "$BRANCH" | tar -x -C "$TRANSPORT"
+git -C "$ROOT" archive "$REF" | tar -x -C "$TRANSPORT"
 BIN="$TRANSPORT/.pixi-sandbox/tools/$PLATFORM/pixi-sandbox"
 # User-tool registration is selected here, explicitly (task-33): a person restoring an
 # airlock gets `pixi` and `pixi sandbox` in a per-user bin by default; a locked-down or
@@ -367,13 +381,27 @@ if (-not $Branch -and (Test-Path $Config)) {
     }
 }
 if (-not $Branch) { $Branch = $DefaultBranch }
-git -C $Root rev-parse --verify "$Branch^{commit}" 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) { $Branch = "origin/$Branch" }
+$Ref = $Branch
+git -C $Root rev-parse --verify "$Ref^{commit}" 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $Ref = "origin/$Branch" }
+git -C $Root rev-parse --verify "$Ref^{commit}" 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    if ($env:PIXI_SANDBOX_FETCH -eq 'skip') {
+        Write-Error -Message "sandbox branch $Branch is not present locally (PIXI_SANDBOX_FETCH=skip); fetch refs/heads/sandbox/* before restoring" -ErrorAction Continue
+        exit 2
+    }
+    git -C $Root fetch --depth 1 origin "refs/heads/${Branch}:refs/remotes/origin/${Branch}"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error -Message "cannot fetch $Branch from origin; run: git fetch origin 'refs/heads/sandbox/*:refs/remotes/origin/sandbox/*'" -ErrorAction Continue
+        exit 2
+    }
+    $Ref = "origin/$Branch"
+}
 $Transport = Join-Path $Root '.pixi/.restore-transport'
 $Archive = Join-Path $Root '.pixi/.restore-transport.tar'
 Remove-Item -Recurse -Force $Transport,$Archive -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $Transport | Out-Null
-git -C $Root archive --format=tar --output=$Archive $Branch
+git -C $Root archive --format=tar --output=$Archive $Ref
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 tar -xf $Archive -C $Transport
 $Binary = Join-Path $Transport '.pixi-sandbox/tools/win-64/pixi-sandbox.exe'
@@ -421,9 +449,12 @@ mod tests {
     }
 
     #[test]
-    fn launchers_are_offline_bootstraps_not_installers() {
+    fn launchers_are_bootstraps_not_installers() {
         let shell = posix_restore("sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
-        assert!(shell.contains("git -C \"$ROOT\" archive"));
+        assert!(shell.contains("git -C \"$ROOT\" archive \"$REF\""));
+        assert!(shell.contains("PIXI_SANDBOX_FETCH:-auto"));
+        assert!(shell.contains("refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"));
+        assert!(shell.contains("fetch refs/heads/sandbox/* before restoring"));
         assert!(!shell.contains("curl"));
         // task-33: the launcher selects the user-tool policy explicitly, and the operator
         // can still override it — env var through the shell default, or a trailing
@@ -436,7 +467,9 @@ mod tests {
         assert!(!shell.contains("--user-tools \""));
         let powershell =
             powershell_restore("sandbox/developer-win-64", Path::new(PREFERRED_CONFIG));
-        assert!(powershell.contains("git -C $Root archive"));
+        assert!(powershell.contains("git -C $Root archive --format=tar --output=$Archive $Ref"));
+        assert!(powershell.contains("$env:PIXI_SANDBOX_FETCH -eq 'skip'"));
+        assert!(powershell.contains("refs/heads/${Branch}:refs/remotes/origin/${Branch}"));
         assert!(!powershell.contains("Invoke-WebRequest"));
         assert!(
             powershell.contains("$env:PIXI_SANDBOX_USER_TOOLS = if ($env:PIXI_SANDBOX_USER_TOOLS)")

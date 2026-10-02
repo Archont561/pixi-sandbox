@@ -1200,7 +1200,7 @@ fn a_bare_root_invocation_verifies_the_branch_and_only_prints_a_hint() {
 
 #[cfg(unix)]
 #[test]
-fn restore_materialises_the_fixture_vendor_tree_and_writes_relative_cargo_config() {
+fn restore_materialises_the_fixture_vendor_tree_and_wires_sandbox_cargo_home() {
     // The fixture transport is used exactly as checked in — including its real unpacker stub.
     // task-33 made restore verify the tree it produced against the manifest's per-file oracle
     // before registering user tools, and a hand-rolled fake unpacker (this test used to swap
@@ -1209,7 +1209,9 @@ fn restore_materialises_the_fixture_vendor_tree_and_writes_relative_cargo_config
 
     let project_root = tempfile::tempdir().unwrap();
     let project = project_root.path().join("project");
-    fs::create_dir_all(&project).unwrap();
+    fs::create_dir_all(project.join(".cargo")).unwrap();
+    let project_config = "[env]\nTS_RS_EXPORT_DIR = \"generated\"\n";
+    fs::write(project.join(".cargo/config.toml"), project_config).unwrap();
     bin()
         // task-33: registration runs by default; keep it inside the tempdir.
         .env("HOME", project_root.path())
@@ -1235,7 +1237,126 @@ fn restore_materialises_the_fixture_vendor_tree_and_writes_relative_cargo_config
         "the vendor tree must be materialised after full transport verification"
     );
     let config = fs::read_to_string(project.join(".cargo/config.toml")).unwrap();
-    assert!(config.contains("directory = \".pixi-sandbox/vendor\""));
+    assert_eq!(
+        config, project_config,
+        "project-owned Cargo config survives"
+    );
+    let cargo_home_config = fs::read_to_string(
+        project
+            .join(".pixi-sandbox")
+            .join("cargo-home")
+            .join("config.toml"),
+    )
+    .unwrap();
+    assert!(
+        cargo_home_config.contains(&format!(
+            "directory = \"{}\"",
+            project.join(".pixi-sandbox/vendor").display()
+        )),
+        "{cargo_home_config}"
+    );
+    let hook = fs::read_to_string(
+        project.join(".pixi/envs/demo/etc/conda/activate.d/pixi-sandbox-cargo-home.sh"),
+    )
+    .unwrap();
+    assert!(hook.contains("export CARGO_HOME="), "{hook}");
+    assert!(hook.contains("$CARGO_HOME/bin:$PATH"), "{hook}");
+}
+
+#[cfg(unix)]
+#[test]
+fn restore_cargo_config_print_and_none_do_not_claim_cargo_is_wired() {
+    for mode in ["print", "none"] {
+        let transport = transport_copy();
+        let project_root = tempfile::tempdir().unwrap();
+        let project = project_root.path().join(format!("project-{mode}"));
+        fs::create_dir_all(&project).unwrap();
+
+        let output = bin()
+            .args([
+                "restore",
+                "--branch-location",
+                transport.path().to_str().unwrap(),
+                "--output-path",
+                project.to_str().unwrap(),
+                "--user-tools",
+                "skip",
+                "--cargo-config",
+                mode,
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let output = String::from_utf8(output).unwrap();
+
+        assert!(
+            output.contains(&format!("cargo vendor: NOT wired (--cargo-config {mode})")),
+            "{output}"
+        );
+        assert!(
+            !output.contains("pixi run --frozen -- cargo build --offline"),
+            "{mode} must not print an offline build recipe it did not wire: {output}"
+        );
+        assert!(!project.join(".cargo/config.toml").exists());
+        assert!(
+            !project
+                .join(".pixi-sandbox/cargo-home/config.toml")
+                .exists()
+        );
+        assert!(
+            !project
+                .join(".pixi/envs/demo/etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+                .exists()
+        );
+        if mode == "print" {
+            assert!(
+                output.contains(
+                    "# Cargo source replacement for .pixi-sandbox/cargo-home/config.toml"
+                ),
+                "{output}"
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn restore_cargo_config_write_keeps_the_destructive_project_config_mode() {
+    let transport = transport_copy();
+    let project_root = tempfile::tempdir().unwrap();
+    let project = project_root.path().join("project");
+    fs::create_dir_all(project.join(".cargo")).unwrap();
+    fs::write(project.join(".cargo/config.toml"), "[env]\nKEEP = \"me\"\n").unwrap();
+
+    bin()
+        .args([
+            "restore",
+            "--branch-location",
+            transport.path().to_str().unwrap(),
+            "--output-path",
+            project.to_str().unwrap(),
+            "--user-tools",
+            "skip",
+            "--cargo-config",
+            "write",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cargo vendor: wired via"))
+        .stdout(predicate::str::contains(
+            "pixi run --frozen -- cargo build --offline",
+        ));
+
+    let config = fs::read_to_string(project.join(".cargo/config.toml")).unwrap();
+    assert!(config.contains("[source.crates-io]"), "{config}");
+    assert!(!config.contains("KEEP"), "write is explicitly destructive");
+    assert!(
+        !project
+            .join(".pixi-sandbox/cargo-home/config.toml")
+            .exists()
+    );
 }
 
 #[test]

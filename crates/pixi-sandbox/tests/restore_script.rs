@@ -541,7 +541,19 @@ fn a_local_branch_restores_without_touching_the_network() {
             .join(".pixi/envs/demo/conda-meta/pixi_env_prefix")
             .is_file()
     );
-    assert!(restored.project.join(".cargo/config.toml").is_file());
+    assert!(
+        restored
+            .project
+            .join(".pixi-sandbox/cargo-home/config.toml")
+            .is_file()
+    );
+    assert!(
+        restored
+            .project
+            .join(".pixi/envs/demo/etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+            .is_file()
+    );
+    assert!(!restored.project.join(".cargo/config.toml").exists());
 
     // The worktree is scratch, and scratch is cleaned up — including from git's own list, or
     // the next restore trips over a stale entry.

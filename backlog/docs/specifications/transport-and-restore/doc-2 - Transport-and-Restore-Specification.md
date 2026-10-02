@@ -205,10 +205,14 @@ where the bytes went; the same numbers appear in the generated `README.md`.
    without them is rejected by pixi's fast path and `pixi install --frozen --offline` tries to
    do real work (which fails offline ✅).
 7. **Materialise the vendored crates** into `<project>/.pixi-sandbox/vendor/` (same verified
-   blob path as everything else) and wire `.cargo/config.toml` with a **relative** directory
-   (D6, §11). `--cargo-config auto|write|print|none`.
-8. **Write `.pixi/sandbox-env.sh`** (task-5): self-sufficient — bundled tools *and* every
-   restored environment's `bin/` on `PATH`, `CARGO_NET_OFFLINE=true`.
+   blob path as everything else) and wire Cargo. Default `--cargo-config auto` writes the
+   source-replacement block to sandbox-owned `.pixi-sandbox/cargo-home/config.toml` and adds
+   per-env Pixi/Conda activation hooks that set `CARGO_HOME`, so project-owned
+   `.cargo/config.toml` is left untouched. Explicit `write` remains the destructive opt-in,
+   while `print` and `none` do not claim Cargo is wired.
+8. **Remove any legacy `.pixi/sandbox-env.sh`**. Restore does not generate a project-level
+   activation script; `pixi run ...` is the entrypoint, with only restore-owned per-env
+   activation hooks for Cargo vendor wiring.
 9. **Verify the restored tree** against the manifest's per-file oracle (D13) — the same check
    `doctor --verify-restored` runs, executed by `restore` itself so that a success exit means
    both sides are proven. Schema-1 envs are reported `unverifiable`, never failed; a mismatch
@@ -533,21 +537,27 @@ vs +3.96 MiB if the whole tree is one artifact ✅, and a fresh clone of the ven
 
 ### §11.3 Wiring the vendored tree into cargo
 
-Wiring after restore is a `[source]` replacement, written with a **relative** path:
+Default wiring after restore is a `[source]` replacement in sandbox-owned
+`.pixi-sandbox/cargo-home/config.toml`, using an **absolute** vendor path so it is independent
+of Cargo's config-layer-relative path rules:
 
 ```toml
 [source.crates-io]
 replace-with = "vendored-sources"
 [source.vendored-sources]
-directory = ".pixi-sandbox/vendor"     # resolved against the project root
+directory = "/project/.pixi-sandbox/vendor"
 ```
 
+Per-environment Pixi/Conda activation hooks set `CARGO_HOME` to that cargo home and prepend
+`$CARGO_HOME/bin`, so `pixi run -- cargo … --offline` uses the vendor tree without touching a
+project-owned `.cargo/config.toml` (which may carry `[env]`, aliases, rustflags or target
+runners). The explicit `--cargo-config write` mode still writes the replacement into project
+`.cargo/config.toml` for dedicated airlock images; `print` and `none` do not wire Cargo.
 Measured subtleties: the base directory of a relative `directory` differs by *where the config
 lives* — a project `.cargo/config.toml` resolves against the project root, `--config` against
-the cwd, `$CARGO_HOME/config.toml` against the CARGO_HOME's parent ✅; with the replacement in
-place, a dead-network `cargo build` works even without `--offline` ✅ (we still export
-`CARGO_NET_OFFLINE=true`, for fail-fast). Cargo gives **no useful error** if a crate is
-missing, so the packer must fail at pack time rather than let the airlock discover it.
+the cwd, `$CARGO_HOME/config.toml` against the CARGO_HOME's parent ✅. Cargo gives **no useful
+error** if a crate is missing, so the packer must fail at pack time rather than let the airlock
+discover it.
 
 **Duplicate crate sources are rejected before anything is written.** `cargo vendor` stores every
 crate as `<name>-<version>` under one vendor root, so when the same crate+version is reachable

@@ -184,7 +184,17 @@ fn fixture_doctor_publish_and_restore_is_the_complete_offline_proof() {
             .join(".pixi-sandbox/vendor/demo-dep-1.0.0/Cargo.toml")
             .is_file()
     );
-    assert!(airlock.join(".cargo/config.toml").is_file());
+    assert!(
+        airlock
+            .join(".pixi-sandbox/cargo-home/config.toml")
+            .is_file()
+    );
+    assert!(!airlock.join(".cargo/config.toml").exists());
+    assert!(
+        airlock
+            .join(".pixi/envs/demo/etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+            .is_file()
+    );
 }
 
 #[test]
@@ -660,16 +670,33 @@ fn assert_gate_cargo_check_uses_pixi(project: &Path, skip_cargo: bool) {
     if skip_cargo || !project.join("Cargo.toml").is_file() {
         return;
     }
-    let cargo_config = project.join(".cargo/config.toml");
+    let cargo_config = project.join(".pixi-sandbox/cargo-home/config.toml");
     assert!(
         cargo_config.is_file(),
-        "no .cargo/config.toml in the restored project; the vendored tree was not wired in"
+        "no sandbox-owned Cargo config in the restored project; the vendored tree was not wired in"
     );
     let cargo_config_text = fs::read_to_string(&cargo_config)
         .unwrap_or_else(|err| panic!("reading {} failed: {err}", cargo_config.display()));
     assert!(
-        cargo_config_text.contains("source.crates-io"),
-        ".cargo/config.toml does not redirect crates.io; --offline would have to hit the network"
+        cargo_config_text.contains("source.crates-io")
+            && cargo_config_text
+                .contains(&project.join(".pixi-sandbox/vendor").display().to_string()),
+        "sandbox Cargo config does not redirect crates.io to the restored vendor tree"
+    );
+
+    let hooks = fs::read_dir(project.join(".pixi/envs"))
+        .unwrap_or_else(|err| panic!("reading restored envs failed: {err}"))
+        .filter_map(Result::ok)
+        .map(|entry| {
+            entry
+                .path()
+                .join("etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+        })
+        .filter(|path| path.is_file())
+        .count();
+    assert!(
+        hooks > 0,
+        "no Pixi activation hook wires CARGO_HOME for cargo check"
     );
 
     let pixi = gate_tool(&gate_tools_bin(project), "pixi");

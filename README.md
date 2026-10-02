@@ -141,9 +141,10 @@ The launcher reads the selected config (`pixi-sandbox.toml` by default, with
 `.pixi-sandbox.toml` retained as a compatibility fallback) and resolves
 `<branch_prefix>/<bundle>-<platform>` for the host — the same branch `pixi-sandbox plan` gives
 the publisher — so renaming a bundle or
-prefix needs no regenerated launcher. It then uses local `git archive`; it never fetches. It
-extracts the branch under `.pixi/.restore-transport` and invokes
-`.pixi-sandbox/tools/<platform>/pixi-sandbox`.
+prefix needs no regenerated launcher. It uses local `git archive` when the sandbox ref is
+present; if a connected clone lacks `refs/remotes/origin/sandbox/*`, it fetches just the selected
+sandbox branch unless `PIXI_SANDBOX_FETCH=skip` is set. It extracts the branch under
+`.pixi/.restore-transport` and invokes `.pixi-sandbox/tools/<platform>/pixi-sandbox`.
 
 ```bash
 PIXI_SANDBOX_BRANCH=sandbox/developer-linux-64 ./restore.sh  # pin an exact branch
@@ -151,7 +152,7 @@ PIXI_SANDBOX_BUNDLE=developer ./restore.sh                   # several bundles c
 ```
 
 > [!TIP]
-> After restore, `.pixi/envs/*` has relocated prefixes and `.cargo/config.toml` is wired to vendored sources with a relative path. No `.pixi/sandbox-env.sh` is generated; run package and crate commands through `pixi run ...`.
+> After restore, `.pixi/envs/*` has relocated prefixes and Cargo is wired through a sandbox-owned `.pixi-sandbox/cargo-home/config.toml` plus Pixi activation hooks, so an existing project `.cargo/config.toml` is left alone. No `.pixi/sandbox-env.sh` is generated; run package and crate commands through `pixi run ...`.
 
 ---
 
@@ -288,8 +289,9 @@ sandbox/<bundle>-<platform>/   # orphan branch
 
 Only Markdown files live at the branch root. `pixi-sandbox init` generates exactly one minimal
 launcher on the normal project branch: `restore.sh` on Unix or `restore.ps1` on Windows. It
-resolves its branch from the selected config, archives the local sandbox branch, and invokes its
-manifest-owned binary without network access.
+resolves its branch from the selected config, fetches the selected sandbox branch only when no
+local copy exists and fetching is not disabled, archives that ref, and invokes its
+manifest-owned binary.
 
 **Sizes (small project, 2 envs, 33 crates, linux-64):**
 
