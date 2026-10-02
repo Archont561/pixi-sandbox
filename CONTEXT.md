@@ -112,7 +112,7 @@ The v1 proposal is now an accepted architectural decision: backlog `decision-1` 
 - Publish package variants to prefix.dev.
 - Push sandbox transport branches or create GitHub Releases.
 - Run native macOS/Windows package and binary jobs.
-- Validate installation from the `@archont561/pixi-sandbox` channel.
+- Validate installation from the `@archont561/archont561` ecosystem channel.
 - Perform the connected half of the standalone transport comparison.
 
 ### Work that can be done offline
@@ -593,6 +593,31 @@ byte), and task-46 made the docs build warning-free. Suite: **405 passed / 1 ski
 job is deciding what to seed: the deferred proofs above are watch-items, not tasks; the
 v2 spike (task-9, rattler-based pack/unpack) and any new work come from the owner's
 priorities, not from re-opening Done tasks.
+
+### 2026-10-02 — issue #71: init's channel append broke consumer locks (task-48, D17, PR #73)
+
+**Open on the session branch** (`arena/01a0fe32-pixi-sandbox`, PR #73, `fix(init): …`, net
+−175 lines). Issue #71 measured what task-34's namespace-root choice actually does:
+`https://prefix.dev/archont561` serves no repodata, so every consumer with a dependency
+fails `pixi lock` right after `init`, and a dependency-free project locks fine (an empty
+solve never fetches repodata) — the smoke-test trap that let it ship. Recorded as **D17**
+and fixed as the no-mutation option: init writes only the files it owns and leaves
+`pixi.toml` byte-identical, with a bare existence check keeping the
+run-init-from-a-Pixi-project guard. The channel machinery and the `toml_edit` dependency
+are deleted; the task-41 corpus is re-pointed at byte-identical assertions over
+dependency-carrying manifests; both docs sections that described the append as a feature now
+describe its removal and the 0.4.3 remediation (delete the appended entry).
+
+Deferred proofs (tracked as task-48's open ACs): the live `pixi lock` probe needs a
+connected host — this session's sandbox is airlock-shaped (github.com and npm only; no
+crates.io, static.rust-lang.org, prefix.dev or conda), so **the PR run is the test run**
+for the suite; the patch release needs the merge plus an `auto-release` dispatch, and the
+token cannot start workflows or comment on issues (`Resource not accessible by integration`)
+— it could open the PR, and `Fixes #71` in its body links the issue. The upstream pixi
+report (the coalesced-request error hiding the 404 URL) is drafted verbatim in task-48's
+notes; searched first, no existing issue covers it. Also filed this session, not yet
+implemented: task-47 + decision-4/D16 (consumer version-drift gate and reviewed upgrade
+path).
 
 **Next session should start with:**
 

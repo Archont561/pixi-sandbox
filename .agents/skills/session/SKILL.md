@@ -120,7 +120,7 @@ Facts about this sandbox that shape every command:
   through `toml::Table`). Run it, then `git checkout pixi.toml` unless the channel addition is
   wanted — a 325-line hand-commented manifest comes back reformatted and 100 lines shorter.
 - `pixi-sandbox` installs globally with
-  `pixi global install -c https://prefix.dev/archont561/pixi-sandbox -c conda-forge pixi-sandbox`
+  `pixi global install -c https://prefix.dev/archont561/archont561 -c conda-forge pixi-sandbox`
   (prefix.dev answers from here); the launcher lands in `~/.pixi/bin`.
 
 ## 2. Survey the backlog

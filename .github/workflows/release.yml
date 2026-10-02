@@ -174,7 +174,7 @@ jobs:
         run: pixi run -e package xtask release-checksums dist
 
       # prefix.dev uses the job's short-lived GitHub OIDC identity. Configure Repository
-      # Access for this repository's `release.yml` workflow on archont561/pixi-sandbox;
+      # Access for this repository's `release.yml` workflow on archont561/archont561;
       # no PREFIX_API_KEY or other long-lived publishing secret is needed. The guard turns a
       # missing permission into a named error before `pixi upload` fails opaquely.
       - name: Verify GitHub OIDC permission

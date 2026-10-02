@@ -195,7 +195,7 @@ build-release-binary = { args = [
 # downloads (`dist/conda/conda-<platform>/*.conda`), so the glob stays out of the workflow.
 publish-conda = { args = [
   { arg = "files", default = "dist/conda/conda-*/*.conda" },
-], cmd = "pixi upload prefix --channel 'archont561/pixi-sandbox' --generate-attestation {{ files }}" }
+], cmd = "pixi upload prefix --channel 'archont561/archont561' --generate-attestation {{ files }}" }
 
 # GITHUB_TOKEN pushes (the release commit) trigger no workflows, so the release dispatches the
 # docs rebuild explicitly; `GH_TOKEN` reaches gh through the step's `env:`.
@@ -221,7 +221,7 @@ dispatch-sandbox-repack = "gh workflow run publish-sandbox.yml --ref main"
 # above, which build and run this tree. Arguments carry the workflow's paths (runner temp),
 # with the same shapes as the sandbox-* twins.
 # ---------------------------------------------------------------------------
-airlock-install-released = "pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox"
+airlock-install-released = "pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox"
 airlock-doctor = { args = [
   { arg = "transport" },
 ], cmd = "pixi-sandbox doctor --branch-location {{ transport }} --verify" }

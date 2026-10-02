@@ -43,7 +43,7 @@ permissions:
 
 env:
   PIXI_SANDBOX_VERSION: __VERSION__
-  PIXI_SANDBOX_CHANNEL: https://prefix.dev/archont561/pixi-sandbox
+  PIXI_SANDBOX_CHANNEL: https://prefix.dev/archont561/archont561
 
 jobs:
   plan:

@@ -23,8 +23,6 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1.1"
-# Mutable TOML documents retain comments and layout while init adds the canonical channel.
-toml_edit = "0.25"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
