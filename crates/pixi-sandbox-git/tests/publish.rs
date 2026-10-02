@@ -6,11 +6,12 @@
 //! `commit-tree` without `-p`) and "-−force" as facts rather than as intentions.
 
 use pixi_sandbox_git::{
-    FakeGit, GitProtocol, RecordingRunner, ShellGit, Snapshot, snapshot_bytes, snapshot_files,
+    Command, Error, FakeGit, GitProtocol, Output, RecordingRunner, Runner, ShellGit, Snapshot,
+    snapshot_bytes, snapshot_files,
 };
 use rstest::rstest;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::Command as StdCommand;
 use std::sync::Arc;
 
 const REMOTE: &str = "/tmp/does-not-matter.git";
@@ -53,7 +54,7 @@ fn rotating<'a>(dir: &'a Path, message: &'a str, keep: u32) -> Snapshot<'a> {
 }
 
 fn run_git(args: &[&str], cwd: &Path) -> String {
-    let out = Command::new("git")
+    let out = StdCommand::new("git")
         .args(args)
         .current_dir(cwd)
         .output()
@@ -69,7 +70,7 @@ fn run_git(args: &[&str], cwd: &Path) -> String {
 fn bare_remote() -> (tempfile::TempDir, String) {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("remote.git");
-    let out = Command::new("git")
+    let out = StdCommand::new("git")
         .args(["init", "-q", "--bare"])
         .arg(&path)
         .output()
@@ -616,9 +617,39 @@ fn the_remote_size_is_knowable_for_a_local_remote_and_not_for_a_url() {
     );
 }
 
+#[derive(Debug)]
+struct FixedRunner(Output);
+
+impl Runner for FixedRunner {
+    fn run(&self, _command: &Command) -> pixi_sandbox_git::Result<Output> {
+        Ok(self.0.clone())
+    }
+}
+
+#[test]
+fn worktree_status_files_handles_empty_and_invalid_output() {
+    let empty = ShellGit::with_runner(Box::new(FixedRunner(Output::default())));
+    assert!(
+        empty
+            .worktree_status_files(Path::new("."))
+            .unwrap()
+            .is_empty()
+    );
+
+    let invalid = ShellGit::with_runner(Box::new(FixedRunner(Output {
+        status: 0,
+        stdout: vec![0xff],
+        stderr: String::new(),
+    })));
+    assert!(matches!(
+        invalid.worktree_status_files(Path::new(".")),
+        Err(Error::NonUtf8 { .. })
+    ));
+}
+
 #[test]
 fn worktree_status_files_reports_tracked_changes_for_xtask() {
-    let repo = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().expect("tempdir");
     run_git(&["init", "-q"], repo.path());
     std::fs::write(repo.path().join("tracked.txt"), "initial").unwrap();
     run_git(&["add", "tracked.txt"], repo.path());
