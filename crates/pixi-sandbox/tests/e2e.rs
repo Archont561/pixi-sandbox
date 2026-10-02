@@ -123,20 +123,23 @@ fn fixture_doctor_publish_and_restore_is_the_complete_offline_proof() {
     );
 
     // The blanket invariant behind #18: no text file in the restored environment may point into
-    // restore scratch or at an unsubstituted pack placeholder.
+    // restore scratch or at an unsubstituted pack placeholder. The file set is restored data, so
+    // it cannot be a static #[case] — collect every (file, word) offender and report them all.
     let mut text = Vec::new();
     text_files_under(&prefix, &mut text);
     assert!(text.len() > 8, "the fixture must stage a realistic prefix");
-    for path in &text {
-        let body = fs::read_to_string(path).unwrap();
-        for forbidden in [".restore-work/stage-demo", "@PREFIX@"] {
-            assert!(
-                !body.contains(forbidden),
-                "{} still points at {forbidden}",
-                path.display()
-            );
-        }
-    }
+    let offenders: Vec<String> = text
+        .iter()
+        .flat_map(|path| {
+            let body = fs::read_to_string(path).unwrap();
+            [".restore-work/stage-demo", "@PREFIX@"]
+                .into_iter()
+                .filter(|forbidden| body.contains(forbidden))
+                .map(move |forbidden| format!("{} still points at {forbidden}", path.display()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(offenders.is_empty(), "{}", offenders.join("\n"));
 
     // Restore scratch is not a deliverable: a completed airlock has no `.restore-work` left.
     assert!(!airlock.join(".pixi/.restore-work").exists());

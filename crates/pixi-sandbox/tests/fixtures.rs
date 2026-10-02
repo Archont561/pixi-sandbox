@@ -10,26 +10,26 @@ mod support;
 
 use pixi_sandbox_core::manifest::Manifest;
 use pixi_sandbox_core::verify;
+use rstest::rstest;
 use std::path::{Path, PathBuf};
-use support::{crate_dir, demo_project, fixture_transport as transport};
+use support::{crate_dir, demo_project, duplicate_source_project, fixture_transport as transport};
+
+#[rstest]
+#[case("pixi.toml")]
+#[case("pixi.lock")]
+#[case("Cargo.toml")]
+#[case("Cargo.lock")]
+#[case("src/main.rs")]
+fn the_demo_project_carries_every_required_file(demo_project: PathBuf, #[case] required: &str) {
+    assert!(
+        demo_project.join(required).is_file(),
+        "{required} is missing from the fixture project"
+    );
+}
 
 #[test]
-fn the_demo_project_is_a_complete_pixi_project() {
-    let project = demo_project();
-    for required in [
-        "pixi.toml",
-        "pixi.lock",
-        "Cargo.toml",
-        "Cargo.lock",
-        "src/main.rs",
-    ] {
-        assert!(
-            project.join(required).is_file(),
-            "{required} is missing from the fixture project"
-        );
-    }
-
-    let manifest = std::fs::read_to_string(project.join("pixi.toml")).unwrap();
+fn the_demo_project_manifest_declares_a_real_environment() {
+    let manifest = std::fs::read_to_string(demo_project().join("pixi.toml")).unwrap();
     assert!(
         manifest.contains("[workspace]"),
         "a pixi manifest needs a workspace table"
@@ -39,84 +39,100 @@ fn the_demo_project_is_a_complete_pixi_project() {
         manifest.contains("[dependencies]"),
         "the fixture must have a real environment"
     );
+}
 
+#[test]
+fn the_demo_project_lockfile_resolves_packages() {
     // A lockfile with packages in it, so `pack`/`vendor`/hash steps have something to chew on.
-    let lock = std::fs::read_to_string(project.join("pixi.lock")).unwrap();
+    let lock = std::fs::read_to_string(demo_project().join("pixi.lock")).unwrap();
     assert!(
         lock.contains("conda:"),
         "the fixture lockfile must resolve packages"
     );
-    assert_eq!(
-        lock.matches("conda:").count(),
-        lock.matches("conda:").count(),
-        "sanity"
-    );
+}
 
+#[test]
+fn the_demo_project_crate_is_its_own_workspace() {
     // The crate is its own cargo workspace: it must never be a member of ours.
-    let cargo = std::fs::read_to_string(project.join("Cargo.toml")).unwrap();
+    let cargo = std::fs::read_to_string(demo_project().join("Cargo.toml")).unwrap();
     assert!(
         cargo.contains("[workspace]"),
         "the fixture crate must declare its own [workspace] root"
     );
 }
 
-#[test]
-fn the_demo_project_does_not_depend_on_the_packers() {
-    // This is the whole point: if the fixture pulled in pixi-pack/pixi-unpack, every test
-    // using it would depend on the developer's environment again.
-    for file in ["pixi.toml", "pixi.lock"] {
-        let text = std::fs::read_to_string(demo_project().join(file)).unwrap();
-        // Comments are documentation, dependencies are the contract: only the latter count.
-        // (The fixture's pixi.toml explains *why* the packers are absent, at length.)
-        let dependencies: String = text
-            .lines()
-            .filter(|line| !line.trim_start().starts_with('#'))
-            .collect::<Vec<_>>()
-            .join("\n");
-        for forbidden in ["pixi-pack", "pixi-unpack"] {
-            let text = &dependencies;
-            assert!(
-                !text.contains(forbidden),
-                "{file} depends on {forbidden}: the fixture must be a plain project, and a test \
-                 that needs a packer must ask for one explicitly (tests/fixtures/README.md)"
-            );
-        }
-    }
+// This is the whole point: if the fixture pulled in pixi-pack/pixi-unpack, every test
+// using it would depend on the developer's environment again.
+#[rstest]
+#[case("pixi.toml", "pixi-pack")]
+#[case("pixi.toml", "pixi-unpack")]
+#[case("pixi.lock", "pixi-pack")]
+#[case("pixi.lock", "pixi-unpack")]
+fn the_demo_project_does_not_depend_on_the_packers(
+    demo_project: PathBuf,
+    #[case] file: &str,
+    #[case] forbidden: &str,
+) {
+    let text = std::fs::read_to_string(demo_project.join(file)).unwrap();
+    // Comments are documentation, dependencies are the contract: only the latter count.
+    // (The fixture's pixi.toml explains *why* the packers are absent, at length.)
+    let dependencies: String = text
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !dependencies.contains(forbidden),
+        "{file} depends on {forbidden}: the fixture must be a plain project, and a test \
+         that needs a packer must ask for one explicitly (tests/fixtures/README.md)"
+    );
 }
 
-#[test]
-fn the_duplicate_source_project_is_a_plain_project_with_the_collision_it_exists_for() {
-    // A second project fixture, for the pack-time duplicate-crate-source check (design.md §11,
-    // backlog task-8). It carries the same policy as `demo-project`: a plain pixi project with
-    // no packer, so using it cannot depend on the developer's environment.
-    let project = crate_dir().join("tests/fixtures/duplicate-source-project");
-    for required in [
-        "pixi.toml",
-        "pixi.lock",
-        "Cargo.toml",
-        "Cargo.lock",
-        "src/main.rs",
-    ] {
-        assert!(
-            project.join(required).is_file(),
-            "{required} is missing from the duplicate-source fixture"
-        );
-    }
-    for file in ["pixi.toml", "pixi.lock"] {
-        let text = std::fs::read_to_string(project.join(file)).unwrap();
-        for forbidden in ["pixi-pack", "pixi-unpack"] {
-            assert!(
-                !text.contains(forbidden),
-                "{file} depends on {forbidden}: every project fixture must be a plain project \
-                 (tests/fixtures/README.md)"
-            );
-        }
-    }
+#[rstest]
+#[case("pixi.toml")]
+#[case("pixi.lock")]
+#[case("Cargo.toml")]
+#[case("Cargo.lock")]
+#[case("src/main.rs")]
+fn the_duplicate_source_project_carries_every_required_file(
+    duplicate_source_project: PathBuf,
+    #[case] required: &str,
+) {
+    assert!(
+        duplicate_source_project.join(required).is_file(),
+        "{required} is missing from the duplicate-source fixture"
+    );
+}
 
+// A second project fixture, for the pack-time duplicate-crate-source check (design.md §11,
+// backlog task-8). It carries the same policy as `demo-project`: a plain pixi project with
+// no packer, so using it cannot depend on the developer's environment.
+#[rstest]
+#[case("pixi.toml", "pixi-pack")]
+#[case("pixi.toml", "pixi-unpack")]
+#[case("pixi.lock", "pixi-pack")]
+#[case("pixi.lock", "pixi-unpack")]
+fn the_duplicate_source_project_does_not_depend_on_the_packers(
+    duplicate_source_project: PathBuf,
+    #[case] file: &str,
+    #[case] forbidden: &str,
+) {
+    let text = std::fs::read_to_string(duplicate_source_project.join(file)).unwrap();
+    assert!(
+        !text.contains(forbidden),
+        "{file} depends on {forbidden}: every project fixture must be a plain project \
+         (tests/fixtures/README.md)"
+    );
+}
+
+#[rstest]
+fn the_duplicate_source_project_carries_the_collision_it_exists_for(
+    duplicate_source_project: PathBuf,
+) {
     // The lockfile must still contain the collision, or the test that uses it would be
     // asserting nothing. `toml` is a dependency of the CLI crate, not this test binary, so
     // the check is deliberately textual rather than a parse.
-    let lock = std::fs::read_to_string(project.join("Cargo.lock")).unwrap();
+    let lock = std::fs::read_to_string(duplicate_source_project.join("Cargo.lock")).unwrap();
     let itoa = lock
         .match_indices("name = \"itoa\"")
         .map(|(at, _)| &lock[at..at + 200.min(lock.len() - at)])

@@ -4,6 +4,7 @@
 //! the Action needs no external test harness of its own.
 
 use pixi_sandbox_core::shard::sha256_bytes;
+use rstest::rstest;
 use std::collections::HashMap;
 use std::fs;
 
@@ -57,22 +58,25 @@ fn render_asset_name(template: &str, target: &str, exe: &str, version: &str) -> 
         .replace("{tag}", version)
 }
 
+#[rstest]
+#[case("Linux", "X64", "x86_64-unknown-linux-musl", "")]
+#[case("Linux", "ARM64", "aarch64-unknown-linux-musl", "")]
+#[case("macOS", "X64", "x86_64-apple-darwin", "")]
+#[case("macOS", "ARM64", "aarch64-apple-darwin", "")]
+#[case("Windows", "X64", "x86_64-pc-windows-msvc", ".exe")]
+fn target_resolution_covers_all_supported_platforms(
+    #[case] os: &str,
+    #[case] arch: &str,
+    #[case] expected_target: &str,
+    #[case] expected_exe: &str,
+) {
+    let (target, exe) = resolve_target(os, arch).expect("target must resolve");
+    assert_eq!(target, expected_target);
+    assert_eq!(exe, expected_exe);
+}
+
 #[test]
-fn target_resolution_covers_all_supported_platforms() {
-    let cases = [
-        ("Linux", "X64", "x86_64-unknown-linux-musl", ""),
-        ("Linux", "ARM64", "aarch64-unknown-linux-musl", ""),
-        ("macOS", "X64", "x86_64-apple-darwin", ""),
-        ("macOS", "ARM64", "aarch64-apple-darwin", ""),
-        ("Windows", "X64", "x86_64-pc-windows-msvc", ".exe"),
-    ];
-
-    for (os, arch, expected_target, expected_exe) in cases {
-        let (target, exe) = resolve_target(os, arch).expect("target must resolve");
-        assert_eq!(target, expected_target);
-        assert_eq!(exe, expected_exe);
-    }
-
+fn an_unsupported_platform_reports_an_error_instead_of_a_wrong_target() {
     assert!(resolve_target("FreeBSD", "X64").is_err());
 }
 

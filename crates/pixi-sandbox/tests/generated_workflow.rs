@@ -5,6 +5,7 @@
 
 use pixi_sandbox::generated::{GithubWorkflowOptions, render_github_workflow};
 use pixi_sandbox_core::sandbox_config::plan_override;
+use rstest::rstest;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -106,21 +107,23 @@ fn generated_workflow_matches_the_reviewed_golden_file() {
     );
 }
 
+#[rstest]
+#[case("on")]
+#[case("jobs")]
+#[case("jobs.plan")]
+#[case("jobs.publish")]
+#[case("jobs.publish.strategy")]
+#[case("jobs.publish.strategy.matrix")]
+fn generated_workflow_has_the_required_yaml_structure(#[case] path: &str) {
+    let yaml = parse_yaml_mappings(&workflow());
+    assert!(yaml.mappings.contains(path), "missing YAML mapping {path}");
+}
+
 #[test]
-fn generated_workflow_has_the_required_yaml_structure() {
+fn generated_workflow_wires_plan_outputs_through_the_matrix() {
     let workflow = workflow();
     let yaml = parse_yaml_mappings(&workflow);
 
-    for path in [
-        "on",
-        "jobs",
-        "jobs.plan",
-        "jobs.publish",
-        "jobs.publish.strategy",
-        "jobs.publish.strategy.matrix",
-    ] {
-        assert!(yaml.mappings.contains(path), "missing YAML mapping {path}");
-    }
     assert_eq!(yaml.scalars["permissions.contents"], "write");
     assert_eq!(yaml.scalars["jobs.publish.needs"], "plan");
     assert_eq!(
@@ -138,8 +141,21 @@ fn generated_workflow_has_the_required_yaml_structure() {
     );
 }
 
+#[rstest]
+#[case("pixi-sandbox plan")]
+#[case("pixi-sandbox pack")]
+#[case("pixi-sandbox doctor")]
+#[case("pixi-sandbox publish")]
+fn generated_workflow_invokes_the_cli_directly(#[case] command: &str) {
+    let workflow = workflow();
+    assert!(
+        workflow.contains(command),
+        "missing direct `{command}` invocation"
+    );
+}
+
 #[test]
-fn generated_workflow_installs_the_channel_package_and_invokes_the_cli_directly() {
+fn generated_workflow_installs_the_channel_package_with_a_verified_bootstrap() {
     let workflow = workflow();
     assert!(
         !workflow.contains("uses: Archont561/pixi-sandbox"),
@@ -147,17 +163,6 @@ fn generated_workflow_installs_the_channel_package_and_invokes_the_cli_directly(
     );
     assert!(workflow.contains("https://prefix.dev/archont561/pixi-sandbox"));
     assert!(workflow.contains("\"pixi-sandbox==${PIXI_SANDBOX_VERSION}\""));
-    for command in [
-        "pixi-sandbox plan",
-        "pixi-sandbox pack",
-        "pixi-sandbox doctor",
-        "pixi-sandbox publish",
-    ] {
-        assert!(
-            workflow.contains(command),
-            "missing direct `{command}` invocation"
-        );
-    }
     assert!(
         workflow.contains("SHA256SUMS") && workflow.contains("checksum mismatch"),
         "the standalone transport bootstrap must be checksum verified"

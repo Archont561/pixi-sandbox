@@ -8,7 +8,7 @@ mod support;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use rstest::rstest;
+use rstest::{fixture, rstest};
 use serde_json::Value;
 use std::fs;
 #[cfg(unix)]
@@ -451,8 +451,21 @@ fn doctor_verify_catches_a_tampered_split_part() {
 
 // ------------------------------------------------------------- publish, end to end
 
-#[test]
-fn publish_pushes_the_transport_as_a_single_orphan_commit() {
+/// The payload the first publish places on the branch, published once and shared read-only by
+/// every listing assertion below: publishing per case would trade a cheap string check for a
+/// git round-trip per line, and the assertions never mutate the remote.
+struct PublishedOrphan {
+    remote: String,
+    listing: String,
+    // Owns the tempdirs so the bare remote and the transport body outlive the fixture call —
+    // rstest hands this value out across tests, and dropping early would delete the remote the
+    // commit-count test reads.
+    _keep_alive: (tempfile::TempDir, tempfile::TempDir),
+}
+
+#[fixture]
+#[once]
+fn published_orphan() -> PublishedOrphan {
     let tmp = tempfile::tempdir().unwrap();
     let transport = transport_copy();
     let remote = bare_remote(tmp.path());
@@ -472,34 +485,83 @@ fn publish_pushes_the_transport_as_a_single_orphan_commit() {
         .stdout(predicate::str::contains("published"))
         .stdout(predicate::str::contains("sandbox/demo-linux-64"));
 
+    let listing = run_git(
+        &["ls-tree", "-r", "--name-only", "sandbox/demo-linux-64"],
+        Path::new(&remote),
+    );
+    PublishedOrphan {
+        remote,
+        listing,
+        _keep_alive: (tmp, transport),
+    }
+}
+
+#[rstest]
+#[case(".pixi-sandbox/manifest.json")]
+#[case(".pixi-sandbox/envs/demo/pack/channel/noarch/demo-big-0.1.0-0.conda.part000")]
+#[case(".pixi-sandbox/tools/linux-64/pixi-sandbox")]
+#[case("AGENTS.md")]
+#[case("README.md")]
+fn the_orphan_commit_carries_every_expected_path(
+    published_orphan: &PublishedOrphan,
+    #[case] expected: &str,
+) {
+    assert!(
+        published_orphan.listing.contains(expected),
+        "{expected} missing from the branch:\n{}",
+        published_orphan.listing
+    );
+}
+
+#[rstest]
+#[case("pixi-sandbox")]
+#[case("restore.sh")]
+#[case("restore.ps1")]
+fn the_orphan_commit_omits_the_legacy_root_files(
+    published_orphan: &PublishedOrphan,
+    #[case] forbidden: &str,
+) {
+    assert!(
+        !published_orphan
+            .listing
+            .lines()
+            .any(|path| path == forbidden),
+        "legacy root file {forbidden:?} must not be published:\n{}",
+        published_orphan.listing
+    );
+}
+
+#[rstest]
+fn publish_pushes_the_transport_as_a_single_orphan_commit(published_orphan: &PublishedOrphan) {
     // one commit, no history to merge — the orphan-branch contract
-    let bare = Path::new(&remote);
     assert_eq!(
-        run_git(&["rev-list", "--count", "sandbox/demo-linux-64"], bare),
+        run_git(
+            &["rev-list", "--count", "sandbox/demo-linux-64"],
+            Path::new(&published_orphan.remote),
+        ),
         "1"
     );
-    let listed = run_git(
-        &["ls-tree", "-r", "--name-only", "sandbox/demo-linux-64"],
-        bare,
-    );
-    for expected in [
-        ".pixi-sandbox/manifest.json",
-        ".pixi-sandbox/envs/demo/pack/channel/noarch/demo-big-0.1.0-0.conda.part000",
-        ".pixi-sandbox/tools/linux-64/pixi-sandbox",
-        "AGENTS.md",
-        "README.md",
-    ] {
-        assert!(
-            listed.contains(expected),
-            "{expected} missing from the branch:\n{listed}"
-        );
-    }
-    for forbidden in ["pixi-sandbox", "restore.sh", "restore.ps1"] {
-        assert!(
-            !listed.lines().any(|path| path == forbidden),
-            "legacy root file {forbidden:?} must not be published:\n{listed}"
-        );
-    }
+}
+
+#[test]
+fn republishing_replaces_the_tip_instead_of_appending() {
+    let tmp = tempfile::tempdir().unwrap();
+    let transport = transport_copy();
+    let remote = bare_remote(tmp.path());
+
+    bin()
+        .args([
+            "publish",
+            "--input-dir",
+            transport.path().to_str().unwrap(),
+            "--branch-name",
+            "sandbox/demo-linux-64",
+            "--remote",
+            &remote,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("published"));
 
     // publishing again replaces the tip instead of appending
     bin()
@@ -515,7 +577,10 @@ fn publish_pushes_the_transport_as_a_single_orphan_commit() {
         .assert()
         .success();
     assert_eq!(
-        run_git(&["rev-list", "--count", "sandbox/demo-linux-64"], bare),
+        run_git(
+            &["rev-list", "--count", "sandbox/demo-linux-64"],
+            Path::new(&remote),
+        ),
         "1"
     );
 }
@@ -654,7 +719,7 @@ fn publish_keep_rotates_the_branch_instead_of_replacing_it() {
 /// verb that could emit such a pointer, so the rule is now asserted over every operator-visible
 /// surface: no verb may claim to be unimplemented, and no help text may name a deleted reference.
 #[test]
-fn no_verb_defers_to_a_reference_and_no_help_cites_a_deleted_one() {
+fn tools_update_never_defers_to_a_reference() {
     let deferred = bin()
         .args([
             "tools",
@@ -670,36 +735,49 @@ fn no_verb_defers_to_a_reference_and_no_help_cites_a_deleted_one() {
         !stderr.contains("not implemented yet"),
         "`tools update` is implemented; it must not still defer:\n{stderr}"
     );
+}
 
-    let surfaces: &[&[&str]] = &[
-        &["--help"],
-        &["tools", "--help"],
-        &["pack", "--help"],
-        &["restore", "--help"],
-    ];
-    for verb in surfaces {
-        let help = bin().args(*verb).assert().success();
-        let text = String::from_utf8_lossy(&help.get_output().stdout).to_ascii_lowercase();
-        // stale-ref-allowed: this list is the rule `lint-repo-consistency` enforces elsewhere.
-        for stale in ["python", "prototype", ".knowledge/research"] {
-            assert!(
-                !text.contains(stale),
-                "`{}` points at the deleted {stale} reference",
-                verb.join(" ")
-            );
-        }
-    }
+// The stale words stay on one line: `#[case]` attributes would each need an opt-out marker.
+// stale-ref-allowed: this list is the rule `lint-repo-consistency` enforces elsewhere.
+const STALE_DELETED_REFERENCES: [&str; 3] = ["python", "prototype", ".knowledge/research"];
 
-    // The flags only exist because the verb is implemented, so their presence is the positive
-    // half of "not a stub" — the failure above only rules out the old wording coming back.
+#[rstest]
+#[case("--help", 0)]
+#[case("--help", 1)]
+#[case("--help", 2)]
+#[case("tools --help", 0)]
+#[case("tools --help", 1)]
+#[case("tools --help", 2)]
+#[case("pack --help", 0)]
+#[case("pack --help", 1)]
+#[case("pack --help", 2)]
+#[case("restore --help", 0)]
+#[case("restore --help", 1)]
+#[case("restore --help", 2)]
+fn no_help_surface_points_at_a_deleted_reference(#[case] surface: &str, #[case] stale: usize) {
+    let stale = STALE_DELETED_REFERENCES[stale];
+    let verb: Vec<&str> = surface.split_whitespace().collect();
+    let help = bin().args(&verb).assert().success();
+    let text = String::from_utf8_lossy(&help.get_output().stdout).to_ascii_lowercase();
+    assert!(
+        !text.contains(stale),
+        "`{surface}` points at the deleted {stale} reference"
+    );
+}
+
+// The flags only exist because the verb is implemented, so their presence is the positive
+// half of "not a stub" — the failure above only rules out the old wording coming back.
+#[rstest]
+#[case("--tools-lock")]
+#[case("--check")]
+#[case("--tool")]
+fn tools_update_help_documents_its_flags(#[case] flag: &str) {
     let update = bin().args(["tools", "update", "--help"]).assert().success();
     let text = String::from_utf8_lossy(&update.get_output().stdout);
-    for flag in ["--tools-lock", "--check", "--tool"] {
-        assert!(
-            text.contains(flag),
-            "`tools update --help` must document {flag}:\n{text}"
-        );
-    }
+    assert!(
+        text.contains(flag),
+        "`tools update --help` must document {flag}:\n{text}"
+    );
 }
 
 // ---------------------------------------------------------- unpack / restore, fixture proof
@@ -1365,60 +1443,58 @@ fn restore_materialises_the_fixture_vendor_tree_and_wires_sandbox_cargo_home() {
 }
 
 #[cfg(unix)]
-#[test]
-fn restore_cargo_config_print_and_none_do_not_claim_cargo_is_wired() {
-    for mode in ["print", "none"] {
-        let transport = transport_copy();
-        let project_root = tempfile::tempdir().unwrap();
-        let project = project_root.path().join(format!("project-{mode}"));
-        fs::create_dir_all(&project).unwrap();
+#[rstest]
+#[case("print")]
+#[case("none")]
+fn restore_cargo_config_print_and_none_do_not_claim_cargo_is_wired(#[case] mode: &str) {
+    let transport = transport_copy();
+    let project_root = tempfile::tempdir().unwrap();
+    let project = project_root.path().join(format!("project-{mode}"));
+    fs::create_dir_all(&project).unwrap();
 
-        let output = bin()
-            .args([
-                "restore",
-                "--branch-location",
-                transport.path().to_str().unwrap(),
-                "--output-path",
-                project.to_str().unwrap(),
-                "--user-tools",
-                "skip",
-                "--cargo-config",
-                mode,
-            ])
-            .assert()
-            .success()
-            .get_output()
-            .stdout
-            .clone();
-        let output = String::from_utf8(output).unwrap();
+    let output = bin()
+        .args([
+            "restore",
+            "--branch-location",
+            transport.path().to_str().unwrap(),
+            "--output-path",
+            project.to_str().unwrap(),
+            "--user-tools",
+            "skip",
+            "--cargo-config",
+            mode,
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output).unwrap();
 
+    assert!(
+        output.contains(&format!("cargo vendor: NOT wired (--cargo-config {mode})")),
+        "{output}"
+    );
+    assert!(
+        !output.contains("pixi run --frozen -- cargo build --offline"),
+        "{mode} must not print an offline build recipe it did not wire: {output}"
+    );
+    assert!(!project.join(".cargo/config.toml").exists());
+    assert!(
+        !project
+            .join(".pixi-sandbox/cargo-home/config.toml")
+            .exists()
+    );
+    assert!(
+        !project
+            .join(".pixi/envs/demo/etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+            .exists()
+    );
+    if mode == "print" {
         assert!(
-            output.contains(&format!("cargo vendor: NOT wired (--cargo-config {mode})")),
+            output.contains("# Cargo source replacement for .pixi-sandbox/cargo-home/config.toml"),
             "{output}"
         );
-        assert!(
-            !output.contains("pixi run --frozen -- cargo build --offline"),
-            "{mode} must not print an offline build recipe it did not wire: {output}"
-        );
-        assert!(!project.join(".cargo/config.toml").exists());
-        assert!(
-            !project
-                .join(".pixi-sandbox/cargo-home/config.toml")
-                .exists()
-        );
-        assert!(
-            !project
-                .join(".pixi/envs/demo/etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
-                .exists()
-        );
-        if mode == "print" {
-            assert!(
-                output.contains(
-                    "# Cargo source replacement for .pixi-sandbox/cargo-home/config.toml"
-                ),
-                "{output}"
-            );
-        }
     }
 }
 

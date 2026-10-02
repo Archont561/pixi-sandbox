@@ -275,9 +275,8 @@ fn an_override_plan_refuses_no_environments() {
 /// that has a runner but no pins would fail on a native runner minutes after the matrix started.
 /// Declaring every platform the table knows must therefore plan cleanly — which is also the
 /// precondition for adding a macOS bundle: the pins for it already exist.
-#[test]
-fn every_platform_with_a_hosted_runner_has_complete_embedded_helper_pins() {
-    let config = config(
+fn runner_table_plan() -> pixi_sandbox_core::sandbox_config::PublishPlan {
+    config(
         r#"
 schema = 1
 branch_prefix = "sandbox"
@@ -288,17 +287,49 @@ name = "developer"
 environments = ["default"]
 platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
 "#,
+    )
+    .plan()
+    .unwrap()
+}
+
+#[test]
+fn the_runner_table_plans_exactly_the_platforms_the_cases_cover() {
+    let plan = runner_table_plan();
+    let platforms: Vec<&str> = plan
+        .include
+        .iter()
+        .map(|target| target.platform.as_str())
+        .collect();
+    assert_eq!(platforms, ["linux-64", "osx-64", "osx-arm64", "win-64"]);
+}
+
+#[rstest]
+#[case("linux-64", "pixi")]
+#[case("linux-64", "pixi-pack")]
+#[case("linux-64", "pixi-unpack")]
+#[case("osx-arm64", "pixi")]
+#[case("osx-arm64", "pixi-pack")]
+#[case("osx-arm64", "pixi-unpack")]
+#[case("osx-64", "pixi")]
+#[case("osx-64", "pixi-pack")]
+#[case("osx-64", "pixi-unpack")]
+#[case("win-64", "pixi")]
+#[case("win-64", "pixi-pack")]
+#[case("win-64", "pixi-unpack")]
+fn every_platform_with_a_hosted_runner_has_complete_embedded_helper_pins(
+    #[case] platform: &str,
+    #[case] tool: &str,
+) {
+    let plan = runner_table_plan();
+    assert!(
+        plan.include
+            .iter()
+            .any(|target| target.platform == platform),
+        "the case list drifted from the plan: {platform} is no longer included"
     );
-    let plan = config.plan().unwrap();
-    assert_eq!(plan.include.len(), 4);
-    for target in &plan.include {
-        let lock = ToolsLock::embedded().unwrap();
-        for tool in ["pixi", "pixi-pack", "pixi-unpack"] {
-            assert!(
-                lock.pin(tool, &target.platform).is_some(),
-                "{tool} has no pin for {}",
-                target.platform
-            );
-        }
-    }
+    let lock = ToolsLock::embedded().unwrap();
+    assert!(
+        lock.pin(tool, platform).is_some(),
+        "{tool} has no pin for {platform}"
+    );
 }

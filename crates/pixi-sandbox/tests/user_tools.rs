@@ -12,6 +12,7 @@ mod support;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use rstest::rstest;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
@@ -41,9 +42,11 @@ fn project_under(temp: &Path, name: &str) -> PathBuf {
 }
 
 /// task-33 AC#1 + AC#6: a first successful restore registers both tools, only after the
-/// restored-tree verification passed.
-#[test]
-fn first_restore_registers_pixi_and_pixi_sandbox_in_the_user_bin() {
+/// restored-tree verification passed. One named case per registered tool.
+#[rstest]
+#[case("pixi")]
+#[case("pixi-sandbox")]
+fn first_restore_registers_pixi_and_pixi_sandbox_in_the_user_bin(#[case] name: &str) {
     let temp = tempfile::tempdir().unwrap();
     let project = project_under(temp.path(), "project");
 
@@ -63,20 +66,18 @@ fn first_restore_registers_pixi_and_pixi_sandbox_in_the_user_bin() {
         ));
 
     let bin = temp.path().join(".local/bin");
-    for name in ["pixi", "pixi-sandbox"] {
-        let launcher = bin.join(name);
-        let body = fs::read_to_string(&launcher)
-            .unwrap_or_else(|_| panic!("launcher {name} must exist at {}", launcher.display()));
-        assert!(body.contains("managed by pixi-sandbox"), "{body}");
-        assert!(
-            body.contains(&format!(
-                "exec \"{}\"",
-                project.join(".pixi/tools/linux-64").join(name).display()
-            )),
-            "launcher must exec the manifest-verified tool copy: {body}"
-        );
-        assert!(is_executable(&launcher));
-    }
+    let launcher = bin.join(name);
+    let body = fs::read_to_string(&launcher)
+        .unwrap_or_else(|_| panic!("launcher {name} must exist at {}", launcher.display()));
+    assert!(body.contains("managed by pixi-sandbox"), "{body}");
+    assert!(
+        body.contains(&format!(
+            "exec \"{}\"",
+            project.join(".pixi/tools/linux-64").join(name).display()
+        )),
+        "launcher must exec the manifest-verified tool copy: {body}"
+    );
+    assert!(is_executable(&launcher));
     // The profile carries exactly one managed PATH block naming the bin directory.
     let profile = fs::read_to_string(temp.path().join(".profile")).unwrap();
     assert!(profile.contains(bin.to_str().unwrap()));
