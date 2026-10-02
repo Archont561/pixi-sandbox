@@ -50,8 +50,12 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
    airlock never does.
 6. **Do not commit generated weight**: `.pixi/`, `target/`, `vendor/`, `node_modules/`, `.pixi-sandbox/`, `docs/dist/`.
 7. **A dynamically linked tool is a bug**, not a warning to ignore (`verify.rs` flags it).
-8. **Git only through `GitProtocol`** — never a bare `Command::new("git")` outside
-   `pixi-sandbox-git` (D9). Tests use `FakeGit`; `--dry-run` uses a runner, not a second code path.
+8. **Git only through `GitProtocol`** — never a bare `Command::new("git")` in production code
+   outside `pixi-sandbox-git` (D9). Tests use `FakeGit` to exercise the consumers of the
+   protocol, while `#[cfg(test)]` fixture builders (`tests/support`, commit-release,
+   airlock, prepare-release) may run real `git` to construct the world under test — an
+   oracle must not share code with the thing it judges; `--dry-run` uses a runner, not a
+   second code path.
 9. **Tests target the fixtures, never this repository** (D10): `tests/fixtures/demo-project`
    for project-level work, `tests/fixtures/transport` for payload-level work. Two tests enforce it.
 10. **Anything you did not implement goes in `CONTEXT.md` § Session scratchpad** — suggestions,
