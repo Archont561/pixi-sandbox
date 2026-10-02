@@ -59,13 +59,25 @@ jobs:
           "pixi-sandbox==${PIXI_SANDBOX_VERSION}"
 
       # The publisher is source-fresh: build the checked-out tree on the native runner.
+      # Linux must target musl: the packed bootstrap is required to be static (D4), while a
+      # host `cargo build --release` produces the dynamically-linked GNU binary.
       # Consumer and airlock workflows intentionally use released binaries instead.
       - name: Build source pixi-sandbox
         id: bootstrap-unix
         if: runner.os != 'Windows'
+        shell: bash
         run: |
-          pixi run -e package build-release-binary
-          echo "path=$PWD/target/release/pixi-sandbox" >> "$GITHUB_OUTPUT"
+          case "${{ matrix.platform }}" in
+            linux-64) target=x86_64-unknown-linux-musl ;;
+            linux-aarch64) target=aarch64-unknown-linux-musl ;;
+            osx-64) target=x86_64-apple-darwin ;;
+            osx-arm64) target=aarch64-apple-darwin ;;
+            *) echo "::error::unsupported source-build platform: ${{ matrix.platform }}"; exit 2 ;;
+          esac
+          rustup target add "$target"
+          if [[ "$target" == *-linux-musl ]]; then sudo apt-get update && sudo apt-get install -y musl-tools; fi
+          pixi run -e package build-release-binary -- --target "$target"
+          echo "path=$PWD/target/$target/release/pixi-sandbox" >> "$GITHUB_OUTPUT"
 
       - name: Build source pixi-sandbox
         id: bootstrap-windows
