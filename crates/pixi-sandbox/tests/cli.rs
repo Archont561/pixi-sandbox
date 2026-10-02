@@ -823,6 +823,7 @@ fn restore_does_not_generate_sandbox_env_and_points_to_pixi_run() {
         .env("HOME", temp.path())
         .env("USERPROFILE", temp.path())
         .env("SHELL", "/usr/bin/bash")
+        .env("TMPDIR", temp.path())
         .args([
             "restore",
             "--branch-location",
@@ -957,6 +958,7 @@ fn pack_unpack_and_restore_a_verified_synthetic_environment() {
         .env("HOME", temp.path())
         .env("USERPROFILE", temp.path())
         .env("SHELL", "/usr/bin/bash")
+        .env("TMPDIR", temp.path())
         .args([
             "restore",
             "--branch-location",
@@ -1396,6 +1398,7 @@ fn restore_materialises_the_fixture_vendor_tree_and_wires_sandbox_cargo_home() {
         .env("HOME", project_root.path())
         .env("USERPROFILE", project_root.path())
         .env("SHELL", "/usr/bin/bash")
+        .env("TMPDIR", project_root.path())
         .args([
             "restore",
             "--branch-location",
@@ -1720,6 +1723,7 @@ fn pack_refuses_a_lockfile_cargo_cannot_vendor() {
 
     let output = bin()
         .env("PATH", path_with_fake_tools(&tools))
+        .env("CARGO_NET_OFFLINE", "true")
         .args([
             "pack",
             "--repo-root",
@@ -1794,6 +1798,7 @@ fn pack_vendors_a_lockfile_whose_crates_come_from_one_source_each() {
     // is that the *duplicate* error is absent, which is still the property under test.
     let output = bin()
         .env("PATH", path_with_fake_tools(&tools))
+        .env("CARGO_NET_OFFLINE", "true")
         .args([
             "pack",
             "--repo-root",

@@ -189,6 +189,7 @@ fn fixture_restore_succeeds_in_a_severed_network_namespace() {
         .env("HOME", temp.path())
         .env("USERPROFILE", temp.path())
         .env("SHELL", "/usr/bin/bash")
+        .env("TMPDIR", temp.path())
         .args([
             "restore",
             "--branch-location",

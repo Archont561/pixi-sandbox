@@ -56,11 +56,15 @@ pub fn duplicate_source_project() -> PathBuf {
 
 /// task-33: a restore must never observe a real user's home or shell profile.
 pub fn isolated_bin(home: &Path) -> Command {
+    let temporary = home.join("tmp");
+    fs::create_dir_all(&temporary).expect("isolated test temporary directory");
+
     let mut command = bin();
     command
         .env("HOME", home)
         .env("USERPROFILE", home)
-        .env("SHELL", "/usr/bin/bash");
+        .env("SHELL", "/usr/bin/bash")
+        .env("TMPDIR", temporary);
     command
 }
 

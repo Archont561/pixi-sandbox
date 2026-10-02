@@ -20,11 +20,13 @@ use support::{bin, copy_tree, fixture_transport, make_executable};
 
 /// A restore whose user-tool side effects land in `home`, with a deterministic shell.
 fn restore(home: &Path, project: &Path) -> Command {
+    fs::create_dir_all(home.join("tmp")).unwrap();
     let mut command = bin();
     command
         .env("HOME", home)
         .env("USERPROFILE", home)
         .env("SHELL", "/usr/bin/bash")
+        .env("TMPDIR", home.join("tmp"))
         .args([
             "restore",
             "--branch-location",
@@ -86,14 +88,14 @@ fn first_restore_registers_pixi_and_pixi_sandbox_in_the_user_bin(#[case] name: &
         1,
         "exactly one managed block: {profile}"
     );
-    // Nothing was written outside the bin dir and the profile.
+    // Nothing was written outside the bin dir, profile, and isolated temporary directory.
     assert!(
         fs::read_dir(temp.path())
             .unwrap()
             .flatten()
             .all(|entry| matches!(
                 entry.file_name().to_string_lossy().as_ref(),
-                ".local" | ".profile" | "project"
+                ".local" | ".profile" | "project" | "tmp"
             ))
     );
 }
