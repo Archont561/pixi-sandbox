@@ -333,7 +333,7 @@ fn a_missing_home_is_an_error_that_names_the_remedy() {
             .join(".pixi/envs/demo/conda-meta/pixi_env_prefix")
             .is_file()
     );
-    assert!(project.join(".pixi/sandbox-env.sh").is_file());
+    assert!(!project.join(".pixi/sandbox-env.sh").exists());
 }
 
 /// The generated launchers pass `--user-tools` explicitly *and* forward their own arguments

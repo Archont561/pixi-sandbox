@@ -124,10 +124,17 @@ The v1 proposal is now an accepted architectural decision: backlog `decision-1` 
 
 ```bash
 bash scripts/restore.sh
-source .pixi/sandbox-env.sh
+export PATH="$HOME/.local/bin:$PATH"   # only needed in the already-running shell
 pixi install --frozen --offline
-cargo build --offline
+pixi run --frozen -- cargo build --offline
 ```
+
+Pixi is the only supported entrypoint. Do not source `.pixi/sandbox-env.sh` (new restores remove
+or do not generate it) and do not run bare `cargo`, `rustc`, `bun`, `taplo`, or `convco` from a
+restored prefix. Rust crate work is either `pixi run --frozen xtask <subcommand>` or
+`pixi run --frozen -- cargo <cmd> -p <crate>`; JavaScript package work is
+`pixi run --frozen bun --filter=<workspace-package> run <script>` (for docs:
+`--filter=pixi-sandbox-docs`) or the root `pixi run --frozen bunx <tool>` task.
 
 Do not attempt package resolution, prefix.dev publication, GitHub Actions dispatch, or native Windows/macOS validation from an airlock-style environment. First produce artifacts on the connected side, then consume and verify them offline.
 
@@ -449,3 +456,42 @@ closing it is the owner's call, not this session's.
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
 > and its templates are in `.agents/skills/session/`.
+
+### 2026-10-02 — pixi-only entrypoint cleanup
+
+**Landed locally before task-35:** restore no longer generates `.pixi/sandbox-env.sh` and
+removes a legacy copy if it finds one; `scripts/restore.sh` reports how to use the registered
+pixi launcher (or the manifest-owned pixi path when registration is skipped) instead of
+sourcing an activation hook; docs, README, `AGENTS.md`, and the session skill all state the
+same rule. The temporary follow-up that made the old shell gate drive Cargo through
+`pixi run --frozen -- cargo …` was superseded by task-35: that shell gate is now deleted.
+
+**Standing command rule:** pixi is the sole environment entrypoint. Use
+`pixi run --frozen <task>` for repository tasks, `pixi run --frozen xtask <subcommand>` for repo
+automation, `pixi run --frozen -- cargo <cmd> -p <crate>` for crate-scoped Rust work, and
+`pixi run --frozen bun --filter=<workspace-package> run <script>` (or root `pixi run --frozen
+bunx <tool>`) for JavaScript package work. Do not source `.pixi/sandbox-env.sh`; new restores do
+not generate it.
+
+### 2026-10-02 — task-35 airlock gate moved into e2e
+
+**Landed and checked on PR #54:** task-35 is implemented and closed. `crates/pixi-sandbox` now
+has a `ci` cargo feature; the real-transport airlock gate is a `#[cfg(feature = "ci")]` module
+in `crates/pixi-sandbox/tests/e2e.rs` with explicit inputs (`PIXI_SANDBOX_GATE_PROJECT`,
+`PIXI_SANDBOX_GATE_TRANSPORT`, `PIXI_SANDBOX_GATE_ENVS`, `PIXI_SANDBOX_GATE_SKIP_CARGO`).
+`pixi.toml` has the one-line tasks `airlock-gate-archive` and `airlock-gate-run`;
+`.github/workflows/airlock.yml` builds a nextest archive while connected, runs it in Tier B,
+and replays the same archive through `xtask deny-egress` in Tier A. `scripts/airlock-gate.sh`
+is deleted, and the D10 fixture exception now names only `scripts/restore.sh`. CI fixes found
+live: the workflow installs `default` before archiving, the archive build no longer passes
+Cargo's offline `--frozen`, the gate filter targets only the `ci_gate` tests, `airlock-pack`
+downloads the static release asset instead of embedding Pixi's global trampoline/dynamic conda
+binary, and `deny-egress` absolutizes `pixi` before sudo sanitizes PATH.
+
+**Local proof already run:** `pixi run --frozen test` (275 passed, 1 skipped), targeted
+`cargo check` for `pixi-sandbox` with and without `--features ci`, targeted clippy for
+`pixi-sandbox --features ci` and `xtask`, a local archived-gate proof against the fixture
+restore, `pixi run --frozen airlock-gate-archive`, `pixi run --frozen lint-actions`,
+`pixi run --frozen lint-toml`, `pixi run --frozen xtask check-repository`, and
+`pixi run --frozen docs-build` all pass. Full all-crates lint was intentionally not run in this
+iteration per the user's instruction to skip it and use repo-specific / targeted checks.

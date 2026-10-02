@@ -3,8 +3,8 @@
 //! Everything that used to be a repo-targeting shell script lives here as a tested Rust
 //! subcommand, so one runtime covers all five release runners — the v0.3.6 release died on
 //! macOS's /bin/bash 3.2 over a single Bash-4 builtin (run 36865921206), a class of failure
-//! an xtask cannot have. The only shell that remains under `scripts/` is the bootstrap pair
-//! that must run where no toolchain can be assumed (`restore.sh`, `airlock-gate.sh`).
+//! an xtask cannot have. The only shell that remains under `scripts/` is `restore.sh`, the
+//! one-command bootstrap that must run where no toolchain can be assumed.
 //!
 //! Commands take an explicit `--root` (default: the working directory, which is the project
 //! root under `pixi run`); the policy logic lives in per-module pure functions that tests
@@ -123,6 +123,21 @@ enum Command {
         #[arg(long, default_value = "")]
         r#override: String,
     },
+    /// Download the static release binary the airlock transport should embed.
+    AirlockSelfBin {
+        /// Repository (`owner/name`) to download the release asset from.
+        #[arg(long)]
+        repo: String,
+        /// Release tag resolved by the plan job.
+        #[arg(long)]
+        tag: String,
+        /// Pixi platform from the matrix.
+        #[arg(long)]
+        platform: String,
+        /// Output path for the executable.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Install the matrix environments (frozen) and pack with the released binary.
     AirlockPack {
         /// Comma-separated environments from the matrix.
@@ -183,7 +198,10 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let args = Args::parse();
+    run_args(Args::parse())
+}
+
+fn run_args(args: Args) -> Result<()> {
     let root = args.root;
     match args.command {
         Command::LintGeneratedWorkflow { actionlint } => {
@@ -247,6 +265,12 @@ fn run() -> Result<()> {
         Command::ResolveReleaseTag { repo, r#override } => {
             airlock::resolve_release_tag(&root, &repo, &r#override)
         }
+        Command::AirlockSelfBin {
+            repo,
+            tag,
+            platform,
+            out,
+        } => airlock::airlock_self_bin(&repo, &tag, &platform, &root.join(out)),
         Command::AirlockPack {
             envs,
             out,
@@ -281,5 +305,30 @@ fn run() -> Result<()> {
         Command::ReleaseChecksums { dir } => {
             release_assets::release_checksums(&root.join(dir)).map(|_| ())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Args, Command, run_args};
+
+    #[test]
+    fn airlock_self_bin_subcommand_reaches_the_downloader_validation() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let error = run_args(Args {
+            root: root.path().to_path_buf(),
+            command: Command::AirlockSelfBin {
+                repo: "owner/repo".to_string(),
+                tag: "v0.4.0".to_string(),
+                platform: "freebsd-64".to_string(),
+                out: "pixi-sandbox".into(),
+            },
+        })
+        .expect_err("unknown platform");
+
+        assert!(
+            format!("{error:#}").contains("no static pixi-sandbox release asset"),
+            "{error:#}"
+        );
     }
 }

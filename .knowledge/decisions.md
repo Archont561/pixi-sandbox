@@ -319,9 +319,10 @@ of the *unpacked* prefix (relative path, sha256 of canonicalised content, exec b
 target; conda-meta records presence-only), recorded by `pack` from its own verification
 unpack. `doctor --verify-restored <PROJECT>` compares a restored project against that list —
 every entry, every extra file, the exec bits, the fingerprint marker — collects **all**
-mismatches, and writes nothing. `scripts/airlock-gate.sh --transport <dir>` calls it, and
-`restore.sh` calls it before cleaning up the worktree. A schema-1 env is reported
-`unverifiable`, never failed: published branches outlive the tool that packed them.
+mismatches, and writes nothing. The airlock workflow's archived `ci`-feature e2e gate calls it
+against the restored tree, and `restore.sh` calls it before cleaning up the worktree. A schema-1
+env is reported `unverifiable`, never failed: published branches outlive the tool that packed
+them.
 
 **Why.** Everything the pipeline verified before task-10 was about the *branch*: blobs matched
 the manifest, and the tree restore produced was checked only by shape — conda-meta present,

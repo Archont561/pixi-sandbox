@@ -506,8 +506,8 @@ fn restore(bundled: Bundled, policy: Option<&str>) -> (tempfile::TempDir, Restor
 
 /// The whole sequence, end to end: derive nothing (the branch is explicit), find the branch
 /// *locally* and do not reach for the network, add a worktree, verify the payload, restore it,
-/// verify the tree that came out, remove the worktree, source the generated environment and
-/// report what it did to the user's home.
+/// verify the tree that came out, remove the worktree, and report the pixi entrypoint the
+/// user should run next.
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn a_local_branch_restores_without_touching_the_network() {
@@ -534,14 +534,26 @@ fn a_local_branch_restores_without_touching_the_network() {
     );
 
     // A real project came out, not just a log that says so.
-    assert!(restored.project.join(".pixi/sandbox-env.sh").is_file());
+    assert!(!restored.project.join(".pixi/sandbox-env.sh").exists());
     assert!(
         restored
             .project
             .join(".pixi/envs/demo/conda-meta/pixi_env_prefix")
             .is_file()
     );
-    assert!(restored.project.join(".cargo/config.toml").is_file());
+    assert!(
+        restored
+            .project
+            .join(".pixi-sandbox/cargo-home/config.toml")
+            .is_file()
+    );
+    assert!(
+        restored
+            .project
+            .join(".pixi/envs/demo/etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+            .is_file()
+    );
+    assert!(!restored.project.join(".cargo/config.toml").exists());
 
     // The worktree is scratch, and scratch is cleaned up — including from git's own list, or
     // the next restore trips over a stale entry.
@@ -565,16 +577,12 @@ fn a_local_branch_restores_without_touching_the_network() {
         String::from_utf8_lossy(&worktrees.stdout)
     );
 
-    // sandbox-env.sh is self-sufficient (task-5): the script hardcodes no environment name and
-    // reports the entries the sourced file actually added.
-    assert!(log.contains("PATH gained:"), "{log}");
-    let project = restored.project.display();
+    // The script no longer sources an activation hook. It tells the operator how to put the
+    // registered pixi launcher on this already-running shell's PATH, and keeps `pixi run` as
+    // the only supported entrypoint.
+    assert!(log.contains("current shell: export PATH="), "{log}");
     assert!(
-        log.contains(&format!("{project}/.pixi/tools/linux-64")),
-        "{log}"
-    );
-    assert!(
-        log.contains(&format!("{project}/.pixi/envs/demo/bin")),
+        log.contains("then use pixi as the only entrypoint: pixi run --frozen <task>"),
         "{log}"
     );
 
@@ -614,7 +622,7 @@ fn a_bootstrap_that_ignores_the_policy_is_reported_not_announced() {
         "the report must name the version that ignored the request: {log}"
     );
     assert!(
-        log.contains("Keep sourcing"),
+        log.contains("no longer sources or supports"),
         "it must also say what to do instead: {log}"
     );
     assert!(
@@ -628,7 +636,7 @@ fn a_bootstrap_that_ignores_the_policy_is_reported_not_announced() {
         "HOME was written to"
     );
     // …and the restore still succeeded, which is why this is a notice and not a failure.
-    assert!(restored.project.join(".pixi/sandbox-env.sh").is_file());
+    assert!(!restored.project.join(".pixi/sandbox-env.sh").exists());
 
     // The version came from the *restored* copy: the branch worktree is gone by the time the
     // report runs, and asking the removed path printed "unknown version" before the fix.
@@ -649,8 +657,12 @@ fn the_skip_policy_leaves_home_alone_and_says_so() {
         "{log}"
     );
     assert!(
-        log.contains("a new one will not; source"),
+        log.contains("current shell unchanged"),
         "the consequence has to be spelled out: {log}"
+    );
+    assert!(
+        log.contains("run --frozen <task> explicitly"),
+        "the pixi-only fallback has to be spelled out: {log}"
     );
     assert!(
         !restored.home.join(".local").exists() && !restored.home.join(".profile").exists(),
@@ -699,7 +711,7 @@ fn a_branch_only_on_origin_is_fetched_then_restored() {
         log.contains("OK — the restored tree matches the manifest"),
         "{log}"
     );
-    assert!(project.join(".pixi/sandbox-env.sh").is_file());
+    assert!(!project.join(".pixi/sandbox-env.sh").exists());
 }
 
 /// A branch that does not exist: fail with exit 1, and — because the usual cause is a typo or

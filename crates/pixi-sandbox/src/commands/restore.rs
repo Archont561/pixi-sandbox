@@ -78,16 +78,17 @@ pub fn run(args: RestoreArgs) -> Result<()> {
     }
 
     let mut vendored = false;
+    let mut cargo_wiring = CargoWiring::NotVendored;
     if let Some(vendor) = &manifest.vendor {
         if !args.no_vendor {
             println!("restore vendored cargo dependencies");
             install_vendor(&branch, vendor, &project, &work, args.force)?;
-            write_cargo_config(&project, args.cargo_config)?;
+            cargo_wiring = configure_cargo_vendor(&project, &environments, args.cargo_config)?;
             vendored = true;
         }
     }
 
-    write_sandbox_env(&project, &manifest, &environments)?;
+    remove_legacy_sandbox_env(&project)?;
 
     // task-33: registration is gated on *two* verifications. The branch was verified before
     // anything was written; this checks the tree that came out the other end against the
@@ -126,15 +127,33 @@ pub fn run(args: RestoreArgs) -> Result<()> {
     )?;
 
     println!("restore complete");
-    println!("  source {}/.pixi/sandbox-env.sh", project.display());
-    println!("  pixi install --frozen --offline   # must be a no-op");
-    if manifest.vendor.is_some() && !args.no_vendor {
-        println!("  cargo build --offline             # must use the restored vendor tree");
+    println!("  pixi install --frozen --offline      # must be a no-op");
+    match cargo_wiring {
+        CargoWiring::SandboxHome { cargo_home } => {
+            println!(
+                "  cargo vendor: wired via {} and Pixi activation hooks",
+                cargo_home.display()
+            );
+            println!("  pixi run --frozen -- cargo build --offline");
+        }
+        CargoWiring::ProjectConfig { config } => {
+            println!("  cargo vendor: wired via {}", config.display());
+            println!("  pixi run --frozen -- cargo build --offline");
+        }
+        CargoWiring::Printed => println!(
+            "  cargo vendor: NOT wired (--cargo-config print); write the printed config before building offline"
+        ),
+        CargoWiring::None => println!(
+            "  cargo vendor: NOT wired (--cargo-config none); configure Cargo before building offline"
+        ),
+        CargoWiring::NotVendored => {}
     }
+    println!(
+        "  no .pixi/sandbox-env.sh is generated; use pixi as the only entrypoint (`pixi run ...`)"
+    );
     if matches!(args.user_tools, UserToolsPolicy::Register) {
         println!(
-            "  pixi and pixi sandbox work in a new shell; sandbox-env.sh is only needed for \
-             direct cargo/rustc/bun use"
+            "  open a new shell (or put the managed user bin on PATH here) for pixi and pixi sandbox"
         );
     }
     Ok(())
@@ -743,56 +762,156 @@ fn unpack_vendor_archive(archive_path: &Path, destination: &Path) -> Result<()> 
     Ok(())
 }
 
-fn write_cargo_config(project: &Path, mode: CargoConfigArg) -> Result<()> {
-    let snippet = format!(
+#[derive(Debug)]
+enum CargoWiring {
+    NotVendored,
+    SandboxHome { cargo_home: PathBuf },
+    ProjectConfig { config: PathBuf },
+    Printed,
+    None,
+}
+
+fn cargo_source_snippet(vendor_dir: &Path) -> String {
+    let directory = toml::Value::String(vendor_dir.to_string_lossy().into_owned()).to_string();
+    format!(
         "[source.crates-io]\nreplace-with = \"vendored-sources\"\n\n\
-         [source.vendored-sources]\ndirectory = \"{MANIFEST_DIR}/vendor\"\n"
-    );
-    let config = project.join(".cargo").join("config.toml");
+         [source.vendored-sources]\ndirectory = {directory}\n"
+    )
+}
+
+fn configure_cargo_vendor(
+    project: &Path,
+    environments: &[String],
+    mode: CargoConfigArg,
+) -> Result<CargoWiring> {
+    let vendor_dir = project.join(MANIFEST_DIR).join("vendor");
+    let snippet = cargo_source_snippet(&vendor_dir);
     match mode {
-        CargoConfigArg::None => println!("  cargo config: left alone (--cargo-config none)"),
-        CargoConfigArg::Print => print!("{snippet}"),
-        CargoConfigArg::Auto if config.exists() => println!(
-            "  {} already exists — left alone (use --cargo-config write to replace it)",
-            config.display()
-        ),
-        CargoConfigArg::Auto | CargoConfigArg::Write => {
+        CargoConfigArg::Auto => {
+            let cargo_home = project.join(MANIFEST_DIR).join("cargo-home");
+            write_sandbox_cargo_home(&cargo_home, &snippet)?;
+            write_cargo_activation_hooks(project, environments, &cargo_home)?;
+            println!(
+                "  cargo config: wrote {} and Pixi activation hooks (project .cargo left alone)",
+                cargo_home.join("config.toml").display()
+            );
+            Ok(CargoWiring::SandboxHome { cargo_home })
+        }
+        CargoConfigArg::Write => {
+            let config = project.join(".cargo").join("config.toml");
             let parent = config.parent().expect("config path has a .cargo parent");
             fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
             fs::write(&config, snippet).with_context(|| format!("writing {}", config.display()))?;
             println!(
-                "  wrote {} with a project-relative vendor directory",
+                "  wrote {} with an absolute vendor directory",
                 config.display()
             );
+            Ok(CargoWiring::ProjectConfig { config })
         }
+        CargoConfigArg::Print => {
+            println!(
+                "# Cargo source replacement for .pixi-sandbox/cargo-home/config.toml (or another Cargo config file)"
+            );
+            print!("{snippet}");
+            Ok(CargoWiring::Printed)
+        }
+        CargoConfigArg::None => {
+            println!("  cargo config: left alone (--cargo-config none)");
+            Ok(CargoWiring::None)
+        }
+    }
+}
+
+fn write_sandbox_cargo_home(cargo_home: &Path, snippet: &str) -> Result<()> {
+    fs::create_dir_all(cargo_home.join("bin"))
+        .with_context(|| format!("creating {}", cargo_home.join("bin").display()))?;
+    let config = cargo_home.join("config.toml");
+    fs::write(&config, snippet).with_context(|| format!("writing {}", config.display()))?;
+    Ok(())
+}
+
+fn write_cargo_activation_hooks(
+    project: &Path,
+    environments: &[String],
+    cargo_home: &Path,
+) -> Result<()> {
+    for environment in environments {
+        let activate_dir = project
+            .join(".pixi")
+            .join("envs")
+            .join(environment)
+            .join("etc")
+            .join("conda")
+            .join("activate.d");
+        fs::create_dir_all(&activate_dir)
+            .with_context(|| format!("creating {}", activate_dir.display()))?;
+        write_posix_cargo_activation(&activate_dir, cargo_home)?;
+        write_powershell_cargo_activation(&activate_dir, cargo_home)?;
+        write_cmd_cargo_activation(&activate_dir, cargo_home)?;
     }
     Ok(())
 }
 
-/// Sourcing this script must be self-sufficient: no caller should need to separately export an
-/// `envs/<name>/bin` directory to find `cargo`, `bun`, `rustc` or anything else the restored
-/// environments provide (task-5). The environment names come from `environments` — the ones
-/// this restore actually materialised under `.pixi/envs/` — not the full manifest, so the PATH
-/// this script builds never points at a directory that was never created.
-fn write_sandbox_env(project: &Path, manifest: &Manifest, environments: &[String]) -> Result<()> {
-    let platform = &manifest.platform;
-    let pixi_file = tool_file_name(manifest, "pixi");
-    let path = project.join(".pixi").join("sandbox-env.sh");
-    let parent = path.parent().expect("sandbox env path has a .pixi parent");
-    fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    let env_bins: String = environments
-        .iter()
-        .map(|name| format!("$_pixi_sandbox_dir/envs/{name}/bin:"))
-        .collect();
+fn write_posix_cargo_activation(activate_dir: &Path, cargo_home: &Path) -> Result<()> {
+    let cargo_home = shell_single_quote(&cargo_home.to_string_lossy());
     let script = format!(
-        "# generated by pixi-sandbox restore — source .pixi/sandbox-env.sh\n\
-         _pixi_sandbox_dir=\"$(CDPATH= cd -- \"$(dirname -- \"${{BASH_SOURCE[0]}}\")\" && pwd)\"\n\
-         export PATH=\"$_pixi_sandbox_dir/tools/{platform}:{env_bins}$PATH\"\n\
-         export CARGO_NET_OFFLINE=true\n\
-         pixi() {{ command \"$_pixi_sandbox_dir/tools/{platform}/{pixi_file}\" \"$@\"; }}\n"
+        "# generated by pixi-sandbox restore — keep Cargo on the restored vendor tree\n\
+         export CARGO_HOME={cargo_home}\n\
+         case \":$PATH:\" in\n\
+         *\":$CARGO_HOME/bin:\"*) ;;\n\
+         *) export PATH=\"$CARGO_HOME/bin:$PATH\" ;;\n\
+         esac\n"
     );
+    let path = activate_dir.join("pixi-sandbox-cargo-home.sh");
     fs::write(&path, script).with_context(|| format!("writing {}", path.display()))?;
-    support::make_executable(&path)?;
+    Ok(())
+}
+
+fn write_powershell_cargo_activation(activate_dir: &Path, cargo_home: &Path) -> Result<()> {
+    let cargo_home = powershell_single_quote(&cargo_home.to_string_lossy());
+    let script = format!(
+        "# generated by pixi-sandbox restore — keep Cargo on the restored vendor tree\n\
+         $env:CARGO_HOME = {cargo_home}\n\
+         $bin = Join-Path $env:CARGO_HOME 'bin'\n\
+         if (-not (($env:PATH -split [IO.Path]::PathSeparator) -contains $bin)) {{\n\
+             $env:PATH = \"$bin$([IO.Path]::PathSeparator)$env:PATH\"\n\
+         }}\n"
+    );
+    let path = activate_dir.join("pixi-sandbox-cargo-home.ps1");
+    fs::write(&path, script).with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
+}
+
+fn write_cmd_cargo_activation(activate_dir: &Path, cargo_home: &Path) -> Result<()> {
+    let cargo_home = cargo_home.to_string_lossy().replace('%', "%%");
+    let script = format!(
+        "@echo off\r\n\
+         rem generated by pixi-sandbox restore — keep Cargo on the restored vendor tree\r\n\
+         set \"CARGO_HOME={cargo_home}\"\r\n\
+         set \"PATH=%CARGO_HOME%\\bin;%PATH%\"\r\n"
+    );
+    let path = activate_dir.join("pixi-sandbox-cargo-home.bat");
+    fs::write(&path, script).with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn powershell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+/// Drop the pre-0.5 activation hook when a project is restored with a newer binary. The
+/// supported contract is a registered `pixi` launcher plus `pixi run ...`; leaving the old file
+/// behind would make a stale, unsupported PATH activation path look deliberate.
+fn remove_legacy_sandbox_env(project: &Path) -> Result<()> {
+    let path = project.join(".pixi").join("sandbox-env.sh");
+    if path.exists() {
+        fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
+        println!("  removed legacy {}", path.display());
+    }
     Ok(())
 }
 
@@ -826,7 +945,7 @@ fn ensure_same_filesystem(work: &Path, project: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{clean_work_dir, relocate_text_prefixes};
+    use super::{clean_work_dir, relocate_text_prefixes, remove_legacy_sandbox_env};
     use std::fs;
     use std::path::Path;
 
@@ -899,6 +1018,19 @@ mod tests {
             format!("prefix='{new}' {new}")
         );
         assert_eq!(fs::read(&latin1).unwrap(), latin1_bytes);
+    }
+
+    #[test]
+    fn legacy_sandbox_env_is_removed_during_restore_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(".pixi/sandbox-env.sh");
+        fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        fs::write(&legacy, b"export PATH=legacy\n").unwrap();
+
+        remove_legacy_sandbox_env(temp.path()).unwrap();
+
+        assert!(!legacy.exists());
+        remove_legacy_sandbox_env(temp.path()).unwrap();
     }
 
     #[test]

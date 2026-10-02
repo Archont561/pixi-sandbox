@@ -31,9 +31,10 @@
 //!   record embeds install-scratch paths *and* `sha256_in_prefix` values that are hashes of
 //!   the relocated files — functions of the host's paths, not normalisable. Their presence is
 //!   still exact, which is what the forged-record attack needs to be caught by.
-//! * `conda-meta/pixi_env_prefix` and `conda-meta/.pixi-environment-fingerprint` are written
-//!   by `restore` itself, so they are excluded from the list and allowed as extras on disk;
-//!   the fingerprint is checked separately against the manifest's recorded value.
+//! * `conda-meta/pixi_env_prefix`, `conda-meta/.pixi-environment-fingerprint`, and the
+//!   `etc/conda/activate.d/pixi-sandbox-cargo-home.*` hooks are written by `restore` itself,
+//!   so they are excluded from the list and allowed as extras on disk; the fingerprint is
+//!   checked separately against the manifest's recorded value.
 
 use crate::error::{Error, Result};
 use crate::manifest::check_rel_path;
@@ -55,20 +56,26 @@ pub const DOC_SCHEMA: u32 = 1;
 
 /// Files `restore` writes into a live prefix, so a staged tree never contains their final
 /// content. Excluded from the list; allowed as extras when verifying.
-pub const RESTORE_MARKERS: [&str; 2] = [
+pub const RESTORE_MARKERS: [&str; 5] = [
     "conda-meta/pixi_env_prefix",
     "conda-meta/.pixi-environment-fingerprint",
+    "etc/conda/activate.d/pixi-sandbox-cargo-home.sh",
+    "etc/conda/activate.d/pixi-sandbox-cargo-home.ps1",
+    "etc/conda/activate.d/pixi-sandbox-cargo-home.bat",
 ];
 
 /// Files that may appear in a restored prefix without being in the list: pixi's own
 /// bookkeeping, written by the first `pixi install` into any prefix that lacks it (measured:
-/// `conda-meta/pixi`, `conda-meta/history`), plus the markers `restore` owns. Anything else
-/// extra is a failure — that is what rejects a hand-forged record.
-pub const ALLOWED_EXTRAS: [&str; 4] = [
+/// `conda-meta/pixi`, `conda-meta/history`), plus the markers and activation hooks `restore`
+/// owns. Anything else extra is a failure — that is what rejects a hand-forged record.
+pub const ALLOWED_EXTRAS: [&str; 7] = [
     "conda-meta/pixi",
     "conda-meta/history",
     "conda-meta/pixi_env_prefix",
     "conda-meta/.pixi-environment-fingerprint",
+    "etc/conda/activate.d/pixi-sandbox-cargo-home.sh",
+    "etc/conda/activate.d/pixi-sandbox-cargo-home.ps1",
+    "etc/conda/activate.d/pixi-sandbox-cargo-home.bat",
 ];
 
 /// One file (or symlink) of the unpacked environment tree, relative to the prefix.
@@ -450,13 +457,14 @@ mod tests {
     }
 
     #[test]
-    fn allowed_extras_are_all_conda_meta_bookkeeping() {
+    fn allowed_extras_are_only_restore_or_pixi_bookkeeping() {
         // The allowlist is the attack surface of the oracle: everything in it escapes content
         // verification, so it must stay exactly the files pixi and restore write themselves.
         for rel in ALLOWED_EXTRAS {
             assert!(
-                rel.starts_with("conda-meta/"),
-                "{rel}: the allowlist must not reach outside conda-meta"
+                rel.starts_with("conda-meta/")
+                    || rel.starts_with("etc/conda/activate.d/pixi-sandbox-cargo-home."),
+                "{rel}: the allowlist must not reach outside pixi/restore-owned bookkeeping"
             );
         }
     }

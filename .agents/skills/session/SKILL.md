@@ -21,9 +21,11 @@ The workspace is a clone of the repository; the pixi environments exist only aft
 Check first, restore only if needed:
 
 ```bash
-test -f .pixi/sandbox-env.sh   # environment already restored?
-# if missing — the one-time bootstrap (idempotent, passes --force itself, never fetches):
+test -x "$HOME/.local/bin/pixi" && "$HOME/.local/bin/pixi" --version
+# if missing or not managed for this checkout — the one-time bootstrap (idempotent, passes --force itself, never fetches):
 bash scripts/restore.sh
+export PATH="$HOME/.local/bin:$PATH"   # the running shell did not read the profile edit
+pixi --version && pixi sandbox --version
 ```
 
 **Let the restore register the user tools** (that is the default, `PIXI_SANDBOX_USER_TOOLS=register`;
@@ -32,7 +34,7 @@ do not pass `skip` here — `skip` is for shared CI runners). When it registers,
 the detected shell profile (task-33); the launchers exec the *manifest-verified* tool copies under
 `.pixi/tools/<platform>/`.
 
-### When you can stop sourcing `sandbox-env.sh` — and when you still cannot
+### Pixi is the only environment entrypoint
 
 **Read the last line the restore printed. It tells you which world you are in**, and it is a fact
 about the tree, not a wish:
@@ -41,57 +43,49 @@ about the tree, not a wish:
 - `user tools: NOT registered — the bundled pixi-sandbox <v> predates --user-tools (0.3.7)` →
   nothing was registered. Registration is a *restore-side* feature, and the binary doing the
   restore comes from the packed branch: a branch packed before 0.3.7 ignores the policy entirely
-  (unknown env var, ignored by design). That was the situation until 2026-10-01, when
-  `sandbox/developer-linux-64` was repacked with 0.4.0 — so the second line now means the machine
-  restored a *stale* branch, not the published one.
+  (unknown env var, ignored by design). Since 2026-10-01, `sandbox/developer-linux-64` has been
+  repacked with 0.4.0, so this line now means the machine restored a stale branch, not the
+  published one.
 
-**The published branch carries 0.4.0** (snapshot `2026-10-01T22:27`, `doctor --verify` clean:
+**The published branch carries 0.4.0** (snapshot `2026-10-01T22:36`, `doctor --verify` clean:
 10327 blobs / 819.9 MiB, `tool pixi-sandbox: v0.4.0 static`). It was repacked by the generated
 `publish-sandbox.yml`, which runs on **every push to main** — so `gh run list` after a merge will
-show a `publish sandbox` run, and the transport you would restore is rebuilt each time. That is
-also why `bash scripts/restore.sh` on a fresh clone gets the current binary.
+show a `publish sandbox` run, and the transport you would restore is rebuilt each time.
 
-Once a 0.3.7+ branch is restored, dropping the sourcing is safe when all three hold:
-
-1. the restore printed the `registered` line (not `skip`, not a refusal over an unmanaged `pixi`
-   already sitting in `~/.local/bin` — that refusal needs `--force`);
-2. `~/.local/bin` is on `PATH` in the shell you are actually in;
-3. everything you run is `pixi …` — i.e. every repo-management command goes through the pixi
-   binary, not through a tool you expect to find loose on `PATH`.
-
-Point 2 is the one that bites an agent: the profile block is read by a **new login/interactive**
-shell, and a non-interactive `bash -c …` — which is what every tool invocation here is — reads
-no profile at all. So instead of sourcing a path inside this checkout, prepend the user bin dir:
+A running parent shell cannot be mutated by the restore. For non-interactive agent commands,
+prepend the user bin dir once per shell and then use pixi for everything:
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"   # once per shell; nothing checkout-specific about it
+export PATH="$HOME/.local/bin:$PATH"
 pixi --version && pixi sandbox --version
 ```
 
-The same applies to the shell that *ran* the restore: a running parent shell cannot be mutated,
-so use the `export` above for the rest of that session.
-
-`.pixi/sandbox-env.sh` is now an **escape hatch, not a step**: it is only needed when you want
-`cargo`, `rustc`, `bun`, `taplo` or `convco` loose on `PATH`. Don't — run them through pixi,
-which is what the hooks and CI do.
+Do **not** source `.pixi/sandbox-env.sh`: new restores remove or do not generate it, and the
+repository no longer supports direct environment activation. Do not run bare `cargo`, `rustc`,
+`bun`, `taplo`, `convco`, etc. A command that needs packages or crates must go through pixi:
+repository automation through `pixi run --frozen xtask <subcommand>`, Cargo through
+`pixi run --frozen -- cargo <cmd> -p <crate>`, docs/package scripts through
+`pixi run --frozen bun --filter=<workspace-package> run <script>`, and repo-wide JS CLIs through
+`pixi run --frozen bunx <tool>`.
 
 ### Every repo task goes through the pixi binary
 
 ```bash
 pixi run --frozen fmt | lint | test | test-doc | coverage
-pixi run --frozen -- cargo <anything>        # e.g. cargo check --offline, cargo nextest run -p …
+pixi run --frozen -- cargo check -p pixi-sandbox   # crate-scoped Cargo, not bare cargo
 pixi run --frozen -- convco check HEAD~1..HEAD
-pixi run --frozen lint-commit < <file>       # what the commit-msg hook runs
-pixi run docs-install                        # once; the bunx lines depend on it too
-pixi run bunx backlog task list -s "To Do" --plain
-pixi run bunx skills …
-pixi run -- lefthook install                 # installs the git hooks in a fresh clone
+pixi run --frozen lint-commit < <file>             # what the commit-msg hook runs
+pixi run --frozen docs-install                     # once; the bunx lines depend on it too
+pixi run --frozen bun --filter=pixi-sandbox-docs run build
+pixi run --frozen bunx backlog task list -s "To Do" --plain
+pixi run --frozen bunx skills …
+pixi run --frozen -- lefthook install              # installs the git hooks in a fresh clone
 ```
 
 Facts about this sandbox that shape every command:
 
 - **Egress is filtered**, and the exact shape matters: github.com and the npm registry answer
-  (so `git fetch`, `gh`, and `pixi run docs-install` all work), while the crates.io index/API,
+  (so `git fetch`, `gh`, and `pixi run --frozen docs-install` all work), while the crates.io index/API,
   prefix.dev and static.rust-lang.org do not. Therefore **always** `--offline` for cargo — the
   vendored tree under `.pixi-sandbox/vendor` is what builds — and always `pixi run --frozen
   <task>` so pixi never tries to solve online. A restore is the only way to get a toolchain
@@ -104,10 +98,10 @@ Facts about this sandbox that shape every command:
   → `doctor --verify-restored`), it needs no network, and on Linux it re-runs the restore inside
   `unshare -rn`; it is already part of `pixi run --frozen test`. The egress-denied gate over a
   *real* packed transport belongs to CI's cross-platform matrix
-  (`.github/workflows/airlock.yml`) — never try to reproduce that tier locally.
-  Today that gate is still `scripts/airlock-gate.sh`, driven from one e2e test; **task-35**
-  moves it into `tests/e2e.rs` behind the `ci` cargo feature (skipped locally, run by the
-  matrix) and deletes the script. Until that lands, add no new logic to the shell script.
+  (`.github/workflows/airlock.yml`) — never try to reproduce that tier locally. That CI gate is
+  the e2e suite's `ci` cargo feature archived by `pixi run --frozen airlock-gate-archive` and
+  replayed by `pixi run --frozen airlock-gate-run`; the default local suite must keep those
+  tests uncompiled and skipped.
 - Missing system tools: no `/usr/bin/time`, no `file(1)` — use `date +%s`, `readelf`.
 - `gh` works against github.com when authenticated; workflow dispatch/rerun may be
   forbidden for the token (`403 Resource not accessible by integration`) — then ask the user to
@@ -129,11 +123,11 @@ Facts about this sandbox that shape every command:
 1. **Sync before proposing.** `git fetch origin` (github.com is reachable), then confirm the
    working branch is based on `origin/main`'s tip — if it is behind, say so before anything
    else. Never edit on a stale base.
-2. **Read the standing context** (skim, do not quote back): `AGENTS.md` (repo map, the nine
-   invariants, task commands), `CONTEXT.md`, and `.knowledge/decisions.md` — the decisions
+2. **Read the standing context** (skim, do not quote back): `AGENTS.md` (repo map, invariants,
+   task commands), `CONTEXT.md`, and `.knowledge/decisions.md` — the decisions
    D1–D15 are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
 3. **List the open work**:
-   `pixi run bunx backlog task list -s "To Do" --plain` — or read `backlog/tasks/*.md` directly;
+   `pixi run --frozen bunx backlog task list -s "To Do" --plain` — or read `backlog/tasks/*.md` directly;
    tasks are markdown files whose frontmatter carries `dependencies`, `priority`, `ordinal`,
    `type`, and `documentation` links (spec docs live under `backlog/docs/`).
 4. **Filter honestly.** A task is a candidate only when every dependency has status `Done`.

@@ -11,6 +11,10 @@ repository.workspace = true
 name = "pixi-sandbox"
 path = "src/main.rs"
 
+[features]
+# CI-only integration tests that run against real airlock transports.
+ci = []
+
 [dependencies]
 # `version` next to `path`: cargo-deny rejects a bare path dependency as a wildcard, and the
 # published `.conda` should state which core it was built against.

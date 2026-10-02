@@ -124,7 +124,7 @@ Two findings that change the framing of the "15 MiB prize":
 Option C′ is the only alternative that improves peak disk (−11 % combined) without growing the
 binary or moving the correctness surface — it is noted for the backlog, not adopted here: it
 changes the `--branch-location` contract that `doctor`, `restore`, `unpack`, the generated
-launchers, and `scripts/airlock-gate.sh` all share, and today's measured peak (2 746 MiB for a
+launchers, and the CI airlock gate all share, and today's measured peak (2 746 MiB for a
 1 830 MiB environment, 16 s) has not been reported as a blocker by any real airlock.
 
 ## 3. Schema migration and compatibility policy

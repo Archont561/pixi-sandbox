@@ -205,10 +205,14 @@ where the bytes went; the same numbers appear in the generated `README.md`.
    without them is rejected by pixi's fast path and `pixi install --frozen --offline` tries to
    do real work (which fails offline ✅).
 7. **Materialise the vendored crates** into `<project>/.pixi-sandbox/vendor/` (same verified
-   blob path as everything else) and wire `.cargo/config.toml` with a **relative** directory
-   (D6, §11). `--cargo-config auto|write|print|none`.
-8. **Write `.pixi/sandbox-env.sh`** (task-5): self-sufficient — bundled tools *and* every
-   restored environment's `bin/` on `PATH`, `CARGO_NET_OFFLINE=true`.
+   blob path as everything else) and wire Cargo. Default `--cargo-config auto` writes the
+   source-replacement block to sandbox-owned `.pixi-sandbox/cargo-home/config.toml` and adds
+   per-env Pixi/Conda activation hooks that set `CARGO_HOME`, so project-owned
+   `.cargo/config.toml` is left untouched. Explicit `write` remains the destructive opt-in,
+   while `print` and `none` do not claim Cargo is wired.
+8. **Remove any legacy `.pixi/sandbox-env.sh`**. Restore does not generate a project-level
+   activation script; `pixi run ...` is the entrypoint, with only restore-owned per-env
+   activation hooks for Cargo vendor wiring.
 9. **Verify the restored tree** against the manifest's per-file oracle (D13) — the same check
    `doctor --verify-restored` runs, executed by `restore` itself so that a success exit means
    both sides are proven. Schema-1 envs are reported `unverifiable`, never failed; a mismatch
@@ -361,10 +365,11 @@ failures, not the first ✅ — for the branch and, since task-10, for the resto
    oracle, the gate prints a notice and stays a shape check rather than failing every airlock
    on the way to the first oracle-carrying release.
 3. **Self-sufficiency** — *does the restored sandbox need anything from the network?* Owned
-   by the airlock gate (`scripts/airlock-gate.sh`): `pixi install --frozen --offline` must be
-   a no-op and `cargo check --offline` must build against the vendored tree. The gate's
-   `--transport` option wires layer 2 in, so a stub prefix with a fabricated conda-meta
-   record — the one attack shape checks cannot see — is rejected by a test, not a comment.
+   by the airlock workflow's archived `ci`-feature e2e gate: `pixi install --frozen --offline`
+   must be a no-op and `pixi run --frozen -- cargo check --offline` must build against the
+   vendored tree. The gate receives the transport checkout explicitly, wiring layer 2 in, so a
+   stub prefix with a fabricated conda-meta record — the one attack shape checks cannot see —
+   is rejected by a test, not a comment.
 
 The layers do not substitute for each other: layer 1 cannot see a restore bug (relocation
 gone wrong, a lost exec bit), layer 2 cannot see a network need, and layer 3 with a live
@@ -532,21 +537,27 @@ vs +3.96 MiB if the whole tree is one artifact ✅, and a fresh clone of the ven
 
 ### §11.3 Wiring the vendored tree into cargo
 
-Wiring after restore is a `[source]` replacement, written with a **relative** path:
+Default wiring after restore is a `[source]` replacement in sandbox-owned
+`.pixi-sandbox/cargo-home/config.toml`, using an **absolute** vendor path so it is independent
+of Cargo's config-layer-relative path rules:
 
 ```toml
 [source.crates-io]
 replace-with = "vendored-sources"
 [source.vendored-sources]
-directory = ".pixi-sandbox/vendor"     # resolved against the project root
+directory = "/project/.pixi-sandbox/vendor"
 ```
 
+Per-environment Pixi/Conda activation hooks set `CARGO_HOME` to that cargo home and prepend
+`$CARGO_HOME/bin`, so `pixi run -- cargo … --offline` uses the vendor tree without touching a
+project-owned `.cargo/config.toml` (which may carry `[env]`, aliases, rustflags or target
+runners). The explicit `--cargo-config write` mode still writes the replacement into project
+`.cargo/config.toml` for dedicated airlock images; `print` and `none` do not wire Cargo.
 Measured subtleties: the base directory of a relative `directory` differs by *where the config
 lives* — a project `.cargo/config.toml` resolves against the project root, `--config` against
-the cwd, `$CARGO_HOME/config.toml` against the CARGO_HOME's parent ✅; with the replacement in
-place, a dead-network `cargo build` works even without `--offline` ✅ (we still export
-`CARGO_NET_OFFLINE=true`, for fail-fast). Cargo gives **no useful error** if a crate is
-missing, so the packer must fail at pack time rather than let the airlock discover it.
+the cwd, `$CARGO_HOME/config.toml` against the CARGO_HOME's parent ✅. Cargo gives **no useful
+error** if a crate is missing, so the packer must fail at pack time rather than let the airlock
+discover it.
 
 **Duplicate crate sources are rejected before anything is written.** `cargo vendor` stores every
 crate as `<name>-<version>` under one vendor root, so when the same crate+version is reachable
@@ -646,11 +657,9 @@ would never be seen. The fixture is the opposite of all four:
   (it reads dependencies, not comments);
 * `tests/fixtures.rs::no_test_targets_the_repository_root` scans the test sources and fails if
   a test walks out of its crate from `CARGO_MANIFEST_DIR` (`".."`, `.parent()`). One exception
-  is carved out and documented in the test: `e2e.rs`'s
-  `the_airlock_gate_rejects_a_forged_conda_meta_record` reaches the real
-  `scripts/airlock-gate.sh`, because the gate script is the artifact under test (task-10's
-  acceptance criterion demands the rejection be *proven by a test*) and a copy of the script
-  would prove nothing about what CI runs;
+  is carved out and documented in the test: `restore_script.rs` reaches the real
+  `scripts/restore.sh`, because the bootstrap itself is the artifact under test and a copy of
+  the script would prove nothing about what a developer runs;
 * `transport/` is committed with real digests, so `doctor`, `publish`, `restore` and the
   verification path are covered with **no pixi, no packer and no network** — including the
   split-blob (`.partNNN`) case that a 95 MiB payload would otherwise be needed for;
@@ -665,7 +674,7 @@ oracle (`envs/demo/files.json`, 14 entries), and `fixtures.rs` re-derives its di
 the list fails in the fixture suite, not in a downstream airlock. The restored-tree oracle itself
 is tested in core (`tests/verify.rs`, the `restored` module: faithful restore, forged record,
 tampered content, lost exec bit, retargeted symlink, failed relocation, corrupted oracle) and the
-gate's use of it in `e2e.rs` against the real `scripts/airlock-gate.sh`.
+gate's use of it in `e2e.rs` (including the `ci`-feature airlock gate that CI archives and runs against a real transport).
 
 Two findings that shaped this section, both measured:
 

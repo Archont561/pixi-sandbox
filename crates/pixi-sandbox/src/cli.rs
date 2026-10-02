@@ -145,7 +145,7 @@ pub struct RestoreArgs {
     #[arg(long)]
     pub work_dir: Option<PathBuf>,
 
-    /// How to wire `.cargo/config.toml` to the vendored sources.
+    /// How to wire Cargo to the vendored sources.
     #[arg(long, value_enum, default_value_t = CargoConfigArg::Auto)]
     pub cargo_config: CargoConfigArg,
 
@@ -185,13 +185,14 @@ pub enum UserToolsPolicy {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum CargoConfigArg {
-    /// Write the file only if it does not exist yet.
+    /// Write sandbox-owned Cargo config under `.pixi-sandbox/cargo-home` and activate it via Pixi.
     Auto,
-    /// Overwrite it.
+    /// Overwrite the project `.cargo/config.toml`.
     Write,
-    /// Print the snippet for the user to paste.
+    /// Print the Cargo source-replacement snippet for the user to paste.
     Print,
-    /// Do nothing; use the `cargo-sandbox` wrapper from `sandbox-env.sh`.
+    /// Do nothing; callers must provide their own Cargo source configuration before using
+    /// `pixi run -- cargo ...` offline.
     None,
 }
 

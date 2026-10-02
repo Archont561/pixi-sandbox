@@ -61,7 +61,7 @@ import FeatureGrid from '../../components/FeatureGrid.astro';
   </div>
   <div>
     <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:upload-cloud" size={16} /> Publish & Restore</strong>
-    <p style="margin: 0.25rem 0; color: var(--sl-color-gray-2); font-size: 0.9rem;">Force-push as orphan branch. Airlock does <code>git fetch</code> + <code>pixi-sandbox restore --output-path .</code> → offline <code>pixi install --frozen --offline</code> + <code>cargo build --offline</code>.</p>
+    <p style="margin: 0.25rem 0; color: var(--sl-color-gray-2); font-size: 0.9rem;">Force-push as orphan branch. Airlock does <code>git fetch</code> + <code>pixi-sandbox restore --output-path .</code> → offline <code>pixi install --frozen --offline</code> + <code>pixi run --frozen -- cargo build --offline</code>.</p>
   </div>
 </div>
 
