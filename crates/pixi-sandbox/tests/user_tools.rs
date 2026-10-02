@@ -8,19 +8,14 @@
 
 #![cfg(unix)]
 
+mod support;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
-
-fn bin() -> Command {
-    Command::cargo_bin("pixi-sandbox").expect("binary builds")
-}
-
-fn fixture_transport() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transport")
-}
+use support::{bin, copy_tree, fixture_transport, make_executable};
 
 /// A restore whose user-tool side effects land in `home`, with a deterministic shell.
 fn restore(home: &Path, project: &Path) -> Command {
@@ -473,29 +468,9 @@ fn the_generated_launcher_selects_the_policy_and_registers_user_tools() {
     );
 }
 
-fn copy_tree(source: &Path, destination: &Path) {
-    fs::create_dir_all(destination).unwrap();
-    for entry in fs::read_dir(source).unwrap().flatten() {
-        let from = entry.path();
-        let to = destination.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_tree(&from, &to);
-        } else {
-            fs::copy(&from, &to).unwrap();
-        }
-    }
-}
-
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     fs::metadata(path)
         .map(|meta| meta.permissions().mode() & 0o111 != 0)
         .unwrap_or(false)
-}
-
-fn make_executable(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let mut permissions = fs::metadata(path).unwrap().permissions();
-    permissions.set_mode(permissions.mode() | 0o111);
-    fs::set_permissions(path, permissions).unwrap();
 }

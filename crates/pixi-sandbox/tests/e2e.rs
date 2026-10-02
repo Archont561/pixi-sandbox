@@ -5,52 +5,13 @@
 
 #![cfg(unix)]
 
-use assert_cmd::Command;
+mod support;
+
 use predicates::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
-
-fn bin() -> Command {
-    Command::cargo_bin("pixi-sandbox").expect("binary builds")
-}
-
-/// task-33: restore registers user tools in a per-user bin directory by default, so every
-/// test that runs a restore points HOME (and the detected shell) at its own tempdir — a test
-/// that touches the developer's real home is a broken test (D10's rule, user level).
-fn isolated_bin(home: &Path) -> Command {
-    let mut command = bin();
-    command
-        .env("HOME", home)
-        .env("USERPROFILE", home)
-        .env("SHELL", "/usr/bin/bash");
-    command
-}
-
-fn fixture_transport() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transport")
-}
-
-/// The complete pixi project definition tests pack (never this repository, see
-/// `tests/fixtures/README.md`).
-fn demo_project() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo-project")
-}
-
-fn copy_tree(source: &Path, destination: &Path) {
-    fs::create_dir_all(destination).unwrap();
-    for entry in fs::read_dir(source).unwrap().flatten() {
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        let metadata = fs::symlink_metadata(&source_path).unwrap();
-        if metadata.is_dir() {
-            copy_tree(&source_path, &destination_path);
-        } else {
-            fs::copy(&source_path, &destination_path).unwrap();
-            fs::set_permissions(&destination_path, metadata.permissions()).unwrap();
-        }
-    }
-}
+use support::{bin, copy_tree, demo_project, fixture_transport, isolated_bin, make_executable};
 
 /// The relocation rule `restore.rs` promises, applied here as an independent check: valid UTF-8
 /// text without NUL bytes is rewritten, and everything else is left exactly as it was staged.
@@ -1003,12 +964,4 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
         GateIntegrity::Verified,
         "the gate must pass again once the record is gone"
     );
-}
-
-#[cfg(unix)]
-fn make_executable(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let mut permissions = fs::metadata(path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(path, permissions).unwrap();
 }

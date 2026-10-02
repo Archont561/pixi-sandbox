@@ -6,23 +6,12 @@
 //! test pointed at it silently passes on a developer's machine and fails (or never runs) on a
 //! clean one. These tests make the rule executable instead of aspirational.
 
+mod support;
+
 use pixi_sandbox_core::manifest::Manifest;
 use pixi_sandbox_core::verify;
 use std::path::{Path, PathBuf};
-
-fn crate_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-/// The complete pixi project definition that tests sandbox (never the repository root).
-fn demo_project() -> PathBuf {
-    crate_dir().join("tests/fixtures/demo-project")
-}
-
-/// A synthetic, already-packed payload: no packer, no pixi, no network needed.
-fn transport() -> PathBuf {
-    crate_dir().join("tests/fixtures/transport")
-}
+use support::{crate_dir, demo_project, fixture_transport as transport};
 
 #[test]
 fn the_demo_project_is_a_complete_pixi_project() {
@@ -281,6 +270,57 @@ fn the_fixtures_file_list_is_derivable_from_its_tarball() {
 /// path from `CARGO_MANIFEST_DIR` and then walking **up** (`".."`, `.parent()`) is how a test
 /// reaches this repository instead of the fixture — that is forbidden, and this is the test
 /// that keeps it forbidden as the suite grows.
+/// Task-38's support module is a policy boundary, not a convenience import: a local copy of
+/// any listed helper is a regression because it lets setup semantics drift without a reviewer
+/// noticing. Keep the definitions in support and keep their rstest fixture entrypoints visible.
+#[test]
+fn shared_test_helpers_are_defined_once_and_exposed_as_fixtures() {
+    let tests_dir = crate_dir().join("tests");
+    let support = tests_dir.join("support/mod.rs");
+    let support_text = std::fs::read_to_string(&support).unwrap();
+    let helpers = [
+        ("bin", "bin"),
+        ("fixture_transport", "fixture_transport"),
+        ("demo_project", "demo_project"),
+        ("isolated_bin", "isolated_bin_fixture"),
+        ("copy_tree", "copy_tree_fixture"),
+        ("make_executable", "make_executable_fixture"),
+        ("host_platform", "host_platform"),
+        ("git", "git_fixture"),
+        ("run_git", "run_git_fixture"),
+        ("commit", "commit_fixture"),
+        ("transport_repo", "transport_repo_fixture"),
+    ];
+    let mut sources = Vec::new();
+    collect_rust(&tests_dir, &mut sources);
+
+    for (helper, fixture) in helpers {
+        let definition = format!("fn {helper}(");
+        let defined_in = sources
+            .iter()
+            .filter(|path| {
+                std::fs::read_to_string(path)
+                    .unwrap()
+                    .lines()
+                    .map(str::trim_start)
+                    .any(|line| {
+                        line.starts_with(&definition)
+                            || line.starts_with(&format!("pub {definition}"))
+                    })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            defined_in,
+            [&support],
+            "{helper} must have exactly one test-support definition"
+        );
+        assert!(
+            support_text.contains(&format!("#[fixture]\npub fn {fixture}(")),
+            "{helper} must stay available through the {fixture} rstest fixture"
+        );
+    }
+}
+
 #[test]
 fn no_test_targets_the_repository_root() {
     let tests_dir = crate_dir().join("tests");

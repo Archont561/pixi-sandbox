@@ -69,4 +69,6 @@ One constraint comes first: **rstest is not in the vendored tree**, so this cann
 2026-10-02: Declared rstest 0.26.1 across the workspace and used the connected relock lane to refresh Cargo.lock. This dependency-only landing must publish a transport containing the new vendor crates before the offline fixture refactor can compile; implementation continues after a fresh restore.
 
 2026-10-02 dependency proof: PR #56 merged as ffd2016; post-merge ci, docs, and publish sandbox runs were green. After force-fetching the rotated sandbox branch, a fresh restore reported 169 vendored crates (up from 155) and Cargo.lock digest 7fbc917aafa0. `pixi run --frozen -- cargo check --workspace --offline` and `pixi run --frozen test` both passed; suite baseline remains 285 passed / 1 skipped.
+
+2026-10-02 support slice: moved the duplicated `bin`, fixture paths, copy, user-isolation, executable, host-platform, temporary-git, and transport-repository setup into `tests/support/mod.rs`. The module exports rstest fixtures (including parameterised helper fixtures); the former test files import it instead of redefining setup. `fixtures.rs` now asserts every shared helper has exactly one definition and a fixture entrypoint. The package test suite passes: 139 passed / 1 skipped.
 <!-- SECTION:NOTES:END -->

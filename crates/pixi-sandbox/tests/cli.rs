@@ -4,42 +4,26 @@
 //! writes copies it into a tempdir first: the fixtures are read-only, and no test ever points
 //! at this repository (see `tests/fixtures/README.md`).
 
+mod support;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
+use rstest::rstest;
 use serde_json::Value;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
-
-fn bin() -> Command {
-    Command::cargo_bin("pixi-sandbox").expect("binary builds")
-}
-
-/// A synthetic, already-packed payload committed for the test suite.
-fn fixture_transport() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transport")
-}
+use support::{
+    bin, copy_tree, duplicate_source_project, fixture_transport, host_platform, run_git,
+};
 
 /// Copy the fixture out of the repository: tests never mutate a fixture in place.
 fn transport_copy() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     copy_tree(&fixture_transport(), dir.path());
     dir
-}
-
-fn copy_tree(from: &Path, to: &Path) {
-    fs::create_dir_all(to).unwrap();
-    for entry in fs::read_dir(from).unwrap().flatten() {
-        let path = entry.path();
-        let target = to.join(entry.file_name());
-        if path.is_dir() {
-            copy_tree(&path, &target);
-        } else {
-            fs::copy(&path, &target).unwrap();
-        }
-    }
 }
 
 #[cfg(unix)]
@@ -150,32 +134,17 @@ fn tree_snapshot(dir: &Path) -> Vec<(String, u64)> {
     out
 }
 
-fn run_git(args: &[&str], cwd: &Path) -> String {
-    let out = StdCommand::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .expect("git runs");
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
-
-#[test]
-fn prints_version() {
-    bin()
-        .arg("--version")
+#[rstest]
+fn prints_version(mut bin: Command) {
+    bin.arg("--version")
         .assert()
         .success()
         .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
 
-#[test]
-fn documents_every_verb() {
-    let out = bin().arg("--help").assert().success();
+#[rstest]
+fn documents_every_verb(mut bin: Command) {
+    let out = bin.arg("--help").assert().success();
     let text = String::from_utf8(out.get_output().stdout.clone()).unwrap();
     for verb in [
         "pack", "publish", "restore", "unpack", "doctor", "init", "plan", "tools",
@@ -1507,19 +1476,6 @@ fn restore_accepts_legacy_path_to_main_repo_code_alias() {
         .stdout(predicate::str::contains("every declared byte matches"));
 }
 
-/// The Pixi platform name the generated launchers resolve to on this host. Tests that create a
-/// sandbox branch must name it the same way, or they only pass on x86_64 Linux.
-#[cfg(unix)]
-fn host_platform() -> &'static str {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => "linux-64",
-        ("linux", "aarch64") => "linux-aarch64",
-        ("macos", "aarch64") => "osx-arm64",
-        ("macos", "x86_64") => "osx-64",
-        other => panic!("unsupported test host {other:?}"),
-    }
-}
-
 #[cfg(unix)]
 #[test]
 fn generated_restore_archives_a_local_sandbox_branch_and_runs_its_nested_binary() {
@@ -1665,12 +1621,6 @@ fn generated_restore_prefers_the_branch_declared_in_the_config() {
         "the launcher must resolve envs/tools-{platform} from pixi-sandbox.toml"
     );
     assert!(project.join("restored-by-config").is_file());
-}
-
-/// A project whose `Cargo.lock` carries one crate+version from two sources. See the fixture's
-/// own header and design.md §11.
-fn duplicate_source_project() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/duplicate-source-project")
 }
 
 #[cfg(unix)]
