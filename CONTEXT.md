@@ -642,3 +642,46 @@ path).
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do
 > not implement goes in `CONTEXT.md`, not into the files it speculates about), the session
 > procedure and its templates are in `.agents/skills/session/`.
+
+### 2026-10-03 — owner publisher is source-only; consumer self-update is the v1 target
+
+**Merged: PR #74** (squash `15b82c7`). The owner-level `publish sandbox` workflow no longer
+installs a released package before planning or publishing: the plan job builds and invokes the
+checked-out source, and the native publish job's source-built static binary remains the one path
+for pack, doctor, publish, and `--self-bin`. Post-merge CI passed (run 37073291863), and the real
+publisher passed (run 37073291962): its plan source-build succeeded, its linux-musl source-build
+succeeded, and the republished `sandbox/developer-linux-64` manifest names source commit
+`15b82c7`, pixi-sandbox 0.4.3, with static linkage. No auto-release or release workflow was
+triggered — both remain dispatch/tag driven, and cutting a release before self-update exists
+would not prove the next target.
+
+The same PR promoted task-47 into the v1 upgrade design and updated proposed decision-4. The
+planned `pixi-sandbox self-update` resolves latest only in the review-producing upgrade lane (or
+an exact manually requested version), verifies the standalone asset against `SHA256SUMS`, safely
+replaces a CI-managed standalone path, and refuses package-manager/global-trampoline ownership.
+The updated binary regenerates owned files into a PR; the regenerated publisher commits an exact
+version and, after merge, uses that same exact verified binary for plan, pack, doctor, publish,
+and `--self-bin`. Production pins never float. Task-45's last open AC is now closed from the
+full GitHub CI evidence, so task-47 is unblocked.
+
+**Next session should start with:**
+
+> Restore the sandbox and baseline the suite (expect **405 passing / 1 skipped**; the trusted
+> transport is `sandbox/developer-linux-64` created by publish run 37073291962, whose manifest
+> names source `15b82c7`, pixi-sandbox 0.4.3, static). Read `AGENTS.md`, decision-4, and task-47.
+> Confirm main's latest `ci` and `publish sandbox` runs are still green; auto-release/release did
+> not run and must not be dispatched yet.
+>
+> Treat task-47 as the **v1.0.0 major-version feature**. Start with only the self-update core:
+> define the CLI contract (`self-update`, latest by default, exact `--version`, non-writing
+> `--check`, explicit CI-managed destination), the canonical host-to-release-asset map, injected
+> release resolver/downloader, `SHA256SUMS` parsing and verification, package-manager/trampoline
+> refusal, and stage-before-replace behavior for Unix and Windows. Tests use fixtures and fake
+> HTTP only — no live release network and no writes to a real user binary. Do not build the
+> generated upgrade job or cut v1.0.0 in the first slice; those follow only after the updater's
+> trust and replacement boundaries are proven.
+>
+> Propose that slice and stop. Call out the Windows running-executable replacement strategy and
+> the exact ownership signal that distinguishes a standalone binary from a Pixi-managed
+> trampoline before implementation. House rules and session templates are in
+> `.agents/skills/session/`.
