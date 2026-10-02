@@ -4,7 +4,7 @@ title: Give consumers a self-updating binary and reviewed generated-file upgrade
 status: In Progress
 assignee: []
 created_date: '2026-10-02 20:05'
-updated_date: '2026-10-03 23:15'
+updated_date: '2026-10-03 23:55'
 labels:
   - ci
   - init
@@ -159,9 +159,47 @@ reported cleanly, with the URL and cause).
 
 Not built in this slice, by instruction: AC#3-#8 (the version stamp, `init --check`, the
 generated upgrade job and its dispatch) and the v1.0.0 cut. Decision-4 stays `proposed`.
+
+2026-10-03 merged as PR #76 (squash `79e4f83`). Post-merge `ci`, `docs` and `publish sandbox`
+all green; the repacked `sandbox/developer-linux-64` manifest names source `79e4f83`,
+pixi-sandbox 0.4.4, static. Re-baselined on the merged tree: **500 passing / 1 skipped**
+(404 at session start).
+
+Review feedback folded in before merge. `codecov/patch` failed on the first push, for two
+reasons that were design problems rather than gaps to waive. (1) `commands/` is private to the
+binary target, so its only test route is spawning the binary — and a separate process earns no
+coverage credit and can assert only on substrings; the report formatting and the whole decision
+flow (`self_update::run`) therefore moved into the library, leaving `commands/self_update.rs` as
+the ambient-input wiring that genuinely cannot be tested offline. (2) Lifting
+`GitHubReleaseSource` into `release` turned long-uncovered HTTP code into *newly added* lines;
+it now sits alone in `release/github.rs`, excluded by name from `pixi run coverage`, so the gap
+is one documented file instead of a number smeared through testable logic. New-code coverage
+finished at 93.67% against a project at 84.91%.
+
+AC#2 remains unchecked, with the same missing proof as before: a Windows runner replacing a
+genuinely running image. Everything it names is implemented and covered against the
+`ReplaceStrategy` parameter on Linux, including the rollback and aside-failure branches, but the
+OS behaviour the Windows arm assumes — that a running image can be renamed but not deleted — is
+not exercised by any run that has happened. Live-network resolution is likewise unproven: the
+dev sandbox's egress proxy terminates TLS with a CA `ureq` does not trust, so the binary cannot
+reach `api.github.com` from it. Both belong to a later slice with a native matrix.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:SUMMARY:BEGIN -->
+Slice 1 of task-47 delivered the self-update core as the v0.5.0 feature: `pixi-sandbox
+self-update` with latest-by-default resolution, exact `--version X.Y.Z`, non-writing `--check`,
+and an explicit CI-managed `--dest`. The trust boundary is the enforcement order and is tested
+as one — resolve, classify the destination, then download; `SHA256SUMS` before the binary; a
+missing entry and a digest mismatch as distinct refusals; nothing downloaded ever executed.
+Ownership is judged on path provenance, so a conda/Pixi prefix, a `pixi global` trampoline, a
+managed launcher and a restored transport tool are each refused with a remedy that works, and
+there is no `--force`. Replacement stages beside the destination and swaps atomically, Unix by
+renaming over the running binary's inode and Windows by renaming the image aside and sweeping
+it on the next run.
+
+AC#1 is met and checked. AC#2's behaviour is implemented and covered but stays unchecked
+pending a Windows runner. AC#3-#9 were out of scope by instruction and are untouched, so the
+task remains In Progress and decision-4 remains proposed.
 <!-- SECTION:SUMMARY:END -->
