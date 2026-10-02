@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.4.1](https://github.com/Archont561/pixi-sandbox/compare/v0.4.0...19f6e36b8b6298d5867018e7cf50a0c8740269bb) (2026-10-02)
+### [v0.4.2](https://github.com/Archont561/pixi-sandbox/compare/v0.4.1...dbe57a8c0bdda37aa01391a2d19a5134259c936e) (2026-10-02)
+
+#### Fixes
+
+* **publish:** build a static source bootstrap (#63)
+([b7ad517](https://github.com/Archont561/pixi-sandbox/commit/b7ad5171d45187af2657ec754b0798ae7a0f1c9c)),
+closes [#63](https://github.com/Archont561/pixi-sandbox/issues/63)
+
+#### Documentation
+
+* **backlog:** close source-built publisher task (#64)
+([dbe57a8](https://github.com/Archont561/pixi-sandbox/commit/dbe57a8c0bdda37aa01391a2d19a5134259c936e)),
+closes [#64](https://github.com/Archont561/pixi-sandbox/issues/64)
+
+### [v0.4.1](https://github.com/Archont561/pixi-sandbox/compare/v0.4.0...v0.4.1) (2026-10-02)
 
 #### Features
 
