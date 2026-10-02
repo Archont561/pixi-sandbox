@@ -1,11 +1,11 @@
 ---
 id: TASK-44
 title: Repack the sandbox transport when a release lands
-status: In Progress
+status: Done
 assignee:
   - '@agent'
 created_date: '2026-10-02 17:30'
-updated_date: '2026-10-02 17:45'
+updated_date: '2026-10-02 18:00'
 labels:
   - ci
   - release
@@ -36,7 +36,7 @@ after the release hand-off.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 auto-release dispatches `publish-sandbox.yml` on main after the release hand-off (a `dispatch-sandbox-repack` task in pixi.toml and a one-line step in auto-release.yml mirroring the `dispatch-docs`/`dispatch-release` pattern), and the workflow-shape, actionlint and repo-consistency gates pass
-- [ ] #2 the published transport's manifest names the then-current main commit and the released pixi-sandbox version, `linkage: static` (evidence: the publish-sandbox run this change triggers or dispatches)
+- [x] #2 the published transport's manifest names the then-current main commit and the released pixi-sandbox version, `linkage: static` (evidence: the publish-sandbox run this change triggers or dispatches)
 - [x] #3 the dispatch remedy for the v0.4.2 gap is recorded with its run as evidence, or the gap is explicitly reported as needing a maintainer's click when the token cannot dispatch
 <!-- AC:END -->
 
@@ -56,4 +56,12 @@ surface, the repository's own auto-release.yml is hand-shaped).
 2026-10-02: Root cause and remedy. The v0.4.2 release cut at 16:58Z left `sandbox/developer-linux-64` at commit `dbe57a8` / pixi-sandbox 0.4.1 (manifest created 2026-10-02T16:40:42Z, verified by `git show origin/sandbox/developer-linux-64:.pixi-sandbox/manifest.json`): auto-release (run 37036291635) pushes the release commit with `github.token`, which starts no `on: push` workflows, and publish-sandbox.yml only runs on push to main — the same hole `dispatch-docs` already patches for the docs rebuild (pixi.toml documents it at the dispatch tasks). Implemented the same hand-off: `dispatch-sandbox-repack = "gh workflow run publish-sandbox.yml --ref main"` beside `dispatch-release`, dispatched from auto-release.yml's `cut` job right after the release build dispatch, `GH_TOKEN` through the step `env:` like its siblings.
 
 AC#3, the honest form: the session token cannot dispatch (`gh workflow run publish-sandbox.yml --ref main` → `403 Resource not accessible by integration`, the documented limitation in the session skill), so the immediate repack of main@7745e9c needs a maintainer's click in the Actions tab (publish sandbox → Run workflow → main). This change's own merge to main is a push event and repacks the transport from the merge commit regardless — AC#2's evidence is that run's manifest, checked at close-out.
+
+2026-10-02 close-out: PR #65 squash-merged to main at 482ab51; the push trigger ran publish-sandbox (run 37043853308, success, 3m8s) and the published `sandbox/developer-linux-64` manifest (created 2026-10-02T17:56:18Z) now names `source.commit 482ab51`, `tool pixi-sandbox 0.4.2`, `linkage: static` — current main, the released version, source-built and static. Post-merge ci (1m28s) and docs (50s) also green. The dispatch step itself proves out on the next release (auto-release's cut job carries it from 482ab51 on).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:SUMMARY:BEGIN -->
+A release now repacks the transport: auto-release dispatches `publish-sandbox.yml` on main through the new `dispatch-sandbox-repack` task, closing the GITHUB_TOKEN gap that left the v0.4.2 transport naming the pre-release tree. The published branch was verified carrying current main (482ab51) and pixi-sandbox 0.4.2, static, from the post-merge run.
+<!-- SECTION:SUMMARY:END -->
