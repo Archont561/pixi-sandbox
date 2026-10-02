@@ -9,8 +9,8 @@
 # a YAML `run:` block where nobody can review it.
 #
 # What it proves:
-#   1. the bundled helper tools are the ones on PATH, so no runner-installed pixi/cargo can
-#      quietly satisfy the checks below;
+#   1. every package/crate command goes through the manifest-owned pixi entrypoint, so no
+#      runner-installed pixi/cargo can quietly satisfy the checks below;
 #   2. the bundled static binary actually executes on this host;
 #   3. each environment prefix is a real installed prefix, not an empty directory that pixi
 #      would happily "install" from the network;
@@ -20,7 +20,7 @@
 #      schema-1 transport, or while the bundled pixi-sandbox predates the oracle, this script
 #      honestly stays a shape check and says so;
 #   5. `pixi install --frozen --offline` needs no byte it did not already have;
-#   6. `cargo check --offline` builds against the vendored tree.
+#   6. `pixi run --frozen -- cargo check --offline` builds against the vendored tree.
 #
 # Two honest limits, learned the hard way against a real transport:
 #   * `--offline` is a REQUEST, not an enforcement. With a network reachable, `pixi install
@@ -81,22 +81,23 @@ done
   fail "--transport $TRANSPORT is not a directory; the extracted branch is what the restored tree is checked against"
 
 [ -d "$PROJECT" ] || fail "no restored project at $PROJECT"
-[ -f "$PROJECT/.pixi/sandbox-env.sh" ] ||
-  fail "$PROJECT/.pixi/sandbox-env.sh is missing; restore did not complete"
 
-# ---------------------------------------------------------------- environment on PATH
-# shellcheck disable=SC1091
-source "$PROJECT/.pixi/sandbox-env.sh"
-
+# ---------------------------------------------------------------- manifest-owned pixi entrypoint
 TOOLS_DIR="$PROJECT/.pixi/tools"
-TOOLS_BIN="$(printf '%s\n' "$PATH" | cut -d: -f1)"
-case "$TOOLS_BIN" in
-  "$TOOLS_DIR"/*) ;;
-  *) fail "the bundled tools directory is not first on PATH (got '$TOOLS_BIN'); a runner-installed tool would make every check below meaningless" ;;
-esac
+TOOLS_BIN=""
+for candidate in "$TOOLS_DIR"/*; do
+  [ -d "$candidate" ] || continue
+  if [ -x "$candidate/pixi" ] || [ -x "$candidate/pixi.exe" ]; then
+    TOOLS_BIN="$candidate"
+    break
+  fi
+done
+[ -n "$TOOLS_BIN" ] || fail "no bundled pixi found under $TOOLS_DIR; restore did not complete"
 
 PLATFORM="$(basename "$TOOLS_BIN")"
-echo "platform $PLATFORM · tools $TOOLS_BIN"
+PIXI_BIN="$TOOLS_BIN/pixi"
+[ -x "$PIXI_BIN" ] || PIXI_BIN="$TOOLS_BIN/pixi.exe"
+echo "platform $PLATFORM · pixi $PIXI_BIN"
 
 # The tools an airlocked host actually needs, which is *not* the whole catalogue: `pixi-pack`
 # creates an environment but is never needed to restore one, so `pack` embeds only `pixi` and
@@ -112,7 +113,7 @@ done
 # The whole airlock story rests on this: a static musl helper that execs on a machine with no
 # prefix and no runtime. `head -1` is applied afterwards rather than in the pipeline: closing a
 # pipe early can SIGPIPE the producer, which `pipefail` would turn into a bogus failure.
-BUNDLED_VERSION="$(command "$TOOLS_BIN/pixi" --version 2>/dev/null || true)"
+BUNDLED_VERSION="$($PIXI_BIN --version 2>/dev/null || true)"
 BUNDLED_VERSION="${BUNDLED_VERSION%%$'\n'*}"
 [ -n "$BUNDLED_VERSION" ] || fail "the bundled pixi could not execute on this host"
 echo "bundled pixi: $BUNDLED_VERSION"
@@ -141,44 +142,9 @@ assert_prefix() {
 }
 
 # ---------------------------------------------------------------- the vendored cargo tree
-# A tool the *environment* provides must come from the transport, not from the image — otherwise
-# `cargo check` below would be testing the runner's toolchain against a vendored tree, which can
-# pass for reasons that have nothing to do with the branch. An environment that ships no cargo at
-# all is not a failure, so the check is conditional on the transport actually providing one.
-ENV_CARGO=""
-for env_bin in "$PROJECT"/.pixi/envs/*/bin; do
-  [ -d "$env_bin" ] || continue
-  for name in cargo cargo.exe; do
-    if [ -x "$env_bin/$name" ]; then
-      ENV_CARGO="$env_bin/$name"
-      break 2
-    fi
-  done
-done
-
-CARGO_BIN=""
-if [ -n "$ENV_CARGO" ]; then
-  RESOLVED="$(command -v cargo 2>/dev/null || true)"
-  [ "$RESOLVED" = "$ENV_CARGO" ] ||
-    fail "cargo resolves to '${RESOLVED:-nothing}' but the transport provides '$ENV_CARGO'; the runner's toolchain would satisfy the check below for the wrong reason"
-  CARGO_BIN="$ENV_CARGO"
-  echo "cargo from transport: $CARGO_BIN"
-else
-  # No cargo in the environment. An image-provided one is still a useful witness: `--offline` plus
-  # `--locked` proves the vendored tree satisfies the lockfile without a fetch. It says nothing
-  # about where the toolchain came from, so the log must not imply otherwise.
-  CARGO_BIN="$(command -v cargo 2>/dev/null || true)"
-  if [ -z "$CARGO_BIN" ]; then
-    if [ "$SKIP_CARGO" = "1" ]; then
-      # Not exiting here: --skip-cargo skips the cargo section only — the integrity and
-      # self-sufficiency sections below must still run.
-      echo "::notice::no cargo available; skipping the vendored-tree check"
-    else
-      fail "no cargo available from the transport or the image; pass --skip-cargo if this project genuinely has no Rust workspace"
-    fi
-  fi
-  echo "::notice::the restored environment ships no cargo; using the image's $CARGO_BIN. This proves the vendored tree is complete, not that the toolchain came from the branch."
-fi
+# Cargo is never called directly. If the project has a Rust workspace, the check goes through
+# the restored pixi entrypoint (`pixi run -- cargo ...`) so package/crate access follows the
+# same command contract as developers and CI.
 
 # ---------------------------------------------------------------- the tree matches the manifest
 # Integrity, not shape: the restored prefix is compared file-by-file against the digests the
@@ -225,7 +191,7 @@ for env_name in ${ENVS//,/ }; do
   # pixi resolves the project from the working directory, and this script must not care where
   # it was invoked from (CI runs it from a checkout that is itself a pixi project — the wrong
   # one), so every pixi call runs inside the restored project.
-  (cd "$PROJECT" && "$TOOLS_BIN/pixi" install --frozen --offline -e "$env_name") ||
+  (cd "$PROJECT" && "$PIXI_BIN" install --frozen --offline -e "$env_name") ||
     fail "pixi install --frozen --offline -e $env_name failed: the transport is not self-sufficient"
 
   # Compared as the *set of files* plus on-disk size rather than a checksum walk: the prefix is
@@ -245,7 +211,7 @@ for env_name in ${ENVS//,/ }; do
   kib_before="$(du -sk "$PROJECT/.pixi" | cut -f1)"
 
   echo "pixi install --frozen --offline -e $env_name"
-  (cd "$PROJECT" && "$TOOLS_BIN/pixi" install --frozen --offline -e "$env_name") ||
+  (cd "$PROJECT" && "$PIXI_BIN" install --frozen --offline -e "$env_name") ||
     fail "pixi install --frozen --offline -e $env_name failed: the transport is not self-sufficient"
 
   list_after="$(find "$PROJECT/.pixi" -type f | LC_ALL=C sort | cksum)"
@@ -278,8 +244,8 @@ fi
 grep -q 'source.crates-io' "$PROJECT/.cargo/config.toml" ||
   fail ".cargo/config.toml does not redirect crates.io; --offline would have to hit the network"
 
-echo "cargo check --offline --locked"
-( cd "$PROJECT" && "$CARGO_BIN" check --offline --locked --quiet ) ||
-  fail "cargo check --offline failed; the vendored crate tree is incomplete"
+echo "pixi run --frozen -- cargo check --offline --locked"
+( cd "$PROJECT" && "$PIXI_BIN" run --frozen -- cargo check --offline --locked --quiet ) ||
+  fail "pixi run cargo check --offline failed; the vendored crate tree is incomplete or the restored environment lacks cargo"
 
 echo "airlock gate passed for $PROJECT ($ENVS)"

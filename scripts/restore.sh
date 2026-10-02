@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-liner offline reconstruction from orphan branch, with PATH aliases.
+# One-liner offline reconstruction from orphan branch, with pixi launcher registration.
 #
 # Usage: bash scripts/restore.sh [branch] [output-path]
 #   branch        defaults to the branch declared for this host in .pixi-sandbox.toml,
@@ -18,9 +18,9 @@
 #
 # The branch name is never guessed: it is read from the same reviewed publish plan the
 # publisher uses, so a config change (new bundle, renamed prefix) reaches this script for
-# free. After restore, sources the generated .pixi/sandbox-env.sh, which is self-sufficient:
-# it puts the bundled tools *and* every restored environment's bin/ on PATH by itself, so no
-# environment name is hardcoded here (task-5).
+# free. After restore, pixi remains the sole entrypoint: open a new shell for the registered
+# launcher (or prepend the managed user bin in this shell) and run repository commands through
+# `pixi run ...`. This script never sources project activation hooks.
 
 set -euo pipefail
 
@@ -256,49 +256,27 @@ fi
 echo "→ cleanup worktree"
 git worktree remove "$WORKTREE" --force || rm -rf "$WORKTREE"
 
-# sandbox-env.sh is self-sufficient (task-5): it already wires the bundled tools *and* every
-# restored environment's bin/ onto PATH, using the environment names from the manifest that
-# `restore` just consulted. No env name is hardcoded here, so this works for a bundle whose
-# environment is not called `default`.
-if [ -f "$OUTPUT/.pixi/sandbox-env.sh" ]; then
-  echo "→ sourcing $OUTPUT/.pixi/sandbox-env.sh"
-  PATH_BEFORE="$PATH"
-  # shellcheck disable=SC1090,SC1091
-  source "$OUTPUT/.pixi/sandbox-env.sh"
-  echo "PATH gained:"
-  case "$PATH" in
-    "$PATH_BEFORE") echo "  (nothing — sandbox-env.sh did not add any entries)" ;;
-    *"$PATH_BEFORE")
-      added="${PATH%"$PATH_BEFORE"}"
-      printf '%s\n' "${added%:}" | tr ':' '\n' | sed 's/^/  /'
-      ;;
-    *) echo "  (PATH was reordered by sandbox-env.sh; see \$PATH)" ;;
-  esac
-  echo "  pixi() function → bundled pixi"
-  echo "Try: pixi --version; cargo --version; cargo check --offline"
-  # Report what happened, never what was requested. The `pixi-sandbox` driven above comes from
-  # the packed branch, and a branch packed by a release older than 0.3.7 carries a binary with
-  # no `--user-tools` at all: it ignores PIXI_SANDBOX_USER_TOOLS (an unknown variable is ignored
-  # by design, which is why the policy travels as one), registers nothing, and the previous
-  # version of these three lines announced the registration anyway. A developer who believed
-  # them opened a new shell with no `pixi` on PATH and no clue why.
-  USER_BIN="${PIXI_SANDBOX_USER_BIN:-${HOME:-}/.local/bin}"
-  if [ "$PIXI_SANDBOX_USER_TOOLS" = skip ]; then
-    echo "user tools: not registered (PIXI_SANDBOX_USER_TOOLS=skip) — this shell has the tools,"
-    echo "  a new one will not; source $OUTPUT/.pixi/sandbox-env.sh there too"
-  elif grep -q "managed by pixi-sandbox" "$USER_BIN/pixi" 2> /dev/null; then
-    echo "user tools: registered pixi and pixi-sandbox in $USER_BIN for new shells"
-    echo "  (set PIXI_SANDBOX_USER_TOOLS=skip to disable that on the next restore)"
-  else
-    # The restored copy, not "$BIN": that one lives in the branch worktree, which was removed
-    # a few lines above, so asking it for a version printed "unknown version" — the first
-    # version of this message said exactly that and named nothing.
-    RESTORED_SELF="$OUTPUT/.pixi/tools/$PLATFORM/pixi-sandbox"
-    BUNDLED_VERSION="$("$RESTORED_SELF" --version 2> /dev/null || echo 'bundled pixi-sandbox')"
-    echo "user tools: NOT registered — the bundled $BUNDLED_VERSION predates --user-tools (0.3.7),"
-    echo "  so PIXI_SANDBOX_USER_TOOLS was ignored. Keep sourcing $OUTPUT/.pixi/sandbox-env.sh in"
-    echo "  every new shell until a branch packed by 0.3.7 or newer is restored here."
-  fi
+# A running parent shell cannot inherit the profile edit restore just wrote. Report what
+# happened and name the pixi entrypoint to use next; do not source an activation hook. Newer
+# restores do not generate `.pixi/sandbox-env.sh`, and older ones are intentionally ignored here
+# so the repo has one supported command path: pixi -> pixi tasks -> xtask/cargo/bun.
+USER_BIN="${PIXI_SANDBOX_USER_BIN:-${HOME:-}/.local/bin}"
+RESTORED_PIXI="$OUTPUT/.pixi/tools/$PLATFORM/pixi"
+if [ "$PIXI_SANDBOX_USER_TOOLS" = skip ]; then
+  echo "user tools: not registered (PIXI_SANDBOX_USER_TOOLS=skip); current shell unchanged"
+  echo "  use $RESTORED_PIXI run --frozen <task> explicitly, or restore with registration enabled"
+elif grep -q "managed by pixi-sandbox" "$USER_BIN/pixi" 2> /dev/null; then
+  echo "user tools: registered pixi and pixi-sandbox in $USER_BIN for new shells"
+  echo "  (set PIXI_SANDBOX_USER_TOOLS=skip to disable that on the next restore)"
+  echo "  current shell: export PATH=\"$USER_BIN:\$PATH\""
+  echo "  then use pixi as the only entrypoint: pixi run --frozen <task>"
 else
-  echo "restore complete but no sandbox-env.sh found"
+  # The restored copy, not "$BIN": that one lives in the branch worktree, which was removed
+  # above, so asking it for a version printed "unknown version" in the past.
+  RESTORED_SELF="$OUTPUT/.pixi/tools/$PLATFORM/pixi-sandbox"
+  BUNDLED_VERSION="$("$RESTORED_SELF" --version 2> /dev/null || echo 'bundled pixi-sandbox')"
+  echo "user tools: NOT registered — the bundled $BUNDLED_VERSION predates --user-tools (0.3.7),"
+  echo "  so PIXI_SANDBOX_USER_TOOLS was ignored. This script no longer sources or supports"
+  echo "  .pixi/sandbox-env.sh; use $RESTORED_PIXI run --frozen <task> explicitly, or restore"
+  echo "  a transport packed by 0.3.7 or newer to register pixi launchers."
 fi

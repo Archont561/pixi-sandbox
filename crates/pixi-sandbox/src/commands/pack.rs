@@ -979,9 +979,9 @@ fn write_branch_docs(
          ## Restore on the disconnected machine\n\n\
          ```{}\n\
          {}\n\
-         # then, with no network:\n\
-         .pixi/tools/{}/{} install --frozen --offline\n\
-         source .pixi/sandbox-env.sh\n\
+         # then, from <project> with no network, use pixi as the sole entrypoint:\n\
+         pixi install --frozen --offline\n\
+         pixi run --frozen -- cargo build --offline\n\
          ```\n\n\
          Every manifest blob is verified before it is written into the working tree.\n",
         manifest.created_at,
@@ -993,8 +993,6 @@ fn write_branch_docs(
         vendor,
         shell_language,
         restore_commands,
-        manifest.platform,
-        pixi_file,
     );
     fs::write(out.join("README.md"), readme)
         .with_context(|| format!("writing {}/README.md", out.display()))?;
@@ -1014,7 +1012,9 @@ fn write_branch_docs(
          - environments: {} (platform {});\n\
          {}\
          - never download tools at restore time; bundled tools are: {};\n\
-         - after restore, `.pixi/tools/{}/{}` install --frozen --offline must be a no-op.\n",
+         - after restore, use pixi as the only entrypoint: `pixi install --frozen --offline` \
+           (or `<project>/.pixi/tools/{}/{}` when user launchers were skipped) must be a no-op;\n\
+         - no `.pixi/sandbox-env.sh` activation script is generated or supported.\n",
         manifest.schema,
         manifest.envs.keys().cloned().collect::<Vec<_>>().join(", "),
         manifest.platform,

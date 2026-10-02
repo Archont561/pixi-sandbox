@@ -191,7 +191,8 @@ pub enum CargoConfigArg {
     Write,
     /// Print the snippet for the user to paste.
     Print,
-    /// Do nothing; use the `cargo-sandbox` wrapper from `sandbox-env.sh`.
+    /// Do nothing; callers must provide their own Cargo source configuration before using
+    /// `pixi run -- cargo ...` offline.
     None,
 }
 

@@ -292,10 +292,10 @@ lint-docs = { args = [
 # time. That is what lets a release rewrite zero documentation lines (the release repin stamps
 # only the README family, which GitHub renders raw).
 docs-install = "bun install --frozen-lockfile"
-docs-dev = { cmd = "bun run dev", cwd = "docs" }
+docs-dev = "bun --filter=pixi-sandbox-docs run dev"
 docs-build = { depends-on = [
   "docs-install",
-], cmd = "bun run build", cwd = "docs" }
+], cmd = "bun --filter=pixi-sandbox-docs run build" }
 
 # ---------------------------------------------------------------------------
 # Bun itself, generically. The repo-wide dev tooling from the root bun workspace

@@ -164,14 +164,15 @@ read-only: it runs `doctor --verify` and prints the explicit restore command.
 | `--user-tools` | `register` (default) / `skip` — register `pixi` + `pixi-sandbox` for the user after both verifications pass, or touch nothing outside the project (env: `PIXI_SANDBOX_USER_TOOLS`) |
 | `--user-bin` | Per-user bin directory for the launchers (default `~/.local/bin`, Windows `%USERPROFILE%\.pixi-sandbox\bin`; env: `PIXI_SANDBOX_USER_BIN`) |
 
-Order: load manifest → verify everything → materialize tools (idempotent) → preflight disk → install envs (pixi-unpack → rename) → write markers (`conda-meta/pixi_env_prefix`, fingerprint) → vendor + cargo config → `sandbox-env.sh` → verify the restored tree against the manifest's per-file digests → register user tools (launchers + profile/registry PATH, unless `--user-tools skip`) → assertions `pixi install --frozen --offline` no-op, `cargo build --offline` ok.
+Order: load manifest → verify everything → materialize tools (idempotent) → preflight disk → install envs (pixi-unpack → rename) → write markers (`conda-meta/pixi_env_prefix`, fingerprint) → vendor + cargo config → remove any legacy `.pixi/sandbox-env.sh` → verify the restored tree against the manifest's per-file digests → register user tools (launchers + profile/registry PATH, unless `--user-tools skip`) → assertions `pixi install --frozen --offline` no-op, `pixi run --frozen -- cargo build --offline` ok.
 
 User-tool registration: managed launchers `exec` the manifest-verified copies under
 `.pixi/tools/<platform>/`; a restore of another project retargets them (the most recent
 restore is the user-level source); unrelated existing `pixi`/`pixi-sandbox` commands are
-refused unless `--force`. Persistent tool discovery is separate from full environment
-activation — `pixi` and `pixi sandbox` work in a new shell; source
-`.pixi/sandbox-env.sh` when you need direct `cargo`, `rustc`, or `bun` commands.
+refused unless `--force`. There is no supported environment activation script: `pixi` is the
+sole entrypoint, and package/crate commands should run as `pixi run ...` (or through the
+manifest-owned `.pixi/tools/<platform>/pixi` when registration is skipped), never as bare
+`cargo`, `rustc`, or `bun` commands from a sourced prefix.
 
 ## unpack
 

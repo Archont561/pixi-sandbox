@@ -76,27 +76,24 @@ cd /path/to/project
 What it does, in order: verifies the tools, stages a copy of each pack under a work dir on
 the project's filesystem, unpacks with the bundled `pixi-unpack`, moves each environment to
 `.pixi/envs/<env>`, writes pixi's `conda-meta` markers, materialises the vendored crates and
-wires `.cargo/config.toml` to them with a **relative** path, then writes `.pixi/sandbox-env.sh`,
-verifies the restored tree against the manifest's per-file digests, and — only after that
-verification — registers the user tools (below).
+wires `.cargo/config.toml` to them with a **relative** path, removes any legacy
+`.pixi/sandbox-env.sh`, verifies the restored tree against the manifest's per-file digests, and
+— only after that verification — registers the user tools (below).
 
-Two kinds of PATH setup exist, and they are for different needs:
+There is one supported command entrypoint after restore: **pixi**. A verified restore puts small
+managed launchers for `pixi` and `pixi-sandbox` into `~/.local/bin` (Windows:
+`%USERPROFILE%\.pixi-sandbox\bin`) and adds that directory to your shell profile's `PATH`
+(Windows: the user `PATH` in the registry — no administrator rights). In a **new** shell,
+`pixi` and `pixi sandbox` then work directly; pixi discovers `pixi sandbox` by finding
+`pixi-sandbox` on `PATH`, which is why both are registered. The launchers `exec` the
+manifest-verified copies under `<project>/.pixi/tools/<platform>/` and carry a
+`managed by pixi-sandbox` marker; restoring another project retargets them, so the most
+recently registered restore is the user-level tool source. An already-running shell cannot be
+mutated — open a new one, or run the `export PATH=...` line the restore prints.
 
-- **Persistent tool discovery (default).** A verified restore puts small managed launchers for
-  `pixi` and `pixi-sandbox` into `~/.local/bin` (Windows: `%USERPROFILE%\.pixi-sandbox\bin`)
-  and adds that directory to your shell profile's `PATH` (Windows: the user `PATH` in the
-  registry — no administrator rights). In a **new** shell, `pixi` and `pixi sandbox` then work
-  directly; pixi discovers `pixi sandbox` by finding `pixi-sandbox` on `PATH`, which is why
-  both are registered. The launchers `exec` the manifest-verified copies under
-  `<project>/.pixi/tools/<platform>/` and carry a `managed by pixi-sandbox` marker; restoring
-  another project retargets them, so the most recently registered restore is the user-level
-  tool source. An already-running shell cannot be mutated — open a new one, or run the
-  `export PATH=...` line the restore prints.
-- **Full environment activation (`source .pixi/sandbox-env.sh`).** The generated script is
-  self-sufficient: it puts the bundled tools **and** every restored environment's `bin/` on
-  `PATH` by itself and sets `CARGO_NET_OFFLINE=true`, using the environment names the manifest
-  declared. This is what you want when you need the environment's own binaries — direct
-  `cargo`, `rustc`, or `bun` commands — not merely `pixi` / `pixi sandbox`.
+No activation script is generated or supported. Do not source `.pixi/sandbox-env.sh` and do not
+run bare `cargo`, `rustc`, or `bun` from a restored prefix; use `pixi run ...` so pixi selects
+the environment and keeps the lockfile/offline contract visible.
 
 Registration refuses to overwrite a `pixi` or `pixi-sandbox` you already have in the user bin
 directory unless you pass `--force`. For CI runners, shared accounts, or locked-down airlocks,
@@ -130,14 +127,13 @@ small volume.
 </div>
 
 ```bash
-source .pixi/sandbox-env.sh          # bundled tools *and* every restored env's bin/ on PATH, CARGO_NET_OFFLINE=true
-pixi install --frozen --offline      # must be a no-op, must not touch the network
-cargo build --offline                # uses the vendored crates only
+pixi install --frozen --offline                 # must be a no-op, must not touch the network
+pixi run --frozen -- cargo build --offline      # uses the vendored crates only
 ```
 
-In a *new* shell, plain `pixi` and `pixi sandbox` already resolve through the registered
-user tools — sourcing `sandbox-env.sh` here is for the environment's own binaries (`cargo`,
-`rustc`, `bun`) and the offline assertion.
+In a *new* shell, plain `pixi` and `pixi sandbox` resolve through the registered user tools. If
+registration was skipped, call the manifest-owned binary explicitly:
+`./.pixi/tools/<platform>/pixi run --frozen <task>`.
 
 If `pixi install --frozen --offline` starts doing real work, the environment on disk does
 not match `pixi.lock` — do not let it continue; re-run the restore instead.

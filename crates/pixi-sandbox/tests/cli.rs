@@ -757,17 +757,11 @@ fn restore_verify_only_checks_the_fixture_without_writing_a_project() {
     );
 }
 
-/// Task-5: `restore.mdx` step 4 tells the operator to `source .pixi/sandbox-env.sh` and then
-/// run restored tools directly. That contract only holds if sourcing the generated script alone
-/// — no hand-added `envs/<name>/bin` export — puts the restored environment's binaries on PATH.
-/// The fixture's `demo` environment ships a real `bin/freetype-config` executable (see
-/// `fixture_doctor_publish_and_restore_is_the_complete_offline_proof` in `tests/e2e.rs`), so it
-/// stands in for `cargo`/`bun`/`rustc` here. It is picked over the fixture's other executable,
-/// `lzmainfo`, because a real `xz-utils` install can already put a system `lzmainfo` on PATH,
-/// which would let this test pass for the wrong reason.
-#[cfg(unix)]
+/// Restores no longer generate an activation hook. The supported contract is the registered
+/// pixi launcher plus `pixi run ...`; environment binaries stay inside their prefixes instead
+/// of being exposed by a sourced `.pixi/sandbox-env.sh`.
 #[test]
-fn sourcing_the_generated_sandbox_env_resolves_restored_environment_binaries() {
+fn restore_does_not_generate_sandbox_env_and_points_to_pixi_run() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");
     fs::create_dir_all(&project).unwrap();
@@ -787,25 +781,23 @@ fn sourcing_the_generated_sandbox_env_resolves_restored_environment_binaries() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("restore complete"));
+        .stdout(predicate::str::contains("restore complete"))
+        .stdout(predicate::str::contains(
+            "no .pixi/sandbox-env.sh is generated",
+        ))
+        .stdout(predicate::str::contains(
+            "pixi run --frozen -- cargo build --offline",
+        ));
 
-    let expected = project.join(".pixi/envs/demo/bin/freetype-config");
-    assert!(expected.is_file(), "fixture must restore a real binary");
-
-    let output = StdCommand::new("bash")
-        .arg("-c")
-        .arg("source .pixi/sandbox-env.sh && command -v freetype-config")
-        .current_dir(&project)
-        .output()
-        .unwrap();
     assert!(
-        output.status.success(),
-        "freetype-config did not resolve on PATH after sourcing sandbox-env.sh alone: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !project.join(".pixi/sandbox-env.sh").exists(),
+        "restore must not leave the retired activation hook behind"
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout).trim(),
-        expected.to_str().unwrap(),
+    assert!(
+        project
+            .join(".pixi/envs/demo/bin/freetype-config")
+            .is_file(),
+        "the fixture still restores the environment binary; callers reach it through pixi run"
     );
 }
 
@@ -932,7 +924,7 @@ fn pack_unpack_and_restore_a_verified_synthetic_environment() {
             .join(".pixi/tools/linux-64/pixi-unpack")
             .is_file()
     );
-    assert!(restored_project.join(".pixi/sandbox-env.sh").is_file());
+    assert!(!restored_project.join(".pixi/sandbox-env.sh").exists());
 }
 
 #[cfg(unix)]

@@ -124,10 +124,17 @@ The v1 proposal is now an accepted architectural decision: backlog `decision-1` 
 
 ```bash
 bash scripts/restore.sh
-source .pixi/sandbox-env.sh
+export PATH="$HOME/.local/bin:$PATH"   # only needed in the already-running shell
 pixi install --frozen --offline
-cargo build --offline
+pixi run --frozen -- cargo build --offline
 ```
+
+Pixi is the only supported entrypoint. Do not source `.pixi/sandbox-env.sh` (new restores remove
+or do not generate it) and do not run bare `cargo`, `rustc`, `bun`, `taplo`, or `convco` from a
+restored prefix. Rust crate work is either `pixi run --frozen xtask <subcommand>` or
+`pixi run --frozen -- cargo <cmd> -p <crate>`; JavaScript package work is
+`pixi run --frozen bun --filter=<workspace-package> run <script>` (for docs:
+`--filter=pixi-sandbox-docs`) or the root `pixi run --frozen bunx <tool>` task.
 
 Do not attempt package resolution, prefix.dev publication, GitHub Actions dispatch, or native Windows/macOS validation from an airlock-style environment. First produce artifacts on the connected side, then consume and verify them offline.
 
@@ -449,3 +456,19 @@ closing it is the owner's call, not this session's.
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
 > and its templates are in `.agents/skills/session/`.
+
+### 2026-10-02 — pixi-only entrypoint cleanup
+
+**Landed locally this session before task-35 work starts:** restore no longer generates
+`.pixi/sandbox-env.sh` and removes a legacy copy if it finds one; `scripts/restore.sh` reports
+how to use the registered pixi launcher (or the manifest-owned pixi path when registration is
+skipped) instead of sourcing an activation hook; `scripts/airlock-gate.sh` now drives Cargo via
+`pixi run --frozen -- cargo …` rather than a bare `cargo` resolved from `PATH`; docs, README,
+`AGENTS.md`, and the session skill all state the same rule.
+
+**Standing command rule:** pixi is the sole environment entrypoint. Use
+`pixi run --frozen <task>` for repository tasks, `pixi run --frozen xtask <subcommand>` for repo
+automation, `pixi run --frozen -- cargo <cmd> -p <crate>` for crate-scoped Rust work, and
+`pixi run --frozen bun --filter=<workspace-package> run <script>` (or root `pixi run --frozen
+bunx <tool>`) for JavaScript package work. Do not source `.pixi/sandbox-env.sh`; new restores do
+not generate it.
