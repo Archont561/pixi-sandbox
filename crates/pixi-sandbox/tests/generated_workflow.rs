@@ -164,7 +164,10 @@ fn generated_workflow_uses_source_for_publishing_but_releases_for_planning() {
     assert!(workflow.contains("https://prefix.dev/archont561/pixi-sandbox"));
     assert!(workflow.contains("\"pixi-sandbox==${PIXI_SANDBOX_VERSION}\""));
     assert!(workflow.contains("Build source pixi-sandbox"));
-    assert!(workflow.contains("build-release-binary"));
+    assert!(workflow.contains("linux-64) target=x86_64-unknown-linux-musl"));
+    assert!(workflow.contains("linux-aarch64) target=aarch64-unknown-linux-musl"));
+    assert!(workflow.contains("build-release-binary -- --target \"$target\""));
+    assert!(workflow.contains("target/$target/release/pixi-sandbox"));
     assert!(!workflow.contains("releases/download"));
     assert!(workflow.contains("--self-bin \"$SELF_BIN\""));
 }

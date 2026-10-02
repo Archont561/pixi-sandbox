@@ -33,7 +33,10 @@ mod fake;
 mod shell;
 
 pub use fake::{FakeGit, Op};
-pub use shell::{Command, Output, PreviewRunner, ProcessRunner, RecordingRunner, Runner, ShellGit};
+pub use shell::{
+    Command, Output, PreviewRunner, ProcessRunner, RecordingRunner, Runner, ShellGit,
+    current_commit,
+};
 
 use std::path::Path;
 use thiserror::Error;

@@ -4,7 +4,7 @@ title: Make publish-sandbox embed source-built binary
 status: In Progress
 assignee: []
 created_date: '2026-10-02 15:10'
-updated_date: '2026-10-02 15:31'
+updated_date: '2026-10-02 16:21'
 labels:
   - ci
   - release
@@ -43,4 +43,6 @@ Build pixi-sandbox from checked-out source on each native publish runner. Use th
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-02: Implemented source-built publisher workflow and updated generated fixture/tests. Local lint passes; full test suite passes 403/403 with 1 skipped. Native cross-platform publish proof remains CI work.
+
+2026-10-02 audit fix: productionresults logs proved the source-built GNU binary was dynamically linked. The generated publisher now maps native Unix platforms to explicit release triples, installs the target and musl-tools on Linux, builds with --target, and embeds target/<triple>/release/pixi-sandbox. Local fmt, lint, generated-workflow checks, and 403/403 tests pass; CI publish proof remains open.
 <!-- SECTION:NOTES:END -->
