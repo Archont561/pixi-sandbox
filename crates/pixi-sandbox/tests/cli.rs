@@ -1071,7 +1071,7 @@ fn init_is_provider_neutral_and_generates_only_this_platforms_launcher() {
     let workflow =
         fs::read_to_string(project.join(".github/workflows/publish-sandbox.yml")).unwrap();
     assert!(!workflow.contains("uses: Archont561/pixi-sandbox"));
-    assert!(workflow.contains("https://prefix.dev/archont561/pixi-sandbox"));
+    assert!(workflow.contains("https://prefix.dev/archont561/archont561"));
     assert!(workflow.contains(&format!(
         "PIXI_SANDBOX_VERSION: {}",
         env!("CARGO_PKG_VERSION")

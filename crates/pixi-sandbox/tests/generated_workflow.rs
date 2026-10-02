@@ -161,7 +161,7 @@ fn generated_workflow_downloads_a_verified_release_binary_for_publishing() {
         !workflow.contains("uses: Archont561/pixi-sandbox"),
         "consumer workflows must not depend on repository-owned composite actions:\n{workflow}"
     );
-    assert!(workflow.contains("https://prefix.dev/archont561/pixi-sandbox"));
+    assert!(workflow.contains("https://prefix.dev/archont561/archont561"));
     assert!(workflow.contains("\"pixi-sandbox==${PIXI_SANDBOX_VERSION}\""));
     assert!(workflow.contains("Download released pixi-sandbox"));
     assert!(workflow.contains("releases/download/v${PIXI_SANDBOX_VERSION}"));

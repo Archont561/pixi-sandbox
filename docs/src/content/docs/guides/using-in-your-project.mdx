@@ -15,7 +15,7 @@ Run the first command from the root of your Pixi project on the **connected side
 Connected hosts need Pixi installed. Install the native package from the canonical channel, then initialise:
 
 ```bash
-pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox
+pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox
 pixi-sandbox init
 ```
 
@@ -228,7 +228,7 @@ pixi-sandbox pack --repo-root . --envs dev --output-dir .sandbox-out --platform 
 `pixi-sandbox init` writes only the files it owns — the publisher workflow, the relock
 workflow, the offline launcher, and `pixi-sandbox.toml` when it does not exist yet. Your
 `pixi.toml` is left byte-identical: the CLI is installed globally with an explicit channel
-(`pixi global install --channel https://prefix.dev/archont561/pixi-sandbox …`), which never
+(`pixi global install --channel https://prefix.dev/archont561/archont561 …`), which never
 reads the project's channel list, and no generated file needs the project to know where the
 CLI came from.
 

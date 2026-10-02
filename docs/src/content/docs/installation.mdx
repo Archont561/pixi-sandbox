@@ -28,14 +28,16 @@ Pixi-sandbox is a pure Rust CLI with static musl binaries — no Python, no runt
 
 ## Via Pixi Global (canonical)
 
-Connected hosts need Pixi installed. The supported installation path is the native package from the pixi-sandbox channel:
+Connected hosts need Pixi installed. The supported installation path is the native package from the Archont561 ecosystem channel:
 
 ```bash
-pixi global install --channel https://prefix.dev/archont561/pixi-sandbox --channel conda-forge pixi-sandbox
+pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox
 pixi-sandbox init
 ```
 
-The package-specific channel installs this CLI. `pixi-sandbox init` separately configures the Archont561 namespace root for project dependencies.
+The ecosystem channel carries every package published under the Archont561 namespace. `pixi-sandbox init` does not modify your Pixi manifest — the CLI install is global and explicit, and no project channel list needs to know about it.
+
+> **Installing or upgrading from ≤ 0.4.3?** Releases before 0.4.4 were published to the package-specific `https://prefix.dev/archont561/pixi-sandbox` channel. Pinned installs from it keep working; to upgrade, use the ecosystem channel above.
 
 ## Via Release Binary (transport bootstrap)
 

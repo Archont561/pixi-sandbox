@@ -467,7 +467,7 @@ this decision).
 `[workspace].channels`. It writes only the files it owns — the publisher workflow, the relock
 workflow, the launcher, and the sandbox config when absent — and leaves `pixi.toml`
 byte-identical, requiring only that the manifest exists. The CLI install stays an explicit
-`pixi global install --channel https://prefix.dev/archont561/pixi-sandbox`, which never reads
+`pixi global install --channel https://prefix.dev/archont561/archont561`, which never reads
 project channels. This reverses task-34, whose premise — that the prefix.dev namespace root
 `https://prefix.dev/archont561` lets a project consume other Archont561 channels — is false:
 prefix.dev serves repodata only at `/<owner>/<channel>`, so the appended URL 404s and every
@@ -490,7 +490,9 @@ probe against the fixed binary runs on a connected host (the airlock cannot reac
 prefix.dev); the fixture suite proves the byte-identical property directly, and CI proves
 the suite.
 
-**What would change it.** A second tool shipping under the namespace with real project-level
-demand — then an ecosystem channel such as `archont561/main` (created once, every release
-uploaded to it too) is the revisit, recorded as a new entry; appending a single package's
-channel is not that path, and the namespace root never was a channel at all.
+**What would change it.** Real project-level demand to consume Archont561 packages from
+consumer project environments. The ecosystem channel now exists — `archont561/archont561`,
+created 2026-10-02, with every release publishing to it from 0.4.4 on (task-49) — so the
+revisit, should that demand materialise, is appending *that* channel, recorded as a new
+entry; a single package's channel is not that path, and the namespace root never was a
+channel at all.

@@ -112,7 +112,7 @@ The v1 proposal is now an accepted architectural decision: backlog `decision-1` 
 - Publish package variants to prefix.dev.
 - Push sandbox transport branches or create GitHub Releases.
 - Run native macOS/Windows package and binary jobs.
-- Validate installation from the `@archont561/pixi-sandbox` channel.
+- Validate installation from the `@archont561/archont561` ecosystem channel.
 - Perform the connected half of the standalone transport comparison.
 
 ### Work that can be done offline
