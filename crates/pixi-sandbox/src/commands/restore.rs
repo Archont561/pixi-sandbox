@@ -6,8 +6,8 @@
 
 use crate::cli::{CargoConfigArg, RestoreArgs, UserToolsPolicy};
 use crate::commands::support;
-use crate::user_tools::{self, LauncherChange, LauncherKind, PathChange, UserTools};
 use anyhow::{Context, Result, bail};
+use pixi_sandbox::user_tools::{self, LauncherChange, LauncherKind, PathChange, UserTools};
 use pixi_sandbox_core::manifest::{Blob, Env, MANIFEST_DIR, Manifest, ToolEntry, Vendor};
 use pixi_sandbox_core::shard;
 use pixi_sandbox_core::tools_lock::executable_filename;

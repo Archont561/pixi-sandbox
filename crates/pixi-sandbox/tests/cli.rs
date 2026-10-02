@@ -1727,3 +1727,84 @@ fn pack_vendors_a_lockfile_whose_crates_come_from_one_source_each() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// self-update: the argument surface, exercised black-box.
+//
+// `cli.rs` and `commands/` are private to the binary target, so `tests/` cannot import them
+// (only `lib.rs` is reachable — see AGENTS.md, Test conventions). Driving the real binary is
+// therefore the way these are covered, and it is also the stronger test: it is the surface a
+// user actually meets.
+// ---------------------------------------------------------------------------
+
+/// clap's structural audit (duplicate argument names, bad defaults, conflicting flags) runs as
+/// `debug_assert!`s when the command tree is *built*, so any successful invocation of a debug
+/// binary proves the tree is sound. This is the test that catches a regression of the
+/// propagated `--version` colliding with `self-update --version`.
+#[test]
+fn the_self_update_command_tree_is_structurally_valid() {
+    bin()
+        .args(["self-update", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--version <X.Y.Z>"))
+        .stdout(predicate::str::contains("--check"))
+        .stdout(predicate::str::contains("--dest <PATH>"));
+}
+
+/// The default repository is part of the contract: a consumer must not have to know it.
+#[test]
+fn self_update_defaults_to_the_canonical_release_repository() {
+    bin()
+        .args(["self-update", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Archont561/pixi-sandbox"));
+}
+
+/// `--version` must take an exact release, and a non-version is refused before any network
+/// access — the resolver's strictness, seen from outside.
+#[test]
+fn self_update_refuses_a_version_that_is_not_an_exact_release() {
+    bin()
+        .args([
+            "self-update",
+            "--version",
+            "latest",
+            "--dest",
+            "/nonexistent/x",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("exact version"));
+}
+
+/// A Pixi-managed destination is refused with its remedy, and nothing is downloaded or
+/// written. Pinning the version keeps the whole test offline.
+#[test]
+fn self_update_refuses_a_pixi_managed_destination_with_a_remedy() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let prefix = temp.path().join(".pixi/envs/default");
+    std::fs::create_dir_all(prefix.join("conda-meta")).expect("mkdir");
+    std::fs::create_dir_all(prefix.join("bin")).expect("mkdir");
+    let managed = prefix.join("bin/pixi-sandbox");
+    std::fs::write(&managed, b"pixi-managed bytes").expect("write");
+
+    bin()
+        .args([
+            "self-update",
+            "--version",
+            "0.4.3",
+            "--dest",
+            managed.to_str().expect("utf-8"),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("pixi update pixi-sandbox"));
+
+    assert_eq!(
+        std::fs::read(&managed).expect("read"),
+        b"pixi-managed bytes",
+        "a refused destination must be left byte-for-byte alone"
+    );
+}

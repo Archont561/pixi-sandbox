@@ -12,6 +12,7 @@ mod pack;
 mod plan;
 mod publish;
 mod restore;
+mod self_update;
 mod support;
 mod tools;
 mod unpack;
@@ -22,6 +23,7 @@ pub use pack::run as pack;
 pub use plan::run as plan;
 pub use publish::run as publish;
 pub use restore::run as restore;
+pub use self_update::run as self_update;
 pub use tools::run as tools;
 pub use unpack::run as unpack;
 

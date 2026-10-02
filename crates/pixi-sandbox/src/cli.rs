@@ -35,6 +35,38 @@ pub enum Command {
     Plan(PlanArgs),
     /// Manage the pinned helper tools (`pixi-pack`, `pixi-unpack`, `pixi`).
     Tools(ToolsArgs),
+    /// Replace this standalone binary with a published release (decision-4).
+    SelfUpdate(SelfUpdateArgs),
+}
+
+#[derive(Debug, Args)]
+// The root sets `propagate_version`, which hands every subcommand an auto-generated
+// `--version`. Here that name belongs to the release being requested, so the inherited flag
+// is turned off rather than renaming the argument an operator would reach for first.
+#[command(disable_version_flag = true)]
+pub struct SelfUpdateArgs {
+    /// Install this exact release instead of the latest one (`X.Y.Z` or `vX.Y.Z`).
+    ///
+    /// Every committed workflow and published transport names an exact version; `latest` is
+    /// discovery for a reviewed upgrade, and this is also how a rollback selects an older
+    /// release (decision-4).
+    #[arg(long, value_name = "X.Y.Z")]
+    pub version: Option<String>,
+
+    /// Report the current and resolved versions and exit without downloading or writing.
+    #[arg(long)]
+    pub check: bool,
+
+    /// Update this standalone binary instead of the running one.
+    ///
+    /// The form CI uses: a disposable, checksum-verified binary in runner scratch. A
+    /// package-manager-owned path is refused with its remedy either way.
+    #[arg(long, value_name = "PATH")]
+    pub dest: Option<PathBuf>,
+
+    /// Repository publishing the standalone release assets.
+    #[arg(long, default_value = pixi_sandbox::self_update::DEFAULT_REPO)]
+    pub repo: String,
 }
 
 #[derive(Debug, Args)]
@@ -427,6 +459,7 @@ pub fn run() -> Result<()> {
         Command::Init(args) => commands::init(args),
         Command::Plan(args) => commands::plan(args),
         Command::Tools(args) => commands::tools(args),
+        Command::SelfUpdate(args) => commands::self_update(args),
     }
 }
 
