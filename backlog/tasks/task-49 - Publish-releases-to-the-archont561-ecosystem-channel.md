@@ -80,7 +80,21 @@ both channels during a transition — the owner said "rather than", and the cons
 accepted and documented (old channel freezes at 0.4.3; the installation guide's migration
 note covers pinned installs). Verification is the PR run (this sandbox cannot reach
 prefix.dev or run a toolchain): the golden-equality test, `lint-generated-workflow`,
-check-repository's check 5, actionlint and the docs build all execute there.
+check-repository's check 5, actionlint and the docs build all execute there — `ci (lint ·
+test · coverage)` is green on the channel-move commit (run 37066597785).
+
+2026-10-02, transition evidence — the channel must be seeded before merge: the PR's own
+airlock proof (run 37066597737, `airlock linux-64`) fails at *Install the released
+pixi-sandbox package*, because `airlock-install-released` now names the ecosystem channel,
+which holds no package until the first release lands there — and that release needs this
+merge. Everything downstream (version proof, pack, both gate tiers) was skipped. Resolution
+(recorded): the owner seeds `archont561/archont561` with the five v0.4.3 `.conda` assets
+from the v0.4.3 GitHub Release — `pixi upload prefix --channel 'archont561/archont561'
+<assets>` with their prefix.dev credentials — before merging, then re-runs the failed
+airlock job; seeding also keeps `pixi-sandbox==0.4.3` pins installable from the new
+channel. Rejected: merging with the red proof (every PR in the release window stays red),
+and a two-phase flip of `airlock-install-released` back to the old channel (a silent
+inconsistency window that no consistency check covers).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -89,6 +103,8 @@ check-repository's check 5, actionlint and the docs build all execute there.
 In progress in PR #72: the release upload target, every install surface, the generated
 publisher, and the repo-consistency constants all name the `archont561/archont561`
 ecosystem channel; the installation guide documents the ≤ 0.4.3 migration; D17 is updated
-without changing its no-append decision. Open: the next release run proving the new
-channel end-to-end (owner must grant `release.yml` Repository Access on it first).
+without changing its no-append decision. Open: the owner seeds the new channel with the
+v0.4.3 packages (the PR's airlock proof is red at the released-package install until then,
+run 37066597737) and grants `release.yml` Repository Access on it; the next release run
+then proves the channel end-to-end.
 <!-- SECTION:SUMMARY:END -->
