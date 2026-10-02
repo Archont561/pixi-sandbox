@@ -711,3 +711,81 @@ accepting black-box coverage through the `xtask` binary; that choice wants a dec
 the work. Worth a backlog task rather than an opportunistic refactor. The `LEGACY` list in the
 guard (6 entries, all in `crates/pixi-sandbox`) is the visible debt for this crate and is
 asserted to shrink, never grow.
+
+### 2026-10-03 — self-update core landed; the upgrade lane is next
+
+**Merged: PR #76** (squash `79e4f83`). Task-47 slice 1 shipped `pixi-sandbox self-update` as
+the v0.5.0 feature: latest by default, exact `--version X.Y.Z`, non-writing `--check`, explicit
+CI-managed `--dest`. Post-merge `ci`, `docs` and `publish sandbox` all passed, and the repacked
+`sandbox/developer-linux-64` manifest names source `79e4f83`, pixi-sandbox 0.4.4, static. Suite
+**500 passing / 1 skipped**, up from 404. No release was cut and none should be until the
+updater has a native-runner proof.
+
+Two findings from the session start worth keeping. The 405 baseline carried in the last three
+opening prompts was never true after PR #73 consolidated `tests/cli.rs`; the real number was
+404, and a stale figure copied between hand-offs is exactly the kind of unverified claim the
+session rules exist to stop. And the transport named in that prompt (run 37073970307, source
+`41dc22f`, 0.4.3) had already been superseded by the v0.4.4 auto-release and its repack — the
+healthy case, not an incident, but it means a hand-off should name the run and let the next
+session re-read the manifest rather than trust the numbers.
+
+Design decisions made here, both approved before implementation. **Windows replacement** renames
+the running image aside to `.pixi-sandbox-old-<version>` and sweeps it at the *start* of the
+following update, because the unlink fails by design while the image is mapped; a failed second
+rename rolls the first back. **Ownership** is judged on path provenance rather than file
+contents, as an ordered ladder (managed launcher, `pixi global` trampoline, conda/Pixi prefix,
+restored transport tool, else standalone), each refusal carrying a remedy. No `--force` was
+added, deliberately.
+
+`codecov/patch` failed on the first push and the fix was structural rather than a waiver:
+formatting and the decision flow moved into the library (a black-box test of a spawned binary
+earns no coverage and can only match substrings), and the one socket-needing file,
+`release/github.rs`, was isolated and excluded by name from `pixi run coverage`. That exclusion
+is the first of its kind in this repository — if a second one is ever proposed, it should have
+to clear the same bar: the file contains no decision, and every decision it could get wrong is
+tested elsewhere against a fake.
+
+**Not implemented, and the honest gaps.** AC#2 stays unchecked: the Windows arm is covered
+against the `ReplaceStrategy` parameter on Linux, but no run anywhere has yet replaced a
+genuinely running Windows image. Live-network resolution is also unproven — this sandbox's
+egress proxy terminates TLS with a CA `ureq` does not trust, so the binary cannot reach
+`api.github.com` from here, and the first real proof will be a CI run. Both want a native
+matrix, not another local slice.
+
+A separate house rule landed alongside: **tests live under `tests/`, never in the file they
+judge**, enforced by `production_sources_carry_no_inline_test_modules` with a `LEGACY` list that
+may only shrink. `pixi-sandbox-core` (3 files) and `xtask` (12) still carry inline tests and are
+not covered by the guard. Core is a library, so its split is mechanical; `xtask` is a binary
+crate with no `lib.rs` at all, so its split means either adding one and widening a lot of
+visibility or accepting black-box coverage — that choice wants a decision before the work, and
+deserves its own backlog task rather than an opportunistic refactor.
+
+**Next session should start with:**
+
+> Restore the sandbox and baseline the suite (expect **500 passing / 1 skipped**; re-read the
+> manifest rather than trusting this number — the trusted transport is
+> `sandbox/developer-linux-64`, repacked by the `publish sandbox` run on `79e4f83`, and its
+> manifest should name that commit, pixi-sandbox 0.4.4, static). Read `AGENTS.md`, decision-4,
+> and task-47's notes. Confirm main's latest `ci`, `docs` and `publish sandbox` runs are green.
+> No release has been cut since v0.4.4 and none should be dispatched yet.
+>
+> Task-47 slice 1 (the self-update core) is merged and `In Progress`. Slice 2 is the **reviewed
+> upgrade path**: AC#3 (a `pixi-sandbox-version: X.Y.Z` stamp beside the ownership marker in
+> every file `init` writes, within the first three lines `ensure_replaceable` already reads),
+> AC#4 (`init --check` as render-and-compare over the same four paths, writing nothing, exiting
+> non-zero with a remedy per drifted file and foreign-owned files reported separately), and
+> AC#5 (config is never rewritten; an older `schema` is a finding naming its migration path, and
+> no `config migrate` command is built while schema is 1). Those three are locally provable and
+> fixture-testable; propose them as one slice and stop.
+>
+> Do **not** start AC#6-#8 (the generated upgrade job, the regenerated PR, the explicit publish
+> dispatch) in the same slice — they need the stamp and `--check` to exist first. Two proofs are
+> outstanding from slice 1 and belong to a native-runner slice, not to this one: a Windows runner
+> replacing a genuinely running image (AC#2), and a real `self-update` against the live release
+> API, which no dev sandbox can produce because its egress proxy breaks TLS for `ureq`.
+>
+> House rules are in `AGENTS.md` — note the new one: tests live under `tests/`, never beside the
+> source they judge, and the `LEGACY` list in
+> `production_sources_carry_no_inline_test_modules` may only shrink. Session procedure and
+> templates are in `.agents/skills/session/`.
+
