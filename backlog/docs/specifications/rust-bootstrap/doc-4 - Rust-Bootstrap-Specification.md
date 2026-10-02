@@ -169,7 +169,7 @@ jobs:
 For configuration-driven native publishing, it calls `setup-pixi-sandbox` for a
 checksum-verified release, uses `pixi-sandbox plan --json` to obtain the project matrix, and
 passes that same verified binary as `--self-bin` for its one-native-platform publish job. Details
-and configuration examples are in [`publish-automation.md`](publish-automation.md).
+and configuration examples are in [`publish-automation.md`](../../../../.knowledge/publish-automation.md).
 
 ## Release acceptance checklist
 
