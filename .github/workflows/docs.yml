@@ -1,7 +1,7 @@
 name: docs
 
 # Build the Astro + Starlight site and publish it to GitHub Pages.
-# One line per step: `pixi run docs-build` builds the site (install + build).
+# One line per step: `pixi run docs build` builds the site (install + build).
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
         with:
           environments: default web
           cache: true
-      - run: pixi run docs-build
+      - run: pixi run docs build
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
         with:
           enablement: true

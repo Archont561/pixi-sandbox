@@ -90,62 +90,22 @@ jobs:
           --channel conda-forge
           "pixi-sandbox==${PIXI_SANDBOX_VERSION}"
 
-      # The channel package drives connected-side commands. The branch embeds the static/native
-      # release binary below, verified against the release checksum before pack sees it.
-      - name: Download verified transport bootstrap
+      # The publisher is source-fresh: build the checked-out tree on the native runner.
+      # Consumer and airlock workflows intentionally use released binaries instead.
+      - name: Build source pixi-sandbox
         id: bootstrap-unix
         if: runner.os != 'Windows'
-        shell: bash
-        env:
-          PLATFORM: ${{ matrix.platform }}
         run: |
-          set -euo pipefail
-          case "$PLATFORM" in
-            linux-64)      ASSET=pixi-sandbox-x86_64-unknown-linux-musl ;;
-            linux-aarch64) ASSET=pixi-sandbox-aarch64-unknown-linux-musl ;;
-            osx-64)        ASSET=pixi-sandbox-x86_64-apple-darwin ;;
-            osx-arm64)     ASSET=pixi-sandbox-aarch64-apple-darwin ;;
-            *) echo "::error::no standalone bootstrap asset for $PLATFORM" >&2; exit 1 ;;
-          esac
-          BASE="https://github.com/Archont561/pixi-sandbox/releases/download/v${PIXI_SANDBOX_VERSION}"
-          BIN="$RUNNER_TEMP/$ASSET"
-          SUMS="$RUNNER_TEMP/pixi-sandbox-SHA256SUMS"
-          curl -fsSL --retry 3 -o "$BIN" "$BASE/$ASSET"
-          curl -fsSL --retry 3 -o "$SUMS" "$BASE/SHA256SUMS"
-          EXPECTED=$(awk -v asset="$ASSET" '$2 == asset || $2 == "*" asset { print $1; exit }' "$SUMS")
-          [ -n "$EXPECTED" ] || { echo "::error::SHA256SUMS has no entry for $ASSET" >&2; exit 1; }
-          if command -v sha256sum >/dev/null 2>&1; then
-            ACTUAL=$(sha256sum "$BIN" | awk '{print $1}')
-          else
-            ACTUAL=$(shasum -a 256 "$BIN" | awk '{print $1}')
-          fi
-          [ "$ACTUAL" = "$EXPECTED" ] || { echo "::error::checksum mismatch for $ASSET" >&2; exit 1; }
-          chmod +x "$BIN"
-          echo "path=$BIN" >> "$GITHUB_OUTPUT"
+          pixi run -e package build-release-binary
+          echo "path=$PWD/target/release/pixi-sandbox" >> "$GITHUB_OUTPUT"
 
-      - name: Download verified transport bootstrap
+      - name: Build source pixi-sandbox
         id: bootstrap-windows
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          PLATFORM: ${{ matrix.platform }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          if ($env:PLATFORM -ne 'win-64') { throw "no standalone bootstrap asset for $env:PLATFORM" }
-          $asset = 'pixi-sandbox-x86_64-pc-windows-msvc.exe'
-          $base = "https://github.com/Archont561/pixi-sandbox/releases/download/v$env:PIXI_SANDBOX_VERSION"
-          $bin = Join-Path $env:RUNNER_TEMP $asset
-          $sums = Join-Path $env:RUNNER_TEMP 'pixi-sandbox-SHA256SUMS'
-          Invoke-WebRequest -Uri "$base/$asset" -OutFile $bin
-          Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $sums
-          $expected = Get-Content $sums | ForEach-Object {
-            $parts = $_ -split '\s+', 2
-            if ($parts.Count -eq 2 -and $parts[1].TrimStart('*') -eq $asset) { $parts[0].ToLowerInvariant() }
-          } | Select-Object -First 1
-          if (-not $expected) { throw "SHA256SUMS has no entry for $asset" }
-          $actual = (Get-FileHash -Algorithm SHA256 $bin).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "checksum mismatch for $asset" }
-          "path=$bin" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          pixi run -e package build-release-binary
+          "path=$((Get-Location).Path)\target\release\pixi-sandbox.exe" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Pack, verify, and publish
         if: runner.os != 'Windows'
@@ -168,7 +128,7 @@ jobs:
           rm -rf "$TRANSPORT"
           CARGO_VENDOR_ARG=
           if [ "$CARGO_VENDOR" = true ]; then CARGO_VENDOR_ARG=--cargo-vendor; fi
-          pixi-sandbox pack \
+          "$SELF_BIN" pack \
             --repo-root . \
             --envs "$ENVIRONMENTS" \
             --output-dir "$TRANSPORT" \
@@ -176,12 +136,12 @@ jobs:
             --fetch-tools \
             --self-bin "$SELF_BIN" \
             $CARGO_VENDOR_ARG
-          pixi-sandbox doctor --branch-location "$TRANSPORT" --verify
+          "$SELF_BIN" doctor --branch-location "$TRANSPORT" --verify
           BASIC_AUTH=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 | tr -d '\r\n')
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=http.extraheader
           export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $BASIC_AUTH"
-          pixi-sandbox publish --input-dir "$TRANSPORT" --branch-name "$BRANCH" --remote "$REMOTE"
+          "$SELF_BIN" publish --input-dir "$TRANSPORT" --branch-name "$BRANCH" --remote "$REMOTE"
 
       - name: Pack, verify, and publish
         if: runner.os == 'Windows'
@@ -204,14 +164,14 @@ jobs:
           Remove-Item -Recurse -Force $transport -ErrorAction SilentlyContinue
           $packArgs = @('pack', '--repo-root', '.', '--envs', $env:ENVIRONMENTS, '--output-dir', $transport, '--platform', $env:PLATFORM, '--fetch-tools', '--self-bin', $env:SELF_BIN)
           if ($env:CARGO_VENDOR -eq 'true') { $packArgs += '--cargo-vendor' }
-          pixi-sandbox @packArgs
-          pixi-sandbox doctor --branch-location $transport --verify
+          & $env:SELF_BIN @packArgs
+          & $env:SELF_BIN doctor --branch-location $transport --verify
           $bytes = [System.Text.Encoding]::UTF8.GetBytes("x-access-token:$env:PUSH_TOKEN")
           $basic = [System.Convert]::ToBase64String($bytes)
           $env:GIT_CONFIG_COUNT = '1'
           $env:GIT_CONFIG_KEY_0 = 'http.extraheader'
           $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: basic $basic"
-          pixi-sandbox publish --input-dir $transport --branch-name $env:BRANCH --remote $env:REMOTE
+          & $env:SELF_BIN publish --input-dir $transport --branch-name $env:BRANCH --remote $env:REMOTE
 "#;
     template
         .replace("__GENERATED_MARKER__", GENERATED_MARKER)

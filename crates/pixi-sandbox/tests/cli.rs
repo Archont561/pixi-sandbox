@@ -1077,7 +1077,7 @@ fn init_is_provider_neutral_and_generates_only_this_platforms_launcher() {
         env!("CARGO_PKG_VERSION")
     )));
     assert!(workflow.contains("--config pixi-sandbox.toml"));
-    assert!(workflow.contains("pixi-sandbox doctor --branch-location \"$TRANSPORT\" --verify"));
+    assert!(workflow.contains("\"$SELF_BIN\" doctor --branch-location \"$TRANSPORT\" --verify"));
     assert!(project.join("pixi-sandbox.toml").is_file());
     assert!(!project.join(".pixi-sandbox.toml").exists());
 }

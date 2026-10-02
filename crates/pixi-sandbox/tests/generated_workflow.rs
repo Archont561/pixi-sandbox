@@ -143,19 +143,19 @@ fn generated_workflow_wires_plan_outputs_through_the_matrix() {
 
 #[rstest]
 #[case("pixi-sandbox plan")]
-#[case("pixi-sandbox pack")]
-#[case("pixi-sandbox doctor")]
-#[case("pixi-sandbox publish")]
-fn generated_workflow_invokes_the_cli_directly(#[case] command: &str) {
+#[case("\"$SELF_BIN\" pack")]
+#[case("\"$SELF_BIN\" doctor")]
+#[case("\"$SELF_BIN\" publish")]
+fn generated_workflow_invokes_the_expected_cli(#[case] command: &str) {
     let workflow = workflow();
     assert!(
         workflow.contains(command),
-        "missing direct `{command}` invocation"
+        "missing expected `{command}` invocation"
     );
 }
 
 #[test]
-fn generated_workflow_installs_the_channel_package_with_a_verified_bootstrap() {
+fn generated_workflow_uses_source_for_publishing_but_releases_for_planning() {
     let workflow = workflow();
     assert!(
         !workflow.contains("uses: Archont561/pixi-sandbox"),
@@ -163,10 +163,9 @@ fn generated_workflow_installs_the_channel_package_with_a_verified_bootstrap() {
     );
     assert!(workflow.contains("https://prefix.dev/archont561/pixi-sandbox"));
     assert!(workflow.contains("\"pixi-sandbox==${PIXI_SANDBOX_VERSION}\""));
-    assert!(
-        workflow.contains("SHA256SUMS") && workflow.contains("checksum mismatch"),
-        "the standalone transport bootstrap must be checksum verified"
-    );
+    assert!(workflow.contains("Build source pixi-sandbox"));
+    assert!(workflow.contains("build-release-binary"));
+    assert!(!workflow.contains("releases/download"));
     assert!(workflow.contains("--self-bin \"$SELF_BIN\""));
 }
 
