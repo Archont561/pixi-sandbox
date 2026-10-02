@@ -92,18 +92,13 @@ export default defineConfig({
   markdown: {
     processor: satteri({ mdastPlugins: [versionPlugin] }),
   },
-  // Astro's content layer prepends "use astro:head-inject" to every propagated-assets
-  // module it generates (astro/dist/content/vite-plugin-content-assets.js); by the time
-  // Rollup bundles those virtual modules the directive's semantics are already applied,
-  // so its MODULE_LEVEL_DIRECTIVE warning is upstream noise repeated for every page.
-  // Filter exactly that warning and pass everything else through.
   vite: {
     build: {
       rollupOptions: {
         onwarn(warning, warn) {
           if (
             warning.code === "MODULE_LEVEL_DIRECTIVE" &&
-            warning.message.includes("astro:head-inject")
+            warning.message.includes('"use astro:head-inject"')
           ) {
             return;
           }
@@ -112,13 +107,6 @@ export default defineConfig({
       },
     },
   },
-  // Starlight's custom-404 mechanism reserves the docs slug `404` while its `[...slug]`
-  // catch-all still lists every docs entry — so the two injected routes both claim `/404`
-  // on purpose and Astro warns that the catch-all "could not render" it. That is the only
-  // route conflict this site can have (Starlight owns both routes), so silence the class
-  // rather than the intended conflict; the dedicated `404` route wins and renders
-  // `404.mdx` into `/404.html` either way.
-  prerenderConflictBehavior: "ignore",
   site: "https://archont561.github.io",
   base: "/pixi-sandbox",
   integrations: [

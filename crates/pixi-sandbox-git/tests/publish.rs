@@ -615,3 +615,28 @@ fn the_remote_size_is_knowable_for_a_local_remote_and_not_for_a_url() {
         "there is no cheap size query over the git wire protocol"
     );
 }
+
+#[test]
+fn worktree_status_files_reports_tracked_changes_for_xtask() {
+    let repo = tempfile::tempdir().unwrap();
+    run_git(&["init", "-q"], repo.path());
+    std::fs::write(repo.path().join("tracked.txt"), "initial").unwrap();
+    run_git(&["add", "tracked.txt"], repo.path());
+    run_git(
+        &[
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "initial",
+        ],
+        repo.path(),
+    );
+    std::fs::write(repo.path().join("tracked.txt"), "changed").unwrap();
+
+    let files = ShellGit::new().worktree_status_files(repo.path()).unwrap();
+    assert_eq!(files, vec!["tracked.txt"]);
+}
