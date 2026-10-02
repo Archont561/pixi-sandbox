@@ -9,6 +9,7 @@ use pixi_sandbox::generated::{
 };
 use std::fs;
 use std::path::{Path, PathBuf};
+use toml_edit::{Array, DocumentMut, Item, RawString, Value};
 
 const PREFERRED_CONFIG: &str = "pixi-sandbox.toml";
 const LEGACY_CONFIG: &str = ".pixi-sandbox.toml";
@@ -121,8 +122,8 @@ fn normalized_channel(value: &str) -> String {
     value.trim().trim_end_matches('/').to_ascii_lowercase()
 }
 
-/// Add the publisher namespace to project-local Pixi configuration through TOML values rather
-/// than text splicing. Existing channel priority is retained and the namespace is appended once.
+/// Add the publisher namespace by mutating only the channel array. `DocumentMut` preserves
+/// comments and formatting in every untouched part of a consumer-maintained manifest.
 fn ensure_archont561_channel(root: &Path) -> Result<()> {
     let path = root.join("pixi.toml");
     let text = fs::read_to_string(&path).with_context(|| {
@@ -131,7 +132,7 @@ fn ensure_archont561_channel(root: &Path) -> Result<()> {
             path.display()
         )
     })?;
-    let mut manifest: toml::Table = text.parse().with_context(|| {
+    let mut manifest: DocumentMut = text.parse().with_context(|| {
         format!(
             "parsing project Pixi configuration {}; fix the TOML before running init",
             path.display()
@@ -139,17 +140,19 @@ fn ensure_archont561_channel(root: &Path) -> Result<()> {
     })?;
     let workspace = manifest
         .get_mut("workspace")
-        .and_then(toml::Value::as_table_mut)
+        .and_then(Item::as_table_mut)
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "{} has no [workspace] table; cannot safely configure the Archont561 channel",
                 path.display()
             )
         })?;
+    if workspace.get("channels").is_none() {
+        workspace.insert("channels", Item::Value(Value::Array(Array::new())));
+    }
     let channels = workspace
-        .entry("channels")
-        .or_insert_with(|| toml::Value::Array(Vec::new()))
-        .as_array_mut()
+        .get_mut("channels")
+        .and_then(Item::as_array_mut)
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "{}.workspace.channels must be an array of channel URLs",
@@ -168,11 +171,77 @@ fn ensure_archont561_channel(root: &Path) -> Result<()> {
             return Ok(());
         }
     }
-    channels.push(toml::Value::String(ARCHONT561_CHANNEL.to_string()));
-    let rendered = toml::to_string_pretty(&manifest)
-        .context("serializing project Pixi configuration after adding the Archont561 channel")?;
-    write(&path, &rendered)
+    append_channel(channels, &text);
+    write(&path, &manifest.to_string())
         .with_context(|| format!("updating project Pixi configuration {}", path.display()))
+}
+
+/// Append to multiline arrays before their preserved closing whitespace. A trailing comment after
+/// the old final comma belongs to that entry, so it must move ahead of the new value rather than
+/// following it.
+fn append_channel(channels: &mut Array, source: &str) {
+    let trailing = source_text(source, channels.trailing()).unwrap_or_default();
+    let last_index = channels.len().checked_sub(1);
+    let last_suffix = last_index
+        .and_then(|index| channels.get(index))
+        .and_then(|channel| channel.decor().suffix())
+        .and_then(|suffix| source_text(source, suffix))
+        .unwrap_or_default();
+    let (decoration, clear_last_suffix) = if trailing.contains('\n') {
+        (trailing.as_str(), false)
+    } else if last_suffix.contains('\n') {
+        (last_suffix.as_str(), true)
+    } else {
+        channels.push(ARCHONT561_CHANNEL);
+        return;
+    };
+    let Some((before_closing, closing)) = decoration.rsplit_once('\n') else {
+        channels.push(ARCHONT561_CHANNEL);
+        return;
+    };
+    let Some(indent) = channels
+        .iter()
+        .last()
+        .and_then(|channel| channel.decor().prefix())
+        .and_then(|prefix| source_text(source, prefix))
+    else {
+        channels.push(ARCHONT561_CHANNEL);
+        return;
+    };
+    // A value prefix may also carry preceding standalone comments. Only its final newline and
+    // indentation belong to the new value; the comments remain attached to their old entry.
+    let indent = if let Some((_, whitespace)) = indent.rsplit_once('\n') {
+        format!("\n{whitespace}")
+    } else {
+        indent
+    };
+    if clear_last_suffix {
+        channels
+            .get_mut(last_index.expect("a channel suffix requires a channel"))
+            .expect("a channel suffix has a matching channel")
+            .decor_mut()
+            .set_suffix("");
+    }
+
+    let mut namespace = Value::from(ARCHONT561_CHANNEL);
+    namespace
+        .decor_mut()
+        .set_prefix(format!("{before_closing}{indent}"));
+    let remaining_trailing = if clear_last_suffix {
+        trailing.as_str()
+    } else {
+        ""
+    };
+    channels.set_trailing(format!("\n{closing}{remaining_trailing}"));
+    channels.push_formatted(namespace);
+}
+
+fn source_text(source: &str, raw: &RawString) -> Option<String> {
+    raw.as_str().map(str::to_owned).or_else(|| {
+        raw.span()
+            .and_then(|span| source.get(span))
+            .map(str::to_owned)
+    })
 }
 
 fn resolve(root: &Path, path: &Path) -> PathBuf {

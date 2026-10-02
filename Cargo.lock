@@ -587,6 +587,7 @@ dependencies = [
  "tar",
  "tempfile",
  "toml",
+ "toml_edit",
  "tracing",
  "tracing-subscriber",
  "ureq",
@@ -1142,6 +1143,7 @@ dependencies = [
  "indexmap",
  "toml_datetime",
  "toml_parser",
+ "toml_writer",
  "winnow",
 ]
 
