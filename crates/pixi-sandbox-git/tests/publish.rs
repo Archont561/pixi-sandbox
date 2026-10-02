@@ -8,6 +8,7 @@
 use pixi_sandbox_git::{
     FakeGit, GitProtocol, RecordingRunner, ShellGit, Snapshot, snapshot_bytes, snapshot_files,
 };
+use rstest::rstest;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -183,21 +184,21 @@ fn the_mock_rotates_the_branch_to_at_most_keep_snapshots() {
 }
 
 /// Rotation is opt-in: the default request is the orphan snapshot it has always been.
-#[test]
-fn the_mock_treats_keep_one_and_no_keep_the_same_way() {
-    for keep in [0, 1] {
-        let git = FakeGit::new();
-        for round in 1..=3 {
-            let body = format!("snapshot {round}");
-            let dir = snapshot(&[("payload.txt", body.as_bytes())]);
-            git.publish(&rotating(dir.path(), &body, keep)).unwrap();
-        }
-        assert_eq!(
-            git.history(REMOTE, BRANCH).len(),
-            1,
-            "keep={keep} must leave a single-snapshot orphan branch"
-        );
+#[rstest]
+#[case(0)]
+#[case(1)]
+fn the_mock_treats_keep_one_and_no_keep_the_same_way(#[case] keep: u32) {
+    let git = FakeGit::new();
+    for round in 1..=3 {
+        let body = format!("snapshot {round}");
+        let dir = snapshot(&[("payload.txt", body.as_bytes())]);
+        git.publish(&rotating(dir.path(), &body, keep)).unwrap();
     }
+    assert_eq!(
+        git.history(REMOTE, BRANCH).len(),
+        1,
+        "keep={keep} must leave a single-snapshot orphan branch"
+    );
 }
 
 #[test]
@@ -232,8 +233,10 @@ fn fetching_an_unknown_branch_is_an_error_not_an_empty_directory() {
     assert!(error.to_string().contains("has no branch"), "got: {error}");
 }
 
-#[test]
-fn both_implementations_refuse_a_symlink_in_the_transport() {
+#[rstest]
+#[case("fake")]
+#[case("shell")]
+fn both_implementations_refuse_a_symlink_in_the_transport(#[case] implementation: &str) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("real.txt"), b"payload").unwrap();
     #[cfg(unix)]
@@ -241,16 +244,16 @@ fn both_implementations_refuse_a_symlink_in_the_transport() {
 
     #[cfg(unix)]
     {
-        for error in [
-            FakeGit::new()
+        let error = match implementation {
+            "fake" => FakeGit::new()
                 .publish(&request(dir.path(), "snapshot"))
                 .unwrap_err(),
-            ShellGit::preview()
+            "shell" => ShellGit::preview()
                 .publish(&request(dir.path(), "snapshot"))
                 .unwrap_err(),
-        ] {
-            assert!(error.to_string().contains("symlink"), "got: {error}");
-        }
+            unexpected => panic!("unknown implementation {unexpected}"),
+        };
+        assert!(error.to_string().contains("symlink"), "got: {error}");
     }
 }
 
@@ -298,17 +301,24 @@ fn the_shell_implementation_publishes_and_fetches_byte_for_byte() {
 fn a_second_publish_replaces_the_branch_history() {
     let (tmp, remote) = bare_remote();
     let git = ShellGit::new();
-    for body in [b"first".as_slice(), b"second".as_slice()] {
-        let transport = snapshot(&[("payload.txt", body)]);
-        git.publish(&Snapshot {
-            dir: transport.path(),
-            branch: BRANCH,
-            remote: &remote,
-            message: "snapshot",
-            keep: 0,
-        })
-        .unwrap();
-    }
+    let first = snapshot(&[("payload.txt", b"first")]);
+    git.publish(&Snapshot {
+        dir: first.path(),
+        branch: BRANCH,
+        remote: &remote,
+        message: "snapshot",
+        keep: 0,
+    })
+    .unwrap();
+    let second = snapshot(&[("payload.txt", b"second")]);
+    git.publish(&Snapshot {
+        dir: second.path(),
+        branch: BRANCH,
+        remote: &remote,
+        message: "snapshot",
+        keep: 0,
+    })
+    .unwrap();
 
     let bare = PathBuf::from(&remote);
     let count = run_git(&["rev-list", "--count", BRANCH], &bare);

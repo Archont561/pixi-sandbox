@@ -143,14 +143,18 @@ fn prints_version(mut bin: Command) {
 }
 
 #[rstest]
-fn documents_every_verb(mut bin: Command) {
+#[case("pack")]
+#[case("publish")]
+#[case("restore")]
+#[case("unpack")]
+#[case("doctor")]
+#[case("init")]
+#[case("plan")]
+#[case("tools")]
+fn documents_every_verb(mut bin: Command, #[case] verb: &str) {
     let out = bin.arg("--help").assert().success();
     let text = String::from_utf8(out.get_output().stdout.clone()).unwrap();
-    for verb in [
-        "pack", "publish", "restore", "unpack", "doctor", "init", "plan", "tools",
-    ] {
-        assert!(text.contains(verb), "`{verb}` missing from --help");
-    }
+    assert!(text.contains(verb), "`{verb}` missing from --help");
     // The branch-facing restore command must remain discoverable from the top-level help.
     assert!(text.contains("Verify and unpack a sandbox branch"));
 }
