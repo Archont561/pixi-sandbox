@@ -129,3 +129,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
         run: pixi run dispatch-release ${{ steps.prep.outputs.version }}
+
+      # The release commit's push was the last GITHUB_TOKEN event of this run, so nothing
+      # `on: push` fires for it — including publish-sandbox.yml, which repacks the transport
+      # on every push to main. Without this hand-off the published branch keeps naming the
+      # pre-release commit until the next human push (exactly what v0.4.2 exposed: the
+      # transport stood at dbe57a8/0.4.1 while main and the release were at 7745e9c/0.4.2).
+      - name: Dispatch sandbox transport repack
+        if: ${{ ! inputs.dry-run }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
+        run: pixi run dispatch-sandbox-repack
