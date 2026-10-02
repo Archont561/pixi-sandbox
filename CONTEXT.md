@@ -475,15 +475,18 @@ not generate it.
 
 ### 2026-10-02 — task-35 airlock gate moved into e2e
 
-**Landed locally, CI proof pending until this commit is pushed:** task-35 is implemented and
-closed. `crates/pixi-sandbox` now has a `ci` cargo feature; the real-transport airlock gate is a
-`#[cfg(feature = "ci")]` module in `crates/pixi-sandbox/tests/e2e.rs` with explicit inputs
-(`PIXI_SANDBOX_GATE_PROJECT`, `PIXI_SANDBOX_GATE_TRANSPORT`, `PIXI_SANDBOX_GATE_ENVS`,
-`PIXI_SANDBOX_GATE_SKIP_CARGO`). `pixi.toml` has the one-line tasks `airlock-gate-archive` and
-`airlock-gate-run`; `.github/workflows/airlock.yml` builds a nextest archive while connected,
-runs it in Tier B, and replays the same archive through `xtask deny-egress` in Tier A.
-`scripts/airlock-gate.sh` is deleted, and the D10 fixture exception now names only
-`scripts/restore.sh`.
+**Landed and checked on PR #54:** task-35 is implemented and closed. `crates/pixi-sandbox` now
+has a `ci` cargo feature; the real-transport airlock gate is a `#[cfg(feature = "ci")]` module
+in `crates/pixi-sandbox/tests/e2e.rs` with explicit inputs (`PIXI_SANDBOX_GATE_PROJECT`,
+`PIXI_SANDBOX_GATE_TRANSPORT`, `PIXI_SANDBOX_GATE_ENVS`, `PIXI_SANDBOX_GATE_SKIP_CARGO`).
+`pixi.toml` has the one-line tasks `airlock-gate-archive` and `airlock-gate-run`;
+`.github/workflows/airlock.yml` builds a nextest archive while connected, runs it in Tier B,
+and replays the same archive through `xtask deny-egress` in Tier A. `scripts/airlock-gate.sh`
+is deleted, and the D10 fixture exception now names only `scripts/restore.sh`. CI fixes found
+live: the workflow installs `default` before archiving, the archive build no longer passes
+Cargo's offline `--frozen`, the gate filter targets only the `ci_gate` tests, `airlock-pack`
+downloads the static release asset instead of embedding Pixi's global trampoline/dynamic conda
+binary, and `deny-egress` absolutizes `pixi` before sudo sanitizes PATH.
 
 **Local proof already run:** `pixi run --frozen test` (275 passed, 1 skipped), targeted
 `cargo check` for `pixi-sandbox` with and without `--features ci`, targeted clippy for
