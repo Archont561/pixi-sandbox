@@ -1,0 +1,19 @@
+---
+title: Page not found
+template: splash
+pagefind: false
+hero:
+  tagline: This page does not exist — the address may be mistyped, or the page moved. Start from the beginning.
+  actions:
+    - text: Start here
+      link: /pixi-sandbox/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/Archont561/pixi-sandbox
+      icon: external
+      variant: minimal
+---
+
+{/* Starlight resolves its 404 route by the reserved slug `404`: without this page every
+    build warned `Entry docs → 404 was not found` and fell back to the bare splash. */}

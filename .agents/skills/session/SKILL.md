@@ -43,14 +43,19 @@ about the tree, not a wish:
 - `user tools: NOT registered — the bundled pixi-sandbox <v> predates --user-tools (0.3.7)` →
   nothing was registered. Registration is a *restore-side* feature, and the binary doing the
   restore comes from the packed branch: a branch packed before 0.3.7 ignores the policy entirely
-  (unknown env var, ignored by design). Since 2026-10-01, `sandbox/developer-linux-64` has been
-  repacked with 0.4.0, so this line now means the machine restored a stale branch, not the
-  published one.
+  (unknown env var, ignored by design). The published branch has carried a registration-aware
+  binary (≥ 0.4.0) since 2026-10-01, so this line means the restore came from a stale branch,
+  not the published one — check what the transport carries as described below.
 
-**The published branch carries 0.4.0** (snapshot `2026-10-01T22:36`, `doctor --verify` clean:
-10327 blobs / 819.9 MiB, `tool pixi-sandbox: v0.4.0 static`). It was repacked by the generated
-`publish-sandbox.yml`, which runs on **every push to main** — so `gh run list` after a merge will
-show a `publish sandbox` run, and the transport you would restore is rebuilt each time.
+**The published branch is rebuilt on every push to main** by the generated
+`publish-sandbox.yml` — after a merge, `gh run list` shows a `publish sandbox` run. The
+transport names a commit and a tool version, and both move with every repack, so read the
+manifest instead of trusting a remembered number:
+`git show origin/sandbox/developer-linux-64:.pixi-sandbox/manifest.json` — `source.commit`
+should name the tip of main, `tools.pixi-sandbox` the newest release, `linkage: static`. A
+lag right after a release is the GITHUB_TOKEN gap (a release-commit push starts no
+workflows; auto-release has dispatched the repack since task-44). A lag at any other time
+is an incident worth reporting.
 
 A running parent shell cannot be mutated by the restore. For non-interactive agent commands,
 prepend the user bin dir once per shell and then use pixi for everything:
