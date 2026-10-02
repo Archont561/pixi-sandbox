@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.4.4](https://github.com/Archont561/pixi-sandbox/compare/v0.4.3...41dc22f24fec06d3ee4b0519a3048d2e8f2f4178) (2026-10-03)
+### [v0.4.5](https://github.com/Archont561/pixi-sandbox/compare/v0.4.4...79e4f838ba9384cab87b2a16c0898c63d908dcf6) (2026-10-03)
+
+#### Features
+
+* **self-update:** verify and replace a standalone binary from a release (#76)
+([79e4f83](https://github.com/Archont561/pixi-sandbox/commit/79e4f838ba9384cab87b2a16c0898c63d908dcf6)),
+closes [#76](https://github.com/Archont561/pixi-sandbox/issues/76)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+
+### [v0.4.4](https://github.com/Archont561/pixi-sandbox/compare/v0.4.3...v0.4.4) (2026-10-02)
 
 #### Fixes
 
