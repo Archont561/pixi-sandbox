@@ -6,7 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.4.2](https://github.com/Archont561/pixi-sandbox/compare/v0.4.1...dbe57a8c0bdda37aa01391a2d19a5134259c936e) (2026-10-02)
+### [v0.4.3](https://github.com/Archont561/pixi-sandbox/compare/v0.4.2...9dbf9f42af2a8e753bef211920dd16f8cc246d66) (2026-10-02)
+
+#### Fixes
+
+* enforce xtask Git boundary and clean docs warnings (#66)
+([5fd728a](https://github.com/Archont561/pixi-sandbox/commit/5fd728abe4fc45f54bd3bb643c929556552e0217)),
+closes [#66](https://github.com/Archont561/pixi-sandbox/issues/66)
+* **ci:** repack the sandbox transport when a release lands (#65)
+([482ab51](https://github.com/Archont561/pixi-sandbox/commit/482ab51ec83ff6e5fdd99eab7fcd2462ae3004f9)),
+closes [#65](https://github.com/Archont561/pixi-sandbox/issues/65)
+
+#### Documentation
+
+* **backlog:** close the transport repack task (#67)
+([098142a](https://github.com/Archont561/pixi-sandbox/commit/098142ae5a013932ac7e9a132705cd629dd2c16c)),
+closes [#67](https://github.com/Archont561/pixi-sandbox/issues/67)
+
+### [v0.4.2](https://github.com/Archont561/pixi-sandbox/compare/v0.4.1...v0.4.2) (2026-10-02)
 
 #### Fixes
 
