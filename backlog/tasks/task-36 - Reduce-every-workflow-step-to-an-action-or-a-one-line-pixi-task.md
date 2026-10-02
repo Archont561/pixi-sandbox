@@ -1,10 +1,10 @@
 ---
 id: TASK-36
 title: Reduce every workflow step to an action or a one-line pixi task
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-01 19:10'
-updated_date: '2026-10-01 20:16'
+updated_date: '2026-10-02 07:35'
 labels:
   - ci
   - tooling
@@ -42,7 +42,7 @@ Bring all three to the `ci.yml` shape. Trivial host bootstrap (`rustup target ad
 - [x] #3 Logic that was shell is an `xtask` subcommand with tempdir-fixture tests (D10), not a one-line task wrapping the same `bash -c`: staging/stripping a release binary, SHA256SUMS generation plus its completeness check, the release commit/tag/push routine and its `.release-touched` guards, the airlock matrix emission, the airlock release-tag resolution, and the airlock branch fetch (git through `pixi-sandbox-git`, D9)
 - [x] #4 `GITHUB_OUTPUT` / `GITHUB_STEP_SUMMARY` writes happen inside the xtask commands that produce the value, and each command degrades to plain stdout when those variables are absent, so the identical invocation works locally
 - [x] #5 `xtask check-repository` gains a workflow-shape check: a `run:` whose body is more than one command fails, with a documented opt-out marker for a reviewed exception, and the check is fixture-tested with a passing and a failing workflow
-- [ ] #6 The three workflows still do exactly what they did: a dry-run `auto-release`, a tag-triggered `release`, and an `airlock` matrix leg each produce the same artifacts, summaries and failure modes as before (verify by dispatch on a throwaway tag before closing)
+- [x] #6 The three workflows still do exactly what they did: a dry-run `auto-release`, a tag-triggered `release`, and an `airlock` matrix leg each produce the same artifacts, summaries and failure modes as before (verify by dispatch on a throwaway tag before closing)
 - [x] #7 `pixi run lint` (actionlint over committed and generated workflows, repo-consistency) and `pixi run test` are green, and the new tasks are reachable from a clean clone with one `pixi run`
 <!-- AC:END -->
 
@@ -84,11 +84,14 @@ New tested xtask subcommands in crates/xtask/src/airlock.rs: airlock-matrix (pla
 Slice 4 (the guard, AC#5) done: check-repository check 9 fails any run: block holding more than one logical command line. Text-based on purpose - a YAML parser would be a new registry dependency the airlock cannot take until a transport carries it, and the shape being policed is visible without one. What counts as one command: folded scalars (run: >-) fold to a single command and are never flagged; inside literal blocks, blanks and # comments are not commands and a trailing backslash continues a line, so a wrapped single command stays legal. The reviewed exception marker is multiline-run-allowed, honoured on the run: line, the line above it, or a comment inside the block. Four fixture tests cover firing, every legal single-command spelling, comments-not-commands, and all three marker placements; verified live against the real tree (passes: the three migration slices leave no multi-line block anywhere) and against a sabotaged ci.yml (fires with file, line, count and remedy). ACs 1-5 and 7 are checked; AC#6 stays open for the throwaway-tag dispatch on a real runner - the one proof this sandbox cannot produce.
 
 PR #51 evidence (real runners, not the sandbox): ci green in 1m12s; the airlock workflow ran on the PR via the crates/** trigger and its whole rewritten path passed on a native linux-64 runner in 3m13s - released-binary install, airlock-pack, doctor, publish to the throwaway remote, the developer-shaped airlock-fetch, restore, Tier B, and Tier A with egress actually denied through deny-egress/unshare. That is the airlock half of AC#6 on a real runner. What remains of AC#6 is the release/auto-release half: a throwaway-tag dispatch of release.yml (maintainer click, the release environment publishes real artifacts).
+
+Close-out proof for AC#6 (2026-10-02): `gh release list` shows v0.4.0 published, so the release half is no longer hypothetical. The tag-triggered `release.yml` run 36933524627 succeeded at d39a231: all five build jobs completed (x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, x86_64-apple-darwin, aarch64-apple-darwin, x86_64-pc-windows-msvc), each uploaded its standalone binary and built, smoke-tested and uploaded its platform Conda package. The publish job downloaded all binaries and Conda packages, ran `check-conda-platforms`, generated SHA256SUMS through the completeness-checking xtask, published to prefix.dev, created the GitHub Release, and triggered the docs rebuild. `gh release view v0.4.0` lists the five standalone binary assets, five `.conda` assets, and SHA256SUMS; the dispatched docs run 36934321988 succeeded from the same d39a231 head. Together with the already-recorded green dry-run auto-release run 36922096859 and airlock matrix run 36928726964, AC#6 is checked.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 <!-- SECTION:SUMMARY:BEGIN -->
+The workflow-shape migration is complete. `release.yml`, `auto-release.yml`, and `airlock.yml` now obey the house rule: every workflow step is a pinned action, a single `pixi run <task>` line, or a one-line host bootstrap, with the former shell logic moved into fixture-tested xtask subcommands and enforced by `xtask check-repository`. The live proofs are now in hand as well: auto-release dry-run 36922096859, airlock matrix 36928726964, and the tag-triggered v0.4.0 release run 36933524627, whose published release carries five binaries, a complete SHA256SUMS, and five Conda packages, with docs dispatch 36934321988 green.
 <!-- SECTION:SUMMARY:END -->
 <!-- SECTION:FINAL_SUMMARY:END -->
