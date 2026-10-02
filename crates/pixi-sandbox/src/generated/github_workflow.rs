@@ -90,34 +90,45 @@ jobs:
           --channel conda-forge
           "pixi-sandbox==${PIXI_SANDBOX_VERSION}"
 
-      # The publisher is source-fresh: build the checked-out tree on the native runner.
-      # Linux must target musl: the packed bootstrap is required to be static (D4), while a
-      # host `cargo build --release` produces the dynamically-linked GNU binary.
-      # Consumer and airlock workflows intentionally use released binaries instead.
-      - name: Build source pixi-sandbox
+      # Consumer workflows embed the released, checksum-verified standalone binary. Building
+      # from the checkout would incorrectly assume the consumer has pixi-sandbox's source tree
+      # and its `package` environment; the checked-out tree belongs to the consumer project.
+      - name: Download released pixi-sandbox
         id: bootstrap-unix
         if: runner.os != 'Windows'
         shell: bash
         run: |
           case "${{ matrix.platform }}" in
-            linux-64) target=x86_64-unknown-linux-musl ;;
-            linux-aarch64) target=aarch64-unknown-linux-musl ;;
-            osx-64) target=x86_64-apple-darwin ;;
-            osx-arm64) target=aarch64-apple-darwin ;;
-            *) echo "::error::unsupported source-build platform: ${{ matrix.platform }}"; exit 2 ;;
+            linux-64) asset=pixi-sandbox-x86_64-unknown-linux-musl ;;
+            linux-aarch64) asset=pixi-sandbox-aarch64-unknown-linux-musl ;;
+            osx-64) asset=pixi-sandbox-x86_64-apple-darwin ;;
+            osx-arm64) asset=pixi-sandbox-aarch64-apple-darwin ;;
+            *) echo "::error::unsupported release platform: ${{ matrix.platform }}"; exit 2 ;;
           esac
-          rustup target add "$target"
-          if [[ "$target" == *-linux-musl ]]; then sudo apt-get update && sudo apt-get install -y musl-tools; fi
-          pixi run -e package build-release-binary -- --target "$target"
-          echo "path=$PWD/target/$target/release/pixi-sandbox" >> "$GITHUB_OUTPUT"
+          base="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/v${PIXI_SANDBOX_VERSION}"
+          path="$RUNNER_TEMP/$asset"
+          curl --fail --location --silent --show-error "$base/$asset" --output "$path"
+          curl --fail --location --silent --show-error "$base/SHA256SUMS" --output "$RUNNER_TEMP/SHA256SUMS"
+          grep "  $asset$" "$RUNNER_TEMP/SHA256SUMS" | sha256sum --check --status -
+          chmod +x "$path"
+          echo "path=$path" >> "$GITHUB_OUTPUT"
 
-      - name: Build source pixi-sandbox
+      - name: Download released pixi-sandbox
         id: bootstrap-windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          pixi run -e package build-release-binary
-          "path=$((Get-Location).Path)\target\release\pixi-sandbox.exe" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $asset = switch ('${{ matrix.platform }}') {
+            'win-64' { 'pixi-sandbox-x86_64-pc-windows-msvc.exe' }
+            default { throw "unsupported release platform: ${{ matrix.platform }}" }
+          }
+          $base = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/download/v$env:PIXI_SANDBOX_VERSION"
+          $path = Join-Path $env:RUNNER_TEMP $asset
+          Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile $path
+          Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS" -OutFile (Join-Path $env:RUNNER_TEMP 'SHA256SUMS')
+          $expected = (Get-Content (Join-Path $env:RUNNER_TEMP 'SHA256SUMS') | Where-Object { $_ -match "  $([regex]::Escape($asset))$" }).Split()[0]
+          if ((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected.ToLowerInvariant()) { throw "SHA256 mismatch for $asset" }
+          "path=$path" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Pack, verify, and publish
         if: runner.os != 'Windows'
