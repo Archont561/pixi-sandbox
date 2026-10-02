@@ -156,6 +156,15 @@ Tests that must exist for any change to sharding or the manifest: a round-trip p
 (`tests/verify.rs`). A change to the embedded tool catalogue must keep
 `tests/manifest.rs::the_embedded_tool_pins_are_valid_and_complete` green.
 
+### Test conventions
+
+Integration setup belongs in `crates/pixi-sandbox/tests/support/mod.rs`: request its zero-argument
+`#[fixture]` values from `#[rstest]` tests, and use the paired `*_fixture` function pointer for a
+helper that needs runtime paths. Never copy a support helper into a test. Turn finite input tables
+into named `#[case]`s; express universal contracts as bounded `proptest!` properties and commit
+the corresponding `.proptest-regressions` seed file. The `coverage_guard` fixture test requires
+each non-wiring production module to have a unit-test block or a named integration-test route.
+
 ## Style
 
 - Rust: `pixi run --frozen fmt`, clippy clean with `-D warnings`, no `unwrap()` in library code paths that

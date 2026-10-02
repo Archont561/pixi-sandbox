@@ -394,6 +394,7 @@ pub fn is_executable(path: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::{ALLOWED_EXTRAS, SENTINEL, canonicalise, collapse_nul_runs, replace_all};
+    use proptest::prelude::*;
     use std::fs;
     use std::path::Path;
 
@@ -434,6 +435,40 @@ mod tests {
         // The sentinel itself is what both canonical forms contain, in place of the path.
         let canonical = canonicalise(text_stage.as_bytes(), std::slice::from_ref(&stage));
         assert_eq!(canonical, [b"prefix=", SENTINEL, b"\n"].concat());
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        /// Pack and restore write different-length prefixes into fixed-width NUL-padded fields.
+        /// The scanned files manifest must hash either spelling identically, for arbitrary
+        /// surrounding binary bytes and arbitrary padding widths.
+        #[test]
+        fn file_manifest_canonicalisation_is_stable_across_prefixes(
+            suffix in proptest::collection::vec(any::<u8>(), 0..128),
+            stage_padding in 1usize..32,
+            final_padding in 1usize..32,
+        ) {
+            let stage = b"/tmp/pixi-sandbox-stage/env".to_vec();
+            let final_prefix = b"/home/project/.pixi/envs/env".to_vec();
+            let stage_bytes = [
+                b"prefix=".as_slice(),
+                stage.as_slice(),
+                &vec![0; stage_padding],
+                suffix.as_slice(),
+            ].concat();
+            let final_bytes = [
+                b"prefix=".as_slice(),
+                final_prefix.as_slice(),
+                &vec![0; final_padding],
+                suffix.as_slice(),
+            ].concat();
+
+            prop_assert_eq!(
+                canonicalise(&stage_bytes, std::slice::from_ref(&stage)),
+                canonicalise(&final_bytes, std::slice::from_ref(&final_prefix)),
+            );
+        }
     }
 
     #[test]

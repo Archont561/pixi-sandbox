@@ -6,41 +6,30 @@
 //! test pointed at it silently passes on a developer's machine and fails (or never runs) on a
 //! clean one. These tests make the rule executable instead of aspirational.
 
+mod support;
+
 use pixi_sandbox_core::manifest::Manifest;
 use pixi_sandbox_core::verify;
+use rstest::rstest;
 use std::path::{Path, PathBuf};
+use support::{crate_dir, demo_project, duplicate_source_project, fixture_transport as transport};
 
-fn crate_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-/// The complete pixi project definition that tests sandbox (never the repository root).
-fn demo_project() -> PathBuf {
-    crate_dir().join("tests/fixtures/demo-project")
-}
-
-/// A synthetic, already-packed payload: no packer, no pixi, no network needed.
-fn transport() -> PathBuf {
-    crate_dir().join("tests/fixtures/transport")
+#[rstest]
+#[case("pixi.toml")]
+#[case("pixi.lock")]
+#[case("Cargo.toml")]
+#[case("Cargo.lock")]
+#[case("src/main.rs")]
+fn the_demo_project_carries_every_required_file(demo_project: PathBuf, #[case] required: &str) {
+    assert!(
+        demo_project.join(required).is_file(),
+        "{required} is missing from the fixture project"
+    );
 }
 
 #[test]
-fn the_demo_project_is_a_complete_pixi_project() {
-    let project = demo_project();
-    for required in [
-        "pixi.toml",
-        "pixi.lock",
-        "Cargo.toml",
-        "Cargo.lock",
-        "src/main.rs",
-    ] {
-        assert!(
-            project.join(required).is_file(),
-            "{required} is missing from the fixture project"
-        );
-    }
-
-    let manifest = std::fs::read_to_string(project.join("pixi.toml")).unwrap();
+fn the_demo_project_manifest_declares_a_real_environment() {
+    let manifest = std::fs::read_to_string(demo_project().join("pixi.toml")).unwrap();
     assert!(
         manifest.contains("[workspace]"),
         "a pixi manifest needs a workspace table"
@@ -50,84 +39,100 @@ fn the_demo_project_is_a_complete_pixi_project() {
         manifest.contains("[dependencies]"),
         "the fixture must have a real environment"
     );
+}
 
+#[test]
+fn the_demo_project_lockfile_resolves_packages() {
     // A lockfile with packages in it, so `pack`/`vendor`/hash steps have something to chew on.
-    let lock = std::fs::read_to_string(project.join("pixi.lock")).unwrap();
+    let lock = std::fs::read_to_string(demo_project().join("pixi.lock")).unwrap();
     assert!(
         lock.contains("conda:"),
         "the fixture lockfile must resolve packages"
     );
-    assert_eq!(
-        lock.matches("conda:").count(),
-        lock.matches("conda:").count(),
-        "sanity"
-    );
+}
 
+#[test]
+fn the_demo_project_crate_is_its_own_workspace() {
     // The crate is its own cargo workspace: it must never be a member of ours.
-    let cargo = std::fs::read_to_string(project.join("Cargo.toml")).unwrap();
+    let cargo = std::fs::read_to_string(demo_project().join("Cargo.toml")).unwrap();
     assert!(
         cargo.contains("[workspace]"),
         "the fixture crate must declare its own [workspace] root"
     );
 }
 
-#[test]
-fn the_demo_project_does_not_depend_on_the_packers() {
-    // This is the whole point: if the fixture pulled in pixi-pack/pixi-unpack, every test
-    // using it would depend on the developer's environment again.
-    for file in ["pixi.toml", "pixi.lock"] {
-        let text = std::fs::read_to_string(demo_project().join(file)).unwrap();
-        // Comments are documentation, dependencies are the contract: only the latter count.
-        // (The fixture's pixi.toml explains *why* the packers are absent, at length.)
-        let dependencies: String = text
-            .lines()
-            .filter(|line| !line.trim_start().starts_with('#'))
-            .collect::<Vec<_>>()
-            .join("\n");
-        for forbidden in ["pixi-pack", "pixi-unpack"] {
-            let text = &dependencies;
-            assert!(
-                !text.contains(forbidden),
-                "{file} depends on {forbidden}: the fixture must be a plain project, and a test \
-                 that needs a packer must ask for one explicitly (tests/fixtures/README.md)"
-            );
-        }
-    }
+// This is the whole point: if the fixture pulled in pixi-pack/pixi-unpack, every test
+// using it would depend on the developer's environment again.
+#[rstest]
+#[case("pixi.toml", "pixi-pack")]
+#[case("pixi.toml", "pixi-unpack")]
+#[case("pixi.lock", "pixi-pack")]
+#[case("pixi.lock", "pixi-unpack")]
+fn the_demo_project_does_not_depend_on_the_packers(
+    demo_project: PathBuf,
+    #[case] file: &str,
+    #[case] forbidden: &str,
+) {
+    let text = std::fs::read_to_string(demo_project.join(file)).unwrap();
+    // Comments are documentation, dependencies are the contract: only the latter count.
+    // (The fixture's pixi.toml explains *why* the packers are absent, at length.)
+    let dependencies: String = text
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !dependencies.contains(forbidden),
+        "{file} depends on {forbidden}: the fixture must be a plain project, and a test \
+         that needs a packer must ask for one explicitly (tests/fixtures/README.md)"
+    );
 }
 
-#[test]
-fn the_duplicate_source_project_is_a_plain_project_with_the_collision_it_exists_for() {
-    // A second project fixture, for the pack-time duplicate-crate-source check (design.md §11,
-    // backlog task-8). It carries the same policy as `demo-project`: a plain pixi project with
-    // no packer, so using it cannot depend on the developer's environment.
-    let project = crate_dir().join("tests/fixtures/duplicate-source-project");
-    for required in [
-        "pixi.toml",
-        "pixi.lock",
-        "Cargo.toml",
-        "Cargo.lock",
-        "src/main.rs",
-    ] {
-        assert!(
-            project.join(required).is_file(),
-            "{required} is missing from the duplicate-source fixture"
-        );
-    }
-    for file in ["pixi.toml", "pixi.lock"] {
-        let text = std::fs::read_to_string(project.join(file)).unwrap();
-        for forbidden in ["pixi-pack", "pixi-unpack"] {
-            assert!(
-                !text.contains(forbidden),
-                "{file} depends on {forbidden}: every project fixture must be a plain project \
-                 (tests/fixtures/README.md)"
-            );
-        }
-    }
+#[rstest]
+#[case("pixi.toml")]
+#[case("pixi.lock")]
+#[case("Cargo.toml")]
+#[case("Cargo.lock")]
+#[case("src/main.rs")]
+fn the_duplicate_source_project_carries_every_required_file(
+    duplicate_source_project: PathBuf,
+    #[case] required: &str,
+) {
+    assert!(
+        duplicate_source_project.join(required).is_file(),
+        "{required} is missing from the duplicate-source fixture"
+    );
+}
 
+// A second project fixture, for the pack-time duplicate-crate-source check (design.md §11,
+// backlog task-8). It carries the same policy as `demo-project`: a plain pixi project with
+// no packer, so using it cannot depend on the developer's environment.
+#[rstest]
+#[case("pixi.toml", "pixi-pack")]
+#[case("pixi.toml", "pixi-unpack")]
+#[case("pixi.lock", "pixi-pack")]
+#[case("pixi.lock", "pixi-unpack")]
+fn the_duplicate_source_project_does_not_depend_on_the_packers(
+    duplicate_source_project: PathBuf,
+    #[case] file: &str,
+    #[case] forbidden: &str,
+) {
+    let text = std::fs::read_to_string(duplicate_source_project.join(file)).unwrap();
+    assert!(
+        !text.contains(forbidden),
+        "{file} depends on {forbidden}: every project fixture must be a plain project \
+         (tests/fixtures/README.md)"
+    );
+}
+
+#[rstest]
+fn the_duplicate_source_project_carries_the_collision_it_exists_for(
+    duplicate_source_project: PathBuf,
+) {
     // The lockfile must still contain the collision, or the test that uses it would be
     // asserting nothing. `toml` is a dependency of the CLI crate, not this test binary, so
     // the check is deliberately textual rather than a parse.
-    let lock = std::fs::read_to_string(project.join("Cargo.lock")).unwrap();
+    let lock = std::fs::read_to_string(duplicate_source_project.join("Cargo.lock")).unwrap();
     let itoa = lock
         .match_indices("name = \"itoa\"")
         .map(|(at, _)| &lock[at..at + 200.min(lock.len() - at)])
@@ -281,6 +286,114 @@ fn the_fixtures_file_list_is_derivable_from_its_tarball() {
 /// path from `CARGO_MANIFEST_DIR` and then walking **up** (`".."`, `.parent()`) is how a test
 /// reaches this repository instead of the fixture — that is forbidden, and this is the test
 /// that keeps it forbidden as the suite grows.
+/// Task-38's support module is a policy boundary, not a convenience import: a local copy of
+/// any listed helper is a regression because it lets setup semantics drift without a reviewer
+/// noticing. Keep the definitions in support and keep their rstest fixture entrypoints visible.
+#[test]
+fn shared_test_helpers_are_defined_once_and_exposed_as_fixtures() {
+    let tests_dir = crate_dir().join("tests");
+    let support = tests_dir.join("support/mod.rs");
+    let support_text = std::fs::read_to_string(&support).unwrap();
+    let helpers = [
+        ("bin", "bin"),
+        ("isolated_home", "isolated_home"),
+        ("fixture_transport", "fixture_transport"),
+        ("demo_project", "demo_project"),
+        ("isolated_bin", "isolated_bin_fixture"),
+        ("copy_tree", "copy_tree_fixture"),
+        ("make_executable", "make_executable_fixture"),
+        ("host_platform", "host_platform"),
+        ("git", "git_fixture"),
+        ("run_git", "run_git_fixture"),
+        ("commit", "commit_fixture"),
+        ("transport_repo", "transport_repo_fixture"),
+    ];
+    let mut sources = Vec::new();
+    collect_rust(&tests_dir, &mut sources);
+
+    for (helper, fixture) in helpers {
+        let definition = format!("fn {helper}(");
+        let defined_in = sources
+            .iter()
+            .filter(|path| {
+                std::fs::read_to_string(path)
+                    .unwrap()
+                    .lines()
+                    .map(str::trim_start)
+                    .any(|line| {
+                        line.starts_with(&definition)
+                            || line.starts_with(&format!("pub {definition}"))
+                    })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            defined_in,
+            [&support],
+            "{helper} must have exactly one test-support definition"
+        );
+        assert!(
+            support_text.contains(&format!("#[fixture]\npub fn {fixture}(")),
+            "{helper} must stay available through the {fixture} rstest fixture"
+        );
+    }
+}
+
+/// Keep coverage from silently drifting toward only the CLI's happy path. This is a lightweight
+/// structural guard rather than a replacement for llvm-cov: every production module must either
+/// carry unit tests or have its derived module symbol mentioned by an integration test. `main.rs`
+/// is wiring only and deliberately excluded.
+#[test]
+fn coverage_guard_requires_a_test_route_for_every_production_module() {
+    let crate_root = crate_dir();
+    let src = crate_root.join("src");
+    let mut production = Vec::new();
+    collect_rust(&src, &mut production);
+    let mut test_sources = Vec::new();
+    collect_rust(&crate_root.join("tests"), &mut test_sources);
+    let test_text = test_sources
+        .iter()
+        .map(|path| std::fs::read_to_string(path).expect("test source is UTF-8"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut uncovered = Vec::new();
+    for source in production {
+        let relative = source.strip_prefix(&src).expect("source sits under src");
+        if relative == Path::new("main.rs") {
+            continue;
+        }
+        let stem = source
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .expect("Rust source has a UTF-8 file stem");
+        let symbol = match stem {
+            // `mod.rs` is named after its containing module; `lib.rs` is the crate symbol used
+            // by integration tests. Both cases make failure output point at a useful remedy.
+            "mod" => relative
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|part| part.to_str())
+                .unwrap_or("module"),
+            "lib" => "pixi_sandbox",
+            _ => stem,
+        };
+        let source_text = std::fs::read_to_string(&source).expect("production source is UTF-8");
+        if source_text.contains("#[cfg(test)]") || test_text.contains(symbol) {
+            continue;
+        }
+        uncovered.push(format!("{} (symbol `{symbol}`)", relative.display()));
+    }
+
+    assert!(
+        uncovered.is_empty(),
+        "coverage guard found production modules with no unit-test block or integration-test \
+         symbol reference:\n  {}\n\nAdd a focused test under tests/ that names the module symbol, \
+         or add a #[cfg(test)] unit-test module beside the production code. `src/main.rs` is \
+         intentionally excluded because it is CLI wiring.",
+        uncovered.join("\n  ")
+    );
+}
+
 #[test]
 fn no_test_targets_the_repository_root() {
     let tests_dir = crate_dir().join("tests");

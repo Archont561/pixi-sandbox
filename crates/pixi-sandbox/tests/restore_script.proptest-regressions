@@ -1,0 +1,4 @@
+# Seeds for property tests in `restore_script.rs`.
+#
+# Keep this file in version control. Proptest appends minimized counterexamples here so every
+# future run reproduces a discovered disagreement between the Bash airlock and Rust planner.

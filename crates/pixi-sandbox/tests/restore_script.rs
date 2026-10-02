@@ -25,32 +25,18 @@
 
 #![cfg(unix)]
 
+mod support;
+
+use proptest::prelude::*;
+use rstest::rstest;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use support::{Bundled, commit, git, host_platform, transport_repo};
 
 /// The script under test, in this repository (see the module comment and `tests/fixtures.rs`).
 fn restore_script() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/restore.sh")
-}
-
-fn fixture_transport() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transport")
-}
-
-/// The same host → Pixi platform table the script derives with `uname`, stated independently
-/// here. `the_script_derives_the_same_platform_name_rust_does` holds the two sides together:
-/// the script's comment claims the mapping matches the generated launchers', and a claim in a
-/// comment is not a guarantee.
-fn host_platform() -> &'static str {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => "linux-64",
-        ("linux", "aarch64") => "linux-aarch64",
-        ("macos", "aarch64") => "osx-arm64",
-        ("macos", "x86_64") => "osx-64",
-        (os, arch) => panic!("unsupported test host: {os}-{arch}"),
-    }
 }
 
 /// `bash scripts/restore.sh …`, with every inherited `PIXI_SANDBOX_*` variable cleared and
@@ -274,27 +260,53 @@ fn a_missing_config_says_how_to_restore_without_one() {
 /// The branch name is interpolated straight into `git fetch` and `git worktree add`. Anything
 /// that is not a plain ref is refused before it reaches git — including a leading `-`, which
 /// git would read as an option.
-#[test]
-fn a_branch_name_that_is_not_ref_safe_is_refused() {
+#[rstest]
+#[case("../evil")]
+#[case("with space")]
+#[case("colon:ref")]
+#[case("tilde~1")]
+#[case("caret^2")]
+#[case("reflog@{1}")]
+#[case("-rf")]
+#[case("glob*")]
+fn a_branch_name_that_is_not_ref_safe_is_refused(#[case] unsafe_name: &str) {
     let config = format!(
         "schema = 1\n[[bundle]]\nname = \"developer\"\nplatforms = [\"{}\"]\n",
         host_platform()
     );
-    for unsafe_name in [
-        "../evil",
-        "with space",
-        "colon:ref",
-        "tilde~1",
-        "caret^2",
-        "reflog@{1}",
-        "-rf",
-        "glob*",
-    ] {
-        let (code, out) = print_branch(&config, &[unsafe_name], &[]);
-        assert_eq!(code, Some(2), "{unsafe_name} was not refused: {out}");
-        assert!(
-            out.contains(&format!("refusing unsafe branch name: {unsafe_name}")),
-            "{out}"
+    let (code, out) = print_branch(&config, &[unsafe_name], &[]);
+    assert_eq!(code, Some(2), "{unsafe_name} was not refused: {out}");
+    assert!(
+        out.contains(&format!("refusing unsafe branch name: {unsafe_name}")),
+        "{out}"
+    );
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    /// The bootstrap has to reject exactly the same branch names as the Rust planner. A branch
+    /// selected on a disconnected host is fed to git before the binary can be available, so
+    /// this exercises the Bash implementation rather than merely re-stating its table in Rust.
+    #[test]
+    fn script_and_rust_agree_on_printable_branch_safety(branch in "[ -~]{0,24}") {
+        // Empty means "derive" and `auto` is the documented derivation sentinel, not a literal
+        // branch argument. Neither is a branch name for this agreement.
+        prop_assume!(!branch.is_empty() && branch != "auto");
+
+        let config = format!(
+            "schema = 1\n[[bundle]]\nname = \"developer\"\nplatforms = [\"{}\"]\n",
+            host_platform()
+        );
+        let (code, output) = print_branch(&config, &[&branch], &[]);
+        let script_accepts = code == Some(0);
+        let rust_accepts = pixi_sandbox_core::sandbox_config::is_safe_git_ref(&branch);
+        prop_assert_eq!(
+            script_accepts,
+            rust_accepts,
+            "branch {:?}: script output was {:?}",
+            branch,
+            output
         );
     }
 }
@@ -363,112 +375,6 @@ fn help_prints_the_usage_block() {
 // The restore itself. Gated to linux-64: the fixture transport and its manifest are linux-64,
 // the same gate `user_tools.rs` and the severed-network proof use.
 // ---------------------------------------------------------------------------------------
-
-/// Which `pixi-sandbox` the branch carries. Both are `#!` shims around the binary under test —
-/// the difference is what they do with the registration policy the script exports.
-#[derive(Clone, Copy)]
-enum Bundled {
-    /// 0.3.7 or newer: honours `PIXI_SANDBOX_USER_TOOLS`.
-    Current,
-    /// A branch packed before 0.3.7: no `--user-tools` at all, so the environment variable is
-    /// ignored and nothing is registered. This is the shape that made the old report lie.
-    PreUserTools,
-}
-
-/// A git repository whose `branch` holds the fixture transport, with `bundled` standing in for
-/// the packed bootstrap binary. Returns the repository root — the developer's checkout, whose
-/// working tree is *not* the payload (the payload lives only on the branch, as it does in
-/// production).
-fn transport_repo(root: &Path, branch: &str, bundled: Bundled) -> PathBuf {
-    fs::create_dir_all(root).unwrap();
-    copy_tree(&fixture_transport(), root);
-
-    let real = assert_cmd::cargo::cargo_bin("pixi-sandbox");
-    let tool = root.join(".pixi-sandbox/tools/linux-64/pixi-sandbox");
-    let shim = match bundled {
-        Bundled::Current => format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", real.display()),
-        Bundled::PreUserTools => format!(
-            r#"#!/bin/sh
-# Plays a bootstrap packed before 0.3.7: it reports that version, and because it has no
-# --user-tools it registers nothing however loudly the caller asks (an unknown environment
-# variable is ignored, which is the whole reason the policy travels as one).
-if [ "$1" = "--version" ]; then echo "pixi-sandbox 0.3.6"; exit 0; fi
-case " $* " in
-  *" restore "*) exec "{real}" "$@" --user-tools skip ;;
-  *) exec "{real}" "$@" ;;
-esac
-"#,
-            real = real.display()
-        ),
-    };
-    fs::write(&tool, shim).unwrap();
-    fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
-
-    // The manifest declares each tool's size, and `verify` checks it before anything is
-    // written: the shim is a different size from the fixture's stub, so the manifest has to
-    // follow it. Everything else about the payload stays exactly as committed.
-    let manifest_path = root.join(".pixi-sandbox/manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
-    manifest["tools"]["pixi-sandbox"]["size_bytes"] =
-        serde_json::json!(fs::metadata(&tool).unwrap().len());
-    fs::write(
-        &manifest_path,
-        serde_json::to_vec_pretty(&manifest).unwrap(),
-    )
-    .unwrap();
-
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["add", "."]);
-    commit(root, "payload");
-    git(root, &["branch", branch]);
-
-    // Back to a checkout that looks like a project, not a payload.
-    git(root, &["rm", "-qrf", "."]);
-    fs::write(root.join("README.md"), "the developer's checkout\n").unwrap();
-    git(root, &["add", "."]);
-    commit(root, "main");
-
-    root.to_path_buf()
-}
-
-fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed in {}", dir.display());
-}
-
-fn commit(dir: &Path, message: &str) {
-    git(
-        dir,
-        &[
-            "-c",
-            "user.name=test",
-            "-c",
-            "user.email=test@example.invalid",
-            "commit",
-            "-qm",
-            message,
-        ],
-    );
-}
-
-fn copy_tree(source: &Path, destination: &Path) {
-    fs::create_dir_all(destination).unwrap();
-    for entry in fs::read_dir(source).unwrap().flatten() {
-        let from = entry.path();
-        let to = destination.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_tree(&from, &to);
-        } else {
-            fs::copy(&from, &to).unwrap();
-            fs::set_permissions(&to, fs::metadata(&from).unwrap().permissions()).unwrap();
-        }
-    }
-}
 
 /// A restored project, as the script leaves it.
 struct Restored {

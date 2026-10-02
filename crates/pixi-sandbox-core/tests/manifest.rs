@@ -3,6 +3,8 @@
 
 use pixi_sandbox_core::manifest::{Manifest, SCHEMA_VERSION};
 use pixi_sandbox_core::tools_lock::ToolsLock;
+use proptest::prelude::*;
+use rstest::rstest;
 
 /// A manifest that validates, written the way the packer writes it.
 fn valid_manifest() -> String {
@@ -90,6 +92,27 @@ fn a_well_formed_manifest_validates_and_summarises() {
         12,
         "the per-file oracle must survive a round trip"
     );
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// Any valid wire document still validates after JSON serialisation and parsing. Varying
+    /// independently-owned scalar fields catches accidental omissions from serde derives and
+    /// validation paths that only work for the hand-written fixture.
+    #[test]
+    fn a_valid_manifest_json_round_trips(version in 0u16..10_000, commit in "[0-9a-f]{1,16}") {
+        let text = valid_manifest()
+            .replace("\"version\": \"0.1.0\"", &format!("\"version\": \"{version}.0\""))
+            .replace("\"commit\": \"deadbeef\"", &format!("\"commit\": \"{commit}\""));
+        let manifest = parse(&text);
+        prop_assert!(manifest.validate().is_ok());
+
+        let encoded = serde_json::to_value(&manifest).expect("manifest serialises");
+        let decoded: Manifest = serde_json::from_value(encoded.clone()).expect("manifest parses");
+        prop_assert!(decoded.validate().is_ok());
+        prop_assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
+    }
 }
 
 #[test]
@@ -208,42 +231,40 @@ fn split_parts_must_sum_to_the_blob_size() {
 
 /// The embedded catalogue is what installed binaries use. These are the tools CI downloads and
 /// the airlock runs, so a missing platform is a broken release, not a warning.
-#[test]
-fn the_embedded_tool_pins_are_valid_and_complete() {
+#[rstest]
+#[case("pixi-pack", "linux-64")]
+#[case("pixi-pack", "linux-aarch64")]
+#[case("pixi-pack", "osx-64")]
+#[case("pixi-pack", "osx-arm64")]
+#[case("pixi-pack", "win-64")]
+#[case("pixi-unpack", "linux-64")]
+#[case("pixi-unpack", "linux-aarch64")]
+#[case("pixi-unpack", "osx-64")]
+#[case("pixi-unpack", "osx-arm64")]
+#[case("pixi-unpack", "win-64")]
+#[case("pixi", "linux-64")]
+#[case("pixi", "linux-aarch64")]
+#[case("pixi", "osx-64")]
+#[case("pixi", "osx-arm64")]
+#[case("pixi", "win-64")]
+fn the_embedded_tool_pins_are_valid_and_complete(#[case] tool: &str, #[case] platform: &str) {
     let lock = ToolsLock::embedded().expect("embedded tools lock must parse");
+    let pin = lock
+        .pin(tool, platform)
+        .unwrap_or_else(|| panic!("{tool} must be pinned for {platform}"));
+    assert_eq!(pin.sha256.len(), 64, "{tool}/{platform}: sha256");
+    let url = lock.url(tool, platform).expect("url");
+    assert!(url.starts_with("https://github.com/"), "got {url}");
+    assert!(!url.contains('{'), "unsubstituted template: {url}");
 
-    for (tool, platforms) in [
-        (
-            "pixi-pack",
-            vec!["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"],
-        ),
-        (
-            "pixi-unpack",
-            vec!["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"],
-        ),
-        (
-            "pixi",
-            vec!["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"],
-        ),
-    ] {
-        for platform in platforms {
-            let pin = lock
-                .pin(tool, platform)
-                .unwrap_or_else(|| panic!("{tool} must be pinned for {platform}"));
-            assert_eq!(pin.sha256.len(), 64, "{tool}/{platform}: sha256");
-            let url = lock.url(tool, platform).expect("url");
-            assert!(url.starts_with("https://github.com/"), "got {url}");
-            assert!(!url.contains('{'), "unsubstituted template: {url}");
-        }
+    // The linux-64 unpacker is the static musl asset (decisions D4) — the whole airlock story
+    // rests on that one asset.
+    if (tool, platform) == ("pixi-unpack", "linux-64") {
+        assert_eq!(pin.linkage, "static");
+        assert_eq!(pin.target, "x86_64-unknown-linux-musl");
+        assert_eq!(
+            pin.sha256,
+            "8191f586b734e634e2f1644e553dcb8e07718d0bafbfefb65c5e6e22b4d484b7"
+        );
     }
-
-    // the linux-64 unpacker is the static musl asset (decisions D4) — the whole airlock
-    // story rests on that one asset
-    let pin = lock.pin("pixi-unpack", "linux-64").unwrap();
-    assert_eq!(pin.linkage, "static");
-    assert_eq!(pin.target, "x86_64-unknown-linux-musl");
-    assert_eq!(
-        pin.sha256,
-        "8191f586b734e634e2f1644e553dcb8e07718d0bafbfefb65c5e6e22b4d484b7"
-    );
 }

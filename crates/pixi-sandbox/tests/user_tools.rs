@@ -8,19 +8,15 @@
 
 #![cfg(unix)]
 
+mod support;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
+use rstest::rstest;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
-
-fn bin() -> Command {
-    Command::cargo_bin("pixi-sandbox").expect("binary builds")
-}
-
-fn fixture_transport() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transport")
-}
+use support::{bin, copy_tree, fixture_transport, make_executable};
 
 /// A restore whose user-tool side effects land in `home`, with a deterministic shell.
 fn restore(home: &Path, project: &Path) -> Command {
@@ -46,9 +42,11 @@ fn project_under(temp: &Path, name: &str) -> PathBuf {
 }
 
 /// task-33 AC#1 + AC#6: a first successful restore registers both tools, only after the
-/// restored-tree verification passed.
-#[test]
-fn first_restore_registers_pixi_and_pixi_sandbox_in_the_user_bin() {
+/// restored-tree verification passed. One named case per registered tool.
+#[rstest]
+#[case("pixi")]
+#[case("pixi-sandbox")]
+fn first_restore_registers_pixi_and_pixi_sandbox_in_the_user_bin(#[case] name: &str) {
     let temp = tempfile::tempdir().unwrap();
     let project = project_under(temp.path(), "project");
 
@@ -68,20 +66,18 @@ fn first_restore_registers_pixi_and_pixi_sandbox_in_the_user_bin() {
         ));
 
     let bin = temp.path().join(".local/bin");
-    for name in ["pixi", "pixi-sandbox"] {
-        let launcher = bin.join(name);
-        let body = fs::read_to_string(&launcher)
-            .unwrap_or_else(|_| panic!("launcher {name} must exist at {}", launcher.display()));
-        assert!(body.contains("managed by pixi-sandbox"), "{body}");
-        assert!(
-            body.contains(&format!(
-                "exec \"{}\"",
-                project.join(".pixi/tools/linux-64").join(name).display()
-            )),
-            "launcher must exec the manifest-verified tool copy: {body}"
-        );
-        assert!(is_executable(&launcher));
-    }
+    let launcher = bin.join(name);
+    let body = fs::read_to_string(&launcher)
+        .unwrap_or_else(|_| panic!("launcher {name} must exist at {}", launcher.display()));
+    assert!(body.contains("managed by pixi-sandbox"), "{body}");
+    assert!(
+        body.contains(&format!(
+            "exec \"{}\"",
+            project.join(".pixi/tools/linux-64").join(name).display()
+        )),
+        "launcher must exec the manifest-verified tool copy: {body}"
+    );
+    assert!(is_executable(&launcher));
     // The profile carries exactly one managed PATH block naming the bin directory.
     let profile = fs::read_to_string(temp.path().join(".profile")).unwrap();
     assert!(profile.contains(bin.to_str().unwrap()));
@@ -473,29 +469,9 @@ fn the_generated_launcher_selects_the_policy_and_registers_user_tools() {
     );
 }
 
-fn copy_tree(source: &Path, destination: &Path) {
-    fs::create_dir_all(destination).unwrap();
-    for entry in fs::read_dir(source).unwrap().flatten() {
-        let from = entry.path();
-        let to = destination.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_tree(&from, &to);
-        } else {
-            fs::copy(&from, &to).unwrap();
-        }
-    }
-}
-
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     fs::metadata(path)
         .map(|meta| meta.permissions().mode() & 0o111 != 0)
         .unwrap_or(false)
-}
-
-fn make_executable(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let mut permissions = fs::metadata(path).unwrap().permissions();
-    permissions.set_mode(permissions.mode() | 0o111);
-    fs::set_permissions(path, permissions).unwrap();
 }

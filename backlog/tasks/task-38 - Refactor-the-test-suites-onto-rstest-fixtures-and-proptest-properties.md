@@ -4,7 +4,7 @@ title: Refactor the test suites onto rstest fixtures and proptest properties
 status: In Progress
 assignee: []
 created_date: '2026-10-01 17:49'
-updated_date: '2026-10-02 10:13'
+updated_date: '2026-10-02 12:05'
 labels:
   - testing
   - tooling
@@ -42,13 +42,13 @@ One constraint comes first: **rstest is not in the vendored tree**, so this cann
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 rstest is a workspace dev-dependency that reached the airlock the supported way: Cargo.lock and the vendored tree refreshed on the connected side, a transport packed and published with it, and 'cargo check --offline' plus 'pixi run test' green on a restored host with no network
-- [ ] #2 One shared test-support module owns every helper that is currently duplicated (copy_tree, fixture_transport, demo_project, bin/isolated_bin, make_executable, host_platform, the git helpers, transport_repo), each defined exactly once and exposed as an rstest #[fixture]; no test file redefines one
-- [ ] #3 A check fails the build when a helper name is defined in more than one test file, so the duplication cannot grow back (the way a fourth copy_tree arrived unnoticed)
+- [x] #2 One shared test-support module owns every helper that is currently duplicated (copy_tree, fixture_transport, demo_project, bin/isolated_bin, make_executable, host_platform, the git helpers, transport_repo), each defined exactly once and exposed as an rstest #[fixture]; no test file redefines one
+- [x] #3 A check fails the build when a helper name is defined in more than one test file, so the duplication cannot grow back (the way a fourth copy_tree arrived unnoticed)
 - [ ] #4 Fixtures isolate by construction: every fixture that runs a restore yields a tempdir HOME and TMPDIR, and D10 still holds - tests target tests/fixtures, never this repository, with scripts/restore.sh as the only reviewed exception
-- [ ] #5 Every hand-rolled table loop in the suite (22 today) becomes #[case] parametrisation: one named test per case, each reporting its own input on failure, with no assertion lost
-- [ ] #6 proptest covers at least these invariants, beyond the existing split/join identity: branch-name ref safety agreeing with scripts/restore.sh, manifest validate/round-trip, sandbox config to publish plan, files.json canonicalisation, and the relocation rule that only valid UTF-8 without NUL is rewritten
+- [x] #5 Every hand-rolled table loop in the suite (22 today) becomes #[case] parametrisation: one named test per case, each reporting its own input on failure, with no assertion lost
+- [x] #6 proptest covers at least these invariants, beyond the existing split/join identity: branch-name ref safety agreeing with scripts/restore.sh, manifest validate/round-trip, sandbox config to publish plan, files.json canonicalisation, and the relocation rule that only valid UTF-8 without NUL is rewritten
 - [ ] #7 Property failures are reproducible: every proptest has its proptest-regressions file committed and not ignored, case counts are bounded so the whole suite stays under 20 seconds, and no test depends on execution order or wall-clock
-- [ ] #8 pixi run lint and pixi run test are green, the test count has risen rather than fallen, and the baseline in .agents/skills/session/SKILL.md plus the testing sections of AGENTS.md and README.md state the new conventions
+- [x] #8 pixi run lint and pixi run test are green, the test count has risen rather than fallen, and the baseline in .agents/skills/session/SKILL.md plus the testing sections of AGENTS.md and README.md state the new conventions
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -69,4 +69,12 @@ One constraint comes first: **rstest is not in the vendored tree**, so this cann
 2026-10-02: Declared rstest 0.26.1 across the workspace and used the connected relock lane to refresh Cargo.lock. This dependency-only landing must publish a transport containing the new vendor crates before the offline fixture refactor can compile; implementation continues after a fresh restore.
 
 2026-10-02 dependency proof: PR #56 merged as ffd2016; post-merge ci, docs, and publish sandbox runs were green. After force-fetching the rotated sandbox branch, a fresh restore reported 169 vendored crates (up from 155) and Cargo.lock digest 7fbc917aafa0. `pixi run --frozen -- cargo check --workspace --offline` and `pixi run --frozen test` both passed; suite baseline remains 285 passed / 1 skipped.
+
+2026-10-02 support slice: moved the duplicated `bin`, fixture paths, copy, user-isolation, executable, host-platform, temporary-git, and transport-repository setup into `tests/support/mod.rs`. The module exports rstest fixtures (including parameterised helper fixtures); the former test files import it instead of redefining setup. `fixtures.rs` now asserts every shared helper has exactly one definition and a fixture entrypoint. The package test suite passes: 139 passed / 1 skipped.
+
+2026-10-02 property/guard slice: added bounded, seed-file-backed properties for Bash/Rust branch safety, manifest JSON validation/round-trip, publish-target uniqueness/ref safety, files-manifest prefix canonicalisation, and NUL-free UTF-8 relocation. The branch predicate is now shared semantically between `sandbox_config` and `scripts/restore.sh`; a generated test checks their agreement. Added the production-module coverage guard and documented fixture/property conventions in the support module, AGENTS.md, and README.md. The frozen full suite is 322 passed / 1 skipped; frozen llvm-cov reports 80.25% region coverage and 83.72% line coverage.
+
+2026-10-02 rstest slice: converted the platform→tool pin table, runner mapping and invalid override table, unsafe branch names, Git mock/shell table, and CLI top-level verb table into independently reported rstest cases. The remaining fixture assertion-table loops still need the same treatment before the task can close.
+
+2026-10-02 table slice: converted every remaining assertion-table loop into named rstest cases — the fixture payload tables (fixtures.rs required-file lists and no-packer matrices for both projects; the demo-project manifest/lockfile/workspace contracts became focused tests), the generated-workflow YAML-mapping and direct-CLI tables, the user-tools launcher table, the platform pin matrix in sandbox_config.rs (12 cases plus a plan-cover test that pins the case list to the plan), the runner-target table in actions.rs, the publish listing tables in cli.rs (a #[once] published-orphan fixture runs the expensive publish once and shares it read-only across the listing/commit cases; republishing is its own test), the help-surface dead-reference matrix (stale words indexed from STALE_DELETED_REFERENCES so the reviewed trio keeps its one-line stale-ref-allowed marker), the tools-update flags table, and the restore print/none pair. The e2e per-restored-file forbidden scan iterates restored data rather than a static table, so it now collects every (file, word) offender into one assertion instead. Removed one tautological lock.matches(...).count() == lock.matches(...).count() assertion that could not fail. All other assertions carried over verbatim. AC#2/#3 are suite-proven (the defined-once guard and fixture-entrypoint guard pass), AC#5 satisfied, AC#6 verified in tree (bounded properties plus committed regression files, generated Bash/Rust branch-predicate agreement test), AC#8 satisfied: pixi run lint and pixi run test green, suite 403 passed / 1 skipped (was 331/1), baseline updated in the session skill, conventions already stated in AGENTS.md and README.md. Still open: AC#4's TMPDIR clause — restore-running fixtures yield a tempdir HOME and set HOME/USERPROFILE/SHELL per test, but no per-test TMPDIR exists; wire it or amend the AC, owner's call. AC#7's <20s-suite clause — measured 22.7s wall (nextest, 2026-10-02), driven by the pre-existing 22.2s pack vendor test, not by the bounded properties; seed files are committed and not ignored, and no test is order- or clock-dependent.
 <!-- SECTION:NOTES:END -->

@@ -148,13 +148,24 @@ if [ "$BRANCH" = "auto" ] || [ -z "$BRANCH" ]; then
   DERIVED=1
 fi
 
-# A branch name flows straight into git plumbing below; keep it to git-ref-safe characters.
-case "$BRANCH" in
-  -* | *' '* | *'..'* | *'~'* | *'^'* | *':'* | *'?'* | *'*'* | *'['* | *'\'* | *'@{'*)
-    echo "::error::refusing unsafe branch name: $BRANCH" >&2
-    exit 2
-    ;;
-esac
+# A branch name flows straight into git plumbing below. Keep this in lockstep with
+# `pixi_sandbox_core::sandbox_config::is_safe_git_ref`: the property test in
+# `crates/pixi-sandbox/tests/restore_script.rs` generates printable names and proves that the
+# airlock's Bash check and Rust's publish-plan check agree. This remains shell-only because
+# `--print-branch` must not need git or the binary it is about to restore.
+is_safe_ref() {
+  case "$1" in
+    '' | -* | /* | */ | *'//'*) return 1 ;;
+    *'..'* | *'@{'* | *[[:space:]]* | *'~'* | *'^'* | *':'* | *'?'* | *'*'* | *'['* | *'\'*) return 1 ;;
+    .* | */.* | *. | *./* | *.lock | *.lock/*) return 1 ;;
+  esac
+  return 0
+}
+
+if ! is_safe_ref "$BRANCH"; then
+  echo "::error::refusing unsafe branch name: $BRANCH" >&2
+  exit 2
+fi
 
 if [ "$PRINT_ONLY" = 1 ]; then
   printf '%s\n' "$BRANCH"

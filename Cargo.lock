@@ -582,6 +582,7 @@ dependencies = [
  "pixi-sandbox-core",
  "pixi-sandbox-git",
  "predicates",
+ "proptest",
  "rstest",
  "serde_json",
  "tar",

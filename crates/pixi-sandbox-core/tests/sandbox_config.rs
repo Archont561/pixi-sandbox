@@ -1,5 +1,10 @@
-use pixi_sandbox_core::sandbox_config::{CONFIG_SCHEMA, SandboxConfig, plan_override};
+use pixi_sandbox_core::sandbox_config::{
+    CONFIG_SCHEMA, SandboxConfig, is_safe_git_ref, plan_override,
+};
 use pixi_sandbox_core::tools_lock::ToolsLock;
+use proptest::prelude::*;
+use rstest::rstest;
+use std::collections::BTreeSet;
 use std::fs;
 
 fn config(text: &str) -> SandboxConfig {
@@ -167,6 +172,33 @@ platforms = ["linux-64", "linux-64"]
     assert!(err.contains("more than once"), "{err}");
 }
 
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(48))]
+
+    /// A reviewed configuration always produces one unique, ref-safe target per declared
+    /// bundle/platform pair. Two randomly named bundles exercise ordering, branch construction,
+    /// runner selection, and the duplicate-target guard together instead of sampling one plan.
+    #[test]
+    fn a_config_plan_has_unique_valid_targets(
+        first in "[a-z][a-z0-9-]{0,10}",
+        second in "[a-z][a-z0-9-]{0,10}",
+        environment in "[a-z][a-z0-9-]{0,10}",
+        first_platform in prop_oneof![Just("linux-64"), Just("osx-arm64"), Just("osx-64"), Just("win-64")],
+        second_platform in prop_oneof![Just("linux-64"), Just("osx-arm64"), Just("osx-64"), Just("win-64")],
+    ) {
+        prop_assume!(first != second);
+        let plan = config(&format!(
+            "schema = 1\nbranch_prefix = \"sandbox\"\n\
+             [[bundle]]\nname = \"{first}\"\nenvironments = [\"{environment}\"]\nplatforms = [\"{first_platform}\"]\n\
+             [[bundle]]\nname = \"{second}\"\nenvironments = [\"{environment}\"]\nplatforms = [\"{second_platform}\"]\n"
+        )).plan().expect("generated config plans");
+        let branches = plan.include.iter().map(|target| target.branch.as_str()).collect::<BTreeSet<_>>();
+        prop_assert_eq!(branches.len(), plan.include.len());
+        prop_assert!(plan.include.iter().all(|target| is_safe_git_ref(&target.branch)));
+        prop_assert!(plan.include.iter().all(|target| target.environments == environment));
+    }
+}
+
 fn config_error(text: &str) -> String {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(".pixi-sandbox.toml");
@@ -177,27 +209,26 @@ fn config_error(text: &str) -> String {
 /// An ad-hoc dispatch must resolve its runner through the same table a reviewed bundle uses.
 /// The workflow this replaces carried a second `case` statement listing the runners, so the two
 /// could disagree; these assertions are the reason they cannot any more.
-#[test]
-fn an_override_plan_uses_the_same_runner_table_as_a_reviewed_bundle() {
+#[rstest]
+#[case("linux-64", "ubuntu-latest")]
+#[case("osx-arm64", "macos-14")]
+#[case("osx-64", "macos-13")]
+#[case("win-64", "windows-latest")]
+fn an_override_plan_uses_the_same_runner_table_as_a_reviewed_bundle(
+    #[case] platform: &str,
+    #[case] runner: &str,
+) {
     let envs = vec!["default".to_string()];
-    let expected = [
-        ("linux-64", "ubuntu-latest"),
-        ("osx-arm64", "macos-14"),
-        ("osx-64", "macos-13"),
-        ("win-64", "windows-latest"),
-    ];
-    for (platform, runner) in expected {
-        let plan = plan_override("custom", &envs, platform, "sandbox", true).unwrap();
-        assert_eq!(plan.schema, CONFIG_SCHEMA);
-        assert_eq!(plan.include.len(), 1);
-        let target = &plan.include[0];
-        assert_eq!(target.runner, runner, "{platform}");
-        assert_eq!(target.platform, platform);
-        assert_eq!(target.bundle, "custom");
-        assert_eq!(target.environments, "default");
-        assert_eq!(target.branch, format!("sandbox/custom-{platform}"));
-        assert!(target.cargo_vendor);
-    }
+    let plan = plan_override("custom", &envs, platform, "sandbox", true).unwrap();
+    assert_eq!(plan.schema, CONFIG_SCHEMA);
+    assert_eq!(plan.include.len(), 1);
+    let target = &plan.include[0];
+    assert_eq!(target.runner, runner, "{platform}");
+    assert_eq!(target.platform, platform);
+    assert_eq!(target.bundle, "custom");
+    assert_eq!(target.environments, "default");
+    assert_eq!(target.branch, format!("sandbox/custom-{platform}"));
+    assert!(target.cargo_vendor);
 }
 
 /// `linux-aarch64` has no safe hosted default on purpose (README documents the override), so an
@@ -217,19 +248,23 @@ fn an_override_plan_refuses_a_platform_with_no_hosted_default() {
 
 /// The override path is a synthetic config, so it inherits the platform slug and git-ref rules
 /// rather than being a looser back door into the matrix.
-#[test]
-fn an_override_plan_is_validated_like_a_config() {
+#[rstest]
+#[case("BAD/Name", "sandbox", "must use only lowercase")]
+#[case("linux-64", "../evil", "safe git-ref")]
+fn an_override_plan_is_validated_like_a_config(
+    #[case] platform: &str,
+    #[case] prefix: &str,
+    #[case] expected: &str,
+) {
     let envs = vec!["default".to_string()];
-    for (platform, prefix, expected) in [
-        ("BAD/Name", "sandbox", "must use only lowercase"),
-        ("linux-64", "../evil", "safe git-ref"),
-    ] {
-        let err = plan_override("custom", &envs, platform, prefix, true)
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains(expected), "{platform} / {prefix}: {err}");
-    }
+    let err = plan_override("custom", &envs, platform, prefix, true)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains(expected), "{platform} / {prefix}: {err}");
+}
 
+#[test]
+fn an_override_plan_refuses_no_environments() {
     let err = plan_override("custom", &[], "linux-64", "sandbox", true)
         .unwrap_err()
         .to_string();
@@ -240,9 +275,8 @@ fn an_override_plan_is_validated_like_a_config() {
 /// that has a runner but no pins would fail on a native runner minutes after the matrix started.
 /// Declaring every platform the table knows must therefore plan cleanly — which is also the
 /// precondition for adding a macOS bundle: the pins for it already exist.
-#[test]
-fn every_platform_with_a_hosted_runner_has_complete_embedded_helper_pins() {
-    let config = config(
+fn runner_table_plan() -> pixi_sandbox_core::sandbox_config::PublishPlan {
+    config(
         r#"
 schema = 1
 branch_prefix = "sandbox"
@@ -253,17 +287,49 @@ name = "developer"
 environments = ["default"]
 platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
 "#,
+    )
+    .plan()
+    .unwrap()
+}
+
+#[test]
+fn the_runner_table_plans_exactly_the_platforms_the_cases_cover() {
+    let plan = runner_table_plan();
+    let platforms: Vec<&str> = plan
+        .include
+        .iter()
+        .map(|target| target.platform.as_str())
+        .collect();
+    assert_eq!(platforms, ["linux-64", "osx-64", "osx-arm64", "win-64"]);
+}
+
+#[rstest]
+#[case("linux-64", "pixi")]
+#[case("linux-64", "pixi-pack")]
+#[case("linux-64", "pixi-unpack")]
+#[case("osx-arm64", "pixi")]
+#[case("osx-arm64", "pixi-pack")]
+#[case("osx-arm64", "pixi-unpack")]
+#[case("osx-64", "pixi")]
+#[case("osx-64", "pixi-pack")]
+#[case("osx-64", "pixi-unpack")]
+#[case("win-64", "pixi")]
+#[case("win-64", "pixi-pack")]
+#[case("win-64", "pixi-unpack")]
+fn every_platform_with_a_hosted_runner_has_complete_embedded_helper_pins(
+    #[case] platform: &str,
+    #[case] tool: &str,
+) {
+    let plan = runner_table_plan();
+    assert!(
+        plan.include
+            .iter()
+            .any(|target| target.platform == platform),
+        "the case list drifted from the plan: {platform} is no longer included"
     );
-    let plan = config.plan().unwrap();
-    assert_eq!(plan.include.len(), 4);
-    for target in &plan.include {
-        let lock = ToolsLock::embedded().unwrap();
-        for tool in ["pixi", "pixi-pack", "pixi-unpack"] {
-            assert!(
-                lock.pin(tool, &target.platform).is_some(),
-                "{tool} has no pin for {}",
-                target.platform
-            );
-        }
-    }
+    let lock = ToolsLock::embedded().unwrap();
+    assert!(
+        lock.pin(tool, platform).is_some(),
+        "{tool} has no pin for {platform}"
+    );
 }
