@@ -155,7 +155,7 @@ fn generated_workflow_invokes_the_expected_cli(#[case] command: &str) {
 }
 
 #[test]
-fn generated_workflow_uses_source_for_publishing_but_releases_for_planning() {
+fn generated_workflow_downloads_a_verified_release_binary_for_publishing() {
     let workflow = workflow();
     assert!(
         !workflow.contains("uses: Archont561/pixi-sandbox"),
@@ -163,12 +163,13 @@ fn generated_workflow_uses_source_for_publishing_but_releases_for_planning() {
     );
     assert!(workflow.contains("https://prefix.dev/archont561/pixi-sandbox"));
     assert!(workflow.contains("\"pixi-sandbox==${PIXI_SANDBOX_VERSION}\""));
-    assert!(workflow.contains("Build source pixi-sandbox"));
-    assert!(workflow.contains("linux-64) target=x86_64-unknown-linux-musl"));
-    assert!(workflow.contains("linux-aarch64) target=aarch64-unknown-linux-musl"));
-    assert!(workflow.contains("build-release-binary -- --target \"$target\""));
-    assert!(workflow.contains("target/$target/release/pixi-sandbox"));
-    assert!(!workflow.contains("releases/download"));
+    assert!(workflow.contains("Download released pixi-sandbox"));
+    assert!(workflow.contains("releases/download/v${PIXI_SANDBOX_VERSION}"));
+    assert!(workflow.contains("SHA256SUMS"));
+    assert!(workflow.contains("sha256sum --check --status"));
+    assert!(workflow.contains("Get-FileHash"));
+    assert!(!workflow.contains("build-release-binary"));
+    assert!(!workflow.contains("rustup target add"));
     assert!(workflow.contains("--self-bin \"$SELF_BIN\""));
 }
 
