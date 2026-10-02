@@ -594,9 +594,9 @@ job is deciding what to seed: the deferred proofs above are watch-items, not tas
 v2 spike (task-9, rattler-based pack/unpack) and any new work come from the owner's
 priorities, not from re-opening Done tasks.
 
-### 2026-10-02 — issue #71: init's channel append broke consumer locks (task-48, D17, PR #72)
+### 2026-10-02 — issue #71: init's channel append broke consumer locks (task-48, D17, PR #73)
 
-**Open on the session branch** (`arena/01a0fe32-pixi-sandbox`, PR #72, `fix(init): …`, net
+**Open on the session branch** (`arena/01a0fe32-pixi-sandbox`, PR #73, `fix(init): …`, net
 −175 lines). Issue #71 measured what task-34's namespace-root choice actually does:
 `https://prefix.dev/archont561` serves no repodata, so every consumer with a dependency
 fails `pixi lock` right after `init`, and a dependency-free project locks fine (an empty

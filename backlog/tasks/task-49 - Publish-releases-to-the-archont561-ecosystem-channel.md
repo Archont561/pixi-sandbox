@@ -72,7 +72,7 @@ purpose — they describe what was true when written.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-02: Implemented on the session branch, riding PR #72 (same branch, same squash
+2026-10-02: Implemented on the session branch, riding PR #73 — recreated from #72 so the description could carry both changes; the session token can open and close PRs but cannot edit a body (same branch, same squash
 release, so the `fix(init):` headline still drives convco's patch bump to 0.4.4 — the
 first release on the ecosystem channel). 21 files, every change a channel-URL move plus
 the four hand edits named in the plan. Rejected alternative, recorded: dual-publishing to
@@ -100,7 +100,7 @@ inconsistency window that no consistency check covers).
 ## Final Summary
 
 <!-- SECTION:SUMMARY:BEGIN -->
-In progress in PR #72: the release upload target, every install surface, the generated
+In progress in PR #73: the release upload target, every install surface, the generated
 publisher, and the repo-consistency constants all name the `archont561/archont561`
 ecosystem channel; the installation guide documents the ≤ 0.4.3 migration; D17 is updated
 without changing its no-append decision. Open: the owner seeds the new channel with the

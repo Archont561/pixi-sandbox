@@ -84,7 +84,7 @@ connected host, and let the patch release carry it (auto-release from the merge)
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-02: Implemented as the no-mutation option in **PR #72** (commit `fix(init): …`,
+2026-10-02: Implemented as the no-mutation option in **PR #73** (commit `fix(init): …`,
 net −175 lines), recorded as **D17** (AC#1): `init` writes only the files it owns, leaves
 `pixi.toml` byte-identical, and keeps a bare existence check (`ensure_pixi_project`) so a
 missing manifest still fails with *run init from a Pixi project* — malformed TOML no longer
@@ -105,10 +105,10 @@ Verification constraint, stated honestly: this session's sandbox is airlock-shap
 github.com and npm reachable — no crates.io, static.rust-lang.org, prefix.dev or conda), so
 no local toolchain exists and the PR **is** the test run: the full gate (fmt, clippy
 `-D warnings`, deny, actionlint, nextest, doc tests, docs build, check-repository) executes
-on PR #72. AC#2's live probe therefore remains open: init can no longer touch the manifest
+on PR #73. AC#2's live probe therefore remains open: init can no longer touch the manifest
 at all (the fixture suite proves the byte-identical property), so the probe reduces to *pixi
 lock passes on an untouched project* — one run on any connected host or a post-merge CI
-check closes it. CI outcome on PR #72: `ci (lint · test · coverage)` **success on both
+check closes it. CI outcome on PR #73: `ci (lint · test · coverage)` **success on both
 commits** (runs 37064073342 and 37064515288 — fmt, clippy `-D warnings`, deny, actionlint,
 nextest, doc tests, coverage, docs build), `validate airlock plan`, `lock guard` and
 `codecov/patch` success, PR mergeable; `airlock linux-64` (the released-binary
@@ -140,7 +140,7 @@ is drafted below verbatim for a one-click filing from a personal token:
 ## Final Summary
 
 <!-- SECTION:SUMMARY:BEGIN -->
-In progress in PR #72: the channel append is gone (D17), the manifest is byte-identical by
+In progress in PR #73: the channel append is gone (D17), the manifest is byte-identical by
 construction and by test, the docs tell the truth and carry the 0.4.3 remediation. Open: the
 live `pixi lock` probe on a connected host, the patch release (merge + auto-release
 dispatch), and the upstream pixi report (drafted in the notes; the session token cannot file
