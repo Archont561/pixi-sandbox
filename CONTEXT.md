@@ -547,3 +547,73 @@ native runner) rather than re-opening Done work.
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
 > and its templates are in `.agents/skills/session/`.
+
+### 2026-10-02 — post-release reconciliation: transport gap closed, git boundary complete
+
+**Merged: PR #65** (squash → main at 482ab51; post-merge ci, docs, and publish sandbox all
+green). The v0.4.2 release itself verified end-to-end first: five standalone binaries, five
+Conda packages, SHA256SUMS, all five release.yml platform builds with package smoke tests,
+prefix.dev publication, GitHub Release, and the docs dispatch (run 37036393055). The one
+missing proof was the transport: `publish-sandbox.yml` had not run for the release commit
+(auto-release pushes with GITHUB_TOKEN, which starts no `on: push` workflows), so
+`sandbox/developer-linux-64` still named dbe57a8 / 0.4.1 while main and the release stood at
+7745e9c / 0.4.2. That gap is task-44: auto-release now dispatches the repack through the new
+`dispatch-sandbox-repack` pixi task, and the post-merge run (37043853308) repacked the
+transport — the published manifest names 482ab51 / 0.4.2 / static. Also landed: task-30's
+AC#4 closed with evidence (task-29 retired check 7; all four named policy families are
+fixture-tested), task-45 moved prepare-release's touched-file report inside the git boundary
+(`ShellGit::changed_paths`; its fixture tests caught a real `run_text` trim bug — porcelain's
+first status column can be a space, and trimming the output shifted the first path by one
+byte), and task-46 made the docs build warning-free. Suite: **405 passed / 1 skipped**
+(was 403/1). Invariant 8 now states its scope in AGENTS.md: production git only through
+`pixi-sandbox-git`; `#[cfg(test)]` fixture builders may run real git as the oracle.
+
+**Not implemented — deferred proofs and notes:**
+
+- **task-44's dispatch step proves end-to-end only on the next release.** The step ships in
+  auto-release's `cut` job from 482ab51 on; the next auto-release run should show the
+  "Dispatch sandbox transport repack" step and a publish-sandbox run it started, with the
+  manifest naming the release commit and the new version. Until then the mechanism is
+  implemented and gate-tested but not yet exercised by a real release.
+- **SHA256SUMS byte-level spot-check needs an online machine**: the release-assets CDN is
+  egress-blocked from the airlock. The file's existence and the green generating step
+  (`xtask release-checksums`, whose five-binary completeness check is fixture-tested) are
+  the airlock-side proof; `sha256sum -c SHA256SUMS` against the downloaded assets is the
+  connected-side completion.
+- **`prerenderConflictBehavior: "ignore"` is global** (docs/astro.config.mjs). Chosen
+  because Starlight owns the only two routes this site has and its custom-404 mechanism
+  conflicts with its own catch-all by design; if Astro grows a per-route exclusion or
+  Starlight starts filtering the reserved `404` slug out of the catch-all's paths, tighten
+  the setting back to the default.
+- The i18n override file (docs/src/content/i18n/en.json) carries one real override
+  (`page.editLink`) so its purpose is self-evident; it exists primarily to register the
+  collection Starlight's runtime reads on every page.
+
+**The backlog is empty again** (task-44/45/46 closed with PR #65). The next session's first
+job is deciding what to seed: the deferred proofs above are watch-items, not tasks; the
+v2 spike (task-9, rattler-based pack/unpack) and any new work come from the owner's
+priorities, not from re-opening Done tasks.
+
+**Next session should start with:**
+
+> Restore the sandbox and baseline the suite (expect **405 passing / 1 skipped** — the
+> transport was repacked off main by the post-merge `publish sandbox` run, so the restore
+> is the usual registered launcher flow; nothing new needs vendoring), then read
+> `CONTEXT.md` § Session scratchpad — the 2026-10-02 heading *"post-release reconciliation:
+> transport gap closed, git boundary complete"* lists the deferred proofs.
+>
+> First, one look at the repo state: `gh run list --branch main --limit 3` and
+> `git show origin/sandbox/developer-linux-64:.pixi-sandbox/manifest.json` — the transport
+> should name the newest main commit with `tool pixi-sandbox` at the newest release and
+> `linkage: static`; a lag outside a release window is an incident, a lag right after one
+> means the dispatch step (task-44, in auto-release since 482ab51) did not fire — read that
+> run before anything else.
+>
+> The backlog is empty; propose new work rather than re-opening Done tasks. The scratchpad's
+> deferred list holds the watch-items (the next release proves task-44's dispatch step
+> end-to-end; an online machine can spot-check v0.4.2's SHA256SUMS), and task-9's v2 spike
+> (rattler-based pack/unpack) is the largest unstarted thread if the owner wants it.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do
+> not implement goes in `CONTEXT.md`, not into the files it speculates about), the session
+> procedure and its templates are in `.agents/skills/session/`.
