@@ -13,7 +13,7 @@ import icon from "astro-icon";
 //    what you are reading about is decided by the tree you built from, never
 //    restated in the site.
 // 2. The root Cargo.toml — the same single source of truth, read directly. This
-//    is the ordinary path for `pixi run docs-build` and a bare `bun run build`
+//    is the ordinary path for `pixi run docs build` and a bare `bun run build`
 //    in docs/ alike: the `web` environment carries no cargo, so the config
 //    reads the manifest itself instead of leaning on a wrapper script.
 //
@@ -48,7 +48,7 @@ function workspaceVersion(startDir = process.cwd()) {
       throw new Error(
         "pixi-sandbox version unresolved: SANDBOX_VERSION is unset and no Cargo.toml " +
           "with a [workspace.package] table exists above the working directory. " +
-          "Run the docs through `pixi run docs-build`.",
+          "Run the docs through `pixi run docs build`.",
       );
     }
     dir = parent;

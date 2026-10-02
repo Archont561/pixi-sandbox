@@ -316,7 +316,7 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `crates/pixi-sandbox` | CLI binary + fixtures |
 | `crates/pixi-sandbox/tests/fixtures/` | Synthetic transport (15 KB, split blob) — tests never point at repo root |
 | `crates/xtask` | Typed repository automation behind one `pixi run --frozen xtask <subcommand>` task (`check-repository`, `prepare-release`, release artifact gates) |
-| `.github/workflows/ci.yml` | CI: lint + test + coverage + docs-build |
+| `.github/workflows/ci.yml` | CI: lint + test + coverage + docs build |
 | `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + prefix.dev Conda package + GitHub Release |
 | `.github/workflows/docs.yml` | Docs → GitHub Pages |
 | `.github/dependabot.yml` | Dependabot: cargo, gha, npm (convco prefixes) |
@@ -357,8 +357,8 @@ pixi run --frozen test-doc
 pixi run --frozen coverage
 
 # Docs (Astro + Starlight + astro-icon; tasks call bun --filter=pixi-sandbox-docs)
-pixi run --frozen docs-dev
-pixi run --frozen docs-build
+pixi run --frozen docs dev
+pixi run --frozen docs build
 
 # Agent CLI + repo tooling (root bun workspace, through bunx)
 pixi run --frozen bunx backlog      # markdown backlog

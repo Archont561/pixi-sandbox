@@ -36,7 +36,7 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 - **Unified Single-Job CI (`.github/workflows/ci.yml`)**:
   - Runs on `ubuntu-latest` in the `default` pixi environment.
   - Leverages `Swatinem/rust-cache` to cache `~/.cargo/` and `./target` across commits.
-  - Sequentially runs `lint` (fmt, clippy, deny, actionlint, taplo, biome), `test` (nextest), `test-doc`, `coverage` (llvm-cov), and `docs-build`.
+  - Sequentially runs `lint` (fmt, clippy, deny, actionlint, taplo, biome), `test` (nextest), `test-doc`, `coverage` (llvm-cov), and `docs build`.
 - **Transport publishing (manual since task-29 retired the reusable publisher)**: the developer
   transport (`sandbox/developer-linux-64`) is packed and published by hand — `pixi run
   sandbox-pack` (which builds `target/release/pixi-sandbox` first and packs it via `--self-bin`,
@@ -180,7 +180,7 @@ went from 38 tasks to 23 behind one `xtask` task and argument-carrying tasks.
   `pixi` on a developer's PATH and every airlock session still sources `sandbox-env.sh`. A
   repack would switch that on. Not done because `publish` force-pushes the branch — a
   maintainer's call, not an agent's.
-- **Docs tasks could collapse further** (`docs-dev`/`docs-build` → one `docs <mode>` task). Left
+- **Docs tasks could collapse further** (`docs dev`/`docs build` → one `docs <mode>` task). Left
   alone deliberately: both names appear in CI, docs and the README, and the churn buys one line.
 
 ### 2026-10-01 — session close
@@ -493,7 +493,7 @@ binary, and `deny-egress` absolutizes `pixi` before sudo sanitizes PATH.
 `pixi-sandbox --features ci` and `xtask`, a local archived-gate proof against the fixture
 restore, `pixi run --frozen airlock-gate-archive`, `pixi run --frozen lint-actions`,
 `pixi run --frozen lint-toml`, `pixi run --frozen xtask check-repository`, and
-`pixi run --frozen docs-build` all pass. Full all-crates lint was intentionally not run in this
+`pixi run --frozen docs build` all pass. Full all-crates lint was intentionally not run in this
 iteration per the user's instruction to skip it and use repo-specific / targeted checks.
 
 ### 2026-10-02 — task-38 lands: every table loop is a named case

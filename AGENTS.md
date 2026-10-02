@@ -96,7 +96,7 @@ pixi run --frozen lint           # fmt --check + clippy -D warnings + deny + act
 pixi run --frozen test           # nextest workspace, including fixture-backed offline lifecycle tests
 pixi run --frozen coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
 pixi run --frozen fmt            # rewrite; `pixi run --frozen fmt --check` is the gate form
-pixi run --frozen docs-dev       # Astro dev server for docs/ (bun --filter=pixi-sandbox-docs)
+pixi run --frozen docs dev       # Astro dev server for docs/ (bun --filter=pixi-sandbox-docs)
 pixi run --frozen docs-install   # bun install --frozen-lockfile at the root of the bun workspace
 pixi run --frozen bunx backlog   # repo backlog (the bunx task runs docs-install itself)
 pixi run --frozen bunx skills    # agent skills CLI, same workspace
