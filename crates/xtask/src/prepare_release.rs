@@ -117,7 +117,9 @@ pub fn run(root: &Path, selector: &str) -> Result<String> {
     let changelog = convco(root, &["changelog", "--unreleased", &semver])?;
     crate::util::write_atomic(&root.join("CHANGELOG.md"), &changelog)?;
 
-    write_touched_report(root)?;
+    let touched_file =
+        std::env::var("RELEASE_TOUCHED_FILE").unwrap_or_else(|_| ".release-touched".into());
+    write_touched_report(root, &root.join(touched_file))?;
     eprintln!("→ prepared release {tag}");
     Ok(tag)
 }
@@ -214,24 +216,58 @@ fn stamp_internal_pins(path: &Path, semver: &str) -> Result<bool> {
 /// Report exactly what this run changed, derived from the working tree rather than from a
 /// hard-coded manifest of "the files this is supposed to touch" — that manifest was correct
 /// right up until the repin added eleven more files to the set, at which point `git add`
-/// would have staged the manifests and quietly dropped every documentation fix.
-fn write_touched_report(root: &Path) -> Result<()> {
+/// would have staged the manifests and quietly dropped every documentation fix. The query
+/// goes through `pixi-sandbox-git` (D9); the output path stays explicit so the release
+/// workflow's environment lookup is exercised once at the entrypoint and this function is
+/// tempdir-fixture testable.
+fn write_touched_report(root: &Path, touched_file: &Path) -> Result<()> {
     let mut files = ShellGit::new()
         .worktree_status_files(root)
         .context("running git status for the touched-file report")?;
     files.sort();
     let report = files.iter().map(|f| format!("{f}\n")).collect::<String>();
-    let touched_file =
-        std::env::var("RELEASE_TOUCHED_FILE").unwrap_or_else(|_| ".release-touched".into());
-    crate::util::write_atomic(&root.join(&touched_file), &report)?;
-    eprintln!("  {} file(s) recorded in {touched_file}", files.len());
+    crate::util::write_atomic(touched_file, &report)?;
+    eprintln!(
+        "  {} file(s) recorded in {}",
+        files.len(),
+        touched_file.display()
+    );
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{reversion_line, stamp_internal_pins, stamp_version};
+    use super::{reversion_line, stamp_internal_pins, stamp_version, write_touched_report};
     use std::fs;
+    use std::path::Path;
+    use std::process::Command as StdCommand;
+
+    fn git(args: &[&str], cwd: &Path) {
+        let output = StdCommand::new("git")
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "fixture")
+            .env("GIT_AUTHOR_EMAIL", "fixture@example.invalid")
+            .env("GIT_COMMITTER_NAME", "fixture")
+            .env("GIT_COMMITTER_EMAIL", "fixture@example.invalid")
+            .current_dir(cwd)
+            .output()
+            .expect("git runs");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        git(&["init", "-q", "-b", "main"], dir.path());
+        fs::write(dir.path().join("CHANGELOG.md"), "# changelog\n").expect("write");
+        fs::write(dir.path().join("Cargo.toml"), "version = \"0.4.2\"\n").expect("write");
+        git(&["add", "."], dir.path());
+        git(&["commit", "-q", "-m", "initial"], dir.path());
+        dir
+    }
 
     #[test]
     fn only_the_column_zero_version_line_is_stamped() {
@@ -289,5 +325,52 @@ mod tests {
         );
         // Idempotent: a second pass reports no change.
         assert!(!stamp_internal_pins(&path, "2.0.0").expect("stamp again"));
+    }
+
+    /// The touched-file report is the release workflow's `git add` list, so its filtering —
+    /// tracked files only, staged or not — is exactly what commit-release stages. Exercised
+    /// against a real git in a tempdir (D10: never this checkout); the fixture builder runs
+    /// git itself because an oracle must not share code with the thing it judges.
+    #[test]
+    fn modified_and_staged_tracked_files_are_listed_and_untracked_are_not() {
+        let dir = repo();
+        let root = dir.path();
+        fs::write(root.join("CHANGELOG.md"), "new entry\n").expect("write");
+        fs::write(root.join("Cargo.toml"), "version = \"0.4.3\"\n").expect("write");
+        git(&["add", "Cargo.toml"], root);
+        fs::write(root.join("notes.txt"), "scratch\n").expect("write");
+
+        let report = root.join("touched.txt");
+        write_touched_report(root, &report).expect("report");
+        assert_eq!(
+            fs::read_to_string(&report).expect("read"),
+            "CHANGELOG.md\nCargo.toml\n",
+            "tracked changes are listed sorted; the untracked file is absent"
+        );
+    }
+
+    #[test]
+    fn a_clean_tree_writes_an_empty_report() {
+        let dir = repo();
+        let report = dir.path().join("touched.txt");
+        write_touched_report(dir.path(), &report).expect("report");
+        assert_eq!(
+            fs::read_to_string(&report).expect("read"),
+            "",
+            "nothing changed, so nothing is staged by the release"
+        );
+    }
+
+    #[test]
+    fn a_non_repository_names_the_status_context() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let error = write_touched_report(dir.path(), &dir.path().join("touched.txt"))
+            .expect_err("status outside a repository must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("running git status for the touched-file report"),
+            "got: {error}"
+        );
     }
 }
