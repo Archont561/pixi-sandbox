@@ -670,33 +670,42 @@ fn assert_gate_cargo_check_uses_pixi(project: &Path, skip_cargo: bool) {
     if skip_cargo || !project.join("Cargo.toml").is_file() {
         return;
     }
-    let cargo_config = project.join(".pixi-sandbox/cargo-home/config.toml");
-    assert!(
-        cargo_config.is_file(),
-        "no sandbox-owned Cargo config in the restored project; the vendored tree was not wired in"
-    );
+    let sandbox_config = project.join(".pixi-sandbox/cargo-home/config.toml");
+    let project_config = project.join(".cargo/config.toml");
+    let cargo_config = if sandbox_config.is_file() {
+        let hooks = fs::read_dir(project.join(".pixi/envs"))
+            .unwrap_or_else(|err| panic!("reading restored envs failed: {err}"))
+            .filter_map(Result::ok)
+            .map(|entry| {
+                entry
+                    .path()
+                    .join("etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+            })
+            .filter(|path| path.is_file())
+            .count();
+        assert!(
+            hooks > 0,
+            "no Pixi activation hook wires CARGO_HOME for cargo check"
+        );
+        sandbox_config
+    } else {
+        // The airlock workflow intentionally restores with the latest released binary, not the
+        // PR build. Until the issue-55 restore fix is itself released, that binary still wires
+        // the project `.cargo/config.toml`; accept that legacy shape here so the workflow keeps
+        // proving the released asset while source-level tests prove the new sandbox-owned path.
+        assert!(
+            project_config.is_file(),
+            "neither sandbox-owned Cargo config nor legacy project Cargo config exists; the vendored tree was not wired in"
+        );
+        project_config
+    };
     let cargo_config_text = fs::read_to_string(&cargo_config)
         .unwrap_or_else(|err| panic!("reading {} failed: {err}", cargo_config.display()));
     assert!(
         cargo_config_text.contains("source.crates-io")
-            && cargo_config_text
-                .contains(&project.join(".pixi-sandbox/vendor").display().to_string()),
-        "sandbox Cargo config does not redirect crates.io to the restored vendor tree"
-    );
-
-    let hooks = fs::read_dir(project.join(".pixi/envs"))
-        .unwrap_or_else(|err| panic!("reading restored envs failed: {err}"))
-        .filter_map(Result::ok)
-        .map(|entry| {
-            entry
-                .path()
-                .join("etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
-        })
-        .filter(|path| path.is_file())
-        .count();
-    assert!(
-        hooks > 0,
-        "no Pixi activation hook wires CARGO_HOME for cargo check"
+            && cargo_config_text.contains(".pixi-sandbox/vendor"),
+        "Cargo config {} does not redirect crates.io to the restored vendor tree",
+        cargo_config.display()
     );
 
     let pixi = gate_tool(&gate_tools_bin(project), "pixi");
