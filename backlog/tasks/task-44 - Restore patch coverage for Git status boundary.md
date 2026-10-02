@@ -1,11 +1,11 @@
 ---
 id: TASK-44
 title: Restore patch coverage for Git status boundary
-status: In Progress
+status: Done
 assignee:
   - '@agent'
 created_date: '2026-10-02 18:05'
-updated_date: '2026-10-02 18:05'
+updated_date: '2026-10-02 18:56'
 labels:
   - rust
   - testing
@@ -27,17 +27,17 @@ The task-30 Git-boundary migration added `ShellGit::worktree_status_files`, but 
 <!-- AC:BEGIN -->
 - [x] #1 The new Git status operation has fixture-backed coverage for tracked changes, empty output, and invalid UTF-8 output
 - [x] #2 The pixi-sandbox-git test suite passes with the added coverage cases
-- [ ] #3 The PR Codecov patch check passes at or above its configured target on GitHub
+- [x] #3 The PR Codecov patch check passes at or above its configured target on GitHub
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Added `FixedRunner` fixture coverage in `crates/pixi-sandbox-git/tests/publish.rs` for empty and invalid UTF-8 status output, alongside the existing tracked-change case. Local verification passed: 21 pixi-sandbox-git tests. The first PR check measured 72.22% diff coverage against an 84.22% target; a new CI result is required to prove the remote threshold after the follow-up commit.
+Added `FixedRunner` fixture coverage in `crates/pixi-sandbox-git/tests/publish.rs` for empty and invalid UTF-8 status output, alongside the existing tracked-change case. Local verification passed: 21 pixi-sandbox-git tests. The first PR check measured 72.22% diff coverage against an 84.22% target; the follow-up PR CI run passed, including the Codecov patch check (run 37049757608).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:SUMMARY:BEGIN -->
-The missing Git status parser branches are covered locally. The task remains In Progress until GitHub reruns Codecov and confirms the patch threshold.
+The missing Git status parser branches are covered locally. PR #66 merged after GitHub confirmed the Codecov patch threshold in run 37049757608; the post-merge main CI run 37050382114 also passed.
 <!-- SECTION:SUMMARY:END -->
