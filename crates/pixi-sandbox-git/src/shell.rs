@@ -125,6 +125,30 @@ impl Runner for ProcessRunner {
     }
 }
 
+/// Read the short commit at `root`, when it is a Git work tree.
+///
+/// Pack treats source provenance as optional, so an unavailable Git executable, a non-repository,
+/// or non-UTF-8 output all become `None`; the command still lives behind this crate's runner.
+pub fn current_commit(root: &Path) -> Option<String> {
+    current_commit_with(&ProcessRunner, root)
+}
+
+fn current_commit_with(runner: &dyn Runner, root: &Path) -> Option<String> {
+    let output = runner
+        .run(
+            &Command::new("git")
+                .args(["rev-parse", "--short", "HEAD"])
+                .cwd(root),
+        )
+        .ok()?;
+    output
+        .ok()
+        .then(|| String::from_utf8(output.stdout).ok())
+        .flatten()
+        .map(|commit| commit.trim().to_string())
+        .filter(|commit| !commit.is_empty())
+}
+
 /// Runs for real *and* remembers every command — used by tests that want to assert the argv
 /// (for example that `commit-tree` is called without `-p`, i.e. the commit is an orphan).
 #[derive(Debug, Default)]

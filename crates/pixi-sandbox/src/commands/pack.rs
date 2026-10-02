@@ -270,7 +270,7 @@ pub fn run(args: PackArgs) -> Result<()> {
         platform: args.platform.clone(),
         shard_limit_bytes: shard_limit,
         source: Source {
-            commit: git_commit(&root),
+            commit: pixi_sandbox_git::current_commit(&root),
             lock_sha256: Some(shard::sha256_file(&root.join("pixi.lock"))?),
         },
         tools,
@@ -866,20 +866,6 @@ fn fingerprint_of(root: &Path, env: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-}
-
-fn git_commit(root: &Path) -> Option<String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["rev-parse", "--short", "HEAD"])
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .filter(|commit| !commit.is_empty())
 }
 
 fn write_branch_docs(
