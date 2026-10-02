@@ -4,7 +4,7 @@ title: Refactor the test suites onto rstest fixtures and proptest properties
 status: In Progress
 assignee: []
 created_date: '2026-10-01 17:49'
-updated_date: '2026-10-02 10:01'
+updated_date: '2026-10-02 10:13'
 labels:
   - testing
   - tooling
@@ -41,7 +41,7 @@ One constraint comes first: **rstest is not in the vendored tree**, so this cann
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 rstest is a workspace dev-dependency that reached the airlock the supported way: Cargo.lock and the vendored tree refreshed on the connected side, a transport packed and published with it, and 'cargo check --offline' plus 'pixi run test' green on a restored host with no network
+- [x] #1 rstest is a workspace dev-dependency that reached the airlock the supported way: Cargo.lock and the vendored tree refreshed on the connected side, a transport packed and published with it, and 'cargo check --offline' plus 'pixi run test' green on a restored host with no network
 - [ ] #2 One shared test-support module owns every helper that is currently duplicated (copy_tree, fixture_transport, demo_project, bin/isolated_bin, make_executable, host_platform, the git helpers, transport_repo), each defined exactly once and exposed as an rstest #[fixture]; no test file redefines one
 - [ ] #3 A check fails the build when a helper name is defined in more than one test file, so the duplication cannot grow back (the way a fourth copy_tree arrived unnoticed)
 - [ ] #4 Fixtures isolate by construction: every fixture that runs a restore yields a tempdir HOME and TMPDIR, and D10 still holds - tests target tests/fixtures, never this repository, with scripts/restore.sh as the only reviewed exception
@@ -67,4 +67,6 @@ One constraint comes first: **rstest is not in the vendored tree**, so this cann
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-02: Declared rstest 0.26.1 across the workspace and used the connected relock lane to refresh Cargo.lock. This dependency-only landing must publish a transport containing the new vendor crates before the offline fixture refactor can compile; implementation continues after a fresh restore.
+
+2026-10-02 dependency proof: PR #56 merged as ffd2016; post-merge ci, docs, and publish sandbox runs were green. After force-fetching the rotated sandbox branch, a fresh restore reported 169 vendored crates (up from 155) and Cargo.lock digest 7fbc917aafa0. `pixi run --frozen -- cargo check --workspace --offline` and `pixi run --frozen test` both passed; suite baseline remains 285 passed / 1 skipped.
 <!-- SECTION:NOTES:END -->
