@@ -195,13 +195,15 @@ jobs:
           path: project
           persist-credentials: false
 
-      # run-install: false and the empty `package` environment for every xtask step: the proof
-      # job solves no development environment (win-64 cannot solve `default` at all), and the
-      # xtask runtime needs only the Rust toolchain the runner carries — the same shape the
-      # release matrix's build legs use.
+      # The proof job installs `default` because task-35 archives the CI-only e2e gate before
+      # egress is denied. The pack/doctor/fetch/restore xtask steps below still run in the empty
+      # `package` environment: those paths need only the Rust toolchain the runner carries, while
+      # the gate archive needs cargo-nextest from the reviewed lockfile.
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
-          run-install: false
+          working-directory: project
+          environments: default
+          cache: true
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: project
