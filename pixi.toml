@@ -123,7 +123,7 @@ xtask = { args = [
 # binary after restore in Tier B (with egress available) and Tier A (through xtask deny-egress).
 airlock-gate-archive = { args = [
   { arg = "archive" },
-], cmd = "cargo nextest archive -p pixi-sandbox --test e2e --features ci --archive-file {{ archive }} --frozen" }
+], cmd = "cargo nextest archive -p pixi-sandbox --test e2e --features ci --archive-file {{ archive }}" }
 airlock-gate-run = { args = [
   { arg = "archive" },
   { arg = "project" },
