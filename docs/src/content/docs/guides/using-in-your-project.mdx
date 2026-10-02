@@ -223,10 +223,16 @@ pixi-sandbox pack --repo-root . --envs dev --output-dir .sandbox-out --platform 
   </div>
 </div>
 
-## Channel configured by init
+## Init does not modify your Pixi manifest
 
-Init preserves the order of the project's existing Pixi channels and adds the fixed Archont561
-namespace root, `https://prefix.dev/archont561`, once. This does not depend on your Git host or
-repository owner. The namespace root is for project dependencies; the package-specific
-`https://prefix.dev/archont561/pixi-sandbox` channel in the install command is only for installing
-the CLI on the connected host.
+`pixi-sandbox init` writes only the files it owns — the publisher workflow, the relock
+workflow, the offline launcher, and `pixi-sandbox.toml` when it does not exist yet. Your
+`pixi.toml` is left byte-identical: the CLI is installed globally with an explicit channel
+(`pixi global install --channel https://prefix.dev/archont561/pixi-sandbox …`), which never
+reads the project's channel list, and no generated file needs the project to know where the
+CLI came from.
+
+> **Upgrading from 0.4.3?** That release appended `https://prefix.dev/archont561` — the
+> publisher's namespace root, which is a web page, not a channel — to
+> `[workspace].channels`, so `pixi lock` failed with a 404 on any project with at least one
+> dependency. Remove that entry from your `channels` array; nothing needs to replace it.

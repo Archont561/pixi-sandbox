@@ -26,8 +26,6 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 # Reads Cargo.lock to reject a lockfile cargo itself cannot vendor (design.md §11).
 toml = { workspace = true }
-# init edits only the channel array, preserving the consumer's comments and formatting.
-toml_edit = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

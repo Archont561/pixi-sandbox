@@ -1083,190 +1083,95 @@ fn init_is_provider_neutral_and_generates_only_this_platforms_launcher() {
 }
 
 #[test]
-fn init_preserves_commented_multiline_channels_and_is_byte_idempotent() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = temp.path().join("unrelated-owner-project");
-    fs::create_dir_all(&project).unwrap();
-    let manifest = concat!(
-        "# This manifest is maintained by hand.\n",
-        "[workspace] # Pixi project metadata\n",
-        "name = \"demo\" # Shown in release reports\n",
-        "channels = [ # Priority matters; do not reorder these.\n",
-        "    \"internal\", # Private packages first\n",
-        "    # Public fallback for everything else.\n",
-        "    \"conda-forge\", # Broadest catalogue\n",
-        "] # Channel list ends here\n",
-        "platforms = [\"linux-64\"] # Current deployment target\n",
-        "\n",
-        "[dependencies] # Keep this table after workspace.\n",
-        "demo = \"1\" # Pinned for the fixture\n",
-    );
-    let expected = manifest.replacen(
-        "    \"conda-forge\", # Broadest catalogue\n",
-        "    \"conda-forge\", # Broadest catalogue\n    \"https://prefix.dev/archont561\",\n",
-        1,
-    );
-    fs::write(project.join("pixi.toml"), manifest).unwrap();
-
-    init_command(&project).assert().success();
-    assert_eq!(
-        fs::read_to_string(project.join("pixi.toml")).unwrap(),
-        expected
-    );
-    init_command(&project).assert().success();
-    assert_eq!(
-        fs::read_to_string(project.join("pixi.toml")).unwrap(),
-        expected
-    );
-}
-
-#[test]
-fn init_preserves_a_final_multiline_channel_comment_without_a_trailing_comma() {
+fn init_leaves_the_consumer_pixi_manifest_untouched() {
+    // Issue #71 / D17: init used to append the publisher namespace root to
+    // [workspace].channels — a URL that serves no repodata — so every consumer with at
+    // least one dependency failed `pixi lock` immediately after init. An empty project
+    // locked fine because an empty solve never fetches repodata, which is exactly the
+    // smoke test that hid the bug: every manifest here carries a dependency.
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");
     fs::create_dir_all(&project).unwrap();
-    let manifest = concat!(
-        "[workspace]\n",
-        "name = \"demo\"\n",
-        "channels = [\n",
-        "    \"internal\", # Private first\n",
-        "    \"conda-forge\" # Public fallback\n",
-        "]\n",
-    );
-    let expected = manifest.replacen(
-        "    \"conda-forge\" # Public fallback\n",
-        "    \"conda-forge\", # Public fallback\n    \"https://prefix.dev/archont561\"\n",
-        1,
-    );
-    fs::write(project.join("pixi.toml"), manifest).unwrap();
-
-    init_command(&project).assert().success();
-    assert_eq!(
-        fs::read_to_string(project.join("pixi.toml")).unwrap(),
-        expected
-    );
+    let manifests = [
+        // The issue's reproduction shape: a dependency forces a repodata fetch on lock.
+        concat!(
+            "[workspace]\n",
+            "name = \"probe\"\n",
+            "channels = [\"conda-forge\"]\n",
+            "platforms = [\"linux-64\"]\n",
+            "\n",
+            "[dependencies]\n",
+            "bun = \"=1.3.11\"\n",
+        ),
+        // A hand-commented manifest (task-41's corpus) survives byte-identically too —
+        // the comment-preservation machinery has nothing to preserve because nothing is
+        // edited.
+        concat!(
+            "# This manifest is maintained by hand.\n",
+            "[workspace] # Pixi project metadata\n",
+            "name = \"demo\" # Shown in release reports\n",
+            "channels = [ # Priority matters; do not reorder these.\n",
+            "    \"internal\", # Private packages first\n",
+            "    # Public fallback for everything else.\n",
+            "    \"conda-forge\", # Broadest catalogue\n",
+            "] # Channel list ends here\n",
+            "platforms = [\"linux-64\"] # Current deployment target\n",
+            "\n",
+            "[dependencies] # Keep this table after workspace.\n",
+            "demo = \"1\" # Pinned for the fixture\n",
+        ),
+        // No channels array at all: init must not invent one.
+        concat!(
+            "# Keep this heading and its blank line.\n",
+            "[workspace]\n",
+            "name = \"demo\" # Unrelated inline comment\n",
+            "platforms = [\"linux-64\"]\n",
+            "\n",
+            "[dependencies]\n",
+            "demo = \"1\" # Keep this trailing newline too.\n",
+        ),
+        // A pre-existing namespace spelling stays exactly as its author wrote it.
+        concat!(
+            "# A pre-existing spelling is valid.\n",
+            "[workspace]\n",
+            "name = \"demo\"\n",
+            "channels = [\"HTTPS://PREFIX.DEV/Archont561/\"] # Keep this spelling.\n",
+        ),
+        // Malformed TOML is no longer init's business (D17): the manifest is not parsed,
+        // so init succeeds and pixi's own lock reports the syntax error where it belongs.
+        "not valid TOML [[[",
+    ];
+    for manifest in manifests {
+        fs::write(project.join("pixi.toml"), manifest).unwrap();
+        init_command(&project).assert().success();
+        assert_eq!(
+            fs::read_to_string(project.join("pixi.toml")).unwrap(),
+            manifest
+        );
+        // Regeneration is equally inert.
+        init_command(&project).assert().success();
+        assert_eq!(
+            fs::read_to_string(project.join("pixi.toml")).unwrap(),
+            manifest
+        );
+    }
 }
 
 #[test]
-fn init_preserves_an_inline_channel_comment_when_extending_a_single_line_array() {
+fn init_still_refuses_a_directory_without_a_pixi_manifest() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");
     fs::create_dir_all(&project).unwrap();
-    let manifest = concat!(
-        "[workspace]\n",
-        "name = \"demo\"\n",
-        "channels = [\"internal\", \"conda-forge\"] # Keep this note on the array.\n",
-        "platforms = [\"linux-64\"]\n",
-    );
-    let expected = manifest.replacen(
-        "channels = [\"internal\", \"conda-forge\"] # Keep this note on the array.\n",
-        "channels = [\"internal\", \"conda-forge\", \"https://prefix.dev/archont561\"] # Keep this note on the array.\n",
-        1,
-    );
-    fs::write(project.join("pixi.toml"), manifest).unwrap();
-
-    init_command(&project).assert().success();
-    assert_eq!(
-        fs::read_to_string(project.join("pixi.toml")).unwrap(),
-        expected
-    );
-}
-
-#[test]
-fn init_adds_channels_without_rewriting_a_manifest_that_omits_them() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = temp.path().join("project");
-    fs::create_dir_all(&project).unwrap();
-    let manifest = concat!(
-        "# Keep this heading and its blank line.\n",
-        "[workspace]\n",
-        "name = \"demo\" # Unrelated inline comment\n",
-        "platforms = [\"linux-64\"]\n",
-        "\n",
-        "[dependencies]\n",
-        "demo = \"1\" # Keep this trailing newline too.\n",
-    );
-    let expected = manifest.replacen(
-        "platforms = [\"linux-64\"]\n",
-        "platforms = [\"linux-64\"]\nchannels = [\"https://prefix.dev/archont561\"]\n",
-        1,
-    );
-    fs::write(project.join("pixi.toml"), manifest).unwrap();
-
-    init_command(&project).assert().success();
-    assert_eq!(
-        fs::read_to_string(project.join("pixi.toml")).unwrap(),
-        expected
-    );
-}
-
-#[test]
-fn init_recognizes_a_normalized_namespace_without_changing_the_manifest() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = temp.path().join("project");
-    fs::create_dir_all(&project).unwrap();
-    let manifest = concat!(
-        "# A pre-existing spelling is valid.\n",
-        "[workspace]\n",
-        "name = \"demo\"\n",
-        "channels = [\"HTTPS://PREFIX.DEV/Archont561/\"] # Keep this spelling.\n",
-    );
-    fs::write(project.join("pixi.toml"), manifest).unwrap();
-
-    init_command(&project).assert().success();
-    assert_eq!(
-        fs::read_to_string(project.join("pixi.toml")).unwrap(),
-        manifest
-    );
-    init_command(&project).assert().success();
-    assert_eq!(
-        fs::read_to_string(project.join("pixi.toml")).unwrap(),
-        manifest
-    );
-}
-
-#[test]
-fn init_keeps_malformed_and_unsafe_configuration_errors_explicit_and_non_destructive() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = temp.path().join("project");
-    let manifest = project.join("pixi.toml");
-    fs::create_dir_all(&project).unwrap();
-
-    let malformed = "not valid TOML [[[";
-    fs::write(&manifest, malformed).unwrap();
-    init_command(&project)
+    // The scaffolding assumes a Pixi project (the generated config defaults to the
+    // `default` environment), so a missing manifest is named, not generated around.
+    // `init_command` would paper over this by writing a manifest, so the command is
+    // built directly.
+    let mut command = bin();
+    command.args(["init", "--project-root", project.to_str().unwrap()]);
+    command
         .assert()
         .failure()
-        .stderr(predicate::str::contains("fix the TOML before running init"));
-    assert_eq!(fs::read_to_string(&manifest).unwrap(), malformed);
-
-    let no_workspace = "[project]\nname = \"demo\"\n";
-    fs::write(&manifest, no_workspace).unwrap();
-    init_command(&project)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("has no [workspace] table"));
-    assert_eq!(fs::read_to_string(&manifest).unwrap(), no_workspace);
-
-    let non_array_channels = "[workspace]\nchannels = \"conda-forge\"\n";
-    fs::write(&manifest, non_array_channels).unwrap();
-    init_command(&project)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "workspace.channels must be an array",
-        ));
-    assert_eq!(fs::read_to_string(&manifest).unwrap(), non_array_channels);
-
-    let non_string_channel = "[workspace]\nchannels = [\"conda-forge\", 1]\n";
-    fs::write(&manifest, non_string_channel).unwrap();
-    init_command(&project)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "workspace.channels contains a non-string entry",
-        ));
-    assert_eq!(fs::read_to_string(&manifest).unwrap(), non_string_channel);
+        .stderr(predicate::str::contains("run init from a Pixi project"));
 }
 
 #[test]
