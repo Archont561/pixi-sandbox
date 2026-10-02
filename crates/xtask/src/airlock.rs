@@ -250,6 +250,46 @@ pub fn resolve_on_path(bin: &str, path_value: &std::ffi::OsStr) -> Option<PathBu
     None
 }
 
+/// `pixi global install` exposes commands through tiny trampolines next to
+/// `trampoline_configuration/<name>.json`. A transport cannot embed that trampoline by itself:
+/// once restored under `.pixi/tools/<platform>/`, it looks for a sibling config directory that
+/// the packer never shipped. Follow the config to the real package binary before `pack --self-bin`
+/// embeds it.
+fn resolve_pixi_trampoline(bin: &Path) -> PathBuf {
+    let Some(name) = bin.file_name().and_then(|name| name.to_str()) else {
+        return bin.to_path_buf();
+    };
+    let config = bin
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join("trampoline_configuration")
+        .join(format!("{name}.json"));
+    let Ok(text) = std::fs::read_to_string(&config) else {
+        return bin.to_path_buf();
+    };
+    let Ok(json) = serde_json::from_str::<Value>(&text) else {
+        return bin.to_path_buf();
+    };
+    find_executable_named(&json, name).unwrap_or_else(|| bin.to_path_buf())
+}
+
+fn find_executable_named(value: &Value, name: &str) -> Option<PathBuf> {
+    match value {
+        Value::String(candidate) => {
+            let path = PathBuf::from(candidate);
+            (path.file_name().and_then(|file| file.to_str()) == Some(name) && is_executable(&path))
+                .then_some(path)
+        }
+        Value::Array(items) => items
+            .iter()
+            .find_map(|item| find_executable_named(item, name)),
+        Value::Object(fields) => fields
+            .values()
+            .find_map(|item| find_executable_named(item, name)),
+        _ => None,
+    }
+}
+
 fn is_executable(path: &Path) -> bool {
     if !path.is_file() {
         return false;
@@ -318,6 +358,7 @@ pub fn airlock_pack(
         )
         .context("pixi-sandbox is not on PATH — install the released package first")?,
     };
+    let self_bin = resolve_pixi_trampoline(&self_bin);
 
     // The transport directory is scratch under the runner's temp; pack refuses a dirty dir,
     // so start it empty exactly like the `rm -rf` in the shell this replaces.
@@ -612,6 +653,30 @@ mod tests {
             resolve_on_path("absent", std::ffi::OsStr::new(&path_value)),
             None
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pixi_global_trampolines_resolve_to_the_real_package_binary() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let exposed = dir.path().join("bin");
+        let package = dir.path().join("env/bin");
+        fs::create_dir_all(exposed.join("trampoline_configuration")).expect("mkdir");
+        fs::create_dir_all(&package).expect("mkdir");
+        let shim = exposed.join("pixi-sandbox");
+        let real = package.join("pixi-sandbox");
+        fs::write(&shim, b"trampoline").expect("write shim");
+        fs::write(&real, b"#!/bin/true\n").expect("write real");
+        fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).expect("chmod shim");
+        fs::set_permissions(&real, fs::Permissions::from_mode(0o755)).expect("chmod real");
+        fs::write(
+            exposed.join("trampoline_configuration/pixi-sandbox.json"),
+            format!(r#"{{"executable":"{}","args":[]}}"#, real.display()),
+        )
+        .expect("write config");
+
+        assert_eq!(resolve_pixi_trampoline(&shim), real);
     }
 
     #[test]
