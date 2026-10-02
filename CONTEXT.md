@@ -495,3 +495,55 @@ restore, `pixi run --frozen airlock-gate-archive`, `pixi run --frozen lint-actio
 `pixi run --frozen lint-toml`, `pixi run --frozen xtask check-repository`, and
 `pixi run --frozen docs-build` all pass. Full all-crates lint was intentionally not run in this
 iteration per the user's instruction to skip it and use repo-specific / targeted checks.
+
+### 2026-10-02 — task-38 lands: every table loop is a named case
+
+**Landed on PR #59** (merged 75a4489; post-merge ci, docs, and publish sandbox all green): the
+full local task-38 stack — rstest support module with fixtures, bounded proptest properties with
+committed seed files, the defined-once/coverage guards — plus the finishing slice converting
+every remaining assertion-table loop into named `#[case]`s. Suite on merged main: **403 passed /
+1 skipped** (was 331/1). AC#1–3, #5, #6, #8 proven and checked. Two patterns worth reusing: the
+expensive publish is shared across read-only cases by a `#[once]` published-orphan fixture
+(restructure beats re-running), and the reviewed stale-word trio keeps its single
+`stale-ref-allowed` line by living in `STALE_DELETED_REFERENCES` with cases passing an index —
+one-line markers silence exactly one following line, so literals spread across `#[case]`
+attributes would need one marker each.
+
+**Not implemented — two owner calls, both in task-38's notes, task stays In Progress:**
+
+- **AC#4's TMPDIR clause.** Restore-running fixtures yield a tempdir HOME and set
+  HOME/USERPROFILE/SHELL per test; nothing sets a per-test TMPDIR. Wire it (a line in
+  `isolated_bin` and the user-tools `restore` builder) or amend the AC to say HOME-only.
+- **AC#7's <20s-suite clause.** Wall-clock is 22.7s, dominated by the pre-existing 22.2s
+  `pack_vendors_a_lockfile_whose_crates_come_from_one_source_each` test; the bounded properties
+  are not the driver. Shrink/split that test or amend the AC to bound the properties rather than
+  the suite.
+
+Also decided in the slice, not asked: the `publish.rs` file-writing loops, restore env-setup
+loops and publish rounds stay loops — they are stateful setup/repetition, not assertion tables,
+and parametrizing them would fork shared state or multiply the work the tests measure. A
+tautological `lock.matches("conda:").count() == lock.matches("conda:").count()` assertion that
+could not fail was removed from `fixtures.rs`.
+
+**Backlog is empty after task-38:** `backlog/tasks/*.md` has no other open item. When task-38
+closes, the next work comes from new tasks — seed them from this scratchpad (the two AC-clause
+fixes if the owner says "wire" / "split", the still-wanted macOS bundle of task-1 awaiting a
+native runner) rather than re-opening Done work.
+
+**Next session should start with:**
+
+> Restore the sandbox and baseline the suite (expect **403 passing / 1 skipped** — `publish
+> sandbox` repacked the transport off main@75a4489, so the restore is the usual registered
+> launcher flow; rstest is vendored, nothing new needs the connected side), then read
+> `CONTEXT.md` § Session scratchpad — the 2026-10-02 heading *"task-38 lands: every table loop
+> is a named case"* lists the two open owner calls.
+>
+> First: decide the two task-38 clauses — per-test TMPDIR in the restore fixtures (wire it, one
+> line, or amend AC#4) and the <20s suite (split the 22.2s pack-vendor test, or amend AC#7 to
+> bound the properties). With both answered, implement what "wire"/"split" implies, check AC#4
+> and AC#7, mark task-38 Done, and the backlog is empty — so propose new tasks from this
+> scratchpad afterwards rather than re-opening Done ones.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
+> and its templates are in `.agents/skills/session/`.
