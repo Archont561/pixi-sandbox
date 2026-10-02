@@ -6,7 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [v0.4.0](https://github.com/Archont561/pixi-sandbox/compare/v0.3.7...99c3e178d53e8452087f3a89329d1a310a11238a) (2026-10-01)
+### [v0.4.1](https://github.com/Archont561/pixi-sandbox/compare/v0.4.0...19f6e36b8b6298d5867018e7cf50a0c8740269bb) (2026-10-02)
+
+#### Features
+
+* **ci:** move airlock gate and restore cargo wiring
+([f0eba3c](https://github.com/Archont561/pixi-sandbox/commit/f0eba3cc5ecd16100c017620fb877c50f59f8986)),
+closes [#55](https://github.com/Archont561/pixi-sandbox/issues/55)
+* **ci:** dogfood the generated sandbox publisher on this repository
+([ef9e68a](https://github.com/Archont561/pixi-sandbox/commit/ef9e68a56a588cf2007e38d7a687204197e930da))
+
+#### Fixes
+
+* **publish:** build sandbox transport from source
+([19f6e36](https://github.com/Archont561/pixi-sandbox/commit/19f6e36b8b6298d5867018e7cf50a0c8740269bb))
+* **init:** preserve pixi.toml comments (#58)
+([a75005b](https://github.com/Archont561/pixi-sandbox/commit/a75005b1572bc85dd99558a9f9c72eeb223af921)),
+closes [#58](https://github.com/Archont561/pixi-sandbox/issues/58)
+
+#### Documentation
+
+* **context:** record task-38 landing and the two open AC-clauses calls (#60)
+([6beb6c3](https://github.com/Archont561/pixi-sandbox/commit/6beb6c36e90cf3690a392d475473f7044b826f5f)),
+closes [#60](https://github.com/Archont561/pixi-sandbox/issues/60)
+* **backlog:** record rstest airlock proof
+([7920002](https://github.com/Archont561/pixi-sandbox/commit/79200026d30647a3f54a8c3f326cc796d39de75f))
+* **context:** close the v0.4.0 session and correct the session skill
+([540e838](https://github.com/Archont561/pixi-sandbox/commit/540e8386db2c369126b79290a8b36aa923a2e1f3)),
+closes [#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+
+## [v0.4.0](https://github.com/Archont561/pixi-sandbox/compare/v0.3.7...v0.4.0) (2026-10-01)
 
 ### Features
 
