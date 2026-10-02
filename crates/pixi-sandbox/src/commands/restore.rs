@@ -812,7 +812,7 @@ fn ensure_same_filesystem(work: &Path, project: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{clean_work_dir, relocate_text_prefixes};
+    use super::{clean_work_dir, relocate_text_prefixes, remove_legacy_sandbox_env};
     use std::fs;
     use std::path::Path;
 
@@ -885,6 +885,19 @@ mod tests {
             format!("prefix='{new}' {new}")
         );
         assert_eq!(fs::read(&latin1).unwrap(), latin1_bytes);
+    }
+
+    #[test]
+    fn legacy_sandbox_env_is_removed_during_restore_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(".pixi/sandbox-env.sh");
+        fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        fs::write(&legacy, b"export PATH=legacy\n").unwrap();
+
+        remove_legacy_sandbox_env(temp.path()).unwrap();
+
+        assert!(!legacy.exists());
+        remove_legacy_sandbox_env(temp.path()).unwrap();
     }
 
     #[test]

@@ -234,12 +234,22 @@ pub fn static_asset_for_platform(platform: &str) -> Result<&'static str> {
 }
 
 pub fn airlock_self_bin(repo: &str, tag: &str, platform: &str, out: &Path) -> Result<()> {
+    airlock_self_bin_with_gh(Path::new("gh"), repo, tag, platform, out)
+}
+
+fn airlock_self_bin_with_gh(
+    gh: &Path,
+    repo: &str,
+    tag: &str,
+    platform: &str,
+    out: &Path,
+) -> Result<()> {
     let asset = static_asset_for_platform(platform)?;
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    let status = StdCommand::new("gh")
+    let status = StdCommand::new(gh)
         .args([
             "release",
             "download",
@@ -385,9 +395,27 @@ pub fn airlock_pack(
     cargo_vendor: &str,
     self_bin: Option<&Path>,
 ) -> Result<()> {
+    airlock_pack_with_pixi(
+        Path::new("pixi"),
+        repo_root,
+        envs,
+        out,
+        cargo_vendor,
+        self_bin,
+    )
+}
+
+fn airlock_pack_with_pixi(
+    pixi: &Path,
+    repo_root: &Path,
+    envs: &str,
+    out: &Path,
+    cargo_vendor: &str,
+    self_bin: Option<&Path>,
+) -> Result<()> {
     for environment in split_envs(envs)? {
         eprintln!("installing environment {environment} (frozen)");
-        let status = StdCommand::new("pixi")
+        let status = StdCommand::new(pixi)
             .args(["install", "--frozen", "-e"])
             .arg(&environment)
             .current_dir(repo_root)
@@ -666,6 +694,54 @@ mod tests {
         assert!(static_asset_for_platform("freebsd-64").is_err());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn self_bin_download_uses_the_static_asset_and_marks_it_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let gh = dir.path().join("gh");
+        write_executable(
+            &gh,
+            r#"#!/bin/sh
+set -eu
+log="$(dirname "$0")/gh.args"
+: > "$log"
+for arg in "$@"; do
+  printf '%s\n' "$arg" >> "$log"
+done
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '#!/bin/sh\nexit 0\n' > "$out"
+chmod 600 "$out"
+"#,
+        );
+        let out = dir.path().join("nested/pixi-sandbox");
+
+        airlock_self_bin_with_gh(&gh, "owner/repo", "v0.4.0", "linux-64", &out).expect("download");
+
+        let args = fs::read_to_string(dir.path().join("gh.args")).expect("args");
+        assert!(args.contains("release\ndownload\nv0.4.0\n"), "{args}");
+        assert!(args.contains("--repo\nowner/repo\n"), "{args}");
+        assert!(
+            args.contains("--pattern\npixi-sandbox-x86_64-unknown-linux-musl\n"),
+            "{args}"
+        );
+        assert!(args.contains("--clobber\n"), "{args}");
+        assert!(out.is_file());
+        assert_ne!(
+            fs::metadata(&out).expect("metadata").permissions().mode() & 0o111,
+            0,
+            "downloaded self binary must be executable"
+        );
+    }
+
     #[test]
     fn env_lists_split_on_commas_and_empty_names_are_dropped() {
         assert_eq!(
@@ -709,6 +785,63 @@ mod tests {
             assert!(argv.contains(&"--fetch-tools".to_string()));
             assert!(argv.contains(&"/bin/pixi-sandbox".to_string()));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn airlock_pack_installs_named_envs_and_runs_the_static_self_binary() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        let pixi = dir.path().join("pixi");
+        write_executable(
+            &pixi,
+            r#"#!/bin/sh
+set -eu
+printf '%s\n' "$@" >> "$(dirname "$0")/pixi.args"
+"#,
+        );
+        let self_bin = dir.path().join("pixi-sandbox");
+        write_executable(
+            &self_bin,
+            r#"#!/bin/sh
+set -eu
+: > "$(dirname "$0")/self.args"
+for arg in "$@"; do
+  printf '%s\n' "$arg" >> "$(dirname "$0")/self.args"
+done
+"#,
+        );
+        let out = dir.path().join("transport");
+        fs::create_dir_all(&out).expect("out");
+        fs::write(out.join("stale"), b"old").expect("stale");
+
+        airlock_pack_with_pixi(&pixi, &repo, "default, web", &out, "false", Some(&self_bin))
+            .expect("pack");
+
+        let pixi_args = fs::read_to_string(dir.path().join("pixi.args")).expect("pixi args");
+        assert!(
+            pixi_args.contains("install\n--frozen\n-e\ndefault\ninstall\n--frozen\n-e\nweb\n"),
+            "{pixi_args}"
+        );
+        assert!(
+            !out.join("stale").exists(),
+            "packing starts from an empty transport dir"
+        );
+        let self_args = fs::read_to_string(dir.path().join("self.args")).expect("self args");
+        assert!(self_args.contains("pack\n--repo-root\n.\n"), "{self_args}");
+        assert!(
+            self_args.contains(&format!("--output-dir\n{}\n", out.display())),
+            "{self_args}"
+        );
+        assert!(
+            self_args.contains(&format!("--self-bin\n{}\n", self_bin.display())),
+            "{self_args}"
+        );
+        assert!(
+            !self_args.contains("--cargo-vendor\n"),
+            "false disables cargo vendoring: {self_args}"
+        );
     }
 
     #[cfg(unix)]
@@ -767,6 +900,34 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn malformed_or_unhelpful_trampoline_configs_keep_the_original_binary() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let exposed = dir.path().join("bin");
+        fs::create_dir_all(exposed.join("trampoline_configuration")).expect("mkdir");
+        let shim = exposed.join("pixi-sandbox");
+        fs::write(&shim, b"trampoline").expect("write shim");
+        fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).expect("chmod shim");
+
+        assert_eq!(resolve_pixi_trampoline(&shim), shim);
+        fs::write(
+            exposed.join("trampoline_configuration/pixi-sandbox.json"),
+            b"not-json",
+        )
+        .expect("write invalid json");
+        assert_eq!(resolve_pixi_trampoline(&shim), shim);
+        fs::write(
+            exposed.join("trampoline_configuration/pixi-sandbox.json"),
+            b"null",
+        )
+        .expect("write null json");
+        assert_eq!(resolve_pixi_trampoline(&shim), shim);
+        assert_eq!(resolve_pixi_trampoline(Path::new("/")), PathBuf::from("/"));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn deny_egress_absolutizes_the_program_before_sudo_sanitizes_path() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().expect("tempdir");
@@ -784,6 +945,18 @@ mod tests {
             command_with_absolute_program(&["/usr/bin/pixi".into()], &path_value)
                 .expect("absolute unchanged"),
             ["/usr/bin/pixi".to_string()]
+        );
+        assert!(
+            command_with_absolute_program(&[], &path_value)
+                .expect_err("empty command")
+                .to_string()
+                .contains("needs a command")
+        );
+        assert!(
+            command_with_absolute_program(&["missing".into()], &path_value)
+                .expect_err("missing program")
+                .to_string()
+                .contains("not on PATH")
         );
     }
 
@@ -854,6 +1027,13 @@ mod tests {
             fs::read(worktree.join("blob.txt")).expect("read"),
             b"transport bytes"
         );
+    }
+
+    #[cfg(unix)]
+    fn write_executable(path: &Path, contents: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::write(path, contents).expect("write executable");
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod executable");
     }
 
     fn run_git(args: &[&str], cwd: &Path, extras: &[&str]) {
