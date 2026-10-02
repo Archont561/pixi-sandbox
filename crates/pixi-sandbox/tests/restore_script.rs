@@ -27,6 +27,8 @@
 
 mod support;
 
+use proptest::prelude::*;
+use rstest::rstest;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -258,27 +260,53 @@ fn a_missing_config_says_how_to_restore_without_one() {
 /// The branch name is interpolated straight into `git fetch` and `git worktree add`. Anything
 /// that is not a plain ref is refused before it reaches git — including a leading `-`, which
 /// git would read as an option.
-#[test]
-fn a_branch_name_that_is_not_ref_safe_is_refused() {
+#[rstest]
+#[case("../evil")]
+#[case("with space")]
+#[case("colon:ref")]
+#[case("tilde~1")]
+#[case("caret^2")]
+#[case("reflog@{1}")]
+#[case("-rf")]
+#[case("glob*")]
+fn a_branch_name_that_is_not_ref_safe_is_refused(#[case] unsafe_name: &str) {
     let config = format!(
         "schema = 1\n[[bundle]]\nname = \"developer\"\nplatforms = [\"{}\"]\n",
         host_platform()
     );
-    for unsafe_name in [
-        "../evil",
-        "with space",
-        "colon:ref",
-        "tilde~1",
-        "caret^2",
-        "reflog@{1}",
-        "-rf",
-        "glob*",
-    ] {
-        let (code, out) = print_branch(&config, &[unsafe_name], &[]);
-        assert_eq!(code, Some(2), "{unsafe_name} was not refused: {out}");
-        assert!(
-            out.contains(&format!("refusing unsafe branch name: {unsafe_name}")),
-            "{out}"
+    let (code, out) = print_branch(&config, &[unsafe_name], &[]);
+    assert_eq!(code, Some(2), "{unsafe_name} was not refused: {out}");
+    assert!(
+        out.contains(&format!("refusing unsafe branch name: {unsafe_name}")),
+        "{out}"
+    );
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    /// The bootstrap has to reject exactly the same branch names as the Rust planner. A branch
+    /// selected on a disconnected host is fed to git before the binary can be available, so
+    /// this exercises the Bash implementation rather than merely re-stating its table in Rust.
+    #[test]
+    fn script_and_rust_agree_on_printable_branch_safety(branch in "[ -~]{0,24}") {
+        // Empty means "derive" and `auto` is the documented derivation sentinel, not a literal
+        // branch argument. Neither is a branch name for this agreement.
+        prop_assume!(!branch.is_empty() && branch != "auto");
+
+        let config = format!(
+            "schema = 1\n[[bundle]]\nname = \"developer\"\nplatforms = [\"{}\"]\n",
+            host_platform()
+        );
+        let (code, output) = print_branch(&config, &[&branch], &[]);
+        let script_accepts = code == Some(0);
+        let rust_accepts = pixi_sandbox_core::sandbox_config::is_safe_git_ref(&branch);
+        prop_assert_eq!(
+            script_accepts,
+            rust_accepts,
+            "branch {:?}: script output was {:?}",
+            branch,
+            output
         );
     }
 }

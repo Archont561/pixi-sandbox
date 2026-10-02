@@ -1,0 +1,3 @@
+# Seeds for property tests in `sandbox_config.rs`.
+#
+# Check in minimized configuration cases so target-planning regressions are replayed exactly.

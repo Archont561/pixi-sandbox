@@ -340,6 +340,11 @@ work goes through `pixi run --frozen xtask <subcommand>` for repository automati
 work goes through `pixi run bun --filter=<workspace-package> run <script>` (for example,
 `--filter=pixi-sandbox-docs`) or the root `pixi run --frozen bunx <tool>` task.
 
+Tests use rstest fixtures from `crates/pixi-sandbox/tests/support/mod.rs`, named `#[case]`
+parameterisation for finite inputs, and bounded proptest invariants for universal contracts. New
+properties keep their `.proptest-regressions` seed file in version control; new integration tests
+use the committed fixtures and isolated temp homes rather than this checkout.
+
 ```bash
 # Lint (rustfmt, clippy -D warnings, cargo-deny, actionlint, taplo, biome)
 pixi run --frozen lint

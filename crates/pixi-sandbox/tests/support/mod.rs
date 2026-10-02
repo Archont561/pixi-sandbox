@@ -3,6 +3,16 @@
 //! This is the only home for the filesystem, process, fixture-payload, and temporary-git setup
 //! that more than one integration test needs. Every path starts under a test-owned tempdir and
 //! every project payload comes from `tests/fixtures`, never the repository checkout (D10).
+//!
+//! ## API convention
+//!
+//! Ask for a zero-argument setup value directly in an `#[rstest]` test (`bin`,
+//! `fixture_transport`, `isolated_home`, and `host_platform`). Helpers that need a path or
+//! caller-selected argument stay ordinary functions, paired with a `*_fixture` that returns a
+//! typed function pointer. This is the rstest-compatible way to expose a parameterised helper:
+//! annotating a function such as `copy_tree(source, destination)` directly as a fixture makes
+//! rstest interpret those runtime arguments as fixture names. Keep properties bounded, add their
+//! committed `.proptest-regressions` file, and use `#[case]` rather than assertion-table loops.
 
 use assert_cmd::Command;
 use rstest::fixture;
@@ -18,6 +28,12 @@ pub fn crate_dir() -> PathBuf {
 #[fixture]
 pub fn bin() -> Command {
     Command::cargo_bin("pixi-sandbox").expect("binary builds")
+}
+
+/// An owned home and temporary directory for any restore or launcher test (D10).
+#[fixture]
+pub fn isolated_home() -> tempfile::TempDir {
+    tempfile::tempdir().expect("isolated test home")
 }
 
 /// A synthetic, already-packed payload committed for integration tests.

@@ -1,0 +1,3 @@
+# Seeds for property tests in `src/files_manifest.rs`.
+#
+# Keep minimized canonicalisation failures so they replay on every airlocked build.

@@ -322,8 +322,16 @@ fn validate_runner_label(platform: &str, runner: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_branch_prefix(value: &str) -> Result<()> {
+/// Return whether `value` is safe to interpolate as a complete Git branch name.
+///
+/// `scripts/restore.sh` owns a Bash spelling of this predicate because the airlock cannot
+/// depend on this binary before it has restored it. Keep the two implementations in lockstep:
+/// the property test in `tests/restore_script.rs` generates printable branch names and checks
+/// their answers agree. This deliberately follows Git's ref-name restrictions plus a leading
+/// dash guard, because a branch is passed to command-line plumbing as well as to ref parsing.
+pub fn is_safe_git_ref(value: &str) -> bool {
     if value.is_empty()
+        || value.starts_with('-')
         || value.starts_with('/')
         || value.ends_with('/')
         || value.contains("//")
@@ -335,22 +343,25 @@ fn validate_branch_prefix(value: &str) -> Result<()> {
                 || matches!(byte, b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
         })
     {
-        return Err(Error::Invalid(format!(
+        return false;
+    }
+
+    value.split('/').all(|component| {
+        !component.is_empty()
+            && component != "."
+            && component != ".."
+            && !component.starts_with('.')
+            && !component.ends_with('.')
+            && !component.ends_with(".lock")
+    })
+}
+
+fn validate_branch_prefix(value: &str) -> Result<()> {
+    if is_safe_git_ref(value) {
+        Ok(())
+    } else {
+        Err(Error::Invalid(format!(
             "branch_prefix {value:?} is not a safe git-ref prefix"
-        )));
+        )))
     }
-    for component in value.split('/') {
-        if component.is_empty()
-            || component == "."
-            || component == ".."
-            || component.starts_with('.')
-            || component.ends_with('.')
-            || component.ends_with(".lock")
-        {
-            return Err(Error::Invalid(format!(
-                "branch_prefix {value:?} contains an unsafe git-ref component {component:?}"
-            )));
-        }
-    }
-    Ok(())
 }

@@ -946,6 +946,7 @@ fn ensure_same_filesystem(work: &Path, project: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{clean_work_dir, relocate_text_prefixes, remove_legacy_sandbox_env};
+    use proptest::prelude::*;
     use std::fs;
     use std::path::Path;
 
@@ -975,6 +976,40 @@ mod tests {
             format!("prefix={}\n", final_prefix.display())
         );
         assert_eq!(fs::read(staged.join("binary")).unwrap(), binary);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(32))]
+
+        /// Prefix relocation has a deliberately narrow contract: valid UTF-8 text without a
+        /// NUL gets rewritten, while any NUL-bearing payload remains byte-for-byte unchanged.
+        #[test]
+        fn relocation_rewrites_only_nul_free_utf8(
+            suffix in proptest::collection::vec(any::<u8>(), 0..96),
+            binary_tail in proptest::collection::vec(any::<u8>(), 0..96),
+        ) {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let staged = temp.path().join("stage/env");
+            let final_prefix = temp.path().join("final/env");
+            fs::create_dir_all(&staged).expect("stage directory");
+            let old = staged_prefix(&staged);
+            let suffix = String::from_utf8_lossy(&suffix).replace('\0', "");
+
+            let text_path = staged.join("text.pc");
+            let text = format!("before={old};{suffix};after={old}\n");
+            fs::write(&text_path, &text).expect("write text");
+
+            let binary_path = staged.join("binary");
+            let binary = [old.as_bytes(), b"\0", binary_tail.as_slice()].concat();
+            fs::write(&binary_path, &binary).expect("write binary");
+
+            prop_assert_eq!(relocate_text_prefixes(&staged, &final_prefix).unwrap(), 1);
+            prop_assert_eq!(
+                fs::read_to_string(&text_path).unwrap(),
+                format!("before={};{suffix};after={}\n", final_prefix.display(), final_prefix.display())
+            );
+            prop_assert_eq!(fs::read(&binary_path).unwrap(), binary);
+        }
     }
 
     #[test]

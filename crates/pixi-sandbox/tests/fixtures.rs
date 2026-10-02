@@ -280,6 +280,7 @@ fn shared_test_helpers_are_defined_once_and_exposed_as_fixtures() {
     let support_text = std::fs::read_to_string(&support).unwrap();
     let helpers = [
         ("bin", "bin"),
+        ("isolated_home", "isolated_home"),
         ("fixture_transport", "fixture_transport"),
         ("demo_project", "demo_project"),
         ("isolated_bin", "isolated_bin_fixture"),
@@ -319,6 +320,62 @@ fn shared_test_helpers_are_defined_once_and_exposed_as_fixtures() {
             "{helper} must stay available through the {fixture} rstest fixture"
         );
     }
+}
+
+/// Keep coverage from silently drifting toward only the CLI's happy path. This is a lightweight
+/// structural guard rather than a replacement for llvm-cov: every production module must either
+/// carry unit tests or have its derived module symbol mentioned by an integration test. `main.rs`
+/// is wiring only and deliberately excluded.
+#[test]
+fn coverage_guard_requires_a_test_route_for_every_production_module() {
+    let crate_root = crate_dir();
+    let src = crate_root.join("src");
+    let mut production = Vec::new();
+    collect_rust(&src, &mut production);
+    let mut test_sources = Vec::new();
+    collect_rust(&crate_root.join("tests"), &mut test_sources);
+    let test_text = test_sources
+        .iter()
+        .map(|path| std::fs::read_to_string(path).expect("test source is UTF-8"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut uncovered = Vec::new();
+    for source in production {
+        let relative = source.strip_prefix(&src).expect("source sits under src");
+        if relative == Path::new("main.rs") {
+            continue;
+        }
+        let stem = source
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .expect("Rust source has a UTF-8 file stem");
+        let symbol = match stem {
+            // `mod.rs` is named after its containing module; `lib.rs` is the crate symbol used
+            // by integration tests. Both cases make failure output point at a useful remedy.
+            "mod" => relative
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|part| part.to_str())
+                .unwrap_or("module"),
+            "lib" => "pixi_sandbox",
+            _ => stem,
+        };
+        let source_text = std::fs::read_to_string(&source).expect("production source is UTF-8");
+        if source_text.contains("#[cfg(test)]") || test_text.contains(symbol) {
+            continue;
+        }
+        uncovered.push(format!("{} (symbol `{symbol}`)", relative.display()));
+    }
+
+    assert!(
+        uncovered.is_empty(),
+        "coverage guard found production modules with no unit-test block or integration-test \
+         symbol reference:\n  {}\n\nAdd a focused test under tests/ that names the module symbol, \
+         or add a #[cfg(test)] unit-test module beside the production code. `src/main.rs` is \
+         intentionally excluded because it is CLI wiring.",
+        uncovered.join("\n  ")
+    );
 }
 
 #[test]

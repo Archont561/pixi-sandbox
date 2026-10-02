@@ -1,0 +1,3 @@
+# Seeds for property tests in `src/commands/restore.rs`.
+#
+# Check in minimized relocation cases so text/binary classification regressions replay exactly.
