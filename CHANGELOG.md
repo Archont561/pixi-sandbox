@@ -6,7 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.4.3](https://github.com/Archont561/pixi-sandbox/compare/v0.4.2...9dbf9f42af2a8e753bef211920dd16f8cc246d66) (2026-10-02)
+### [v0.4.4](https://github.com/Archont561/pixi-sandbox/compare/v0.4.3...41dc22f24fec06d3ee4b0519a3048d2e8f2f4178) (2026-10-03)
+
+#### Fixes
+
+* **publish:** use source binary throughout owner workflow (#74)
+([15b82c7](https://github.com/Archont561/pixi-sandbox/commit/15b82c755652cca3f333009d1036090487f2d67b)),
+closes [#74](https://github.com/Archont561/pixi-sandbox/issues/74)
+* **init:** stop appending the unusable namespace root to consumer channels; publish to the
+archont561 ecosystem channel (#73)
+([47f77c6](https://github.com/Archont561/pixi-sandbox/commit/47f77c6eef9817688fe97a1dc2a3c80ff5c855b5)),
+closes [#73](https://github.com/Archont561/pixi-sandbox/issues/73)
+[#71](https://github.com/Archont561/pixi-sandbox/issues/71)
+[#72](https://github.com/Archont561/pixi-sandbox/issues/72)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#72](https://github.com/Archont561/pixi-sandbox/issues/72)
+[#73](https://github.com/Archont561/pixi-sandbox/issues/73)
+[#72](https://github.com/Archont561/pixi-sandbox/issues/72)
+[#72](https://github.com/Archont561/pixi-sandbox/issues/72)
+[#73](https://github.com/Archont561/pixi-sandbox/issues/73)
+
+#### Documentation
+
+* **context:** hand off v1 self-update session (#75)
+([41dc22f](https://github.com/Archont561/pixi-sandbox/commit/41dc22f24fec06d3ee4b0519a3048d2e8f2f4178)),
+closes [#75](https://github.com/Archont561/pixi-sandbox/issues/75)
+
+### [v0.4.3](https://github.com/Archont561/pixi-sandbox/compare/v0.4.2...v0.4.3) (2026-10-02)
 
 #### Fixes
 
