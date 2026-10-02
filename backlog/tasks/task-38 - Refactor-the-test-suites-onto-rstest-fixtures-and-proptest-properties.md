@@ -1,10 +1,10 @@
 ---
 id: TASK-38
 title: Refactor the test suites onto rstest fixtures and proptest properties
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-01 17:49'
-updated_date: '2026-10-01 17:49'
+updated_date: '2026-10-02 10:01'
 labels:
   - testing
   - tooling
@@ -62,3 +62,9 @@ One constraint comes first: **rstest is not in the vendored tree**, so this cann
 6. Add the guard that keeps it true: a check (in `tests/fixtures.rs` or `xtask check-repository`) that fails when a helper name is defined in more than one test file.
 7. Update the baselines and conventions: test count in `.agents/skills/session/SKILL.md`, the testing section in `AGENTS.md` and `README.md`, and a short note in the docs on how to write a new test (ask for a fixture; parametrise with `#[case]`; prefer a property where the invariant is universal).
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-02: Declared rstest 0.26.1 across the workspace and used the connected relock lane to refresh Cargo.lock. This dependency-only landing must publish a transport containing the new vendor crates before the offline fixture refactor can compile; implementation continues after a fresh restore.
+<!-- SECTION:NOTES:END -->
