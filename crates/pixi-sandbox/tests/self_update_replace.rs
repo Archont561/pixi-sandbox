@@ -200,3 +200,138 @@ fn the_current_strategy_matches_the_host() {
     };
     assert_eq!(ReplaceStrategy::current(), expected);
 }
+
+/// The rollback's own failure mode: the staged file is missing *and* the destination name has
+/// been taken by something that cannot be renamed over, so the previous binary cannot be put
+/// back. The operator must be told where their binary went rather than left guessing.
+#[test]
+fn an_unrecoverable_windows_swap_names_the_file_to_move_back_by_hand() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bin = dir.path().join("pixi-sandbox");
+    fs::write(&bin, b"the previous binary").expect("write");
+    let missing = dir.path().join("never-staged");
+
+    // Re-occupy the destination with a directory while the swap is mid-flight by making the
+    // rollback target unavailable: a directory cannot be replaced by `rename` of a file.
+    let err = {
+        let aside = bin.with_file_name(format!("pixi-sandbox{DISPLACED_INFIX}0.0.1"));
+        fs::rename(&bin, &aside).expect("move aside");
+        fs::create_dir(&bin).expect("occupy the destination");
+        let result = windows_swap(&missing, &bin, VERSION);
+        result.unwrap_err()
+    };
+    let text = format!("{err:?}");
+    assert!(
+        text.contains("pixi-sandbox"),
+        "the message must name the binary: {text}"
+    );
+}
+
+/// A destination whose parent cannot be created is reported, not silently skipped.
+#[test]
+fn an_uncreatable_destination_directory_is_an_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let blocker = dir.path().join("not-a-dir");
+    fs::write(&blocker, b"a file where a directory is needed").expect("write");
+    let err = install(
+        ReplaceStrategy::Unix,
+        &blocker.join("pixi-sandbox"),
+        b"new",
+        VERSION,
+    )
+    .unwrap_err();
+    assert!(format!("{err:?}").contains("not-a-dir"), "{err:?}");
+}
+
+/// The sweep must tolerate a directory it cannot read rather than abort the update.
+#[test]
+fn a_destination_directory_that_cannot_be_listed_still_installs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bin = dir.path().join("fresh/pixi-sandbox");
+    let result = install(ReplaceStrategy::Unix, &bin, b"new", VERSION).expect("installed");
+    assert!(
+        result.swept.is_empty(),
+        "nothing to sweep in a new directory"
+    );
+}
+
+/// The Unix swap's failure path: a directory occupying the destination cannot be renamed over.
+/// The staged file must not be left behind.
+#[test]
+fn a_failed_unix_rename_is_reported_and_leaves_no_staged_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let destination = dir.path().join("pixi-sandbox");
+    fs::create_dir(&destination).expect("a directory where the binary should be");
+    fs::write(destination.join("occupant"), b"x").expect("make it non-empty");
+
+    let err = install(ReplaceStrategy::Unix, &destination, b"new", VERSION).unwrap_err();
+    assert!(format!("{err:?}").contains("pixi-sandbox"), "{err:?}");
+    assert!(
+        !staging_path(&destination).exists(),
+        "a failed swap must clean up its staged file"
+    );
+}
+
+/// The Windows swap cannot even move the old image aside — the error must name both paths so
+/// an operator knows nothing was touched.
+#[cfg(unix)]
+#[test]
+fn a_windows_swap_that_cannot_move_the_old_binary_aside_reports_both_paths() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let locked = dir.path().join("locked");
+    fs::create_dir(&locked).expect("mkdir");
+    let destination = locked.join("pixi-sandbox");
+    fs::write(&destination, b"the previous binary").expect("write");
+    let staged = dir.path().join("staged");
+    fs::write(&staged, b"new").expect("write");
+
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).expect("read-only dir");
+    let result = windows_swap(&staged, &destination, VERSION);
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).expect("restore");
+
+    let err = result.unwrap_err();
+    let text = format!("{err:?}");
+    assert!(text.contains("aside"), "{text}");
+    assert_eq!(
+        fs::read(&destination).expect("read"),
+        b"the previous binary",
+        "nothing may be touched when the move aside fails"
+    );
+}
+
+/// An unlistable destination directory must not abort the update — the sweep is best effort.
+#[cfg(unix)]
+#[test]
+fn an_unreadable_directory_sweeps_nothing_instead_of_failing() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let target = dir.path().join("opaque");
+    fs::create_dir(&target).expect("mkdir");
+    let destination = target.join("pixi-sandbox");
+    // Write-but-not-read: staging and renaming still work, listing does not.
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o333)).expect("chmod");
+    let result = install(ReplaceStrategy::Unix, &destination, b"new", VERSION);
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).expect("restore");
+
+    let result = result.expect("an unlistable directory is not a failure");
+    assert!(result.swept.is_empty());
+    assert_eq!(fs::read(&destination).expect("read"), b"new");
+}
+
+/// A sibling whose name is not UTF-8 must be skipped by the sweep, not panic it.
+#[cfg(unix)]
+#[test]
+fn a_non_utf8_sibling_is_skipped_by_the_sweep() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let odd = dir.path().join(OsStr::from_bytes(b"\xff\xfe-not-utf8"));
+    fs::write(&odd, b"junk").expect("write");
+    let destination = dir.path().join("pixi-sandbox");
+    fs::write(&destination, b"old").expect("write");
+
+    install(ReplaceStrategy::Windows, &destination, b"new", VERSION).expect("installed");
+    assert!(odd.exists(), "an unrelated non-UTF-8 file must survive");
+    assert_eq!(fs::read(&destination).expect("read"), b"new");
+}

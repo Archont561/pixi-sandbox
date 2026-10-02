@@ -32,57 +32,9 @@ pub fn run(args: SelfUpdateArgs) -> Result<()> {
         strategy: ReplaceStrategy::current(),
     };
 
-    let plan = self_update::plan(&source, &request)?;
-
-    println!("self-update  {}", plan.destination.display());
-    println!(
-        "  current  {CURRENT_VERSION}\n  target   {} ({})\n  asset    {}",
-        plan.resolved.version,
-        plan.resolved.selection.describe(),
-        plan.asset
-    );
-
-    if let Some(refusal) = plan.ownership.refusal(&plan.destination) {
-        // Report the refusal the same way in both modes: `--check` must be able to tell CI
-        // that this destination would never have been updatable, before it tries.
-        anyhow::bail!("{refusal}");
+    for line in self_update::run(&source, &request, args.check)? {
+        println!("{line}");
     }
-
-    if args.check {
-        if plan.is_up_to_date() {
-            println!("  verdict  up to date — nothing to do");
-        } else {
-            println!(
-                "  verdict  update available: {CURRENT_VERSION} -> {}",
-                plan.resolved.version
-            );
-        }
-        println!("  (--check wrote nothing)");
-        return Ok(());
-    }
-
-    if plan.is_up_to_date() {
-        println!("  verdict  already {CURRENT_VERSION}; nothing to do");
-        return Ok(());
-    }
-
-    let applied = self_update::apply(&source, &request, plan)?;
-    println!("  sha256   {}", applied.digest);
-    for swept in &applied.replacement.swept {
-        println!("  swept    {}", swept.display());
-    }
-    if let Some(displaced) = &applied.replacement.displaced {
-        if displaced.exists() {
-            println!(
-                "  note     the previous binary is still mapped; {} is removed on the next update",
-                displaced.display()
-            );
-        }
-    }
-    println!(
-        "updated  {} -> {}",
-        applied.plan.current_version, applied.plan.resolved.version
-    );
     Ok(())
 }
 

@@ -100,7 +100,10 @@ package = []
 # rust
 test = "cargo nextest run --workspace"
 test-doc = "cargo test --workspace --doc"
-coverage = "cargo llvm-cov nextest --workspace --lcov --output-path lcov.info"
+# `release/github.rs` is the one file that needs a socket — the real GitHub transport behind
+# the `ReleaseSource` trait. Every decision it could get wrong lives in `release/mod.rs` and
+# is tested against a fake, so counting the HTTP shim would only reward mocking the client.
+coverage = "cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --ignore-filename-regex 'release/github\\.rs$'"
 lint-rust = "cargo clippy --workspace --all-targets -- -D warnings"
 deny = "cargo deny check"
 

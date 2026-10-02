@@ -133,3 +133,100 @@ pub fn apply(source: &dyn ReleaseSource, request: &Request<'_>, plan: Plan) -> R
         replacement,
     })
 }
+
+/// The lines a run prints, built as data so they are testable.
+///
+/// Formatting lives here rather than in `commands/` for a reason the coverage report made
+/// concrete: `commands/` is private to the binary target, so its only test route is spawning
+/// the binary — and a separate process earns no coverage credit and cannot assert on
+/// structure, only on substrings. Keeping the wording here means the command module stays
+/// thin wiring (resolve ambient inputs, print these lines).
+impl Plan {
+    /// The header every run prints, mutating or not.
+    pub fn report(&self) -> Vec<String> {
+        vec![
+            format!("self-update  {}", self.destination.display()),
+            format!("  current  {}", self.current_version),
+            format!(
+                "  target   {} ({})",
+                self.resolved.version,
+                self.resolved.selection.describe()
+            ),
+            format!("  asset    {}", self.asset),
+        ]
+    }
+
+    /// The verdict `--check` prints. Writes nothing by construction: it is a pure function.
+    pub fn check_verdict(&self) -> Vec<String> {
+        let verdict = if self.is_up_to_date() {
+            "  verdict  up to date — nothing to do".to_string()
+        } else {
+            format!(
+                "  verdict  update available: {} -> {}",
+                self.current_version, self.resolved.version
+            )
+        };
+        vec![verdict, "  (--check wrote nothing)".to_string()]
+    }
+
+    /// The verdict a mutating run prints when there is nothing to do.
+    pub fn up_to_date_verdict(&self) -> String {
+        format!("  verdict  already {}; nothing to do", self.current_version)
+    }
+}
+
+impl Applied {
+    /// What a completed update prints.
+    pub fn report(&self) -> Vec<String> {
+        let mut lines = vec![format!("  sha256   {}", self.digest)];
+        for swept in &self.replacement.swept {
+            lines.push(format!("  swept    {}", swept.display()));
+        }
+        if let Some(displaced) = &self.replacement.displaced {
+            // Only worth saying when the OS actually kept it: on Unix it never exists, and on
+            // Windows it is gone unless the old image is still mapped.
+            if displaced.exists() {
+                lines.push(format!(
+                    "  note     the previous binary is still mapped; {} is removed on the next \
+                     update",
+                    displaced.display()
+                ));
+            }
+        }
+        lines.push(format!(
+            "updated  {} -> {}",
+            self.plan.current_version, self.plan.resolved.version
+        ));
+        lines
+    }
+}
+
+/// The whole command, as a function of its inputs: resolve, report, refuse, and either stop
+/// (`--check`) or replace. Returns the lines to print.
+///
+/// This lives here rather than in `commands/` so the decision flow — which verdict follows
+/// which state — is testable. `commands/self_update.rs` is left with the part that genuinely
+/// cannot be tested offline: reading the running executable's path, the host triple and the
+/// compiled-in version, then printing.
+pub fn run(source: &dyn ReleaseSource, request: &Request<'_>, check: bool) -> Result<Vec<String>> {
+    let plan = plan(source, request)?;
+    let mut lines = plan.report();
+
+    // A refusal is reported identically in both modes: `--check` has to be able to tell CI
+    // that this destination would never have been updatable, before it tries.
+    if let Some(refusal) = plan.ownership.refusal(&plan.destination) {
+        bail!("{}\n{refusal}", lines.join("\n"));
+    }
+
+    if check {
+        lines.extend(plan.check_verdict());
+        return Ok(lines);
+    }
+    if plan.is_up_to_date() {
+        lines.push(plan.up_to_date_verdict());
+        return Ok(lines);
+    }
+
+    lines.extend(apply(source, request, plan)?.report());
+    Ok(lines)
+}

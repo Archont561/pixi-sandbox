@@ -325,3 +325,209 @@ fn the_windows_strategy_completes_the_same_verified_update() {
     let displaced = applied.replacement.displaced.expect("kept aside");
     assert!(displaced.to_string_lossy().contains("0.4.4"));
 }
+
+// --- the printed report -----------------------------------------------------------------
+//
+// Formatting lives in the library so it can be asserted on structurally. `commands/` only
+// loops over these lines, and a black-box test of a spawned binary can check substrings but
+// earns no coverage and cannot tell "absent" from "misspelled".
+
+#[test]
+fn the_plan_header_names_the_destination_version_selection_and_asset() {
+    let source = FakeRelease::healthy();
+    let scratch = scratch(b"the 0.4.4 binary");
+    let plan = plan(&source, &request(&scratch.destination, None)).expect("planned");
+    let report = plan.report();
+    assert_eq!(report.len(), 4);
+    assert!(report[0].contains("pixi-sandbox"), "{report:?}");
+    assert!(report[1].contains("0.4.4"), "{report:?}");
+    assert!(
+        report[2].contains("0.5.0") && report[2].contains("latest"),
+        "the target line states which selection produced it: {report:?}"
+    );
+    assert!(report[3].contains(LINUX_ASSET), "{report:?}");
+}
+
+#[test]
+fn a_pinned_plan_header_says_pinned_rather_than_latest() {
+    let source = FakeRelease::healthy();
+    let scratch = scratch(b"the 0.4.4 binary");
+    let plan = plan(&source, &request(&scratch.destination, Some("0.3.7"))).expect("planned");
+    assert!(plan.report()[2].contains("pinned"), "{:?}", plan.report());
+}
+
+#[test]
+fn check_reports_an_available_update_and_says_it_wrote_nothing() {
+    let source = FakeRelease::healthy();
+    let scratch = scratch(b"the 0.4.4 binary");
+    let plan = plan(&source, &request(&scratch.destination, None)).expect("planned");
+    let verdict = plan.check_verdict();
+    assert!(verdict[0].contains("0.4.4 -> 0.5.0"), "{verdict:?}");
+    assert!(verdict[1].contains("wrote nothing"), "{verdict:?}");
+}
+
+#[test]
+fn check_reports_an_up_to_date_destination() {
+    let source = FakeRelease::healthy();
+    let scratch = scratch(b"the 0.5.0 binary");
+    let mut request = request(&scratch.destination, None);
+    request.current_version = "0.5.0";
+    let plan = plan(&source, &request).expect("planned");
+    assert!(
+        plan.check_verdict()[0].contains("up to date"),
+        "{:?}",
+        plan.check_verdict()
+    );
+    assert!(plan.up_to_date_verdict().contains("already 0.5.0"));
+}
+
+#[test]
+fn a_completed_update_reports_the_digest_and_the_transition() {
+    let source = FakeRelease::healthy();
+    let scratch = scratch(b"the 0.4.4 binary");
+    let request = request(&scratch.destination, None);
+    let plan = plan(&source, &request).expect("planned");
+    let applied = apply(&source, &request, plan).expect("applied");
+    let report = applied.report();
+    assert!(
+        report[0].contains(&pixi_sandbox_core::shard::sha256_bytes(NEW_BINARY)),
+        "{report:?}"
+    );
+    assert!(
+        report.last().expect("a verdict").contains("0.4.4 -> 0.5.0"),
+        "{report:?}"
+    );
+    // Unix keeps nothing aside, so no "still mapped" note is printed.
+    assert!(
+        !report.iter().any(|line| line.contains("still mapped")),
+        "{report:?}"
+    );
+}
+
+#[test]
+fn a_completed_update_reports_each_swept_leftover() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let destination = dir.path().join("pixi-sandbox");
+    std::fs::write(&destination, b"the 0.4.4 binary").expect("write");
+    std::fs::write(
+        dir.path().join("pixi-sandbox.pixi-sandbox-old-0.0.1"),
+        b"corpse",
+    )
+    .expect("write");
+
+    let source = FakeRelease::healthy();
+    let request = request(&destination, None);
+    let plan = plan(&source, &request).expect("planned");
+    let applied = apply(&source, &request, plan).expect("applied");
+    assert!(
+        applied.report().iter().any(|line| line.contains("swept")),
+        "{:?}",
+        applied.report()
+    );
+}
+
+#[test]
+fn a_destination_that_is_somehow_not_standalone_is_refused_with_a_fallback_message() {
+    // Defensive branch: a verdict with no remedy must still refuse rather than proceed.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = dir.path().join("env");
+    std::fs::create_dir_all(prefix.join("conda-meta")).expect("mkdir");
+    let destination = prefix.join("bin/pixi-sandbox");
+    std::fs::create_dir_all(destination.parent().expect("parent")).expect("mkdir");
+    std::fs::write(&destination, b"managed").expect("write");
+
+    let source = FakeRelease::healthy();
+    let request = request(&destination, None);
+    let plan = plan(&source, &request).expect("planned");
+    assert!(apply(&source, &request, plan).is_err());
+}
+
+// --- the command flow, end to end ---------------------------------------------------------
+
+#[test]
+fn run_with_check_reports_the_transition_and_writes_nothing() {
+    let source = FakeRelease::healthy();
+    let scratch = scratch(b"the 0.4.4 binary");
+    let lines = run(&source, &request(&scratch.destination, None), true).expect("checked");
+    assert!(
+        lines.iter().any(|l| l.contains("0.4.4 -> 0.5.0")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("wrote nothing")),
+        "{lines:?}"
+    );
+    assert_eq!(
+        std::fs::read(&scratch.destination).expect("read"),
+        b"the 0.4.4 binary"
+    );
+    assert!(
+        source.downloads().is_empty(),
+        "--check must not download the binary: {:?}",
+        source.downloads()
+    );
+}
+
+#[test]
+fn run_without_check_performs_the_verified_replacement() {
+    let source = FakeRelease::healthy();
+    let scratch = scratch(b"the 0.4.4 binary");
+    let lines = run(&source, &request(&scratch.destination, None), false).expect("updated");
+    assert!(
+        lines.last().expect("verdict").contains("0.4.4 -> 0.5.0"),
+        "{lines:?}"
+    );
+    assert_eq!(
+        std::fs::read(&scratch.destination).expect("read"),
+        NEW_BINARY
+    );
+}
+
+#[test]
+fn run_stops_at_an_up_to_date_destination_without_downloading() {
+    let source = FakeRelease::healthy();
+    let scratch = scratch(b"the 0.5.0 binary");
+    let mut request = request(&scratch.destination, None);
+    request.current_version = "0.5.0";
+    let lines = run(&source, &request, false).expect("nothing to do");
+    assert!(
+        lines.last().expect("verdict").contains("already 0.5.0"),
+        "{lines:?}"
+    );
+    assert!(source.downloads().is_empty());
+}
+
+#[test]
+fn run_refuses_a_managed_destination_in_both_modes_and_shows_the_header() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = dir.path().join(".pixi/envs/default");
+    std::fs::create_dir_all(prefix.join("conda-meta")).expect("mkdir");
+    let destination = prefix.join("bin/pixi-sandbox");
+    std::fs::create_dir_all(destination.parent().expect("parent")).expect("mkdir");
+    std::fs::write(&destination, b"pixi-managed").expect("write");
+
+    for check in [true, false] {
+        let source = FakeRelease::healthy();
+        let err = run(&source, &request(&destination, None), check).unwrap_err();
+        let text = format!("{err:?}");
+        assert!(
+            text.contains("pixi update pixi-sandbox"),
+            "check={check}: {text}"
+        );
+        assert!(
+            text.contains("self-update"),
+            "the header must precede the refusal so the destination is visible: {text}"
+        );
+        assert!(source.downloads().is_empty(), "check={check}");
+    }
+    assert_eq!(std::fs::read(&destination).expect("read"), b"pixi-managed");
+}
+
+#[test]
+fn run_propagates_an_unsupported_host_before_touching_the_release() {
+    let scratch = scratch(b"binary");
+    let mut request = request(&scratch.destination, None);
+    request.host_arch = "riscv64";
+    let err = run(&FakeRelease::healthy(), &request, true).unwrap_err();
+    assert!(format!("{err:?}").contains("linux/riscv64"), "{err:?}");
+}

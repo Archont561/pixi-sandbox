@@ -144,3 +144,19 @@ fn the_ladder_prefers_the_launcher_verdict_over_the_prefix_one() {
     );
     assert_eq!(classify(&launcher), Ownership::ManagedLauncher);
 }
+
+/// A path with no file name at all must not panic the trampoline probe.
+#[test]
+fn a_root_like_path_is_classified_without_panicking() {
+    assert_eq!(classify(Path::new("/")), Ownership::Standalone);
+}
+
+/// Too shallow to be `.pixi/tools/<platform>/<bin>`: the transport probe must not misfire.
+#[test]
+fn a_path_too_shallow_for_the_transport_layout_is_standalone() {
+    assert_eq!(classify(Path::new("pixi-sandbox")), Ownership::Standalone);
+    assert_eq!(
+        classify(Path::new("tools/pixi-sandbox")),
+        Ownership::Standalone
+    );
+}
