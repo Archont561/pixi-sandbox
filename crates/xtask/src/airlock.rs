@@ -219,6 +219,59 @@ pub fn resolve_release_tag(root: &Path, repo: &str, override_tag: &str) -> Resul
 }
 
 // ---------------------------------------------------------------------------
+// airlock-self-bin
+// ---------------------------------------------------------------------------
+
+pub fn static_asset_for_platform(platform: &str) -> Result<&'static str> {
+    match platform {
+        "linux-64" => Ok("pixi-sandbox-x86_64-unknown-linux-musl"),
+        "linux-aarch64" => Ok("pixi-sandbox-aarch64-unknown-linux-musl"),
+        "osx-64" => Ok("pixi-sandbox-x86_64-apple-darwin"),
+        "osx-arm64" => Ok("pixi-sandbox-aarch64-apple-darwin"),
+        "win-64" => Ok("pixi-sandbox-x86_64-pc-windows-msvc.exe"),
+        other => bail!("no static pixi-sandbox release asset is known for {other}"),
+    }
+}
+
+pub fn airlock_self_bin(repo: &str, tag: &str, platform: &str, out: &Path) -> Result<()> {
+    let asset = static_asset_for_platform(platform)?;
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    let status = StdCommand::new("gh")
+        .args([
+            "release",
+            "download",
+            tag,
+            "--repo",
+            repo,
+            "--pattern",
+            asset,
+            "--output",
+        ])
+        .arg(out)
+        .arg("--clobber")
+        .status()
+        .with_context(|| format!("starting gh release download for {asset}"))?;
+    if !status.success() {
+        bail!("downloading static release asset {asset} from {repo}@{tag} failed");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(out)
+            .with_context(|| format!("reading {}", out.display()))?
+            .permissions();
+        permissions.set_mode(permissions.mode() | 0o755);
+        std::fs::set_permissions(out, permissions)
+            .with_context(|| format!("making {} executable", out.display()))?;
+    }
+    println!("downloaded {asset} to {}", out.display());
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // airlock-pack
 // ---------------------------------------------------------------------------
 
@@ -578,6 +631,19 @@ mod tests {
                 "{garbage} must be refused: {error:#}"
             );
         }
+    }
+
+    #[test]
+    fn release_assets_are_selected_from_the_pixi_platform() {
+        assert_eq!(
+            static_asset_for_platform("linux-64").expect("linux"),
+            "pixi-sandbox-x86_64-unknown-linux-musl"
+        );
+        assert_eq!(
+            static_asset_for_platform("osx-arm64").expect("mac"),
+            "pixi-sandbox-aarch64-apple-darwin"
+        );
+        assert!(static_asset_for_platform("freebsd-64").is_err());
     }
 
     #[test]

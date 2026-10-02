@@ -123,6 +123,21 @@ enum Command {
         #[arg(long, default_value = "")]
         r#override: String,
     },
+    /// Download the static release binary the airlock transport should embed.
+    AirlockSelfBin {
+        /// Repository (`owner/name`) to download the release asset from.
+        #[arg(long)]
+        repo: String,
+        /// Release tag resolved by the plan job.
+        #[arg(long)]
+        tag: String,
+        /// Pixi platform from the matrix.
+        #[arg(long)]
+        platform: String,
+        /// Output path for the executable.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Install the matrix environments (frozen) and pack with the released binary.
     AirlockPack {
         /// Comma-separated environments from the matrix.
@@ -247,6 +262,12 @@ fn run() -> Result<()> {
         Command::ResolveReleaseTag { repo, r#override } => {
             airlock::resolve_release_tag(&root, &repo, &r#override)
         }
+        Command::AirlockSelfBin {
+            repo,
+            tag,
+            platform,
+            out,
+        } => airlock::airlock_self_bin(&repo, &tag, &platform, &root.join(out)),
         Command::AirlockPack {
             envs,
             out,

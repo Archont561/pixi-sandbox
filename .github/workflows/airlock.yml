@@ -226,6 +226,15 @@ jobs:
       - name: Prove the released binary runs
         run: pixi-sandbox --version
 
+      # The conda package exposes pixi-sandbox through a Pixi trampoline. It proves the package
+      # installs, but the transport must embed the static release asset, not the trampoline and
+      # its runner-local configuration.
+      - name: Download the static released binary to embed
+        working-directory: project
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pixi run -e package xtask airlock-self-bin -- --repo "${{ github.repository }}" --tag "${{ needs.plan.outputs.tag }}" --platform "${{ matrix.platform }}" --out "${{ runner.temp }}/pixi-sandbox-self-bin"
+
       # ---------------------------------------------------------------- pack and publish
       # Into a bare repo under the runner's temp dir. `publish` force-pushes an orphan branch,
       # which is the real code path, but the remote is disposable so a PR run cannot disturb
@@ -238,7 +247,7 @@ jobs:
       # is data from the matrix, which is why this is an xtask and not a plain task.
       - name: Pack the transport with the released binary
         working-directory: project
-        run: pixi run -e package xtask airlock-pack -- --envs "${{ matrix.environments }}" --out "${{ runner.temp }}/airlock-transport" --cargo-vendor "${{ matrix.cargo_vendor }}"
+        run: pixi run -e package xtask airlock-pack -- --envs "${{ matrix.environments }}" --out "${{ runner.temp }}/airlock-transport" --cargo-vendor "${{ matrix.cargo_vendor }}" --self-bin "${{ runner.temp }}/pixi-sandbox-self-bin"
 
       - name: Verify the transport
         working-directory: project
