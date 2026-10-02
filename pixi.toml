@@ -130,7 +130,7 @@ airlock-gate-run = { args = [
   { arg = "transport" },
   { arg = "envs" },
   { arg = "skip_cargo", default = "false" },
-], cmd = "PIXI_SANDBOX_GATE_PROJECT={{ project }} PIXI_SANDBOX_GATE_TRANSPORT={{ transport }} PIXI_SANDBOX_GATE_ENVS={{ envs }} PIXI_SANDBOX_GATE_SKIP_CARGO={{ skip_cargo }} cargo nextest run --archive-file {{ archive }} --test-threads=1 airlock_gate_" }
+], cmd = "PIXI_SANDBOX_GATE_PROJECT={{ project }} PIXI_SANDBOX_GATE_TRANSPORT={{ transport }} PIXI_SANDBOX_GATE_ENVS={{ envs }} PIXI_SANDBOX_GATE_SKIP_CARGO={{ skip_cargo }} cargo nextest run --archive-file {{ archive }} --test-threads=1 'ci_gate::airlock_gate_'" }
 
 lint-actions = "actionlint"
 lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pixi-sandbox-core/Cargo.toml crates/pixi-sandbox/Cargo.toml crates/pixi-sandbox/pixi.toml crates/pixi-sandbox-git/Cargo.toml crates/xtask/Cargo.toml deny.toml"
