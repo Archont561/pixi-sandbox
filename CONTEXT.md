@@ -715,11 +715,27 @@ asserted to shrink, never grow.
 ### 2026-10-03 — self-update core landed; the upgrade lane is next
 
 **Merged: PR #76** (squash `79e4f83`). Task-47 slice 1 shipped `pixi-sandbox self-update` as
-the v0.5.0 feature: latest by default, exact `--version X.Y.Z`, non-writing `--check`, explicit
+the v0.5.0-intended feature: latest by default, exact `--version X.Y.Z`, non-writing `--check`, explicit
 CI-managed `--dest`. Post-merge `ci`, `docs` and `publish sandbox` all passed, and the repacked
 `sandbox/developer-linux-64` manifest names source `79e4f83`, pixi-sandbox 0.4.4, static. Suite
-**500 passing / 1 skipped**, up from 404. No release was cut and none should be until the
-updater has a native-runner proof.
+**500 passing / 1 skipped**, up from 404.
+
+**Release state, and an open question it raised.** After the merge an `auto-release` was
+dispatched (not by this session) and cut **v0.4.5** — commit `afcbdbf`, tag pushed — and the
+v0.4.5 `release` run was then canceled by the owner, so there is a release commit and tag on
+main with **no GitHub Release and no published assets**. That dangling tag needs a decision
+before anything else is cut: either publish it by dispatching `release.yml` for v0.4.5, or move
+the tag aside.
+
+The reason it came out `v0.4.5` rather than the intended `v0.5.0` is `preMajor: true` in
+`.versionrc`. Before 1.0 that policy maps a breaking change to a minor bump and a plain `feat`
+to a **patch**, so `convco version --bump` over `feat(self-update): …` returns 0.4.5 and
+`prepare-release auto` can never produce 0.5.0 for a feature. Getting the intended minor means
+dispatching auto-release with the explicit `minor` selector (`prepare-release` already accepts
+`auto|major|minor|patch|vX.Y.Z`), or changing the preMajor policy. This is a real decision, not
+a bug: the policy is doing exactly what it says, and it simply disagrees with "treat task-47 as
+the v0.5.0 minor-version feature". Worth settling before the next release, because the
+self-update feature's own assets are what a future `self-update --version` resolves.
 
 Two findings from the session start worth keeping. The 405 baseline carried in the last three
 opening prompts was never true after PR #73 consolidated `tests/cli.rs`; the real number was
@@ -767,7 +783,12 @@ deserves its own backlog task rather than an opportunistic refactor.
 > `sandbox/developer-linux-64`, repacked by the `publish sandbox` run on `79e4f83`, and its
 > manifest should name that commit, pixi-sandbox 0.4.4, static). Read `AGENTS.md`, decision-4,
 > and task-47's notes. Confirm main's latest `ci`, `docs` and `publish sandbox` runs are green.
-> No release has been cut since v0.4.4 and none should be dispatched yet.
+>
+> **Settle the release state first.** `v0.4.5` (`afcbdbf`) is tagged on main but its `release`
+> run was canceled, so no GitHub Release or assets exist for it — decide whether to publish
+> that tag or retire it. Note that `preMajor: true` in `.versionrc` makes `feat` a *patch*
+> before 1.0, so auto-release can never produce the intended `v0.5.0`; that needs an explicit
+> `minor` selector or a policy change. Do not cut anything new until that is decided.
 >
 > Task-47 slice 1 (the self-update core) is merged and `In Progress`. Slice 2 is the **reviewed
 > upgrade path**: AC#3 (a `pixi-sandbox-version: X.Y.Z` stamp beside the ownership marker in
