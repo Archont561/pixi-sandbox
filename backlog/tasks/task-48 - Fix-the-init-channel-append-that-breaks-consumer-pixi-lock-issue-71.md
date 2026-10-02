@@ -108,8 +108,12 @@ no local toolchain exists and the PR **is** the test run: the full gate (fmt, cl
 on PR #72. AC#2's live probe therefore remains open: init can no longer touch the manifest
 at all (the fixture suite proves the byte-identical property), so the probe reduces to *pixi
 lock passes on an untouched project* — one run on any connected host or a post-merge CI
-check closes it. AC#6 needs the merge plus an `auto-release` dispatch this token cannot
-start. AC#7: searched `prefix-dev/pixi` for `coalesced request failed`, `repodata 404`,
+check closes it. CI outcome on PR #72: `ci (lint · test · coverage)` **success on both
+commits** (runs 37064073342 and 37064515288 — fmt, clippy `-D warnings`, deny, actionlint,
+nextest, doc tests, coverage, docs build), `validate airlock plan`, `lock guard` and
+`codecov/patch` success, PR mergeable; `airlock linux-64` (the released-binary
+offline-restore proof) in flight at close. AC#6 needs the merge plus an `auto-release`
+dispatch this token cannot start. AC#7: searched `prefix-dev/pixi` for `coalesced request failed`, `repodata 404`,
 `verbose 404`, `error does not show url` — no existing issue covers it; filing from the
 session token failed with `Resource not accessible by integration` (repo-scoped). The report
 is drafted below verbatim for a one-click filing from a personal token:
