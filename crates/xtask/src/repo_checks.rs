@@ -19,8 +19,8 @@
 //!  6. no workflow pins a literal `vX.Y.Z` release tag, so no proof silently keeps running
 //!     against the previous release after a cut.
 //!  7. retired with the composite Action surfaces in TASK-29.
-//!  8. the surviving shell scripts stay on the Bash 3.2 surface: the darwin runners execute
-//!     them with macOS's /bin/bash 3.2, and v0.3.6's release died 127 on both darwin legs
+//!  8. the surviving shell script stays on the Bash 3.2 surface: the darwin runners execute
+//!     it with macOS's /bin/bash 3.2, and v0.3.6's release died 127 on both darwin legs
 //!     over one Bash-4 builtin (run 36865921206) — the regression that moved everything else
 //!     into this xtask.
 //!  9. task-36 — every workflow `run:` is a single command line: a step is `uses:`, one
@@ -92,7 +92,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell scripts stay on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render" // stale-ref-allowed
     );
     Ok(())
 }
@@ -443,9 +443,9 @@ fn workflow_literal_tags(root: &Path, failures: &mut Vec<Failure>) -> Result<()>
 
 // ---------------------------------------------------------------- 8. Bash 3.2 for the macOS runners
 
-/// The scripts that remain shell (`restore.sh` bootstraps hosts that have nothing but sh and
-/// git; `airlock-gate.sh` runs where no toolchain may be assumed) are invoked with whatever
-/// `bash` the host has, and on the GitHub macOS runners that is Apple's /bin/bash 3.2 — Bash
+/// The script that remains shell (`restore.sh`, which bootstraps hosts that have nothing but
+/// sh and git) is invoked with whatever `bash` the host has, and on the GitHub macOS runners
+/// that is Apple's /bin/bash 3.2 — Bash
 /// 4 never shipped (GPLv3). v0.3.6's release run 36865921206 exited 127 on both darwin legs
 /// over one Bash-4 builtin; Linux (bash 5) and Windows (Git bash 5) passed, so macOS is the
 /// only leg that can ever see this failure — the blind spot this check closes. actionlint

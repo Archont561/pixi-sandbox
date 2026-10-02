@@ -79,8 +79,8 @@ Reports all failures, not first. Checks size + sha256 + tool linkage (rejects dy
 `--verify-restored` additionally checks every file of the restored prefix (content, symlink
 targets, exec bits, the fingerprint marker) against the `files.json` oracle the packer
 recorded, flags any file present that the transport never carried, and reports schema-1
-environments as `unverifiable` rather than failed. `scripts/airlock-gate.sh --transport` runs
-it as part of the airlock gate.
+environments as `unverifiable` rather than failed. The airlock workflow's archived `ci`-feature
+e2e gate runs it against the restored project and extracted transport.
 
 ## publish
 

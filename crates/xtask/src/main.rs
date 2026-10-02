@@ -3,8 +3,8 @@
 //! Everything that used to be a repo-targeting shell script lives here as a tested Rust
 //! subcommand, so one runtime covers all five release runners — the v0.3.6 release died on
 //! macOS's /bin/bash 3.2 over a single Bash-4 builtin (run 36865921206), a class of failure
-//! an xtask cannot have. The only shell that remains under `scripts/` is the bootstrap pair
-//! that must run where no toolchain can be assumed (`restore.sh`, `airlock-gate.sh`).
+//! an xtask cannot have. The only shell that remains under `scripts/` is `restore.sh`, the
+//! one-command bootstrap that must run where no toolchain can be assumed.
 //!
 //! Commands take an explicit `--root` (default: the working directory, which is the project
 //! root under `pixi run`); the policy logic lives in per-module pure functions that tests

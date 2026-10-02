@@ -119,6 +119,19 @@ xtask = { args = [
 ], cmd = "cargo run -q -p xtask -- {{ subcommand }} {{ rest }}" }
 
 # config / workflows
+# Archive the CI-only e2e airlock gate in the connected runner, then replay that exact test
+# binary after restore in Tier B (with egress available) and Tier A (through xtask deny-egress).
+airlock-gate-archive = { args = [
+  { arg = "archive" },
+], cmd = "cargo nextest archive -p pixi-sandbox --test e2e --features ci --archive-file {{ archive }} --frozen" }
+airlock-gate-run = { args = [
+  { arg = "archive" },
+  { arg = "project" },
+  { arg = "transport" },
+  { arg = "envs" },
+  { arg = "skip_cargo", default = "false" },
+], cmd = "PIXI_SANDBOX_GATE_PROJECT={{ project }} PIXI_SANDBOX_GATE_TRANSPORT={{ transport }} PIXI_SANDBOX_GATE_ENVS={{ envs }} PIXI_SANDBOX_GATE_SKIP_CARGO={{ skip_cargo }} cargo nextest run --archive-file {{ archive }} --test-threads=1 airlock_gate_" }
+
 lint-actions = "actionlint"
 lint-toml = "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pixi-sandbox-core/Cargo.toml crates/pixi-sandbox/Cargo.toml crates/pixi-sandbox/pixi.toml crates/pixi-sandbox-git/Cargo.toml crates/xtask/Cargo.toml deny.toml"
 # conventional-commit check for the `commit-msg` hook; reads the proposed message from stdin

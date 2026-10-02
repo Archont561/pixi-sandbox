@@ -9,21 +9,20 @@
 # Two tiers, and the distinction matters:
 #   Tier B runs the gate with the network reachable. It is a smoke test.
 #   Tier A runs the same gate with egress actually denied, which is the authoritative check.
-# Only Tier A can fail for the reason we care about. Since the gate gained its integrity
-# section (--transport, D13) both tiers also compare the restored tree against the manifest's
-# per-file digests — but only Tier A proves the same about a machine that *could not* fetch.
-# See scripts/airlock-gate.sh for why the Tier B no-op check cannot be trusted on its own:
-# `pixi install --offline` is a request, not an enforcement, and will re-fetch a damaged
-# prefix over a live network while reporting success.
+# Only Tier A can fail for the reason we care about. The gate is the e2e test suite's
+# `ci`-feature airlock module: it is archived while connected, replayed from that archive after
+# restore, and compares the restored tree against the manifest's per-file digests (D13).
+# Tier B's no-op check cannot be trusted on its own: `pixi install --offline` is a request, not
+# an enforcement, and can re-fetch a damaged prefix over a live network while reporting success.
 #
 # Nothing here touches a real branch or a real remote: the publish step targets a bare repo
 # under the runner's own temp directory, so the proof is self-contained and safe on a PR.
 #
 # Every step is a pinned `uses:` or a one-line `pixi run` (task-36): the matrix emission, the
 # release-tag resolution, the pack orchestration, the branch fetch and the egress denial are
-# tested xtask commands (crates/xtask/src/airlock.rs). The two `scripts/airlock-gate.sh`
-# tiers are the last shell steps and the last multi-line exception — task-35 moves the gate
-# into the e2e suite and deletes them.
+# tested xtask commands (crates/xtask/src/airlock.rs). The restored-project gate is now a
+# Cargo nextest archive of the e2e suite's `ci` feature, so both tiers execute the same test
+# binary instead of shell.
 
 name: airlock
 
@@ -98,7 +97,7 @@ on:
   pull_request:
     paths:
       - "crates/**"
-      - "scripts/airlock-gate.sh"
+      - "pixi.toml"
       - "scripts/restore.sh"
       - ".pixi-sandbox.toml"
       - ".github/workflows/airlock.yml"
@@ -207,6 +206,13 @@ jobs:
         with:
           workspaces: project
 
+      # The connected side compiles the CI-only gate once and stores a nextest archive. Both
+      # proof tiers replay this exact archive after restore, so the egress-denied tier does not
+      # need to build Rust code or consult the network.
+      - name: Archive the CI e2e airlock gate
+        working-directory: project
+        run: pixi run --frozen airlock-gate-archive "${{ runner.temp }}/airlock-gate.tar.zst"
+
       # A real airlock begins with a checksum-verified released binary, so that is what the
       # proof uses — both to drive the pack and as the self-bootstrap embedded in the transport.
       # The channel install is the documented installation path, and the version proof is the
@@ -269,17 +275,17 @@ jobs:
         run: pixi run -e package airlock-restore "${{ runner.temp }}/airlock-checkout" "${{ runner.temp }}/restored" "${{ matrix.environments }}"
 
       # ---------------------------------------------------------------- the gate
-      # --transport hands the gate the extracted branch, so its integrity section can compare
-      # the restored tree against the manifest's per-file digests (D13) instead of shape only.
-      # The two tiers are the last shell steps in any workflow: task-35 moves the gate into
-      # the e2e suite behind the `ci` feature and deletes both.
+      # The restored-project gate is a nextest archive of the e2e suite built with
+      # `--features ci`. The restored project, branch checkout, environment list and cargo-vendor
+      # policy are explicit inputs; missing inputs fail before a false-positive pass is possible.
       - name: Tier B — gate with the network reachable
-        run: bash project/scripts/airlock-gate.sh "${{ runner.temp }}/restored" "${{ matrix.environments }}" --transport "${{ runner.temp }}/airlock-checkout"
+        working-directory: project
+        run: pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"
 
-      # deny-egress re-execs the gate under `sudo unshare -n` on Linux and `sudo sandbox-exec`
-      # with outbound denied on macOS, and fails loudly on any other OS — a proof that ran
-      # with the network reachable would be a green build that proves nothing.
+      # deny-egress re-execs the same archived tests under `sudo unshare -n` on Linux and
+      # `sudo sandbox-exec` with outbound denied on macOS, and fails loudly on any other OS — a
+      # proof that ran with the network reachable would be a green build that proves nothing.
       - name: Tier A — gate with egress denied
         if: ${{ env.BLOCK_NETWORK == 'true' }}
         working-directory: project
-        run: pixi run -e package xtask deny-egress -- bash scripts/airlock-gate.sh "${{ runner.temp }}/restored" "${{ matrix.environments }}" --transport "${{ runner.temp }}/airlock-checkout"
+        run: pixi run -e package xtask deny-egress -- pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"

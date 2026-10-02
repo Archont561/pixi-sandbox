@@ -303,12 +303,480 @@ fn a_real_packed_environment_restores_with_nothing_pointing_into_restore_scratch
     assert!(!airlock.join(".pixi/.restore-work").exists());
 }
 
-/// The gate script is part of the deliverable, not fixture data: this test runs the real
-/// `scripts/airlock-gate.sh` from this repository (the one sanctioned reach outside the crate,
-/// recorded in `tests/fixtures.rs`), because testing a copy would prove nothing about the
-/// script CI runs.
-fn gate_script() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/airlock-gate.sh")
+const NOOP_DRIFT_KIB: u64 = 64;
+
+#[cfg(feature = "ci")]
+#[derive(Clone, Debug)]
+struct GateInputs {
+    project: PathBuf,
+    transport: PathBuf,
+    envs: Vec<String>,
+    skip_cargo: bool,
+}
+
+#[cfg(feature = "ci")]
+impl GateInputs {
+    fn from_env() -> Self {
+        let project = required_gate_path("PIXI_SANDBOX_GATE_PROJECT");
+        let transport = required_gate_path("PIXI_SANDBOX_GATE_TRANSPORT");
+        let envs = required_gate_envs();
+        let skip_cargo = std::env::var("PIXI_SANDBOX_GATE_SKIP_CARGO")
+            .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "yes"));
+        Self {
+            project,
+            transport,
+            envs,
+            skip_cargo,
+        }
+    }
+}
+
+#[cfg(feature = "ci")]
+fn required_gate_path(name: &str) -> PathBuf {
+    let value = std::env::var_os(name)
+        .unwrap_or_else(|| panic!("{name} must name the real-transport airlock gate input"));
+    let path = PathBuf::from(value);
+    assert!(
+        path.is_dir(),
+        "{name}={} is not a directory",
+        path.display()
+    );
+    path
+}
+
+#[cfg(feature = "ci")]
+fn required_gate_envs() -> Vec<String> {
+    let value = std::env::var("PIXI_SANDBOX_GATE_ENVS")
+        .expect("PIXI_SANDBOX_GATE_ENVS must list the environments to prove");
+    let envs: Vec<String> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect();
+    assert!(
+        !envs.is_empty(),
+        "PIXI_SANDBOX_GATE_ENVS must name at least one environment"
+    );
+    envs
+}
+
+fn gate_tools_bin(project: &Path) -> PathBuf {
+    let tools_root = project.join(".pixi/tools");
+    let mut candidates: Vec<PathBuf> = fs::read_dir(&tools_root)
+        .unwrap_or_else(|err| panic!("reading {} failed: {err}", tools_root.display()))
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .filter(|path| {
+            gate_tool_candidate(&path.join("pixi")) || gate_tool_candidate(&path.join("pixi.exe"))
+        })
+        .collect();
+    candidates.sort();
+    candidates.into_iter().next().unwrap_or_else(|| {
+        panic!(
+            "no manifest-owned pixi executable found under {}",
+            tools_root.display()
+        )
+    })
+}
+
+fn gate_tool_candidate(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(path)
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+fn gate_tool(tools_bin: &Path, name: &str) -> PathBuf {
+    let unix = tools_bin.join(name);
+    if gate_tool_candidate(&unix) {
+        return unix;
+    }
+    let windows = tools_bin.join(format!("{name}.exe"));
+    if gate_tool_candidate(&windows) {
+        return windows;
+    }
+    panic!(
+        "bundled {name} is missing or not executable under {}",
+        tools_bin.display()
+    );
+}
+
+fn run_gate_command(command: &mut StdCommand, description: &str) -> String {
+    let output = command
+        .output()
+        .unwrap_or_else(|err| panic!("starting {description} failed: {err}"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "{description} failed with {}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+    stdout.into_owned()
+}
+
+#[cfg(feature = "ci")]
+fn gate_path_with_tools_first(tools_bin: &Path) -> std::ffi::OsString {
+    let mut paths = vec![tools_bin.to_path_buf()];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(paths).expect("PATH entries are valid")
+}
+
+#[cfg(feature = "ci")]
+fn assert_gate_tools_are_first_on_path_and_execute(project: &Path) {
+    let tools_bin = gate_tools_bin(project);
+    let path = gate_path_with_tools_first(&tools_bin);
+    let first_path_entry = std::env::split_paths(&path)
+        .next()
+        .expect("the gate PATH is non-empty");
+    assert_eq!(
+        first_path_entry, tools_bin,
+        "the manifest-owned tools directory must be first on PATH"
+    );
+
+    let pixi = gate_tool(&tools_bin, "pixi");
+    let sandbox = gate_tool(&tools_bin, "pixi-sandbox");
+    let unpack = gate_tool(&tools_bin, "pixi-unpack");
+    assert!(unpack.is_file(), "pixi-unpack must be bundled for restore");
+
+    let pixi_version = run_gate_command(
+        StdCommand::new(&pixi).env("PATH", &path).arg("--version"),
+        "bundled pixi --version",
+    );
+    assert!(
+        pixi_version.contains("pixi"),
+        "bundled pixi printed an unexpected version line: {pixi_version}"
+    );
+    let sandbox_version = run_gate_command(
+        StdCommand::new(&sandbox)
+            .env("PATH", &path)
+            .arg("--version"),
+        "bundled pixi-sandbox --version",
+    );
+    assert!(
+        sandbox_version.contains("pixi-sandbox"),
+        "bundled pixi-sandbox printed an unexpected version line: {sandbox_version}"
+    );
+}
+
+fn assert_gate_prefix(project: &Path, env_name: &str, when: &str) {
+    let prefix = project.join(".pixi/envs").join(env_name);
+    assert!(
+        prefix.is_dir(),
+        "environment '{env_name}' has no prefix at {} ({when})",
+        prefix.display()
+    );
+    let conda_meta = prefix.join("conda-meta");
+    let records = fs::read_dir(&conda_meta)
+        .unwrap_or_else(|err| panic!("reading {} failed: {err}", conda_meta.display()))
+        .flatten()
+        .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+        .count();
+    assert!(
+        records > 0,
+        "environment '{env_name}' has an empty conda-meta ({when}); the prefix was never populated"
+    );
+    let files = files_under(&prefix).len();
+    assert!(
+        files > records,
+        "environment '{env_name}' holds only its {records} conda-meta records and no payload ({when})"
+    );
+}
+
+fn files_under(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    collect_files(root, &mut out);
+    out.sort();
+    out
+}
+
+fn collect_files(root: &Path, out: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(root)
+        .unwrap_or_else(|err| panic!("reading {} failed: {err}", root.display()))
+        .flatten()
+    {
+        let path = entry.path();
+        if entry.file_type().unwrap().is_dir() {
+            collect_files(&path, out);
+        } else if entry.file_type().unwrap().is_file() {
+            out.push(path);
+        }
+    }
+}
+
+fn relative_file_set(root: &Path) -> Vec<String> {
+    files_under(root)
+        .into_iter()
+        .map(|path| {
+            path.strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect()
+}
+
+fn du_kib(path: &Path) -> u64 {
+    let output = StdCommand::new("du")
+        .arg("-sk")
+        .arg(path)
+        .output()
+        .unwrap_or_else(|err| panic!("starting du -sk {} failed: {err}", path.display()));
+    assert!(
+        output.status.success(),
+        "du -sk {} failed: {}",
+        path.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .next()
+        .expect("du prints a size")
+        .parse()
+        .expect("du size is numeric")
+}
+
+fn gate_restored_tree_result(
+    project: &Path,
+    transport: &Path,
+    envs: &[String],
+) -> Result<GateIntegrity, String> {
+    let tools_bin = gate_tools_bin(project);
+    let sandbox = gate_tool(&tools_bin, "pixi-sandbox");
+    let help = StdCommand::new(&sandbox)
+        .args(["doctor", "--help"])
+        .output()
+        .map_err(|err| format!("starting bundled pixi-sandbox doctor --help failed: {err}"))?;
+    if !help.status.success() {
+        return Err(format!(
+            "bundled pixi-sandbox doctor --help failed with {}\nstdout:\n{}\nstderr:\n{}",
+            help.status,
+            String::from_utf8_lossy(&help.stdout),
+            String::from_utf8_lossy(&help.stderr)
+        ));
+    }
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    if !help_text.contains("--verify-restored") {
+        return Ok(GateIntegrity::DegradedPreOracle);
+    }
+
+    let envs_arg = envs.join(",");
+    let output = StdCommand::new(&sandbox)
+        .arg("doctor")
+        .arg("--branch-location")
+        .arg(transport)
+        .arg("--verify-restored")
+        .arg(project)
+        .arg("--envs")
+        .arg(envs_arg)
+        .output()
+        .map_err(|err| format!("starting doctor --verify-restored failed: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "doctor --verify-restored failed with {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(GateIntegrity::Verified)
+}
+
+fn assert_gate_restored_tree(project: &Path, transport: &Path, envs: &[String]) -> GateIntegrity {
+    gate_restored_tree_result(project, transport, envs)
+        .unwrap_or_else(|message| panic!("{message}"))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum GateIntegrity {
+    Verified,
+    DegradedPreOracle,
+}
+
+fn assert_gate_pixi_install_is_noop(project: &Path, envs: &[String]) {
+    let tools_bin = gate_tools_bin(project);
+    let pixi = gate_tool(&tools_bin, "pixi");
+    for env_name in envs {
+        assert_gate_prefix(project, env_name, "after restore");
+
+        run_gate_command(
+            StdCommand::new(&pixi).current_dir(project).args([
+                "install",
+                "--frozen",
+                "--offline",
+                "-e",
+                env_name,
+            ]),
+            "pixi install settle",
+        );
+
+        let pixi_root = project.join(".pixi");
+        let list_before = relative_file_set(&pixi_root);
+        let kib_before = du_kib(&pixi_root);
+
+        run_gate_command(
+            StdCommand::new(&pixi).current_dir(project).args([
+                "install",
+                "--frozen",
+                "--offline",
+                "-e",
+                env_name,
+            ]),
+            "pixi install no-op check",
+        );
+
+        let list_after = relative_file_set(&pixi_root);
+        let kib_after = du_kib(&pixi_root);
+        assert_eq!(
+            list_before, list_after,
+            "pixi install was not a no-op for '{env_name}': the set of files under .pixi changed"
+        );
+        let drift = kib_after.abs_diff(kib_before);
+        assert!(
+            drift <= NOOP_DRIFT_KIB,
+            "pixi install was not a no-op for '{env_name}': .pixi drifted by {drift} KiB ({kib_before} -> {kib_after}), over the {NOOP_DRIFT_KIB} KiB tolerance"
+        );
+
+        assert_gate_prefix(project, env_name, "after the offline install");
+    }
+}
+
+#[cfg(feature = "ci")]
+fn assert_gate_cargo_check_uses_pixi(project: &Path, skip_cargo: bool) {
+    if skip_cargo || !project.join("Cargo.toml").is_file() {
+        return;
+    }
+    let cargo_config = project.join(".cargo/config.toml");
+    assert!(
+        cargo_config.is_file(),
+        "no .cargo/config.toml in the restored project; the vendored tree was not wired in"
+    );
+    let cargo_config_text = fs::read_to_string(&cargo_config)
+        .unwrap_or_else(|err| panic!("reading {} failed: {err}", cargo_config.display()));
+    assert!(
+        cargo_config_text.contains("source.crates-io"),
+        ".cargo/config.toml does not redirect crates.io; --offline would have to hit the network"
+    );
+
+    let pixi = gate_tool(&gate_tools_bin(project), "pixi");
+    run_gate_command(
+        StdCommand::new(&pixi).current_dir(project).args([
+            "run",
+            "--frozen",
+            "--",
+            "cargo",
+            "check",
+            "--offline",
+            "--locked",
+            "--quiet",
+        ]),
+        "pixi run -- cargo check --offline",
+    );
+}
+
+// CI-only airlock gate input contract:
+//
+// * PIXI_SANDBOX_GATE_PROJECT: restored project path.
+// * PIXI_SANDBOX_GATE_TRANSPORT: extracted sandbox branch/transport path.
+// * PIXI_SANDBOX_GATE_ENVS: comma-separated environments to prove.
+// * PIXI_SANDBOX_GATE_SKIP_CARGO: optional true/1/yes to skip the cargo check when the
+//   transport intentionally did not vendor crates.
+//
+// The default feature set must not compile this module; CI builds a nextest archive with
+// `--features ci` while egress is still available, then replays the archive in both tiers.
+#[cfg(feature = "ci")]
+mod ci_gate {
+    use super::*;
+
+    #[test]
+    fn airlock_gate_inputs_are_present() {
+        let inputs = GateInputs::from_env();
+        assert!(inputs.project.is_dir());
+        assert!(inputs.transport.is_dir());
+        assert!(!inputs.envs.is_empty());
+    }
+
+    #[test]
+    fn airlock_gate_manifest_owned_tools_are_first_on_path_and_execute() {
+        let inputs = GateInputs::from_env();
+        assert_gate_tools_are_first_on_path_and_execute(&inputs.project);
+    }
+
+    #[test]
+    fn airlock_gate_prefixes_are_real_installed_prefixes() {
+        let inputs = GateInputs::from_env();
+        for env_name in &inputs.envs {
+            assert_gate_prefix(&inputs.project, env_name, "after restore");
+        }
+    }
+
+    #[test]
+    fn airlock_gate_restored_tree_matches_the_manifest() {
+        let inputs = GateInputs::from_env();
+        assert_eq!(
+            assert_gate_restored_tree(&inputs.project, &inputs.transport, &inputs.envs),
+            GateIntegrity::Verified,
+            "real CI transports must carry the per-file oracle and a checker that understands it"
+        );
+    }
+
+    #[test]
+    fn airlock_gate_pixi_install_is_a_noop() {
+        let inputs = GateInputs::from_env();
+        assert_gate_pixi_install_is_noop(&inputs.project, &inputs.envs);
+    }
+
+    #[test]
+    fn airlock_gate_cargo_check_uses_the_pixi_entrypoint() {
+        let inputs = GateInputs::from_env();
+        assert_gate_cargo_check_uses_pixi(&inputs.project, inputs.skip_cargo);
+    }
+
+    #[test]
+    fn airlock_gate_rejects_a_forged_conda_meta_record() {
+        let inputs = GateInputs::from_env();
+        let env_name = inputs
+            .envs
+            .first()
+            .expect("gate inputs have at least one environment");
+        let forged = inputs
+            .project
+            .join(".pixi/envs")
+            .join(env_name)
+            .join("conda-meta/forged-9.9.9-0.json");
+        fs::write(
+            &forged,
+            r#"{"name":"forged","version":"9.9.9","build":"0","files":[]}"#,
+        )
+        .unwrap();
+        let message = gate_restored_tree_result(
+            &inputs.project,
+            &inputs.transport,
+            std::slice::from_ref(env_name),
+        )
+        .expect_err("the gate must reject a forged conda-meta record");
+        let _ = fs::remove_file(&forged);
+        assert!(
+            message.contains("forged-9.9.9-0.json")
+                && message
+                    .contains("present in the restored prefix but not in the manifest's file list"),
+            "the forged-record failure must name the fabricated record, got:\n{message}"
+        );
+    }
 }
 
 /// task-10: `doctor --verify-restored` checks the tree restore produced, not just the branch
@@ -395,8 +863,8 @@ fn doctor_verify_restored_checks_the_tree_restore_produced() {
 }
 
 /// task-10's headline claim, proven end to end: the airlock gate calls doctor --verify-restored
-/// (via --transport) and a stub prefix carrying a fabricated conda-meta record is rejected —
-/// by a test, not by a comment in the script.
+/// and a stub prefix carrying a fabricated conda-meta record is rejected — by a test, not by a
+/// comment in a script.
 #[test]
 fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
     let temp = tempfile::tempdir().unwrap();
@@ -415,19 +883,6 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
         ])
         .assert()
         .success();
-
-    // The gate command, shared by every run below.
-    let run_gate = || {
-        let mut command = StdCommand::new("bash");
-        command
-            .arg(gate_script())
-            .arg(airlock.canonicalize().unwrap())
-            .arg("demo")
-            .arg("--skip-cargo")
-            .arg("--transport")
-            .arg(transport.canonicalize().unwrap());
-        command
-    };
 
     // Degraded mode first, while the fixture stub still plays the bundled binary: a transport
     // packed by an older release embeds a pixi-sandbox without --verify-restored, and the gate
@@ -450,16 +905,12 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
     .unwrap();
     make_executable(&pixi_stub);
 
-    let degraded = run_gate().output().unwrap();
-    let degraded_log = String::from_utf8_lossy(&degraded.stdout);
-    assert!(
-        degraded.status.success(),
-        "the gate must pass while the bundled binary predates the oracle:\n{degraded_log}"
+    assert_eq!(
+        assert_gate_restored_tree(&airlock, &transport, &["demo".to_string()]),
+        GateIntegrity::DegradedPreOracle,
+        "the gate must explicitly degrade while the bundled binary predates the oracle"
     );
-    assert!(
-        degraded_log.contains("predates the per-file oracle"),
-        "the degradation must be said out loud, not passed silently:\n{degraded_log}"
-    );
+    assert_gate_pixi_install_is_noop(&airlock, &["demo".to_string()]);
     let recorded_cwd = fs::read_to_string(&marker).unwrap();
     assert_eq!(
         recorded_cwd.trim(),
@@ -475,9 +926,9 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
     make_executable(&tool);
 
     // A faithful restore passes the whole gate, integrity section included.
-    let status = run_gate().status().unwrap();
-    assert!(
-        status.success(),
+    assert_eq!(
+        assert_gate_restored_tree(&airlock, &transport, &["demo".to_string()]),
+        GateIntegrity::Verified,
         "the gate must pass for a faithful fixture restore"
     );
 
@@ -489,23 +940,20 @@ fn the_airlock_gate_rejects_a_forged_conda_meta_record() {
         r#"{"name":"forged","version":"9.9.9","build":"0","files":[]}"#,
     )
     .unwrap();
-    let output = run_gate().output().unwrap();
+    let message = gate_restored_tree_result(&airlock, &transport, &["demo".to_string()])
+        .expect_err("the gate must reject a forged conda-meta record");
     assert!(
-        !output.status.success(),
-        "the gate must reject a prefix with a fabricated conda-meta record"
-    );
-    let log = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        log.contains("forged-9.9.9-0.json")
-            && log.contains("present in the restored prefix but not in the manifest's file list"),
-        "the gate must name the forged record, got:\n{log}"
+        message.contains("forged-9.9.9-0.json")
+            && message
+                .contains("present in the restored prefix but not in the manifest's file list"),
+        "the forged-record failure must name the fabricated record, got:\n{message}"
     );
 
     // And the failure was the record, not flakiness: remove it and the gate passes again.
     fs::remove_file(records.join("forged-9.9.9-0.json")).unwrap();
-    let status = run_gate().status().unwrap();
-    assert!(
-        status.success(),
+    assert_eq!(
+        assert_gate_restored_tree(&airlock, &transport, &["demo".to_string()]),
+        GateIntegrity::Verified,
         "the gate must pass again once the record is gone"
     );
 }

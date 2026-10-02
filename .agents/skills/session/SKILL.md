@@ -98,11 +98,10 @@ Facts about this sandbox that shape every command:
   → `doctor --verify-restored`), it needs no network, and on Linux it re-runs the restore inside
   `unshare -rn`; it is already part of `pixi run --frozen test`. The egress-denied gate over a
   *real* packed transport belongs to CI's cross-platform matrix
-  (`.github/workflows/airlock.yml`) — never try to reproduce that tier locally.
-  Today that gate is still `scripts/airlock-gate.sh`, driven from one e2e test; **task-35**
-  moves it into `tests/e2e.rs` behind the `ci` cargo feature (skipped locally, run by the
-  matrix) and deletes the script. Keep any remaining edits minimal and in service of that
-  removal path.
+  (`.github/workflows/airlock.yml`) — never try to reproduce that tier locally. That CI gate is
+  the e2e suite's `ci` cargo feature archived by `pixi run --frozen airlock-gate-archive` and
+  replayed by `pixi run --frozen airlock-gate-run`; the default local suite must keep those
+  tests uncompiled and skipped.
 - Missing system tools: no `/usr/bin/time`, no `file(1)` — use `date +%s`, `readelf`.
 - `gh` works against github.com when authenticated; workflow dispatch/rerun may be
   forbidden for the token (`403 Resource not accessible by integration`) — then ask the user to

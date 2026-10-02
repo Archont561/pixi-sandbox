@@ -409,7 +409,7 @@ consumers, byte-checked by `pixi run --frozen xtask check-repository`. Change th
 `pixi run --frozen xtask render-relock`; never edit `.github/workflows/relock.yml` directly.
 
 > [!IMPORTANT]
-> Integration tests run against synthetic fixtures in `crates/pixi-sandbox/tests/fixtures/`, **never** against this repo itself, ensuring hermetic offline isolation. Two tests enforce it: the fixture must not depend on pixi-pack, and no test may walk out via `..`/`.parent()` — with two reviewed exceptions, `scripts/airlock-gate.sh` and `scripts/restore.sh`, which are artifacts under test rather than fixture data (`tests/restore_script.rs` runs the real bootstrap against a throwaway git repo and the transport fixture).
+> Integration tests run against synthetic fixtures in `crates/pixi-sandbox/tests/fixtures/`, **never** against this repo itself, ensuring hermetic offline isolation. Two tests enforce it: the fixture must not depend on pixi-pack, and no test may walk out via `..`/`.parent()` — with the single reviewed exception `scripts/restore.sh`, which is an artifact under test rather than fixture data (`tests/restore_script.rs` runs the real bootstrap against a throwaway git repo and the transport fixture).
 
 ### Dev container
 
