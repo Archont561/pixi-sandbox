@@ -685,3 +685,29 @@ full GitHub CI evidence, so task-47 is unblocked.
 > the exact ownership signal that distinguishes a standalone binary from a Pixi-managed
 > trampoline before implementation. House rules and session templates are in
 > `.agents/skills/session/`.
+
+### 2026-10-03 — tests move out of production sources
+
+House rule promoted at the owner's direction: **no `#[cfg(test)] mod tests` beside production
+code**. Written into `AGENTS.md` § Test conventions and enforced by
+`production_sources_carry_no_inline_test_modules` in `crates/pixi-sandbox/tests/fixtures.rs`.
+
+The structural obstacle, for whoever extends this: `pixi-sandbox` is a **binary** crate, so
+`tests/` can reach it only through `lib.rs` (which previously exposed `generated` alone) or by
+spawning the binary. Splitting the self-update tests therefore required promoting `release`,
+`self_update` and `user_tools` to `pub mod` in `lib.rs` and widening `user_tools`' 17
+`pub(crate)` items to `pub` — the `generated` precedent, applied further. Four private items
+that only a failure-branch test can reach (`windows_swap`, `staging_path`, `DISPLACED_INFIX`,
+`STAGING_INFIX`) are `#[doc(hidden)] pub`: reachable from `tests/`, flagged as a test boundary
+rather than API. `cli.rs` and `commands/` stayed private and are now covered black-box from
+`tests/cli.rs`, which is the better test — it caught nothing new here, but it is the surface a
+user meets.
+
+Not done, and the obvious next step: `pixi-sandbox-core` (3 files) and `xtask` (12 files) still
+carry inline tests and are not covered by the new guard. `pixi-sandbox-core` is a library, so
+its split is mechanical. `xtask` is a binary crate with no `lib.rs` at all and heavily internal
+modules, so splitting it means either adding a `lib.rs` and widening a lot of visibility, or
+accepting black-box coverage through the `xtask` binary; that choice wants a decision before
+the work. Worth a backlog task rather than an opportunistic refactor. The `LEGACY` list in the
+guard (6 entries, all in `crates/pixi-sandbox`) is the visible debt for this crate and is
+asserted to shrink, never grow.
