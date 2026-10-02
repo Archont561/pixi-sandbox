@@ -208,6 +208,12 @@ dispatch-release = { args = [
   { arg = "tag" },
 ], cmd = "gh workflow run release.yml --ref {{ tag }} -f version={{ tag }}" }
 
+# The same GITHUB_TOKEN hole, the same hand-off, for the transport: publish-sandbox.yml
+# (the sandbox branch repack) runs on push to main, and a GITHUB_TOKEN release-commit push
+# starts no workflows — auto-release dispatches the repack explicitly so the published
+# branch names the release commit, not the last pre-release push.
+dispatch-sandbox-repack = "gh workflow run publish-sandbox.yml --ref main"
+
 # ---------------------------------------------------------------------------
 # The airlock proof (.github/workflows/airlock.yml, task-36): these run the RELEASED
 # pixi-sandbox — the proof is about published assets, not this tree's build — so they invoke

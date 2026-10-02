@@ -493,6 +493,29 @@ impl ShellGit {
         Ok(text.lines().map(str::to_string).collect())
     }
 
+    /// Every tracked file git reports as changed, staged or not — `git status --porcelain
+    /// --untracked-files=no`. This is the prepare-release question ("what did this run
+    /// touch?"), where [`Self::unstaged_modifications`] answers the commit-release question
+    /// ("what is modified that I did not stage?"); the two are deliberately different
+    /// predicates, so a release that stages its own output is not rejected by its own
+    /// report. Porcelain prefixes each path with two status columns, so the name starts at
+    /// byte 3 — and the first column can be a *space*, which is why this parses
+    /// [`Output::utf8`] raw instead of going through `run_text`: that trims the output, and
+    /// a trimmed leading space would shift the first entry's name by one byte.
+    pub fn changed_paths(&self, root: &Path) -> Result<Vec<String>> {
+        let output = self.run(
+            &self
+                .git(["status", "--porcelain", "--untracked-files=no"])
+                .cwd(root),
+        )?;
+        Ok(output
+            .utf8()
+            .lines()
+            .filter(|line| line.len() > 3)
+            .map(|line| line[3..].to_string())
+            .collect())
+    }
+
     /// Commit the staged changes under the instance's identity.
     pub fn commit(&self, root: &Path, message: &str) -> Result<()> {
         self.run(&self.git(["commit", "-m"]).arg(message).cwd(root))
