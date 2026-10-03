@@ -272,11 +272,36 @@ fn a_failed_unix_rename_is_reported_and_leaves_no_staged_file() {
     );
 }
 
+/// Whether this host actually enforces the read-only-directory edge the swap failure needs.
+/// Root ignores directory permissions, and some container and network filesystems are mounted
+/// with fixed modes, so the premise — not the code under test — is what goes missing there.
+/// Probing the edge is more honest than asking `geteuid`, and it needs no dependency.
+#[cfg(unix)]
+fn a_read_only_directory_is_actually_read_only() -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let probe = tempfile::tempdir().expect("tempdir");
+    let dir = probe.path().join("probe");
+    fs::create_dir(&dir).expect("mkdir");
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).expect("chmod");
+    let denied = fs::File::create(dir.join("canary")).is_err();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).expect("restore");
+    denied
+}
+
 /// The Windows swap cannot even move the old image aside — the error must name both paths so
 /// an operator knows nothing was touched.
+///
+/// This asserts a permission edge, so it needs a host that has one; where the premise does not
+/// hold the test says so and stops, rather than failing on the environment. It stays ungated on
+/// purpose: the `ci` feature is the airlock's replay-only switch (`--test e2e --features ci`),
+/// so a `cfg(feature = "ci")` here would compile the test out of every run that exists.
 #[cfg(unix)]
 #[test]
 fn a_windows_swap_that_cannot_move_the_old_binary_aside_reports_both_paths() {
+    if !a_read_only_directory_is_actually_read_only() {
+        eprintln!("skipped: this host does not enforce directory permissions");
+        return;
+    }
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().expect("tempdir");
     let locked = dir.path().join("locked");
@@ -317,6 +342,170 @@ fn an_unreadable_directory_sweeps_nothing_instead_of_failing() {
     let result = result.expect("an unlistable directory is not a failure");
     assert!(result.swept.is_empty());
     assert_eq!(fs::read(&destination).expect("read"), b"new");
+}
+
+// ---------------------------------------------------------------------------
+// The running-image proof (task-47 AC#2).
+//
+// Every test above drives `windows_swap` through its `ReplaceStrategy` parameter, so the code
+// path is covered on whatever host runs them — but what that path exists for is a fact about
+// Windows rather than about this code: a mapped image can be renamed aside, yet it cannot be
+// deleted or renamed onto. Only a real Windows host with a real running process can confirm
+// that, so the proof lives here and ci.yml's `replace-running-image` job runs it on
+// windows-latest. The assertions are deliberately falsifiable: run this file ungated on Linux
+// and it fails at the corpse check, because Linux unlinks a running image without complaint.
+// ---------------------------------------------------------------------------
+
+/// The running process the proof needs. Spawned as a copy of this very test binary — libtest's
+/// own `--ignored --exact` runs only this test — so no fixture binary has to be built and
+/// nothing is added to the published asset set. What is under test is the mapped file's
+/// behaviour, not pixi-sandbox's, so a stand-in is the honest subject here.
+#[cfg(windows)]
+#[test]
+#[ignore = "spawned as a child by the running-image test; it sleeps rather than asserting"]
+fn hold_the_image_open() {
+    let marker =
+        std::env::var("PIXI_SANDBOX_HELD_IMAGE_MARKER").expect("marker path from the parent");
+    std::fs::write(&marker, b"mapped").expect("signal that the image is mapped");
+    std::thread::sleep(std::time::Duration::from_secs(60));
+}
+
+/// Kills the held image on unwind. Without it a failed assertion leaves a mapped file that
+/// Windows will not delete, so the tempdir cleanup fails too and buries the real failure.
+#[cfg(windows)]
+struct HeldImage(std::process::Child);
+
+#[cfg(windows)]
+impl Drop for HeldImage {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Block until the child reports a mapped image, or fail with whatever it did instead. Windows
+/// maps the image before `main` runs, so the marker is a lower bound rather than a race — but a
+/// child that dies early must not be waited on forever.
+#[cfg(windows)]
+fn wait_until_the_image_is_mapped(marker: &Path, child: &mut std::process::Child) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while !marker.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the child never reported a mapped image"
+        );
+        if let Some(status) = child.try_wait().expect("try_wait") {
+            panic!("the child exited with {status} before mapping its image");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// Poll the destination across a swap, recording every successful read that is neither the bytes
+/// it started with nor the expected bytes. Absence is legitimate — the tool is missing for one
+/// syscall between the two renames — but a short read is a torn write, which is what "no partial
+/// executable" forbids. Both endpoints must be accepted: the watcher starts *before* the swap, so
+/// every read of the untouched image is a pre-swap observation, not a torn one. A canary, not a
+/// proof: it can only fail, never certify, which is the right direction for a window this narrow.
+#[cfg(windows)]
+fn watch_for_a_torn_destination(
+    destination: &Path,
+    before: &[u8],
+    expected: &[u8],
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> std::thread::JoinHandle<Vec<usize>> {
+    let path = destination.to_path_buf();
+    let before = before.to_vec();
+    let expected = expected.to_vec();
+    std::thread::spawn(move || {
+        let mut torn = Vec::new();
+        while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Ok(bytes) = fs::read(&path) {
+                if bytes != before && bytes != expected {
+                    torn.push(bytes.len());
+                }
+            }
+        }
+        torn
+    })
+}
+
+#[test]
+#[cfg(windows)]
+fn a_genuinely_running_image_is_replaced_and_its_corpse_is_reaped_by_the_next_update() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let exe = std::env::current_exe().expect("this test binary");
+    let original = fs::metadata(&exe).expect("stat").len();
+    let bin = dir.path().join(if cfg!(windows) {
+        "pixi-sandbox.exe"
+    } else {
+        "pixi-sandbox"
+    });
+    fs::copy(&exe, &bin).expect("copy this test binary to stand in for the managed tool");
+
+    let marker = dir.path().join("image-mapped");
+    let child = std::process::Command::new(&bin)
+        .args([
+            "--ignored",
+            "--exact",
+            "hold_the_image_open",
+            "--test-threads=1",
+        ])
+        .env("PIXI_SANDBOX_HELD_IMAGE_MARKER", &marker)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    let mut held = HeldImage(child.expect("spawn the running image"));
+    wait_until_the_image_is_mapped(&marker, &mut held.0);
+
+    let before = fs::read(&bin).expect("read the pre-swap image");
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let watcher =
+        watch_for_a_torn_destination(&bin, &before, b"new binary", std::sync::Arc::clone(&stop));
+
+    // The proof itself: Windows refuses to unlink a mapped image and refuses to rename onto
+    // one, so this succeeds only by renaming it aside first. If the corpse were gone below,
+    // the host had permitted the unlink and the Windows assumption would be unfounded.
+    let first = install(ReplaceStrategy::Windows, &bin, b"new binary", VERSION)
+        .expect("a mapped image is replaceable");
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let torn = watcher.join().expect("watcher");
+    assert!(
+        torn.is_empty(),
+        "the destination was never a partial executable (observed {torn:?})"
+    );
+
+    let displaced = first.displaced.expect("windows keeps the old image aside");
+    assert!(
+        displaced.exists(),
+        "a mapped image cannot be unlinked, so the corpse must survive this update"
+    );
+    assert_eq!(
+        fs::metadata(&displaced).expect("stat the corpse").len(),
+        original,
+        "the corpse is a whole image, not a torn one"
+    );
+    assert_eq!(fs::read(&bin).expect("read"), b"new binary");
+    assert!(
+        held.0.try_wait().expect("try_wait").is_none(),
+        "the running process must be unaffected by the swap"
+    );
+    assert!(
+        !staging_path(&bin).exists(),
+        "a successful swap must leave no staged file"
+    );
+
+    // Once the image is released the corpse is an ordinary file, so the next update reaps it.
+    held.0.kill().expect("kill");
+    held.0.wait().expect("wait");
+    let second =
+        install(ReplaceStrategy::Windows, &bin, b"newer binary", VERSION).expect("installed");
+    assert!(
+        second.swept.contains(&displaced),
+        "the released corpse must be swept by the next update: {:?}",
+        second.swept
+    );
+    assert!(!displaced.exists(), "the corpse must be gone");
 }
 
 /// A sibling whose name is not UTF-8 must be skipped by the sweep, not panic it.
