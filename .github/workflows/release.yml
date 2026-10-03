@@ -201,6 +201,15 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
 
+      # A release created with GITHUB_TOKEN does not emit a follow-on `release: published`
+      # workflow run. Dispatch the consumer proof explicitly so every release is tested at the
+      # downloaded-asset boundary; workflow_dispatch is not subject to recursion suppression.
+      - name: Trigger consumer proof for the released version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pixi run -e package dispatch-consumer-proof ${{ inputs.version || github.ref_name }}
+
       # The release commit repins every version reference across docs/** and README, but that
       # commit is pushed with GITHUB_TOKEN, and GitHub suppresses workflow triggers on
       # GITHUB_TOKEN pushes — so docs.yml's `push: [main]` trigger never fires for it and GitHub

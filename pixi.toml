@@ -209,8 +209,12 @@ publish-conda = { args = [
   { arg = "files", default = "dist/conda/conda-*/*.conda" },
 ], cmd = "pixi upload prefix --channel 'archont561/archont561' --generate-attestation {{ files }}" }
 
-# GITHUB_TOKEN pushes (the release commit) trigger no workflows, so the release dispatches the
-# docs rebuild explicitly; `GH_TOKEN` reaches gh through the step's `env:`.
+# GITHUB_TOKEN-created releases and pushes trigger no follow-on workflows, so the release
+# dispatches both its consumer-boundary proof and the docs rebuild explicitly; `GH_TOKEN`
+# reaches gh through each workflow step's `env:`.
+dispatch-consumer-proof = { args = [
+  { arg = "tag" },
+], cmd = "gh workflow run consumer-proof.yml --ref main -f release-tag={{ tag }}" }
 dispatch-docs = "gh workflow run docs.yml --ref main"
 
 # auto-release's hand-off to the build half: the release tag is pushed with GITHUB_TOKEN,
