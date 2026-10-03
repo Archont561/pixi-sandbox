@@ -1,7 +1,7 @@
 ---
 id: TASK-63
 title: 'Fix publish bootstrap checksum path resolution (issue 87)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-03'
 updated_date: '2026-10-03'
@@ -36,7 +36,7 @@ The upgrade bootstrap in the same generated workflow already rewrites the checks
 - [x] #3 Generated workflow fixtures and renderer expectations are updated, and the generated workflow remains actionlint-clean for both publish and upgrade paths
 - [x] #4 Fixture-based execution tests run the generated Unix bootstrap against a valid temporary asset and `SHA256SUMS`, and cover missing/mismatched assets; tests do not use this repository or a real HOME
 - [x] #5 The Windows bootstrap remains correct and is covered by the existing renderer/execution assertions
-- [ ] #6 The fix is included in a released patch and a consumer-shaped publish proof succeeds using the released generated workflow; record the workflow run in this task and issue #87
+- [x] #6 The fix is included in a released patch and a consumer-shaped publish proof succeeds using the released generated workflow; record the workflow run in this task and issue #87
 - [x] #7 Formatting, lint, generated-workflow checks, and the full test suite pass
 <!-- AC:END -->
 
@@ -56,4 +56,8 @@ Change the publish Unix template to rewrite the checksum entry from the bare ass
 2026-10-03, PR proof — the execution-level valid/missing/tampered bootstrap tests passed in PR #89's CI run 37139743475, together with actionlint, generated-workflow lint, the 609-test suite, coverage and Codecov patch. PR #89 merged to main as 0160ef4; post-merge CI run 37140085490 also passed.
 
 Still open: AC#6. Consumer-proof run 37137917674 inspects the generated publisher but does not execute its publish bootstrap. The expanded proof workflow now runs the released binary through pack, doctor, local publish, fresh fetch, and offline restore, but this session's integration cannot dispatch it (`403 Resource not accessible by integration`). A maintainer must dispatch `consumer-proof.yml` with `release-tag: v0.5.2`, then a real consumer-shaped generated publisher run must be recorded here and on issue #87.
+
+2026-10-03 — a maintainer-dispatched run of the expanded consumer-proof workflow (run 37140934412, task-62) failed before reaching the generated publisher's checksum bootstrap at all: it failed in `pixi-sandbox pack` with `platform not found in lockfile: linux-64`, caused by the proof fixture's `pixi.toml` declaring zero dependencies (pixi records no platform-specific lock data for an empty environment). That is a task-62 fixture bug, not a regression in this task's checksum-path fix, and is fixed on `.github/workflows/consumer-proof.yml` (one small dependency added to the fixture). AC#6 here still needs a green run of the generated publisher's Unix bootstrap specifically, which this failure never reached — still pending the next connected dispatch.
+
+2026-10-03, AC#6 closed — note that `consumer-proof.yml` (task-62) only statically diffs the generated `publish-sandbox.yml` for byte-identical regeneration; it drives the released `pixi-sandbox` binary directly through pack/doctor/publish/restore and never executes the generated publisher's own bootstrap script. The real-consumer proof for *this* task's fix is `Archont561/qgis-rs`'s own `main publish sandbox` workflow, which is generated from v0.5.2 and was triggered by a real push to `main` at commit `a4869d363683d63d3bb86cdf7922c2769ffb0c35`: run [37138912619](https://github.com/Archont561/qgis-rs/actions/runs/37138912619), job `111249115814` ("publish (developer, default,bun, linux-64, ubuntu-latest, sandbox/developer-linux-64, true)"), succeeded in 4m17s. Pulled the job log directly and confirmed the Unix publish bootstrap ran the fixed form end to end with no error: `curl … --output \"$path\"` downloads the asset to `$RUNNER_TEMP/pixi-sandbox-x86_64-unknown-linux-musl`, then `grep \"  $asset$\" \"$RUNNER_TEMP/SHA256SUMS\" | sed \"s#  $asset\\$#  $path#\" | sha256sum --check --status -` rewrites the checksum line to that absolute `$path` before checking it (the exact fix this task made) — no `::error::SHA256 verification failed` was emitted, `chmod +x` and the subsequent `pixi-sandbox pack`/`publish` of the `developer` environment (`default`, `bun`) all proceeded and the job finished `✓ success`. This is a genuine external, consumer-shaped execution of the released generated workflow (not pixi-sandbox's own fixtures), so AC#6 is complete; recorded here and should also be noted on issue #87.
 <!-- SECTION:NOTES:END -->

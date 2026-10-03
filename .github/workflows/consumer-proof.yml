@@ -49,6 +49,14 @@ jobs:
           name = "consumer-proof"
           channels = ["https://prefix.dev/conda-forge"]
           platforms = ["linux-64"]
+
+          [dependencies]
+          # A dependency-free environment solves to no platform-specific lock entry at all
+          # (pixi omits per-platform data when there is nothing to record), so pixi-pack later
+          # fails with "platform not found in lockfile: linux-64" and an empty candidate list.
+          # One small, fast-to-fetch package (same choice as tests/fixtures/demo-project) is
+          # enough to make the environment real without slowing the proof down.
+          ripgrep = "*"
           EOF
           printf '%s\n' "consumer fixture: $RELEASE_TAG" > "$RUNNER_TEMP/consumer/README.md"
 
@@ -106,6 +114,9 @@ jobs:
           git clone "$remote" "$checkout"
           git -C "$checkout" fetch origin sandbox/consumer-proof-linux-64
           git -C "$checkout" checkout --detach FETCH_HEAD
+          # restore requires --output-path to already exist (support::existing_dir) — the
+          # e2e fixture tests mkdir it first for the same reason.
+          mkdir -p "$restored"
           env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$checkout/.pixi-sandbox/tools/linux-64/pixi-sandbox" restore --branch-location "$checkout" --output-path "$restored" --user-tools skip | tee "$RUNNER_TEMP/evidence/restore.log"
           env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$restored/.pixi/tools/linux-64/pixi" --version | tee "$RUNNER_TEMP/evidence/restored-pixi-version.txt"
           cp "$transport/.pixi-sandbox/manifest.json" "$RUNNER_TEMP/evidence/manifest.json"
