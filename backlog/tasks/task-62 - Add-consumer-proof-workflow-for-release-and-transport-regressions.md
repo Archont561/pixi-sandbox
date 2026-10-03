@@ -38,16 +38,16 @@ This workflow proves current releases and prevents recurrence. It does not by it
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `.github/workflows/consumer-proof.yml` triggers on `release.published` and `workflow_dispatch`, resolves the published tag safely, and does not use the source-built binary as the proof subject
-- [ ] #2 A clean fixture consumer is created on the runner with an isolated HOME and no dependency on this repository's working tree or user profile
-- [ ] #3 The workflow runs the real released binary to initialize the fixture, renders the publisher workflow, and proves a second initialization/regeneration is byte-identical without hand edits
-- [ ] #4 Generated bash and PowerShell publisher workflows both reference the canonical pixi-sandbox release repository, retain SHA256SUMS verification, and pass actionlint or an equivalent checked renderer assertion
-- [ ] #5 The workflow downloads the selected standalone release asset, verifies its SHA256SUMS entry, and executes `--version` and `--help` with a bare HOME and minimal PATH
+- [x] #1 `.github/workflows/consumer-proof.yml` triggers on `release.published` and `workflow_dispatch`, resolves the published tag safely, and does not use the source-built binary as the proof subject
+- [x] #2 A clean fixture consumer is created on the runner with an isolated HOME and no dependency on this repository's working tree or user profile
+- [x] #3 The workflow runs the real released binary to initialize the fixture, renders the publisher workflow, and proves a second initialization/regeneration is byte-identical without hand edits
+- [x] #4 Generated bash and PowerShell publisher workflows both reference the canonical pixi-sandbox release repository, retain SHA256SUMS verification, and pass actionlint or an equivalent checked renderer assertion
+- [x] #5 The workflow downloads the selected standalone release asset, verifies its SHA256SUMS entry, and executes `--version` and `--help` with a bare HOME and minimal PATH
 - [ ] #6 The workflow packs a fixture transport with the verified standalone binary, runs doctor/verification, publishes to a throwaway local remote, fetches it as a fresh host, restores it offline, and runs the restored consumer assertion
 - [ ] #7 Evidence includes the selected tag, asset name, checksums, generated workflow files, manifest, restore output, and test logs as bounded workflow artifacts; secrets and tokens are not uploaded
-- [ ] #8 The workflow supports a release-tag override for rerunning historical proofs, rejects missing or non-release tags, and is safe to rerun concurrently
-- [ ] #9 The proof is documented in the relevant issue/task notes and supplies the connected evidence required to close issues #79 and #80; issue #81 is closed only after the affected transport remediation is separately proven
-- [ ] #10 Fixture tests, lint, generated-workflow checks, and the full test suite pass; the workflow is actionlint-clean and uses pinned third-party actions
+- [x] #8 The workflow supports a release-tag override for rerunning historical proofs, rejects missing or non-release tags, and is safe to rerun concurrently
+- [x] #9 The proof is documented in the relevant issue/task notes and supplies the connected evidence required to close issues #79 and #80; issue #81 is closed only after the affected transport remediation is separately proven
+- [x] #10 Fixture tests, lint, generated-workflow checks, and the full test suite pass; the workflow is actionlint-clean and uses pinned third-party actions
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -60,4 +60,10 @@ Run the proof after a release is published, with a manual tag override for recov
 ## Implementation Notes
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-03 — started implementation. Added `.github/workflows/consumer-proof.yml`, triggered by published releases and manual release-tag dispatch. The workflow downloads a pinned Linux standalone asset, verifies SHA256SUMS, executes it with an isolated HOME, initializes a clean consumer fixture twice, checks byte-identical generated output, and uploads bounded evidence. Full release/consumer execution remains to be proven by the next release run.
+
+2026-10-03, connected proof — manual v0.5.2 consumer-proof run 37137917674 passed: clean isolated fixture, released asset download and SHA256 verification, bare-HOME execution, canonical release URL/checksum assertions, and byte-identical regeneration. The first manual run 37137843995 failed closed when the required override was omitted, proving the empty-input guard; the succeeding run proves the historical-tag override. CI run 37136644662 passed the repository gates on the workflow commit. Release-trigger recursion was found to be suppressed for GITHUB_TOKEN-created releases, so release.yml now explicitly dispatches the proof (commit 24455d7) while retaining `release.published` and manual triggers. AC#1-5 and #8-10 are complete.
+
+2026-10-03, local implementation — the proof now installs Pixi without solving the owner checkout, creates and locks a clean committed consumer fixture, and drives the downloaded release binary through pack with `--self-bin`, doctor verification, publish to a throwaway bare remote, fresh clone/fetch, and restore under an empty environment with user registration disabled. Evidence now includes the release checksum manifest, packed manifest, and pack/doctor/publish/restore logs. The restore ends by executing the restored Pixi binary. Actionlint and the 609-test local suite are green.
+
+Still open: AC#6 and #7 require a connected run of this expanded workflow. Keep both unchecked until that run proves the lifecycle and its uploaded artifact is inspected.
 <!-- SECTION:NOTES:END -->

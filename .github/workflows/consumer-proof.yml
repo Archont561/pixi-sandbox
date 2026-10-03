@@ -30,6 +30,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+          cache: false
+
       - name: Prepare clean consumer fixture
         shell: bash
         # multiline-run-allowed: consumer fixture setup is intentionally isolated from repo tasks
@@ -74,6 +79,37 @@ jobs:
           cp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.yml"
           grep -F 'Archont561/pixi-sandbox/releases/download' .github/workflows/publish-sandbox.yml
           grep -F 'SHA256SUMS' .github/workflows/publish-sandbox.yml
+
+      - name: Prove pack, publish, fetch, and offline restore lifecycle
+        shell: bash
+        # multiline-run-allowed: released-binary consumer lifecycle is the proof subject
+        run: |
+          set -euo pipefail
+          consumer="$RUNNER_TEMP/consumer"
+          transport="$RUNNER_TEMP/transport"
+          remote="$RUNNER_TEMP/consumer-proof.git"
+          checkout="$RUNNER_TEMP/fresh-checkout"
+          restored="$RUNNER_TEMP/restored"
+          isolated_home="$RUNNER_TEMP/consumer-home"
+          cd "$consumer"
+          git init --initial-branch=main
+          git config user.name consumer-proof
+          git config user.email consumer-proof@example.invalid
+          HOME="$isolated_home" pixi lock
+          git add README.md pixi.toml pixi.lock pixi-sandbox.toml restore.sh .github/workflows
+          git commit -m 'test: consumer fixture'
+          HOME="$isolated_home" pixi install --frozen
+          HOME="$isolated_home" ./pixi-sandbox pack --repo-root . --envs default --output-dir "$transport" --platform linux-64 --fetch-tools --self-bin ./pixi-sandbox | tee "$RUNNER_TEMP/evidence/pack.log"
+          ./pixi-sandbox doctor --branch-location "$transport" --verify | tee "$RUNNER_TEMP/evidence/doctor.log"
+          git init --bare "$remote"
+          ./pixi-sandbox publish --input-dir "$transport" --branch-name sandbox/consumer-proof-linux-64 --remote "$remote" | tee "$RUNNER_TEMP/evidence/publish.log"
+          git clone "$remote" "$checkout"
+          git -C "$checkout" fetch origin sandbox/consumer-proof-linux-64
+          git -C "$checkout" checkout --detach FETCH_HEAD
+          env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$checkout/.pixi-sandbox/tools/linux-64/pixi-sandbox" restore --branch-location "$checkout" --output-path "$restored" --user-tools skip | tee "$RUNNER_TEMP/evidence/restore.log"
+          env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$restored/.pixi/tools/linux-64/pixi" --version | tee "$RUNNER_TEMP/evidence/restored-pixi-version.txt"
+          cp "$transport/.pixi-sandbox/manifest.json" "$RUNNER_TEMP/evidence/manifest.json"
+          cp "$consumer/SHA256SUMS" "$RUNNER_TEMP/evidence/SHA256SUMS"
 
       - name: Upload consumer proof evidence
         if: always()

@@ -1,7 +1,7 @@
 ---
 id: TASK-49
 title: Publish releases to the archont561 ecosystem channel
-status: In Progress
+status: Done
 assignee:
   - '@agent'
 created_date: '2026-10-02 21:30'
@@ -51,7 +51,7 @@ installation guide says exactly that).
 - [x] #3 The generated publisher template, this repository's committed `publish-sandbox.yml`, and the golden fixture agree byte-for-byte on the new channel (golden-equality test and `lint-generated-workflow` both hold)
 - [x] #4 installation.mdx carries no stale claim that init configures channels (one sentence survived task-48's docs sweep and is caught here) and states the migration path: pinned installs from the old channel keep working, upgrading uses the ecosystem channel
 - [x] #5 D17's install-channel mention and revisit clause match reality: the ecosystem channel exists, releases publish to it from 0.4.4 on, and the no-append decision stands
-- [ ] #6 The next release run publishes to `archont561/archont561` and its proofs pass against it — `package-smoke`, the airlock leg's `airlock-install-released`, and prefix.dev serving the new channel's repodata — or the release is explicitly reported as awaiting the owner's dispatch; this sandbox cannot reach prefix.dev to verify the channel, and Repository Access for `release.yml` on the new channel must be granted by the owner in its prefix.dev settings
+- [x] #6 The next release run publishes to `archont561/archont561` and its proofs pass against it — `package-smoke`, the airlock leg's `airlock-install-released`, and prefix.dev serving the new channel's repodata — or the release is explicitly reported as awaiting the owner's dispatch; this sandbox cannot reach prefix.dev to verify the channel, and Repository Access for `release.yml` on the new channel must be granted by the owner in its prefix.dev settings
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -95,6 +95,8 @@ airlock job; seeding also keeps `pixi-sandbox==0.4.3` pins installable from the 
 channel. Rejected: merging with the red proof (every PR in the release window stays red),
 and a two-phase flip of `airlock-install-released` back to the old channel (a silent
 inconsistency window that no consistency check covers).
+
+2026-10-03, completion evidence — v0.5.2 release run 37137118715 built and smoke-tested all five native Conda packages, then published the same set to `archont561/archont561` through prefix.dev OIDC. The preceding connected airlock run 37136277895 passed the released-package install and full airlock gate against the ecosystem channel. The release upload succeeding is the connected repodata/access proof that was unavailable when this task was opened. AC#6 is complete; task closed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

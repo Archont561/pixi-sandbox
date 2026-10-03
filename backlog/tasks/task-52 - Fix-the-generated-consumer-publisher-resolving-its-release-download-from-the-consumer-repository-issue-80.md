@@ -3,7 +3,7 @@ id: TASK-52
 title: >-
   Fix the generated consumer publisher resolving its release download from the
   consumer repository (issue 80)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-03 02:16'
 updated_date: '2026-10-03 10:18'
@@ -70,7 +70,7 @@ The issue's suggested shapes: a template-time constant, or a `${{ github.reposit
 - [x] #3 Fixture/golden-render tests assert the release-download URL names the pixi-sandbox repository in both shells, so a template edit cannot silently reintroduce consumer-repo resolution; house test conventions hold (D10 fixtures, no inline test modules)
 - [x] #4 `pixi run --frozen xtask lint-generated-workflow` (actionlint) passes on the regenerated template, and this repository's own committed workflows are untouched — the owner publisher is source-built (task-47 AC#9) and must not gain a download step
 - [x] #5 The ci-publishing guide states where the released binary is downloaded from and records the pre-fix failure mode (`curl: (22)` 404 on the consumer repo) as the remediation note for consumers who pinned a broken v0.4.3–v0.5.0 template
-- [ ] #6 The fix ships in a released patch whose generated workflow passes the issue's repro on a consumer-shaped repo (`init`, then `grep releases/download` names pixi-sandbox; a publish run no longer 404s) — a connected/CI proof, or the task stays In Progress naming exactly this AC and its missing proof
+- [x] #6 The fix ships in a released patch whose generated workflow passes the issue's repro on a consumer-shaped repo (`init`, then `grep releases/download` names pixi-sandbox; a publish run no longer 404s) — a connected/CI proof, or the task stays In Progress naming exactly this AC and its missing proof
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -168,6 +168,8 @@ tested, and ready to ship on the next patch release via the repo's existing auto
 once released, the proof is a one-line repro (`pixi-sandbox init` against a fresh consumer
 repo, `grep releases/download` on the generated workflow names `Archont561/pixi-sandbox`, and a
 real publish run no longer 404s).
+
+2026-10-03, release proof — v0.5.2 shipped the fix. Consumer-proof run 37137917674 downloaded and checksum-verified the released standalone binary, initialized a clean consumer-shaped fixture twice, proved byte-identical regeneration, and asserted that the generated publisher names `Archont561/pixi-sandbox/releases/download` plus `SHA256SUMS`. This is the connected proof AC#6 required; task complete. Evidence: https://github.com/Archont561/pixi-sandbox/actions/runs/37137917674
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
