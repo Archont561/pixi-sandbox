@@ -399,8 +399,8 @@ reach (and `pixi add` solves before it writes). So the solve belongs to the conn
    than `setup-pixi`'s message about installation.
 3. **The bot relocks.** When the guard fails, the second job refreshes `pixi.lock` and
    `Cargo.lock` onto your branch as `pixi-sandbox[bot]` with a `chore(lock):` commit, then
-   dispatches `ci.yml` explicitly — a `GITHUB_TOKEN` push triggers no workflow, so that
-   dispatch is the only verdict the lock commit gets.
+   dispatches `ci.yml` and `publish-sandbox.yml` explicitly — a `GITHUB_TOKEN` push triggers no workflow, so those
+   dispatches are the only verdict the lock commit gets.
 4. **Merge** once CI is green.
 
 > [!IMPORTANT]
