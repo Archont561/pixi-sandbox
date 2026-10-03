@@ -6,7 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [v0.5.0](https://github.com/Archont561/pixi-sandbox/compare/v0.4.5...83d3dc2e5e12df043ddf46d5d76e9240de69be21) (2026-10-03)
+### [v0.5.1](https://github.com/Archont561/pixi-sandbox/compare/v0.5.0...6a31874043b35dc4fe854f4243b9b1c5e0bb92bd) (2026-10-03)
+
+#### Features
+
+* **ci:** prove the Windows running-image replace and dispatch publish on relock
+([b5918db](https://github.com/Archont561/pixi-sandbox/commit/b5918db93159eb248576c5e8259c9134920b82da)),
+closes [#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+
+#### Fixes
+
+* **pack:** refuse self-bins that cannot run standalone (issue 81) (#82)
+([3e99f97](https://github.com/Archont561/pixi-sandbox/commit/3e99f97ba1a7f1c8f5ea8fde40519568568c5c4c)),
+closes [#82](https://github.com/Archont561/pixi-sandbox/issues/82)
+
+#### Documentation
+
+* **backlog:** task-54 AC#1 — the v0.5.0 asset is standalone, not a trampoline
+([6a31874](https://github.com/Archont561/pixi-sandbox/commit/6a31874043b35dc4fe854f4243b9b1c5e0bb92bd)),
+closes [#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#81](https://github.com/Archont561/pixi-sandbox/issues/81)
+[#80](https://github.com/Archont561/pixi-sandbox/issues/80)
+* **context:** task-54 leftover proofs are connected-host work (#83)
+([08ea7ea](https://github.com/Archont561/pixi-sandbox/commit/08ea7ea83312f343ab67e476f0427d869a8f34c8)),
+closes [#83](https://github.com/Archont561/pixi-sandbox/issues/83)
+
+## [v0.5.0](https://github.com/Archont561/pixi-sandbox/compare/v0.4.5...v0.5.0) (2026-10-03)
 
 ### Documentation
 
