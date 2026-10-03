@@ -272,14 +272,36 @@ fn a_failed_unix_rename_is_reported_and_leaves_no_staged_file() {
     );
 }
 
+/// Whether this host actually enforces the read-only-directory edge the swap failure needs.
+/// Root ignores directory permissions, and some container and network filesystems are mounted
+/// with fixed modes, so the premise — not the code under test — is what goes missing there.
+/// Probing the edge is more honest than asking `geteuid`, and it needs no dependency.
+#[cfg(unix)]
+fn a_read_only_directory_is_actually_read_only() -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let probe = tempfile::tempdir().expect("tempdir");
+    let dir = probe.path().join("probe");
+    fs::create_dir(&dir).expect("mkdir");
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).expect("chmod");
+    let denied = fs::File::create(dir.join("canary")).is_err();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).expect("restore");
+    denied
+}
+
 /// The Windows swap cannot even move the old image aside — the error must name both paths so
 /// an operator knows nothing was touched.
 ///
-/// This is a permission-edge simulation that is sensitive to the test filesystem; run it only
-/// in CI where the environment is controlled.
-#[cfg(all(unix, feature = "ci"))]
+/// This asserts a permission edge, so it needs a host that has one; where the premise does not
+/// hold the test says so and stops, rather than failing on the environment. It stays ungated on
+/// purpose: the `ci` feature is the airlock's replay-only switch (`--test e2e --features ci`),
+/// so a `cfg(feature = "ci")` here would compile the test out of every run that exists.
+#[cfg(unix)]
 #[test]
 fn a_windows_swap_that_cannot_move_the_old_binary_aside_reports_both_paths() {
+    if !a_read_only_directory_is_actually_read_only() {
+        eprintln!("skipped: this host does not enforce directory permissions");
+        return;
+    }
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().expect("tempdir");
     let locked = dir.path().join("locked");
@@ -379,24 +401,27 @@ fn wait_until_the_image_is_mapped(marker: &Path, child: &mut std::process::Child
     }
 }
 
-/// Poll the destination across a swap, recording every successful read that is not exactly the
-/// expected bytes. Absence is legitimate — the tool is missing for one syscall between the two
-/// renames — but a short read is a torn write, which is what "no partial executable" forbids.
-/// A canary, not a proof: it can only fail, never certify, which is the right direction for a
-/// window this narrow.
+/// Poll the destination across a swap, recording every successful read that is neither the bytes
+/// it started with nor the expected bytes. Absence is legitimate — the tool is missing for one
+/// syscall between the two renames — but a short read is a torn write, which is what "no partial
+/// executable" forbids. Both endpoints must be accepted: the watcher starts *before* the swap, so
+/// every read of the untouched image is a pre-swap observation, not a torn one. A canary, not a
+/// proof: it can only fail, never certify, which is the right direction for a window this narrow.
 #[cfg(windows)]
 fn watch_for_a_torn_destination(
     destination: &Path,
+    before: &[u8],
     expected: &[u8],
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> std::thread::JoinHandle<Vec<usize>> {
     let path = destination.to_path_buf();
+    let before = before.to_vec();
     let expected = expected.to_vec();
     std::thread::spawn(move || {
         let mut torn = Vec::new();
         while !stop.load(std::sync::atomic::Ordering::Relaxed) {
             if let Ok(bytes) = fs::read(&path) {
-                if bytes != expected {
+                if bytes != before && bytes != expected {
                     torn.push(bytes.len());
                 }
             }
@@ -433,8 +458,10 @@ fn a_genuinely_running_image_is_replaced_and_its_corpse_is_reaped_by_the_next_up
     let mut held = HeldImage(child.expect("spawn the running image"));
     wait_until_the_image_is_mapped(&marker, &mut held.0);
 
+    let before = fs::read(&bin).expect("read the pre-swap image");
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let watcher = watch_for_a_torn_destination(&bin, b"new binary", std::sync::Arc::clone(&stop));
+    let watcher =
+        watch_for_a_torn_destination(&bin, &before, b"new binary", std::sync::Arc::clone(&stop));
 
     // The proof itself: Windows refuses to unlink a mapped image and refuses to rename onto
     // one, so this succeeds only by renaming it aside first. If the corpse were gone below,
