@@ -100,9 +100,17 @@ fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
         );
     }
 
+    let workflow_reference = project_reference(root, &workflow);
+    let relock_reference = project_reference(root, &relock);
+    let script_reference = project_reference(root, &script);
     let workflow_content = render_github_workflow(GithubWorkflowOptions {
         version: CLI_VERSION,
         config_path: &config_reference.to_string_lossy(),
+        workflow_path: &workflow_reference.to_string_lossy(),
+        relock_workflow_path: &relock_reference.to_string_lossy(),
+        relock_ci_workflow: &args.relock_ci_workflow,
+        script_path: &script_reference.to_string_lossy(),
+        branch: &args.branch,
     });
     let relock_content = render_relock_workflow(RelockWorkflowOptions {
         cli_version: CLI_VERSION,

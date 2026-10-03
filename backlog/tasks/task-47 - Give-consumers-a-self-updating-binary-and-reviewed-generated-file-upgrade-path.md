@@ -4,7 +4,7 @@ title: Give consumers a self-updating binary and reviewed generated-file upgrade
 status: In Progress
 assignee: []
 created_date: '2026-10-02 20:05'
-updated_date: '2026-10-03 10:45'
+updated_date: '2026-10-03 10:53'
 labels:
   - ci
   - init
@@ -64,10 +64,10 @@ lands on main.
 - [x] #3 Every file `init` writes carries a machine-readable version stamp beside the ownership marker (a `pixi-sandbox-version: X.Y.Z` line, within the first three lines the marker check already reads) for the publisher workflow, the relock workflow, and the launcher; fixture tests cover presence and parsing on every render
 - [x] #4 `pixi-sandbox init --check` renders fresh, writes nothing, and exits non-zero naming each drifted file with its remedy (`pixi-sandbox init`) and each foreign-owned file separately (`--force`); a clean tree exits 0 — fixture-tested in both directions (D10)
 - [x] #5 `init` and `--check` never rewrite an existing config; a config whose `schema` is older than the CLI's is reported as a finding naming the explicit migration path (no `config migrate` command is built while config schema is 1 — it exists only once a schema bump gives it something to do), and config readers keep accepting older schemas for a deprecation window, mirroring the manifest reader policy
-- [ ] #6 The generated `publish-sandbox.yml` gains a scheduled and manually dispatchable upgrade job that bootstraps its currently pinned standalone binary with checksum verification, runs `self-update` (latest by default, exact version for manual dispatch), then uses that updated binary for `init --check` and regeneration; drift opens a pull request and never pushes to main or touches config, and the workflow remains actionlint-clean
+- [x] #6 The generated `publish-sandbox.yml` gains a scheduled and manually dispatchable upgrade job that bootstraps its currently pinned standalone binary with checksum verification, runs `self-update` (latest by default, exact version for manual dispatch), then uses that updated binary for `init --check` and regeneration; drift opens a pull request and never pushes to main or touches config, and the workflow remains actionlint-clean
 - [ ] #7 The regenerated pull request contains a new exact `PIXI_SANDBOX_VERSION` and the templates emitted by that same binary; a human merge triggers the normal publisher, which uses the exact matching released binary for plan, pack, doctor, publish, and `--self-bin`, and the resulting manifest names that version — no production step resolves `latest`
-- [ ] #8 Because a `github.token` push starts no `on: push` workflows (task-44's lesson), any automated-merge path ends in an explicit `gh workflow run publish-sandbox.yml` dispatch; the workflow and docs distinguish this from a human merge and tests hold the dispatch behavior
-- [ ] #9 The repository owner workflow remains source-built and has no released-CLI/self-update dependency; the airlock side is unchanged (`restore.sh`/`restore.ps1` stay version-agnostic and doctor reads older manifests), and docs cover self-update, exact pinning, the reviewed upgrade PR, and rollback by dispatching an exact older version
+- [x] #8 Because a `github.token` push starts no `on: push` workflows (task-44's lesson), any automated-merge path ends in an explicit `gh workflow run publish-sandbox.yml` dispatch; the workflow and docs distinguish this from a human merge and tests hold the dispatch behavior
+- [x] #9 The repository owner workflow remains source-built and has no released-CLI/self-update dependency; the airlock side is unchanged (`restore.sh`/`restore.ps1` stay version-agnostic and doctor reads older manifests), and docs cover self-update, exact pinning, the reviewed upgrade PR, and rollback by dispatching an exact older version
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -244,6 +244,68 @@ lint-generated-workflow` and `xtask check-repository` both clean; `pixi run --fr
 Still open after this slice: AC#2 (unchanged, blocked on a Windows runner), AC#6-#9 (the
 generated upgrade job, exact-version pinning through to the transport, the explicit post-merge
 dispatch, and docs) — targeted next in the same session.
+
+2026-10-03 slice 3 — the generated upgrade job (AC#6, #8, #9), same session.
+
+`GithubWorkflowOptions` gained `workflow_path`, `relock_workflow_path`, `relock_ci_workflow`,
+`script_path`, and `branch` — the exact arguments `init` was invoked with, baked into the
+rendered file as literals (the same pattern `config_path` already used) so the upgrade job's
+own `init`/`init --check` calls reproduce the *exact* generation invocation rather than relying
+on defaults that silently diverge the moment a project customises any path.
+
+The publisher template gained a `schedule:` trigger (weekly) and a `workflow_dispatch.inputs.
+upgrade` string (blank by default, so an existing manual dispatch keeps doing an ordinary
+publish with zero behaviour change). A new `upgrade` job: `if: event_name == 'schedule' ||
+(event_name == 'workflow_dispatch' && inputs.upgrade != '')`, exactly the negation of the
+`plan`/`publish` jobs' new `if:` — the two lanes can structurally never both fire on one event,
+asserted directly in `upgrade_job::the_publish_lane_and_the_upgrade_lane_can_never_both_fire`.
+
+The job: downloads the currently-pinned standalone binary with the same checksum verification
+`publish` already uses, asks that *exact* binary to `self-update --dest "$BIN"` (latest, or the
+dispatch-supplied exact version) — so only a verified self-update, never a floating resolver,
+ever decides what gets written — then runs the *updated* binary's own `init --check` against
+the baked-in exact paths/branch/config. A clean result stops here, nothing written, nothing
+proposed. A drifted result re-runs `init` for real, stages only the three owned paths
+(explicitly never the config — D16; the test
+`upgrade_job::the_regenerated_commit_never_stages_the_config` holds this), commits as
+`pixi-sandbox[bot]` (the same identity `relock.yml` already uses), pushes a side branch, and
+opens a PR with `gh pr create` — never a push to `main`. The PR body names the exact explicit
+dispatch an automated merge still needs (task-44's `github.token`-push lesson, restated for this
+lane): `gh workflow run .github/workflows/publish-sandbox.yml --ref main` (AC#8). The *same*
+dispatch input doubles as the rollback path: naming an older released version proposes
+downgrading the generated files to it, reusing `self-update`'s existing exact-version support —
+no new code, just the existing input used in the other direction.
+
+No new third-party action is pinned: every new step is a pinned `uses:` already present or a
+single `run: |` block, consistent with the publisher template's existing exemption from the
+repository's own single-command workflow-shape rule (it was already multi-line by necessity).
+
+Tests: a new `upgrade_job` module in `tests/generated_workflow.rs` (9 tests) checks the mutual
+exclusion of the two lanes, the bootstrap-then-self-update order, that drift-check and
+regeneration use the exact baked-in generation arguments, that the config is never staged, that
+no step ever pushes `main` directly, that the PR body names the exact dispatch command, the bot
+identity, and the job-level `permissions:` block (which replaces rather than adds to the
+workflow-level one, same trap `relock.yml` already documents, so `pull-requests: write` has to
+be named explicitly or `gh pr create` 403s). The golden fixture and `xtask lint-generated-
+workflow` (actionlint) both regenerated/re-verified clean. `xtask check-repository` clean — the
+repository's own vestigial `publish-sandbox.yml` stays untouched, same as slice 2.
+
+Docs: `reference/cli.mdx` documents `init --check`'s finding types and remedies and the new
+version stamp; `guides/ci-publishing.mdx` gained a "Staying current: the upgrade job" section
+covering the schedule, the manual-dispatch exact-version input, the review-then-merge flow, the
+required explicit post-merge dispatch, and rollback by naming an older version. `pixi run docs`
+(astro build) and `pixi run lint-docs` (biome) both pass on the new content.
+
+AC#7 stays unchecked by necessity, the same shape as AC#2 and task-52's AC#6: everything it
+names is implemented and structurally tested (the exact-version stamp flows automatically
+because `init` always stamps its own `CARGO_PKG_VERSION`, and the unchanged `plan`/`publish`
+jobs already install and bootstrap that exact pin), but "the regenerated pull request" and "the
+resulting manifest names that version" describe a live run this sandbox cannot produce without
+a connected GitHub host and a real cut release.
+
+Evidence: `cargo clippy --workspace --all-targets -- -D warnings` clean; `xtask lint-generated-
+workflow` and `xtask check-repository` clean; `pixi run docs` and `pixi run lint-docs` clean;
+`pixi run --frozen test`: **581 passed / 1 skipped** (573 before this slice).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

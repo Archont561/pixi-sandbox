@@ -251,6 +251,35 @@ requires the explicit flag. The launcher uses only local `git archive`, `tar`, a
 binary stored under `.pixi-sandbox/tools/<platform>/` in the sandbox branch. It never downloads
 during restoration.
 
+Every file `init` writes carries a `pixi-sandbox-version: X.Y.Z` line beside its ownership
+marker, naming the exact CLI release that rendered it.
+
+### `init --check`
+
+Render every owned file fresh, write nothing, and report drift:
+
+```bash
+pixi-sandbox init --check
+```
+
+Exits `0` when the generated workflow, the relock workflow, the launcher, and the sandbox
+config schema all match what `init` would produce right now. Otherwise it names each finding
+on its own line with the remedy that fixes it, and exits non-zero:
+
+- a **missing** owned file — remedy: `pixi-sandbox init`
+- a **stale** owned file, present and marked but no longer matching a fresh render — remedy:
+  `pixi-sandbox init`
+- a **foreign** file at an owned path, present but carrying no ownership marker — remedy:
+  `pixi-sandbox init --force`
+- a sandbox config whose `schema` this CLI no longer understands — remedy: upgrade the CLI
+  (a config older than the CLI's current schema is accepted silently; config is reviewed data
+  and is never rewritten by either `init` or `--check`)
+
+`--check` and `--force` are mutually exclusive: auditing a tree and replacing a foreign file on
+it are different operations on purpose. This is the same check the generated workflow's
+scheduled upgrade job runs against a freshly self-updated binary (see below) before it proposes
+anything.
+
 ## plan
 
 Validate `pixi-sandbox.toml` and emit matrix.

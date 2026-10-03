@@ -27,3 +27,44 @@ against `SHA256SUMS` before `chmod +x`/execution in every leg; a mismatch fails 
 > anything was packed (issue #80). Re-run `pixi-sandbox init --force` with a patched CLI to
 > regenerate the workflow against the fixed template; no other part of the generated file
 > changes.
+
+## Staying current: the upgrade job
+
+A new pixi-sandbox release leaves every consumer's generated files silently stale until
+someone notices and re-runs `init` by hand. The generated workflow also contains an `upgrade`
+job that closes that gap without ever floating a production pin:
+
+- **Weekly, on its own** (`schedule:`), it bootstraps the standalone binary your workflow is
+  currently pinned to (the same checksum-verified download the `publish` job uses), asks that
+  exact binary to `self-update` to the **latest** release, and runs `init --check` with the
+  updated binary against the exact paths, branch, and config this project was generated with.
+- **On demand** (`workflow_dispatch`, leaving the new `upgrade` input blank runs an ordinary
+  publish exactly as before; naming an exact version there — `1.2.3` — makes the job
+  self-update to that **exact** release instead of latest). This is also how you roll back: name
+  an older released version to propose downgrading the generated files to it.
+
+If `init --check` finds no drift, the job stops — nothing is written, nothing is proposed. If it
+finds drift, the updated binary re-runs `init` for real and the job opens a pull request
+containing only the regenerated workflow, relock workflow, and launcher. **It never pushes to
+`main` and never touches `pixi-sandbox.toml`** — config is reviewed data, and a config whose
+`schema` the updated binary no longer understands is reported as a finding in that same
+`init --check` output for a human to act on, never edited automatically.
+
+Review the diff like any other dependency bump — it is, after all, exactly the file `init
+--force` would produce locally with the same binary — then merge it. Because a `github.token`
+commit or merge starts no `on: push` workflow (the same trap the relock workflow documents),
+merging this PR does **not** by itself trigger a new publish. Dispatch it explicitly:
+
+```bash
+gh workflow run .github/workflows/publish-sandbox.yml --ref main
+```
+
+After that run, the matrix's bootstrap step downloads the exact new release named in the
+merged `PIXI_SANDBOX_VERSION`, and `pack`/`doctor --verify`/`publish`/`--self-bin` all use that
+one verified binary — the published transport's manifest names that exact version. No
+production step ever resolves `latest`; `latest` only ever decided what the *proposed* pull
+request contained.
+
+This repository's own publisher is unaffected by any of this: it builds pixi-sandbox from
+source and never installs or self-updates a released CLI, so there is nothing here for it to
+depend on.

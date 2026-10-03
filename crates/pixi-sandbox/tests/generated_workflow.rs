@@ -12,11 +12,21 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const VERSION: &str = "9.8.7";
 const CONFIG_PATH: &str = "config/pixi-sandbox.toml";
+const WORKFLOW_PATH: &str = ".github/workflows/publish-sandbox.yml";
+const RELOCK_PATH: &str = ".github/workflows/relock.yml";
+const RELOCK_CI_WORKFLOW: &str = "ci.yml";
+const SCRIPT_PATH: &str = "restore.sh";
+const BRANCH: &str = "sandbox/developer-linux-64";
 
 fn workflow() -> String {
     render_github_workflow(GithubWorkflowOptions {
         version: VERSION,
         config_path: CONFIG_PATH,
+        workflow_path: WORKFLOW_PATH,
+        relock_workflow_path: RELOCK_PATH,
+        relock_ci_workflow: RELOCK_CI_WORKFLOW,
+        script_path: SCRIPT_PATH,
+        branch: BRANCH,
     })
 }
 
@@ -113,6 +123,147 @@ fn generated_workflow_matches_the_reviewed_golden_file() {
 #[test]
 fn generated_workflow_carries_a_parseable_version_stamp() {
     assert_eq!(parse_version_stamp(&workflow()), Some(VERSION));
+}
+
+/// task-47 AC#6-#8: the generated upgrade job, scheduled and manually dispatchable, never
+/// floats a production pin and never pushes to main directly.
+mod upgrade_job {
+    use super::{CONFIG_PATH, RELOCK_PATH, SCRIPT_PATH, WORKFLOW_PATH, workflow};
+
+    #[test]
+    fn the_workflow_gains_a_schedule_and_an_opt_in_dispatch_input() {
+        let workflow = workflow();
+        assert!(workflow.contains("schedule:"), "{workflow}");
+        assert!(workflow.contains("cron:"), "{workflow}");
+        assert!(workflow.contains("inputs:\n      upgrade:"), "{workflow}");
+        // An ordinary manual dispatch (today's only form) must keep working exactly as before:
+        // the new input defaults to blank, which routes to the normal publish, not the upgrade.
+        assert!(workflow.contains("default: \"\""), "{workflow}");
+    }
+
+    /// The normal publish lane and the upgrade lane are mutually exclusive by construction:
+    /// no event can satisfy both `if:` conditions at once, so they can never double-run.
+    #[test]
+    fn the_publish_lane_and_the_upgrade_lane_can_never_both_fire() {
+        let workflow = workflow();
+        assert!(
+            workflow.contains(
+                "if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.upgrade == '')"
+            ),
+            "{workflow}"
+        );
+        assert!(
+            workflow.contains(
+                "if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.upgrade != '')"
+            ),
+            "{workflow}"
+        );
+    }
+
+    /// The upgrade job never trusts a package manager's "latest" for anything that ends up in
+    /// a committed file (decision-4 / D16): it bootstraps the exact pinned, checksum-verified
+    /// binary and only that binary's own `self-update` ever decides the new version.
+    #[test]
+    fn the_upgrade_job_bootstraps_a_verified_binary_before_self_updating_it() {
+        let workflow = workflow();
+        assert!(workflow.contains("Download currently pinned pixi-sandbox"), "{workflow}");
+        assert!(workflow.contains("sha256sum --check --status"), "{workflow}");
+        assert!(workflow.contains("self-update --dest \"$BIN\""), "{workflow}");
+        assert!(
+            workflow.contains("self-update --dest \"$BIN\" --version \"$UPGRADE_VERSION\""),
+            "a manual dispatch must pass the requested exact version through: {workflow}"
+        );
+    }
+
+    /// `init --check` runs against the exact paths and branch this project was generated with
+    /// — never defaults that could silently diverge from a customised init invocation — and
+    /// only a positive drift finding triggers a real `init` run.
+    #[test]
+    fn drift_check_and_regeneration_use_the_exact_generation_arguments() {
+        let workflow = workflow();
+        let upgrade_job = workflow
+            .split("\n  upgrade:\n")
+            .nth(1)
+            .expect("the upgrade job exists");
+        for flag in [
+            "--github-workflow-path .github/workflows/publish-sandbox.yml",
+            "--relock-workflow-path .github/workflows/relock.yml",
+            "--relock-ci-workflow ci.yml",
+            "--script-path restore.sh",
+            "--config config/pixi-sandbox.toml",
+            "--branch sandbox/developer-linux-64",
+        ] {
+            assert_eq!(
+                upgrade_job.matches(flag).count(),
+                2,
+                "expected `{flag}` in both the --check and the regenerate invocation: {upgrade_job}"
+            );
+        }
+        assert!(workflow.contains("\"$BIN\" init --check"), "{workflow}");
+        assert!(workflow.contains("if: steps.check.outputs.drift == 'true'"), "{workflow}");
+    }
+
+    /// Config is reviewed data (D16): the upgrade job's own commit never stages it, even when
+    /// `init` regenerated the other three files.
+    #[test]
+    fn the_regenerated_commit_never_stages_the_config() {
+        let workflow = workflow();
+        let add_line = workflow
+            .lines()
+            .find(|line| line.trim_start().starts_with("git add "))
+            .expect("the upgrade job stages its regenerated files");
+        assert!(!add_line.contains(CONFIG_PATH), "{add_line}");
+        assert!(add_line.contains(WORKFLOW_PATH), "{add_line}");
+        assert!(add_line.contains(RELOCK_PATH), "{add_line}");
+        assert!(add_line.contains(SCRIPT_PATH), "{add_line}");
+    }
+
+    /// task-47 AC#8: because a `github.token` push starts no `on: push` workflow (task-44's
+    /// lesson, restated here for the upgrade lane), the job opens a reviewable pull request
+    /// against a side branch — never a direct push to `main` — and its own body spells out the
+    /// explicit dispatch an automated merge still requires.
+    #[test]
+    fn the_job_opens_a_pull_request_instead_of_pushing_main() {
+        let workflow = workflow();
+        assert!(!workflow.contains("git push --force origin main"), "{workflow}");
+        assert!(!workflow.contains("git push origin main"), "{workflow}");
+        assert!(workflow.contains("gh pr create"), "{workflow}");
+        assert!(workflow.contains("--base main"), "{workflow}");
+        assert!(
+            workflow.contains("gh workflow run .github/workflows/publish-sandbox.yml --ref main"),
+            "the PR body must name the explicit post-merge dispatch: {workflow}"
+        );
+    }
+
+    /// The bot identity matches the one the relock workflow already established (task-39's
+    /// precedent): one recognisable automation identity across every generated bot commit.
+    #[test]
+    fn the_upgrade_commit_uses_the_same_bot_identity_as_relock() {
+        let workflow = workflow();
+        assert!(workflow.contains("pixi-sandbox[bot]"), "{workflow}");
+        assert!(
+            workflow.contains("41898282+github-actions[bot]@users.noreply.github.com"),
+            "{workflow}"
+        );
+    }
+
+    /// A job-level `permissions:` block replaces the workflow-level one rather than adding to
+    /// it (the trap `relock.yml` already documents) — `pull-requests: write` must be spelled
+    /// out explicitly on the upgrade job or `gh pr create` gets a 403.
+    #[test]
+    fn the_upgrade_job_grants_itself_pull_request_permission() {
+        let workflow = workflow();
+        let upgrade_job = workflow
+            .split("\n  upgrade:\n")
+            .nth(1)
+            .expect("the upgrade job exists");
+        let permissions_block = upgrade_job
+            .split("permissions:\n")
+            .nth(1)
+            .expect("the upgrade job declares its own permissions");
+        assert!(permissions_block.contains("contents: write"));
+        assert!(permissions_block.contains("pull-requests: write"));
+    }
 }
 
 #[rstest]

@@ -68,6 +68,11 @@ pub fn lint_generated_workflow(actionlint: &Path) -> Result<()> {
     let workflow = render_github_workflow(GithubWorkflowOptions {
         version: env!("CARGO_PKG_VERSION"),
         config_path: "pixi-sandbox.toml",
+        workflow_path: WORKFLOW_PATH,
+        relock_workflow_path: RELOCK_PATH,
+        relock_ci_workflow: "ci.yml",
+        script_path: "restore.sh",
+        branch: "sandbox/developer-linux-64",
     });
     fs::write(&workflow_path, workflow)
         .with_context(|| format!("writing generated workflow {}", workflow_path.display()))?;
