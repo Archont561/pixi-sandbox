@@ -91,3 +91,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ github.head_ref }}
+      - if: ${{ steps.commit.outputs.changes_detected == 'true' }}
+        run: gh workflow run publish-sandbox.yml --ref "$HEAD_REF"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}

@@ -58,3 +58,28 @@ jobs:
           name: docs-site
           path: docs/dist
           retention-days: 7
+
+  # task-47 AC#2: the one thing the job above cannot prove. `self-update` replaces the binary
+  # that is currently executing, and Windows forbids what Unix permits — a mapped image cannot
+  # be unlinked or renamed onto, though it can be renamed aside. `windows_swap` is written for
+  # exactly that, and its `ReplaceStrategy` parameter lets Linux run the code path, but only a
+  # real Windows host with a real running process can confirm the OS behaviour underneath it.
+  #
+  # This proves the updater's replace path on Windows. It does NOT make win-64 a supported
+  # platform: `pixi.lock` still carries no win-64 entries, the README's Windows gap (no
+  # conda-forge `bun`, D11) stands, and `.pixi-sandbox.toml` still publishes linux-64 only.
+  replace-running-image:
+    name: replace a running image (windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # `run-install: false` for the same reason release.yml's matrix sets it: no environment
+      # can be installed on win-64, so the empty `package` one is what runs — against the Rust
+      # toolchain the runner image already ships, exactly as the release build leg does.
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+          cache: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: pixi run -e package test-self-update-replace

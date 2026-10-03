@@ -22,6 +22,8 @@ pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.5.0" }
 # git goes through a trait (crates/pixi-sandbox-git): the real binary uses `ShellGit`, tests
 # use `FakeGit`, and neither the CLI nor the tests ever touch the developer's own repository.
 pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.5.0" }
+# Self updates for standalone executables
+self_update = { version = "1.3.0", default-features = false, features = ["reqwest", "rustls", "archive-zip", "archive-tar", "compression-tar-gz"] }
 anyhow = { workspace = true }
 clap = { workspace = true }
 # Reads Cargo.lock to reject a lockfile cargo itself cannot vendor (design.md §11).

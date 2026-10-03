@@ -100,6 +100,15 @@ package = []
 # rust
 test = "cargo nextest run --workspace"
 test-doc = "cargo test --workspace --doc"
+# task-47 AC#2: replacing the binary that is currently executing, on a real Windows host — the
+# one behaviour no amount of Linux testing can confirm, because Linux will happily unlink a
+# running image and Windows will not. Run through the empty `package` environment
+# (`pixi run -e package …`) because `pixi.lock` carries no win-64 entries, so nothing else can
+# be installed on that runner: the same constraint, and the same runner-provided Rust toolchain,
+# release.yml's windows build leg already works under. Plain `cargo test` rather than nextest
+# because `cargo-nextest` is a conda dependency of the `rust` feature, which cannot solve on
+# win-64 at all.
+test-self-update-replace = "cargo test -p pixi-sandbox --test self_update_replace"
 # `release/github.rs` is the one file that needs a socket — the real GitHub transport behind
 # the `ReleaseSource` trait. Every decision it could get wrong lives in `release/mod.rs` and
 # is tested against a fake, so counting the HTTP shim would only reward mocking the client.
