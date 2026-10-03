@@ -1,0 +1,85 @@
+name: consumer proof
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: Release tag to prove, for example v0.5.2
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: consumer-proof-${{ github.event.release.tag_name || inputs.release-tag || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  consumer-proof:
+    name: consumer proof (linux-64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release-tag }}
+      RELEASE_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prepare clean consumer fixture
+        shell: bash
+        # multiline-run-allowed: consumer fixture setup is intentionally isolated from repo tasks
+        run: |
+          set -euo pipefail
+          test -n "$RELEASE_TAG"
+          case "$RELEASE_TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::release-tag must be a semver tag"; exit 2 ;; esac
+          rm -rf "$RUNNER_TEMP/consumer" "$RUNNER_TEMP/evidence"
+          mkdir -p "$RUNNER_TEMP/consumer/.github/workflows" "$RUNNER_TEMP/evidence" "$RUNNER_TEMP/consumer/.pixi"
+          cat > "$RUNNER_TEMP/consumer/pixi.toml" <<'EOF'
+          [workspace]
+          name = "consumer-proof"
+          channels = ["https://prefix.dev/conda-forge"]
+          platforms = ["linux-64"]
+          EOF
+          printf '%s\n' "consumer fixture: $RELEASE_TAG" > "$RUNNER_TEMP/consumer/README.md"
+
+      - name: Download and verify standalone release asset
+        shell: bash
+        # multiline-run-allowed: this is the release-boundary proof, not repository automation
+        run: |
+          set -euo pipefail
+          base="${GITHUB_SERVER_URL}/${RELEASE_REPO}/releases/download/${RELEASE_TAG}"
+          asset=pixi-sandbox-x86_64-unknown-linux-musl
+          curl --fail --location --silent --show-error "$base/$asset" --output "$RUNNER_TEMP/consumer/pixi-sandbox"
+          curl --fail --location --silent --show-error "$base/SHA256SUMS" --output "$RUNNER_TEMP/consumer/SHA256SUMS"
+          grep "  $asset$" "$RUNNER_TEMP/consumer/SHA256SUMS" | sed "s#  $asset\$#  $RUNNER_TEMP/consumer/pixi-sandbox#" | sha256sum --check --status -
+          chmod +x "$RUNNER_TEMP/consumer/pixi-sandbox"
+          env -i HOME="$RUNNER_TEMP/consumer-home" PATH=/usr/bin:/bin "$RUNNER_TEMP/consumer/pixi-sandbox" --version | tee "$RUNNER_TEMP/evidence/version.txt"
+          "$RUNNER_TEMP/consumer/pixi-sandbox" --help > "$RUNNER_TEMP/evidence/help.txt"
+
+      - name: Render and regenerate consumer workflow
+        shell: bash
+        # multiline-run-allowed: the proof must exercise the released CLI in a clean consumer
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/consumer"
+          HOME="$RUNNER_TEMP/consumer-home" "$RUNNER_TEMP/consumer/pixi-sandbox" init --force
+          cp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.first.yml"
+          HOME="$RUNNER_TEMP/consumer-home" "$RUNNER_TEMP/consumer/pixi-sandbox" init --force
+          cmp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.first.yml"
+          cp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.yml"
+          grep -F 'Archont561/pixi-sandbox/releases/download' .github/workflows/publish-sandbox.yml
+          grep -F 'SHA256SUMS' .github/workflows/publish-sandbox.yml
+
+      - name: Upload consumer proof evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: consumer-proof-${{ env.RELEASE_TAG }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: ignore
+          retention-days: 14
