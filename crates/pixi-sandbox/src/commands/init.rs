@@ -180,6 +180,13 @@ fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
             .context("the embedded tools lock declares no pixi pin")?,
         cargo: plan_vendors_cargo(&config),
         ci_workflow: &args.relock_ci_workflow,
+        // The relock bot's third dispatch has to name the publisher this run is generating,
+        // so it is the file name of the path `init` was handed — never a literal, or a renamed
+        // `--workflow-path` leaves the bot dispatching a workflow that does not exist.
+        publisher_workflow: &workflow
+            .file_name()
+            .context("publisher workflow path has no file name")?
+            .to_string_lossy(),
     });
     let script_content = launcher_kind.render(CLI_VERSION, &args.branch, &config_reference);
 

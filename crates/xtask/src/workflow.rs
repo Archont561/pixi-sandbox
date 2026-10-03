@@ -10,6 +10,10 @@ use std::process::Command;
 
 const WORKFLOW_PATH: &str = ".github/workflows/publish-sandbox.yml";
 
+/// The same file by name alone, which is how a workflow is named in a `gh workflow run`
+/// dispatch — the relock render's third dispatch target.
+const PUBLISHER_WORKFLOW: &str = "publish-sandbox.yml";
+
 /// Where this repository keeps its own render. Unlike the publisher — which no consumer-shaped
 /// rule lets us commit, because its template is multi-line shell by necessity — the relock
 /// render is house-shaped, so the repository runs the very artifact `init` hands consumers.
@@ -26,6 +30,7 @@ pub fn relock_render(root: &Path) -> Result<String> {
         pixi_version: &pixi_version,
         cargo: plan_vendors_cargo(&root.join(DEFAULT_FILE)),
         ci_workflow: "ci.yml",
+        publisher_workflow: PUBLISHER_WORKFLOW,
     }))
 }
 
@@ -169,6 +174,7 @@ pub fn lint_generated_workflow(actionlint: &Path) -> Result<()> {
                 .context("the embedded tools lock declares no pixi pin")?,
             cargo,
             ci_workflow: "ci.yml",
+            publisher_workflow: PUBLISHER_WORKFLOW,
         });
         fs::write(&path, rendered)
             .with_context(|| format!("writing generated workflow {}", path.display()))?;

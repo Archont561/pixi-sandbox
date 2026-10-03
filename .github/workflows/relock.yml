@@ -75,9 +75,10 @@ jobs:
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
           commit_author: pixi-sandbox[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           file_pattern: pixi.lock Cargo.lock
-      # The push above used GITHUB_TOKEN, so it started nothing. These two dispatches are the
-      # only verdict the lock commit will ever get: the consumer's CI, and this workflow again
-      # so its own guard reports green on the commit that fixed the drift.
+      # The push above used GITHUB_TOKEN, so it started nothing. These three dispatches are the
+      # only verdict the lock commit will ever get: the consumer's CI, this workflow again
+      # so its own guard reports green on the commit that fixed the drift, and the publisher so
+      # the lockfile just refreshed reaches the transport instead of stalling on the branch.
       # The branch name reaches the command as an environment variable, never as inline
       # ${{ }}: a branch name is attacker-controlled text on a pull request, and interpolating
       # it into a shell line is the script-injection hole actionlint rejects.

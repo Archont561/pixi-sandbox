@@ -53,6 +53,13 @@ pub struct RelockWorkflowOptions<'a> {
     /// Workflow file the bot dispatches after pushing a lock commit, relative to
     /// `.github/workflows/`.
     pub ci_workflow: &'a str,
+    /// Workflow file the bot dispatches *after* that, so the refreshed lockfile is actually
+    /// republished rather than left sitting on the branch — relative to `.github/workflows/`,
+    /// and derived from the publisher path `init` was given, because a project that renamed its
+    /// publisher would otherwise have a relock bot dispatching a workflow that does not exist.
+    /// Without this the published transport carries the pre-relock lockfile indefinitely, and
+    /// nothing reports the drift.
+    pub publisher_workflow: &'a str,
 }
 
 /// The pixi pin compiled into this binary — the pixi a transport packed by it will carry, and
@@ -159,9 +166,10 @@ __CARGO_STEP__      - id: commit
           commit_user_email: __BOT_EMAIL__
           commit_author: __BOT_NAME__ <__BOT_EMAIL__>
           file_pattern: __LOCK_FILES__
-      # The push above used GITHUB_TOKEN, so it started nothing. These two dispatches are the
-      # only verdict the lock commit will ever get: the consumer's CI, and this workflow again
-      # so its own guard reports green on the commit that fixed the drift.
+      # The push above used GITHUB_TOKEN, so it started nothing. These three dispatches are the
+      # only verdict the lock commit will ever get: the consumer's CI, this workflow again
+      # so its own guard reports green on the commit that fixed the drift, and the publisher so
+      # the lockfile just refreshed reaches the transport instead of stalling on the branch.
       # The branch name reaches the command as an environment variable, never as inline
       # ${{ }}: a branch name is attacker-controlled text on a pull request, and interpolating
       # it into a shell line is the script-injection hole actionlint rejects.
@@ -172,6 +180,11 @@ __CARGO_STEP__      - id: commit
           HEAD_REF: ${{ github.head_ref }}
       - if: ${{ steps.commit.outputs.changes_detected == 'true' }}
         run: gh workflow run relock.yml --ref "$HEAD_REF"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}
+      - if: ${{ steps.commit.outputs.changes_detected == 'true' }}
+        run: gh workflow run __PUBLISHER_WORKFLOW__ --ref "$HEAD_REF"
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ github.head_ref }}
@@ -204,6 +217,7 @@ __CARGO_STEP__      - id: commit
         .replace("__LOCK_FILES__", lock_files)
         .replace("__LOCK_COMMANDS__", lock_commands)
         .replace("__CI_WORKFLOW__", options.ci_workflow)
+        .replace("__PUBLISHER_WORKFLOW__", options.publisher_workflow)
         .replace("__BOT_NAME__", BOT_NAME)
         .replace("__BOT_EMAIL__", BOT_EMAIL)
 }
@@ -229,6 +243,7 @@ mod tests {
             pixi_version: "0.81.0",
             cargo,
             ci_workflow: "ci.yml",
+            publisher_workflow: "publish-sandbox.yml",
         })
     }
 
@@ -317,7 +332,9 @@ mod tests {
     }
 
     /// A `GITHUB_TOKEN` push triggers nothing, so the dispatches are the lock commit's only
-    /// verdict — and they only fire when a commit actually happened.
+    /// verdict — and they only fire when a commit actually happened. The publisher is among
+    /// them: a lockfile refreshed on the branch but never republished leaves the published
+    /// transport holding the one the bot just replaced.
     #[test]
     fn the_dispatches_are_explicit_and_gated_on_a_real_commit() {
         let workflow = render(true);
@@ -329,11 +346,15 @@ mod tests {
             workflow.contains(r#"run: gh workflow run relock.yml --ref "$HEAD_REF""#),
             "{workflow}"
         );
+        assert!(
+            workflow.contains(r#"run: gh workflow run publish-sandbox.yml --ref "$HEAD_REF""#),
+            "{workflow}"
+        );
         // A branch name is attacker-controlled on a pull request, so it travels as an
         // environment variable instead of being interpolated into the command line.
         assert_eq!(
             workflow.matches("HEAD_REF: ${{ github.head_ref }}").count(),
-            2
+            3
         );
         for line in workflow.lines().filter(|line| line.contains("run: ")) {
             assert!(!line.contains("${{"), "inline interpolation in {line}");
@@ -342,9 +363,32 @@ mod tests {
             workflow
                 .matches("if: ${{ steps.commit.outputs.changes_detected == 'true' }}")
                 .count(),
-            2
+            3
         );
-        assert_eq!(workflow.matches("GH_TOKEN: ${{ github.token }}").count(), 2);
+        assert_eq!(workflow.matches("GH_TOKEN: ${{ github.token }}").count(), 3);
+    }
+
+    /// The publisher dispatch names the publisher this project actually has, not a literal: a
+    /// project that renamed its publisher via `--workflow-path` would otherwise get a relock bot
+    /// dispatching a workflow that does not exist, and the failure lands on the bot, not on init.
+    #[test]
+    fn the_publisher_dispatch_follows_the_publisher_the_project_was_given() {
+        let workflow = render_relock_workflow(RelockWorkflowOptions {
+            cli_version: "9.8.7",
+            pixi_version: "0.81.0",
+            cargo: true,
+            ci_workflow: "ci.yml",
+            publisher_workflow: "publish-fork-sandbox.yaml",
+        });
+        assert!(
+            workflow
+                .contains(r#"run: gh workflow run publish-fork-sandbox.yaml --ref "$HEAD_REF""#),
+            "{workflow}"
+        );
+        assert!(
+            !workflow.contains("gh workflow run publish-sandbox.yml"),
+            "{workflow}"
+        );
     }
 
     #[test]
@@ -354,6 +398,7 @@ mod tests {
             pixi_version: "0.81.0",
             cargo: false,
             ci_workflow: "build-and-test.yml",
+            publisher_workflow: "publish-sandbox.yml",
         });
         assert!(
             workflow.contains(r#"gh workflow run build-and-test.yml --ref "$HEAD_REF""#),
@@ -463,6 +508,7 @@ mod tests {
             pixi_version: "0.81.0",
             cargo: false,
             ci_workflow: "ci.yml",
+            publisher_workflow: "publish-sandbox.yml",
         });
         assert_eq!(
             crate::generated::parse_version_stamp(&workflow),
