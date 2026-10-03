@@ -149,7 +149,7 @@ Concrete properties worth adding once `Platform` (A1) exists or even before it, 
 - `release_assets.rs::staged_name`/`binary_name`: *for every known target triple, the staged name starts with `pixi-sandbox-`, ends with `.exe` iff the triple contains `windows`, and is parseable back to the same triple* — replaces the current ~6 hand-picked example-based tests (lines 216–225) with one property plus the existing examples kept as a couple of named regression cases.
 - `repo_checks.rs::bash32_surface`'s regex: *for every string built by concatenating a forbidden token (`mapfile`, `readarray`, `coproc`, `declare -A`, `${x,,}`, `${x^^}`, `&>>`) with random surrounding non-identifier text, the check always fires; for strings drawn only from an allow-listed vocabulary, it never does* — this is exactly a metamorphic/property test, and today the check only has hand-picked example lines.
 - `pixi-sandbox-core::verify::verify`: *flipping any single byte in any one blob of a valid transport is always reported as a failure, and verifying an untouched transport never is* — a property over "which blob, which byte", generalizing the 15 hand-rolled tempdir cases already in `pixi-sandbox-core/tests/verify.rs` (607 lines, 37 tests, 0 proptest today) rather than replacing them.
-- `pixi-sandbox-core::manifest::Manifest`: serde round-trip (`from_str(to_string(m)) == m`) over an arbitrary-ish `Manifest` built with `proptest::prop_oneof!`/a `Strategy` impl — catches a future field added to the struct but not to the hand-written JSON fixtures in `tests/verify.rs`/`tests/manifest.rs` before it ships silently wrong.
+- `pixi-sandbox-core::manifest::Manifest`: `tests/manifest.rs::a_valid_manifest_json_round_trips` already exists (task-38) but only varies `version`/`commit`; widening its `Strategy` to also vary `tools`, `envs`, and blob counts would catch a future field added to the struct that the two varied fields don't exercise. Lower priority than the items below — extend, don't duplicate.
 - `Platform::from_os_arch` / `Platform::asset_name` (once A1 lands): round-trip and "every member of `ALL` has a non-empty, extension-correct asset name" — subsumes what are currently 4 separate, near-identical "every platform" tests spread across `self_update_assets.rs`, `airlock.rs`, `release_assets.rs`, `conda_platforms.rs`.
 
 ### B.2 `cli.rs` (2,008 lines) doesn't follow the crate's own established test-split convention
@@ -177,6 +177,31 @@ Converting `transport`/`scratch`/`request` into `#[fixture]` functions (rstest s
 
 ---
 
+## Correction after checking the backlog (session-skill rule: don't re-propose finished work)
+
+`task-38` (Done, 2026-10-02) already executed most of Part B's intent for the `pixi-sandbox`
+crate's integration suite: shared `tests/support/mod.rs` fixtures, a defined-once-helper guard,
+every hand-rolled table converted to `#[case]`, and five new property tests (branch-name
+safety, manifest round-trip, publish-plan uniqueness, files-manifest canonicalisation, NUL-free
+relocation). It explicitly scoped to `cli.rs`, `e2e.rs`, `user_tools.rs`, `restore_script.rs`,
+and `pixi-sandbox-core/tests/shard.rs`. That narrows Part B's real remaining scope to what
+task-38 did **not** touch:
+
+- `xtask` (B.1) — confirmed untouched, task-38 never mentions it; still the single biggest gap.
+- `pixi-sandbox-core/tests/verify.rs`, `pixi-sandbox/tests/self_update*.rs` (6 files),
+  `pixi-sandbox-git/tests/publish.rs` (B.3's examples) — none are in task-38's reference list;
+  still open.
+- `tests/cli.rs`'s split (B.2) is **downgraded from "do it" to "reconsider"**: task-38 added a
+  `#[once]` fixture (`published_orphan`) specifically so an expensive publish runs once and is
+  shared read-only across many listing/commit cases *in that one file*. Splitting the file would
+  either duplicate that expensive setup per new file or require a cross-file fixture-sharing
+  mechanism rstest doesn't give for free. Keep cli.rs as one file; if it grows past this, revisit
+  then with the `#[once]` cost in view, not before.
+- `tests/manifest.rs` already has a bounded manifest round-trip property (task-38); it only
+  varies `version`/`commit`, so widening it is a small follow-on, not new work. `verify.rs`'s
+  corruption-invariant property (any single-byte flip in any blob is always caught) is genuinely
+  new — task-38's properties don't touch `verify()`.
+
 ## Sequencing (suggested backlog tasks, in dependency order)
 
 1. **`platform: introduce a Platform type in pixi-sandbox-core`** (A1). No consumers changed yet beyond the new module + its own round-trip tests. Pure addition, zero risk.
@@ -187,7 +212,7 @@ Converting `transport`/`scratch`/`request` into `#[fixture]` functions (rstest s
 6. **`pack/restore/doctor: extract pipeline steps out of long run() functions`** (A3). Do one command per task (`pack` first — it already has the most helper extraction to build on).
 7. **`tests: add proptest coverage for release_assets, bash32_surface, verify, manifest round-trip`** (B.1). Independent of 1–6; can start immediately and is the lowest-risk, highest-learning item to do first if sequencing is flexible.
 8. **`tests: formalize transport()/scratch()/request() as rstest fixtures`** (B.3). Independent, low risk, mechanical.
-9. **`tests: split cli.rs into per-command files`** (B.2). Do after 6 if possible — a split test file is a better place to land the new tests Part A's extraction work will want anyway.
+9. ~~`tests: split cli.rs into per-command files`~~ — **dropped**, see "Correction after checking the backlog" above: task-38's `#[once]` fixture design makes the single file the right shape today.
 
 Items 7 and 8 need nothing from the others and are the best candidates for "first task of the next session" if the goal is a quick, low-risk win; items 1–4 are the highest-leverage structural fix and should be done together as a short sequence since 2–4 are mechanical once 1 lands.
 
