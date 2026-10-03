@@ -112,7 +112,10 @@ pub struct PackArgs {
     #[arg(long, env = "PIXI_SANDBOX_TOOLS_CACHE")]
     pub tools_cache: Option<PathBuf>,
 
-    /// Bundle this very binary so the branch bootstraps itself.
+    /// Bundle this very binary so the branch bootstraps itself. Must run *standalone*:
+    /// use the checksum-verified release asset (`pixi-sandbox-<target>`), never a
+    /// `pixi global install` trampoline — pack executes `--version` under an empty
+    /// environment and refuses a binary that breaks without its prefix (issue #81).
     #[arg(long)]
     pub self_bin: Option<PathBuf>,
 }

@@ -3,9 +3,10 @@ id: TASK-54
 title: >-
   Make pack refuse a self-bin that cannot run standalone and prove the embedded
   tool executes (issue 81)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-03 08:04'
+updated_date: '2026-10-03 10:12'
 labels:
   - bug
   - pack
@@ -76,10 +77,10 @@ unrestorable transport.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Root cause pinned and recorded in this task: the consumer transport's embedded tool is a pixi global trampoline introduced by the issue-#80 workaround, and the issue's release-asset theory is resolved one way or the other — a downloaded v0.5.0 standalone asset executed with `--version` in an isolated bare HOME on a connected host (impossible from this sandbox: `release-assets.githubusercontent.com` is egress-blocked), with the outcome recorded here
-- [ ] #2 `pack --self-bin` runs a standalone-execution probe before embedding — executes the candidate's `--version` with an isolated environment (empty tempdir HOME, no pixi/conda prefixes) — and refuses a failing candidate with a remedy naming the standalone release asset; the probe sits behind an injected runner (the `ReleaseSource` precedent) so fixture tests exercise a trampoline-shaped fake that demands `trampoline_configuration` and a healthy static fake, with no network and no real HOME (D10)
-- [ ] #3 `doctor` flags an embedded tool that fails the same standalone probe (or its structural trampoline signature), so a fetched branch in the consumer's exact state — faithful copy, unrestorable tool — is diagnosed *before* a restore is attempted, while a healthy transport passes unchanged
-- [ ] #4 The e2e lifecycle (`tests/e2e.rs`, pack → publish → restore) gains an isolated-environment assertion that the packed branch's `tools/<platform>/pixi-sandbox --version` executes without any pixi global prefix, so a green publisher run proves the embedded bootstrap is executable — closing the "successful publish ≠ restorable" gap the issue names
-- [ ] #5 The ci-publishing guide (and any `--self-bin` reference) states the source must be a standalone binary, names the `command -v pixi-sandbox`-from-`pixi global install` trap explicitly, and gives the correct interim recipe (checksum-verified standalone asset download) until task-52 ships
+- [x] #2 `pack --self-bin` runs a standalone-execution probe before embedding — executes the candidate's `--version` with an isolated environment (empty tempdir HOME, no pixi/conda prefixes) — and refuses a failing candidate with a remedy naming the standalone release asset; the probe sits behind an injected runner (the `ReleaseSource` precedent) so fixture tests exercise a trampoline-shaped fake that demands `trampoline_configuration` and a healthy static fake, with no network and no real HOME (D10)
+- [x] #3 `doctor` flags an embedded tool that fails the same standalone probe (or its structural trampoline signature), so a fetched branch in the consumer's exact state — faithful copy, unrestorable tool — is diagnosed *before* a restore is attempted, while a healthy transport passes unchanged
+- [x] #4 The e2e lifecycle (`tests/e2e.rs`, pack → publish → restore) gains an isolated-environment assertion that the packed branch's `tools/<platform>/pixi-sandbox --version` executes without any pixi global prefix, so a green publisher run proves the embedded bootstrap is executable — closing the "successful publish ≠ restorable" gap the issue names
+- [x] #5 The ci-publishing guide (and any `--self-bin` reference) states the source must be a standalone binary, names the `command -v pixi-sandbox`-from-`pixi global install` trap explicitly, and gives the correct interim recipe (checksum-verified standalone asset download) until task-52 ships
 - [ ] #6 The fix ships in a patch release; the affected consumer transport is repacked with a standalone self-bin and a fresh consumer restore passes — a connected/CI proof recorded here, or the task stays In Progress naming exactly this gap
 <!-- AC:END -->
 
@@ -110,5 +111,98 @@ auto-release; the repack + fresh-restore proof on the real consumer (AC#6) is co
 work, sequenced last. Read task-52's constant when writing the AC#5 recipe so the guide's
 download URL and the eventual template fix cannot drift apart.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-03 — implemented (AC#2–#5). The design landed as planned: a two-layer guard in the
+new library module `crates/pixi-sandbox/src/standalone.rs` (`pub mod` in `lib.rs`, tested
+only from `tests/standalone.rs` — no inline test module, per convention).
+
+**Structural layer** — `pack_refusal_for_ownership` reuses the task-47 ladder
+(`self_update::ownership::classify`) on the *candidate path*: a `pixi global` trampoline
+(its sibling `trampoline_configuration/<name>.json` exists in the global prefix — exactly
+the context a transport can never ship) and a managed launcher script are refused *before*
+any embedding, each with its own remedy. A conda-prefix binary and a restored transport
+tool are deliberately *not* refused: they are real binaries, and a transport tool is a good
+self-bin for a repack; execution judges them.
+
+**Behavioural oracle** — after `embed_tool`, `pack` probes the *embedded copy* (the exact
+bytes that will ship) via `ProbeRunner::run_version`: `--version` under `env_clear`,
+HOME/USERPROFILE/TMP anchored at a scratch dir, minimal PATH, null stdin, pipes drained on
+reader threads capped at 16 KiB each, killed at a 30 s budget. The fake-runner injection
+(ReleaseSource precedent) scripts every verdict offline; the real `CommandRunner` is
+covered by in-process script tests. Cross-platform packs skip with a printed reason —
+probing foreign bytes would be a lie, and doctor on the target host is the same guard.
+
+**Doctor** — the probe runs on the embedded `pixi-sandbox` tool under `--verify`, *after
+and only after* the hash report is green (unverified bytes are never executed — the trust
+order, tested by the tamper test), exits non-zero with the rendered refusal on failure, and
+prints a `probe skipped — <reason>` line for platform mismatch or red hashes. Human label
+is `probe` (short, matching `verify`/`restored`); JSON key `standalone`. A requirement the
+issue's wording did not spell out and verify.rs confirmed: a self-bin's content is *not
+pinned into the manifest at all* (`ToolEntry.pinned_sha256` is `None` for self-bins — only
+size + linkage are checked), so hashes were never even theoretically able to see issue #81;
+that fact is now in the description and in the refusal text.
+
+**Evidence**: suite 500 → **516 passing / 1 skipped** (+16: 11 in `tests/standalone.rs`, 4
+new in `tests/cli.rs` — both pack refusals, the recreated consumer state, the
+never-execute-unverified test — and 1 e2e: the AC#4 isolated execution plus the doctor OK
+line). Gates: `fmt`, `lint` (clippy `-D warnings`, deny on cached index, actionlint, taplo,
+biome, check-repository), `test` — all green. Binary smoke (built debug binary, not the
+suite): healthy fixture via a *relative* `--branch-location` reports `verify OK` +
+`probe tool pixi-sandbox v0.1.0: runs standalone` and exits 0; the recreated consumer
+state (trampoline script + manifest size fixed to stay faithful) reports `verify OK` then
+`probe FAILED — …` with the trampoline's own error text as evidence and the remedy, exit 1.
+
+**Three defects found by smoke-testing the binary, not the suite** (same lesson task-47
+recorded): (1) my refusal strings used the `\n\\` continuation idiom wrongly, so every
+rendered message carried literal backslashes — the suite's `contains` assertions were blind
+to it; fixed to the ownership.rs `\n\` idiom. (2) A relative `--branch-location` produced
+`ENOENT` in the probe: the runner chdir'd to the anchor and the relative tool path was
+re-resolved against it; the runner now absolutizes both paths, with a regression test
+(`the_runner_resolves_relative_paths_against_the_calling_cwd`). (3) The `standalone` label
+is 10 chars and glued to its text (`standaloneFAILED`); renamed the human label to `probe`.
+A fourth was caught by the first full run: a killed candidate that had forked left an
+orphaned grandchild holding the probe pipes, so joining the reader threads waited out the
+orphan's whole `sleep` (the kill reaches one pid, not the tree). The refusal path now
+detaches the readers instead of joining — verdict already decided, the refusal is prompt;
+the regression test asserts a 150 ms timeout returns in well under 10 s.
+
+**AC#1 — partial, named gap.** Root cause pinned and recorded in the description:
+consumer's issue-#80 workaround packed `$(command -v pixi-sandbox)` (a pixi global
+trampoline). The release-asset theory is answered at the *pipeline* level: release.yml
+stages standalone assets with `xtask stage-release-binary` straight from cargo's
+`target/<triple>/release/` output, so the v0.5.0 asset cannot be a trampoline. The
+byte-level proof (downloading the asset and executing it in a bare HOME) was impossible
+from this sandbox: `release-assets.githubusercontent.com` is egress-blocked (`gh release
+download` → EOF), so that sentence of AC#1 stays unproven and the AC unchecked — one
+command on a connected host closes it.
+
+AC#6 is untouched by definition (merge → auto-release patch → consumer repack → fresh
+consumer restore). It stays open with the release flow.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:SUMMARY:BEGIN -->
+The hole issue #81 exposed is closed at both ends of the pipeline, as a behavioural oracle
+rather than another declarative check. `pack --self-bin` refuses the known-broken shapes on
+provenance (`pixi global` trampoline, managed launcher — before embedding, each with its
+remedy) and proves every other candidate by executing exactly the shipped bytes —
+`--version` under an empty environment — refusing with the child's own failure text, the
+reason hashes were green anyway (a self-bin's content is not pinned into the manifest), and
+the one remedy that works (checksum-verified standalone asset, never
+`$(command -v pixi-sandbox)`). `doctor --verify` applies the same probe to a fetched
+transport after, and only after, every declared byte matches; the recreated consumer state
+(a faithful but unrestorable branch) now fails loudly with exit 1 instead of blessing the
+push. The e2e lifecycle asserts the packed branch's embedded tool executes with no pixi
+prefix, and the docs name the trap in both the guide and the CLI reference.
+
+AC#2–#5 are met and checked. AC#1's root-cause half is recorded; its asset-execution half
+and AC#6 (patch release + consumer repack + fresh restore) remain open — both need a
+connected host or a release, so the task stays In Progress naming exactly those proofs.
+<!-- SECTION:SUMMARY:END -->
+
 
 

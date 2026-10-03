@@ -11,7 +11,9 @@ use predicates::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
-use support::{bin, copy_tree, demo_project, fixture_transport, isolated_bin, make_executable};
+use support::{
+    bin, copy_tree, demo_project, fixture_transport, host_platform, isolated_bin, make_executable,
+};
 
 /// The relocation rule `restore.rs` promises, applied here as an independent check: valid UTF-8
 /// text without NUL bytes is rewritten, and everything else is left exactly as it was staged.
@@ -37,7 +39,7 @@ fn fixture_doctor_publish_and_restore_is_the_complete_offline_proof() {
     copy_tree(&fixture_transport(), &transport);
     fs::create_dir_all(&airlock).unwrap();
 
-    bin()
+    let doctor = bin()
         .args([
             "doctor",
             "--branch-location",
@@ -47,6 +49,38 @@ fn fixture_doctor_publish_and_restore_is_the_complete_offline_proof() {
         .assert()
         .success()
         .stdout(predicate::str::contains("OK — every declared byte matches"));
+    if host_platform() == "linux-64" {
+        // On the fixture's own platform, doctor also proves the embedded bootstrap runs —
+        // hashes bless the bytes, only execution blesses the behaviour (issue #81).
+        doctor.stdout(predicate::str::contains(
+            "tool pixi-sandbox v0.1.0: runs standalone",
+        ));
+    }
+
+    // task-54 AC#4: the packed branch's embedded tool executes with nothing but its own
+    // bytes — no pixi global prefix, no profile. The order is the trust boundary: only a
+    // hash-green transport earns execution, so this probe follows doctor, not precedes it.
+    let probe_home = temp.path().join("standalone-probe-home");
+    fs::create_dir_all(&probe_home).unwrap();
+    let version = StdCommand::new(transport.join(".pixi-sandbox/tools/linux-64/pixi-sandbox"))
+        .arg("--version")
+        .current_dir(&probe_home)
+        .env_clear()
+        .env("HOME", &probe_home)
+        .env("TMPDIR", &probe_home)
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .expect("the embedded tool starts");
+    assert!(
+        version.status.success(),
+        "the embedded bootstrap must run standalone: {}",
+        String::from_utf8_lossy(&version.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&version.stdout).contains("pixi-sandbox 0.1.0"),
+        "the embedded bootstrap answers --version: {}",
+        String::from_utf8_lossy(&version.stdout)
+    );
 
     assert!(
         StdCommand::new("git")

@@ -2,18 +2,20 @@
 //!
 //! This is the one fully implemented command in the scaffold, because it is the one an
 //! airlock operator needs *before* anything is written and the one CI runs against its own
-//! output. It never writes, never touches the network, and (with `--verify`) reports every
-//! failure instead of the first one. `--verify-restored <project>` extends the same honesty
-//! to the *output* of a restore: the tree that came out the other end is checked against the
-//! manifest's per-file digests (D13), because an intact branch plus verified writes still
-//! does not prove the prefix is right.
+//! output. It never writes into the transport or the project (the standalone probe's scratch
+//! lives beside the branch and is removed before returning), never touches the network, and
+//! (with `--verify`) reports every failure instead of the first one. `--verify-restored
+//! <project>` extends the same honesty to the *output* of a restore: the tree that came out
+//! the other end is checked against the manifest's per-file digests (D13), because an intact
+//! branch plus verified writes still does not prove the prefix is right.
 
 use crate::cli::DoctorArgs;
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
-use pixi_sandbox_core::manifest::Manifest;
+use pixi_sandbox_core::manifest::{MANIFEST_DIR, Manifest};
 use pixi_sandbox_core::verify::{self, Report, RestoredReport};
 use serde_json::{Value, json};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 pub fn run(args: DoctorArgs) -> Result<()> {
@@ -46,6 +48,12 @@ pub fn run(args: DoctorArgs) -> Result<()> {
         )
     });
 
+    // The standalone probe (issue #81, AC#3). Hashes prove the embedded tool is the
+    // declared file; only executing it — under the empty environment an airlock has —
+    // proves it *runs*. The order is the trust boundary: probe only what verified green,
+    // on a host that matches the manifest platform, and never write into the branch.
+    let standalone = standalone_probe(&args.branch_location, &manifest, report.as_ref());
+
     let restored_section = restored
         .as_ref()
         .map(|(project, report)| (*project, report));
@@ -56,11 +64,18 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                 &path,
                 &manifest,
                 report.as_ref(),
-                restored_section
+                restored_section,
+                standalone.as_ref()
             ))?
         );
     } else {
-        print_human(&path, &manifest, report.as_ref(), restored_section);
+        print_human(
+            &path,
+            &manifest,
+            report.as_ref(),
+            restored_section,
+            standalone.as_ref(),
+        );
     }
 
     if let Some(report) = &report {
@@ -77,7 +92,82 @@ pub fn run(args: DoctorArgs) -> Result<()> {
             );
         }
     }
+    if let Some(StandaloneProbe::Refused { detail }) = &standalone {
+        bail!("standalone probe failed:\n{detail}");
+    }
     Ok(())
+}
+
+/// The probe's single outcome: skipped (with the honest reason), proven to run, or refused
+/// with the rendered evidence and remedy. `None` means the check does not apply at all —
+/// no `--verify`, or the transport embeds no pixi-sandbox tool (a consumer transport that
+/// restores with an installed CLI).
+enum StandaloneProbe {
+    Skipped(String),
+    Runs { version: String },
+    Refused { detail: String },
+}
+
+/// Probe the embedded pixi-sandbox tool exactly as a restore will execute it.
+///
+/// Why these guards, in this order: probing is *executing fetched bytes*, so it runs only
+/// behind `--verify` (a bare look at a branch executes nothing — the same trust shape
+/// doctor always had) and only after the hash report is green; and a foreign-platform
+/// binary cannot be judged here, so cross-platform hosts skip — the skip is printed, never
+/// silent, because an airlock operator must know *who* still owes this proof.
+fn standalone_probe(
+    branch_location: &Path,
+    manifest: &Manifest,
+    report: Option<&Report>,
+) -> Option<StandaloneProbe> {
+    let report = report?;
+    let tool = manifest.tools.get("pixi-sandbox")?;
+    let relative = tool.path.clone()?;
+
+    let skipped = match pixi_sandbox::standalone::host_platform() {
+        Some(host) if host != manifest.platform => Some(format!(
+            "manifest platform {} ≠ this host ({host}); the probe runs on the target host's doctor",
+            manifest.platform
+        )),
+        None => Some("this host has no pixi platform in the release matrix".to_string()),
+        Some(_) => None,
+    };
+    if let Some(reason) = skipped {
+        return Some(StandaloneProbe::Skipped(reason));
+    }
+    if !report.ok() {
+        return Some(StandaloneProbe::Skipped(
+            "the hash report is not green — unverified bytes are never executed".to_string(),
+        ));
+    }
+
+    let tool_path = branch_location.join(MANIFEST_DIR).join(&relative);
+    let anchor = branch_location
+        .with_file_name(format!(".pixi-sandbox-doctor-probe-{}", std::process::id()));
+    let outcome = fs::create_dir_all(anchor.join("tmp"))
+        .with_context(|| format!("creating {}", anchor.display()))
+        .and_then(|()| {
+            pixi_sandbox::standalone::probe(
+                &tool_path,
+                &anchor,
+                &pixi_sandbox::standalone::CommandRunner::new(),
+            )
+            .map_err(|refusal| anyhow::anyhow!(refusal.render(&tool_path)))
+        });
+    let scratch = support::remove_path(&anchor);
+    Some(match (outcome, scratch) {
+        (Ok(()), Ok(())) => StandaloneProbe::Runs {
+            version: tool.version.clone(),
+        },
+        (Ok(()), Err(scratch)) => StandaloneProbe::Refused {
+            detail: format!(
+                "the tool runs standalone, but the probe scratch was not removed: {scratch:#}"
+            ),
+        },
+        (Err(failure), _) => StandaloneProbe::Refused {
+            detail: format!("{failure:#}"),
+        },
+    })
 }
 
 /// Accept either the manifest itself or the directory that contains it.
@@ -94,6 +184,7 @@ fn print_human(
     manifest: &Manifest,
     report: Option<&Report>,
     restored: Option<(&Path, &RestoredReport)>,
+    standalone: Option<&StandaloneProbe>,
 ) {
     labelled("manifest", &path.display().to_string());
 
@@ -190,6 +281,29 @@ fn print_human(
         }
     }
 
+    if let Some(standalone) = standalone {
+        match standalone {
+            StandaloneProbe::Skipped(reason) => {
+                labelled("probe", &format!("skipped — {reason}"));
+            }
+            StandaloneProbe::Runs { version } => {
+                labelled(
+                    "probe",
+                    &format!(
+                        "tool pixi-sandbox v{version}: runs standalone (--version, empty environment)"
+                    ),
+                );
+            }
+            StandaloneProbe::Refused { detail } => {
+                labelled(
+                    "probe",
+                    "FAILED — the embedded tool does not run standalone",
+                );
+                println!("  {detail}");
+            }
+        }
+    }
+
     if let Some((project, restored)) = restored {
         labelled("restored", &project.display().to_string());
         for name in &restored.verified {
@@ -234,6 +348,7 @@ fn as_json(
     manifest: &Manifest,
     report: Option<&Report>,
     restored: Option<(&Path, &RestoredReport)>,
+    standalone: Option<&StandaloneProbe>,
 ) -> Value {
     let envs: Vec<Value> = manifest
         .envs
@@ -314,6 +429,18 @@ fn as_json(
             "ok": restored.ok(),
             "failures": failures,
         });
+    }
+
+    if let Some(standalone) = standalone {
+        out["standalone"] = match standalone {
+            StandaloneProbe::Skipped(reason) => json!({ "status": "skipped", "reason": reason }),
+            StandaloneProbe::Runs { version } => {
+                json!({ "status": "ok", "tool": "pixi-sandbox", "version": version })
+            }
+            StandaloneProbe::Refused { detail } => {
+                json!({ "status": "failed", "tool": "pixi-sandbox", "detail": detail })
+            }
+        };
     }
     out
 }

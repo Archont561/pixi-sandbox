@@ -7,4 +7,5 @@
 pub mod generated;
 pub mod release;
 pub mod self_update;
+pub mod standalone;
 pub mod user_tools;

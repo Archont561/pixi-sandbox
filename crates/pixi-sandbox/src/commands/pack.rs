@@ -222,6 +222,12 @@ pub fn run(args: PackArgs) -> Result<()> {
         if !source.is_file() {
             bail!("--self-bin is not a file: {}", source.display());
         }
+        // Structural fast-path (issue #81): the shapes whose brokenness path provenance
+        // already decides — a `pixi global` trampoline, a managed launcher script — are
+        // refused before anything is copied, with the remedy that packs a runnable binary.
+        if let Some(refusal) = pixi_sandbox::standalone::pack_refusal_for_ownership(&source) {
+            bail!("{refusal}");
+        }
         let entry = embed_tool(
             &payload,
             &args.platform,
@@ -240,6 +246,39 @@ pub fn run(args: PackArgs) -> Result<()> {
             entry.linkage,
             support::mib(entry.size_bytes)
         );
+
+        // The behavioural oracle: execute exactly the bytes that will ship, under an empty
+        // environment. A self-bin's content is not pinned into the manifest (only its size
+        // is), and a static trampoline passes the linkage check — so neither declared check
+        // can see a launcher that dies without its global prefix; only running it can.
+        // Cross-platform packs skip with a reason: probing foreign bytes would be a lie,
+        // and doctor on the target host is the same guard there.
+        if pixi_sandbox::standalone::host_platform() == Some(args.platform.as_str()) {
+            let Some(relative) = entry.path.clone() else {
+                bail!("embedded pixi-sandbox recorded no tool path");
+            };
+            let embedded_path = payload.join(relative);
+            let anchor = out.join(".pixi-sandbox-standalone-probe");
+            let outcome = fs::create_dir_all(anchor.join("tmp"))
+                .with_context(|| format!("creating {}", anchor.display()))
+                .and_then(|()| {
+                    pixi_sandbox::standalone::probe(
+                        &embedded_path,
+                        &anchor,
+                        &pixi_sandbox::standalone::CommandRunner::new(),
+                    )
+                    .map_err(|refusal| anyhow::anyhow!(refusal.render(&embedded_path)))
+                });
+            support::remove_path(&anchor)?;
+            outcome?;
+            println!("  self-bin: runs standalone (--version, empty environment)");
+        } else {
+            println!(
+                "  self-bin: standalone probe skipped — packing {} on a {} host; doctor --verify on the target host is the guard",
+                args.platform,
+                pixi_sandbox::standalone::host_platform().unwrap_or("unsupported"),
+            );
+        }
         tools.insert("pixi-sandbox".to_string(), entry);
     }
 
