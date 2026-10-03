@@ -1,10 +1,10 @@
 ---
 id: TASK-56
 title: 'xtask: split repo_checks.rs into one module per check'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-03 09:26'
-updated_date: '2026-10-03 09:27'
+updated_date: '2026-10-03 09:42'
 labels:
   - refactor
   - solid
@@ -21,8 +21,14 @@ Split the 1,078-line crates/xtask/src/repo_checks.rs (10 unrelated lint policies
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 repo_checks.rs is split into one file per numbered check under crates/xtask/src/repo_checks/, each with its own tests
-- [ ] #2 mod.rs holds a CHECKS function-pointer table used by check_repository
-- [ ] #3 Shared opt-out-marker helpers live in one support module, not duplicated per check
-- [ ] #4 pixi run --frozen test and pixi run --frozen lint pass with the same check-repository behavior
+- [x] #1 repo_checks.rs is split into one file per numbered check under crates/xtask/src/repo_checks/, each with its own tests
+- [x] #2 mod.rs holds a CHECKS function-pointer table used by check_repository
+- [x] #3 Shared opt-out-marker helpers live in one support module, not duplicated per check
+- [x] #4 pixi run --frozen test and pixi run --frozen lint pass with the same check-repository behavior
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+repo_checks.rs is now a repo_checks/ directory: one file per numbered check with its own tests, a shared support.rs for cross-check helpers, and a CHECKS function-pointer table in mod.rs driving check_repository. Same observable behaviour, same 547/1 full-suite result.
+<!-- SECTION:FINAL_SUMMARY:END -->
