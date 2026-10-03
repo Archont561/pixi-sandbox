@@ -1,30 +1,30 @@
 //! The canonical host → release-asset map.
 //!
-//! Reviewed data, not a computation: these five names are exactly what
-//! `xtask stage-release-binary` writes and what `xtask release-checksums` covers
-//! (`crates/xtask/src/release_assets.rs`). A host that is not in this table is a hard error
-//! naming the host — guessing a triple would produce a 404 at best and the wrong architecture's
-//! binary at worst, and decision-4 makes "never executes or installs unverified bytes" the
-//! property of this command.
+//! Derived from [`pixi_sandbox_core::platform::Platform`] (task-55/task-58), the single source
+//! of these five names — which are exactly what `xtask stage-release-binary` writes and what
+//! `xtask release-checksums` covers (`crates/xtask/src/release_assets.rs`, migrated onto the
+//! same type in task-59). A host that is not in this table is a hard error naming the host —
+//! guessing a triple would produce a 404 at best and the wrong architecture's binary at worst,
+//! and decision-4 makes "never executes or installs unverified bytes" the property of this
+//! command.
 
 use anyhow::{Result, bail};
+use pixi_sandbox_core::platform::Platform;
 
-/// `(os, arch, asset name)`. The `.exe` suffix is part of the published name on Windows.
-pub const SUPPORTED_HOSTS: [(&str, &str, &str); 5] = [
-    ("linux", "x86_64", "pixi-sandbox-x86_64-unknown-linux-musl"),
-    (
-        "linux",
-        "aarch64",
-        "pixi-sandbox-aarch64-unknown-linux-musl",
-    ),
-    ("macos", "x86_64", "pixi-sandbox-x86_64-apple-darwin"),
-    ("macos", "aarch64", "pixi-sandbox-aarch64-apple-darwin"),
-    (
-        "windows",
-        "x86_64",
-        "pixi-sandbox-x86_64-pc-windows-msvc.exe",
-    ),
-];
+/// `(os, arch, asset name)`. The `.exe` suffix is part of the published name on Windows. Built
+/// from `Platform::ALL` in a `const` block rather than listed by hand, so this table cannot
+/// drift from `Platform`'s own asset names — the thing a doc comment used to merely promise.
+pub const SUPPORTED_HOSTS: [(&str, &str, &str); Platform::ALL.len()] = {
+    let mut hosts = [("", "", ""); Platform::ALL.len()];
+    let mut index = 0;
+    while index < Platform::ALL.len() {
+        let platform = Platform::ALL[index];
+        let (os, arch) = platform.os_arch();
+        hosts[index] = (os, arch, platform.asset_name());
+        index += 1;
+    }
+    hosts
+};
 
 /// The asset name for an explicit host. A parameter rather than a `cfg!` read so every row of
 /// the table is exercised on whatever machine runs the tests.

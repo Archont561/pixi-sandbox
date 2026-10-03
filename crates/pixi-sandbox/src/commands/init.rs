@@ -185,15 +185,18 @@ fn write(path: &Path, content: &str) -> Result<()> {
     fs::write(path, content).with_context(|| format!("writing {}", path.display()))
 }
 
+/// Thin wrapper over [`pixi_sandbox_core::platform::Platform`], the single source of this
+/// mapping (task-55); kept as its own function for the error message `init`'s callers expect.
 fn current_platform() -> Result<&'static str> {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => Ok("linux-64"),
-        ("linux", "aarch64") => Ok("linux-aarch64"),
-        ("macos", "x86_64") => Ok("osx-64"),
-        ("macos", "aarch64") => Ok("osx-arm64"),
-        ("windows", "x86_64") => Ok("win-64"),
-        (os, arch) => bail!("init does not support host platform {os}-{arch}"),
-    }
+    pixi_sandbox_core::platform::Platform::current()
+        .map(|platform| platform.as_str())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "init does not support host platform {}-{}",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            )
+        })
 }
 
 fn default_config(platform: &str) -> String {
