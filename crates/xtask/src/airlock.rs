@@ -16,10 +16,12 @@
 //! Spawned processes are thin adapters over pure, tempdir-tested cores (D10).
 
 use anyhow::{Context, Result, bail};
+use pixi_sandbox_core::platform::Platform;
 use pixi_sandbox_git::ShellGit;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
+use std::str::FromStr;
 
 /// The sandbox-exec profile that allows everything except outbound network — macOS has no
 /// unshare, and this is the equivalent the Tier A step has always used.
@@ -222,15 +224,15 @@ pub fn resolve_release_tag(root: &Path, repo: &str, override_tag: &str) -> Resul
 // airlock-self-bin
 // ---------------------------------------------------------------------------
 
+/// The release asset name for a Pixi platform id. Delegates to
+/// [`pixi_sandbox_core::platform::Platform`] (task-55/task-59) instead of restating the five
+/// names xtask also stages and checksums (`release_assets.rs`).
 pub fn static_asset_for_platform(platform: &str) -> Result<&'static str> {
-    match platform {
-        "linux-64" => Ok("pixi-sandbox-x86_64-unknown-linux-musl"),
-        "linux-aarch64" => Ok("pixi-sandbox-aarch64-unknown-linux-musl"),
-        "osx-64" => Ok("pixi-sandbox-x86_64-apple-darwin"),
-        "osx-arm64" => Ok("pixi-sandbox-aarch64-apple-darwin"),
-        "win-64" => Ok("pixi-sandbox-x86_64-pc-windows-msvc.exe"),
-        other => bail!("no static pixi-sandbox release asset is known for {other}"),
-    }
+    Platform::from_str(platform)
+        .map(Platform::asset_name)
+        .map_err(|_| {
+            anyhow::anyhow!("no static pixi-sandbox release asset is known for {platform}")
+        })
 }
 
 pub fn airlock_self_bin(repo: &str, tag: &str, platform: &str, out: &Path) -> Result<()> {

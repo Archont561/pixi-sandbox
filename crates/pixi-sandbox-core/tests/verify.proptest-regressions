@@ -1,0 +1,4 @@
+# Seeds for property tests in `verify.rs`.
+#
+# Keep minimized single-byte-flip counterexamples under version control so a disagreement
+# between the digest check and the fixture's blob layout stays reproducible on every host.

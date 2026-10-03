@@ -8,6 +8,7 @@ use crate::cli::PlanArgs;
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::sandbox_config::{SandboxConfig, plan_override};
+use std::path::Path;
 
 pub fn run(args: PlanArgs) -> Result<()> {
     let plan = match &args.envs {
@@ -33,7 +34,17 @@ pub fn run(args: PlanArgs) -> Result<()> {
             let path = support::absolute(&args.config)?;
             let config = SandboxConfig::load(&path)
                 .with_context(|| format!("loading sandbox publish config {}", path.display()))?;
-            config.plan().context("planning sandbox publish jobs")?
+            let mut plan = config.plan().context("planning sandbox publish jobs")?;
+            // `push_paths` is surfaced here, not inside `SandboxConfig::plan`, because deriving
+            // it needs a repo root to check which optional vendor manifests actually exist
+            // (task-53 AC#3) — every other caller of `plan()` stays filesystem-free.
+            let repo_root = path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| support::absolute(Path::new(".")).unwrap_or_default());
+            let config_display = args.config.to_string_lossy().replace('\\', "/");
+            plan.push_paths = config.resolved_push_paths(&repo_root, &config_display);
+            plan
         }
     };
 

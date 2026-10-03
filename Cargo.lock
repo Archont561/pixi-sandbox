@@ -1489,6 +1489,7 @@ dependencies = [
  "pixi-sandbox",
  "pixi-sandbox-core",
  "pixi-sandbox-git",
+ "proptest",
  "regex",
  "serde_json",
  "tempfile",

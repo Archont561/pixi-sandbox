@@ -4,6 +4,8 @@
 //! and property-tested) while the CLI stays a thin shell. The pieces:
 //!
 //! * [`manifest`] — the wire format (`manifest.json`, schema 2) and its validation rules;
+//! * [`platform`] — the single source of truth for the five supported platform ids and
+//!   everything derived from them (target triple, release asset name, GitHub runner);
 //! * [`shard`] — the only two file operations in the project: `record_file` (split when
 //!   oversized) and `materialise`/`join_parts` (verify, then write, never a half file);
 //! * [`files_manifest`] — the per-file oracle for a restored prefix (`envs/<name>/files.json`);
@@ -16,6 +18,7 @@
 pub mod error;
 pub mod files_manifest;
 pub mod manifest;
+pub mod platform;
 pub mod sandbox_config;
 pub mod shard;
 pub mod tools_lock;

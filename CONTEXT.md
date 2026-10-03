@@ -834,3 +834,97 @@ fixed Arena session branch — it had to be re-pushed afterwards; merge without 
 relative exe re-resolved. Also seen once: killing a probed child reaches one pid only — an
 orphaned grandchild kept inherited pipes open and hung joined reader threads; the timeout
 path detaches readers now.
+
+### 2026-10-03 — task-48 re-verified; still 4/7, same two connected-host gaps
+
+A later session picked task-48 back up expecting to implement it, found the fix already
+merged (PR #73, D17) and shipped in **v0.4.4** (confirmed via `gh release view`, published
+2026-10-02T22:56:26Z, ~40 minutes after the PR merged) and still present in the current
+**v0.5.0**; issue #71 is closed. Re-ran the init test suite to reconfirm nothing regressed
+(`init_leaves_the_consumer_pixi_manifest_untouched` and
+`init_still_refuses_a_directory_without_a_pixi_manifest` both pass) and re-read the guide
+section and D17 — both still match the shipped code. No code or doc changes were needed.
+
+The two remaining gaps are exactly what the prior session left: AC#2/#6's live `pixi lock`
+probe needs a connected host (this sandbox still reaches only github.com — prefix.dev,
+crates.io and static.rust-lang.org all fail at the TLS layer, confirmed again this session),
+and AC#7's upstream `prefix-dev/pixi` report needs a personal GitHub token or the web UI —
+`gh issue create --repo prefix-dev/pixi` and the equivalent `gh api` call both still return
+`Resource not accessible by integration` (HTTP 403), the same class of installation-token
+limitation task-54 hit on `gh workflow run`. The drafted report text is unchanged in
+task-48's implementation notes. Task-48 stays **In Progress**; nothing here needs a backlog
+task of its own, it's the same two open ACs waiting on the same online-host/personal-token
+access the task already named.
+
+### 2026-10-03 — task-52: the generated publisher stopped downloading from the consumer's own repo
+
+Issue #80's other half: the generated consumer workflow's "Download released pixi-sandbox"
+step built its release URL from `$GITHUB_REPOSITORY`/`$env:GITHUB_REPOSITORY` — always the
+*consumer's* repository at Actions runtime — so any consumer repo with no GitHub releases of
+its own got a `curl: (22)` 404 before `pack` ever ran. Regression traced to the v0.3.2 →
+v0.4.3 inlining of the composite `setup` action (task-29 era), which dropped the owner/repo
+the old action resolved against.
+
+Fix: a new `release::PIXI_SANDBOX_REPO` constant (`Archont561/pixi-sandbox`), re-exported as
+`self_update::DEFAULT_REPO` so the CLI's `--repo` default and the generated download URL share
+one source of truth and cannot drift apart again. `generated/github_workflow.rs` renders both
+the bash and pwsh download bases from it via a new `__RELEASE_REPO__` placeholder;
+`GITHUB_SERVER_URL` (still correct on GHES) and the unrelated `REMOTE:` line (the consumer's
+own repo, correctly used for `publish`'s git push) are untouched. SHA256SUMS verification is
+byte-identical — nothing unverified is ever executed.
+
+Test-first: a new fixture/golden-render test
+(`generated_workflow_downloads_release_assets_from_the_pixi_sandbox_repository_not_the_consumers`)
+confirmed red (failed to compile) before the constant existed, green after; the committed
+golden fixture was updated in lockstep. `xtask lint-generated-workflow` (actionlint) and
+`check-repository` both pass; `git status --short .github/` is empty, confirming this repo's
+own committed `publish-sandbox.yml` (vestigial — not regenerated or byte-checked by any
+tooling, per `crates/xtask/src/workflow.rs`) stayed untouched as the task requires. The
+ci-publishing guide now states the download source and the pre-fix 404 remediation.
+`pixi run --frozen test`: 557 passed / 1 skipped (the baseline's one new test). Task-52 moved
+from **To Do** to **In Progress at 5/6 ACs** — AC#6 (shipping in a released patch plus a live
+consumer-repo repro) stays open, named, and waiting on a connected host and a cut release,
+same pattern as task-48 and task-54's remaining gaps.
+
+### 2026-10-03 — task-47 slice 3: the generated scheduled/dispatchable upgrade job, and task-53: `[workflow]`-table CI policy
+
+User instruction this session: "do task 47 and 53 locally and then open PR and fix all issues."
+Both tackled offline, in order, before opening the PR.
+
+**task-47 AC#6/#8/#9** (the remaining ACs from the self-update task, AC#2/#7 stay blocked on a
+Windows runner and a connected host respectively, same as before): `GithubWorkflowOptions`
+gained the exact paths/branch `init` was invoked with as literals, and the publisher template
+gained a weekly `schedule:` plus a `workflow_dispatch.inputs.upgrade` string (blank keeps
+today's ordinary dispatch). The new `upgrade` job is the structural negation of `plan`/`publish`'s
+gate, so the two lanes can never both fire on one event (asserted directly in a test). It
+bootstraps the currently-pinned checksum-verified binary, asks it to `self-update` in place
+(latest, or the dispatch-named exact version — also the rollback path), runs the *updated*
+binary's `init --check` against the baked-in exact generation arguments, and on drift opens a PR
+containing only the three owned paths (never the config, never a push to `main`). The PR body
+names the explicit post-merge dispatch a bot merge needs (task-44's `github.token`-push lesson).
+Docs (`reference/cli.mdx`'s `init --check` section, `guides/ci-publishing.mdx`'s "Staying
+current" section) and a 9-test `upgrade_job` module landed alongside. task-47 moved to **7/9
+ACs** (committed `a57e915`).
+
+**task-53** (issue #79, "carry consumer publish-workflow policy in `pixi-sandbox.toml`"):
+AC#1-6 fully done, AC#7 partially (every offline gate green; the connected proof and the minor
+release stay open, same shape as task-47/task-52's remaining gaps). An optional `[workflow]`
+table (`push_paths`, `permissions`, `concurrency`, `timeouts`, `pixi_version`,
+`setup_pixi_cache`) now carries CI policy that previously required hand-editing the generated
+workflow after every `init --force`. Decision D18 records the one judgement call: the table's
+mere *presence* (not each field) is the opt-in to a safer default for exactly two
+correctness/cost-flavoured fields (`setup_pixi_cache` → `false`, `push_paths` → derived from the
+known transport inputs instead of an unfiltered trigger); `permissions`/`concurrency`/`timeouts`
+stay fully per-field opt-in. Every new render block is a placeholder that disappears entirely
+when unconfigured, so an absent `[workflow]` table — every existing consumer today — still
+renders byte-identically to the pre-task-53 template; a round-trip fixture test
+(`init`, `init --check`, `init` again) proves a fully-configured table regenerates with zero
+drift and zero hand edits. `push_paths` also surfaces through `plan --json` for diffing. Docs
+updated in both `reference/configuration.mdx` (new `[workflow]` table reference) and
+`guides/ci-publishing.mdx` (retires the hand-edit-plus-`--force` ritual explicitly).
+
+Evidence for both slices together: `pixi run test` (nextest) 605 passed / 1 skipped (was 581
+before this session's work); `pixi run lint` (fmt, clippy, deny, actionlint, lint-generated-
+workflow, sandbox-plan --json, lint-toml, lint-docs, check-repository) all green; `pixi run docs`
+builds the new MDX cleanly. Commit `a57e915` carries task-47's slice; task-53's commit follows
+in this same session before the PR opens.

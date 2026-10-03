@@ -1,0 +1,4 @@
+# Seeds for property tests in `release_assets.rs`.
+#
+# Keep in version control so a minimized disagreement between staged_name/binary_name and the
+# windows-suffix invariant stays reproducible on every host.

@@ -6,13 +6,51 @@
 //! Actions matrix without coupling the transport format to a CI provider.
 
 use crate::error::{Error, Result};
+use crate::platform::Platform;
 use crate::tools_lock::ToolsLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::str::FromStr;
 
-/// Schema understood by this build.
+/// Bumped only for incompatible changes; readers refuse anything newer but keep accepting every
+/// older schema they understand for a deprecation window (task-47 AC#5 / decision D16), mirroring
+/// `manifest::SCHEMA_VERSION`'s policy exactly. Config is reviewed data and is never rewritten
+/// automatically to a newer schema — unlike a transport manifest, which this build itself wrote,
+/// a sandbox config is maintained by the consumer, so bumping it is their edit to make. No
+/// `config migrate` command exists while this constant is still `1`: there is only one schema
+/// shape to migrate *from*, so there is nothing for it to do yet.
 pub const CONFIG_SCHEMA: u32 = 1;
+
+/// True when this build can act on a config's schema (see [`CONFIG_SCHEMA`]).
+#[must_use]
+pub fn schema_supported(schema: u32) -> bool {
+    (1..=CONFIG_SCHEMA).contains(&schema)
+}
+
+/// Read only the `schema` field, tolerating any other shape the rest of this file might have.
+///
+/// `SandboxConfig::load` enforces `deny_unknown_fields` against *today's* field set, which is
+/// correct for every caller that needs the config's contents but wrong for a diagnostic that
+/// must still say something useful about a schema this build cannot otherwise parse at all —
+/// `init --check` uses this to turn a schema mismatch into a named finding instead of an opaque
+/// parse failure (task-47 AC#5).
+///
+/// # Errors
+/// Returns an error if the file cannot be read or contains no parseable `schema` key, which
+/// means the file is not a sandbox config at all rather than merely an old or new one.
+pub fn peek_schema(path: &Path) -> Result<u32> {
+    #[derive(Deserialize)]
+    struct SchemaOnly {
+        schema: u32,
+    }
+    let text = std::fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
+    let peek: SchemaOnly = toml::from_str(&text).map_err(|error| Error::InvalidManifest {
+        path: path.display().to_string(),
+        reason: error.to_string(),
+    })?;
+    Ok(peek.schema)
+}
 
 /// Default project-level declaration consumed by `pixi-sandbox plan`.
 pub const DEFAULT_FILE: &str = ".pixi-sandbox.toml";
@@ -34,6 +72,9 @@ pub struct SandboxConfig {
     pub runners: BTreeMap<String, String>,
     #[serde(default, rename = "bundle")]
     pub bundles: Vec<Bundle>,
+    /// Optional generated-publisher CI policy (issue #79, task-53). See [`WorkflowPolicy`].
+    #[serde(default)]
+    pub workflow: Option<WorkflowPolicy>,
 }
 
 /// One environment set to publish for one or more native platforms.
@@ -52,6 +93,66 @@ pub struct Bundle {
     pub cargo_vendor: Option<bool>,
 }
 
+/// Optional consumer-owned CI policy for the generated publisher (issue #79, task-53).
+///
+/// The whole table is absent by default; a config with no `[workflow]` section at all renders
+/// byte-identically to the pre-task-53 template (task-53 AC#1) — that property is the migration
+/// path for every existing consumer. Once the table is *present* (even empty), two fields whose
+/// current hardcoded behaviour the issue treats as a correctness or cost hazard rather than a
+/// mere preference — `push_paths` (an unfiltered trigger repacks and force-pushes on every push,
+/// including a README typo) and `setup_pixi_cache` (a cache keyed on the consumer manifest can
+/// restore a solve pixi-sandbox's own native `pixi install` will not reuse) — move to their
+/// safer default unless given an explicit value (decision D18). The remaining three fields
+/// (`permissions`, `concurrency`, `timeouts`) carry no such defect in the status quo, so they
+/// stay fully per-field opt-in with no default change from the table's mere presence.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowPolicy {
+    /// Explicit `on.push.paths:` allowlist. Unset, the publisher derives one from the known
+    /// transport inputs instead (task-53 AC#3; see [`derive_push_paths`]).
+    #[serde(default)]
+    pub push_paths: Option<Vec<String>>,
+    /// Scope `permissions:` to least privilege: `contents: read` top-level, `contents: write`
+    /// only on the `publish` job (default `false`, today's unconditional top-level
+    /// `contents: write`, unchanged by the table's mere presence).
+    #[serde(default)]
+    pub permissions: bool,
+    /// `concurrency:` group and cancel policy for the whole workflow.
+    #[serde(default)]
+    pub concurrency: Option<ConcurrencyPolicy>,
+    /// `timeout-minutes:` for the `plan` and `publish` jobs.
+    #[serde(default)]
+    pub timeouts: Option<TimeoutsPolicy>,
+    /// Pin `prefix-dev/setup-pixi`'s own `pixi-version:` input. Unset keeps that step's
+    /// existing behaviour (no pin, the action's own resolution).
+    #[serde(default)]
+    pub pixi_version: Option<String>,
+    /// `setup-pixi`'s `cache:` input. Defaults to `false` once `[workflow]` is present at all
+    /// (decision D18); a consumer who wants the old best-effort caching back sets
+    /// `setup_pixi_cache = true` explicitly.
+    #[serde(default)]
+    pub setup_pixi_cache: Option<bool>,
+}
+
+/// `[workflow.concurrency]`: see [`WorkflowPolicy::concurrency`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConcurrencyPolicy {
+    pub group: String,
+    #[serde(default)]
+    pub cancel_in_progress: bool,
+}
+
+/// `[workflow.timeouts]`: see [`WorkflowPolicy::timeouts`].
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TimeoutsPolicy {
+    #[serde(default)]
+    pub plan: Option<u32>,
+    #[serde(default)]
+    pub publish: Option<u32>,
+}
+
 /// JSON shape emitted by `pixi-sandbox plan --json`.
 ///
 /// Consumers must build their matrix from `.include` alone, never from this
@@ -62,6 +163,13 @@ pub struct Bundle {
 pub struct PublishPlan {
     pub schema: u32,
     pub include: Vec<PublishTarget>,
+    /// The resolved `on.push.paths:` allowlist (explicit override or derivation; empty when no
+    /// `[workflow]` table is configured at all) — surfaced so a consumer can diff what `init`
+    /// would emit against what they expect (task-53 AC#3). `fromJSON(plan).include` is the only
+    /// key the generated workflow ever reads from this object; an added array key is therefore
+    /// safe the same way `schema` already is (see this struct's own doc comment above).
+    #[serde(default)]
+    pub push_paths: Vec<String>,
 }
 
 /// One native job: it creates exactly one orphan branch.
@@ -106,8 +214,31 @@ pub fn plan_override(
             platforms: vec![platform.to_string()],
             cargo_vendor: None,
         }],
+        workflow: None,
     }
     .plan()
+}
+
+/// Derive an `on.push.paths:` allowlist from the transport inputs a publish actually reads
+/// (task-53 AC#3): the sandbox config itself, pixi's own manifest and lock (always present —
+/// every bundle is a Pixi environment), and the vendor-specific manifests a bundle's
+/// environments might add, included only when `repo_root` actually has one so an unrelated
+/// bundle's publisher does not gain an irrelevant trigger path.
+#[must_use]
+pub fn derive_push_paths(repo_root: &Path, config_display: &str) -> Vec<String> {
+    let mut paths = vec![
+        config_display.to_string(),
+        "pixi.toml".to_string(),
+        "pixi.lock".to_string(),
+    ];
+    for candidate in ["package.json", "bun.lock", "Cargo.toml", "Cargo.lock"] {
+        if repo_root.join(candidate).is_file() {
+            paths.push(candidate.to_string());
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
 }
 
 impl SandboxConfig {
@@ -151,13 +282,37 @@ impl SandboxConfig {
         Ok(PublishPlan {
             schema: CONFIG_SCHEMA,
             include,
+            // Resolving push_paths needs a repo root to check which optional vendor manifests
+            // exist, which this method deliberately does not take (every other call site stays
+            // unaffected by task-53): callers that care call `resolved_push_paths` themselves
+            // and assign it in, the same way `commands::plan` does for `plan --json`.
+            push_paths: Vec::new(),
         })
     }
 
+    /// Resolve the `on.push.paths:` allowlist: an explicit `[workflow] push_paths` always wins;
+    /// otherwise, once `[workflow]` is present at all, derive one from the transport inputs
+    /// `plan` already depends on (task-53 AC#3); absent no `[workflow]` table, no filter at all
+    /// (empty), matching the unconditional pre-task-53 trigger exactly.
+    #[must_use]
+    pub fn resolved_push_paths(&self, repo_root: &Path, config_display: &str) -> Vec<String> {
+        match &self.workflow {
+            None => Vec::new(),
+            Some(policy) => policy
+                .push_paths
+                .clone()
+                .unwrap_or_else(|| derive_push_paths(repo_root, config_display)),
+        }
+    }
+
     fn validate(&self) -> Result<()> {
-        if self.schema != CONFIG_SCHEMA {
+        // A reviewed config outlives the CLI version that last touched it, the same way a
+        // published transport manifest outlives the binary that packed it: an older schema is
+        // still accepted (there is only ever one to accept today), and only a newer one — which
+        // could mean anything this build does not understand — is refused.
+        if !schema_supported(self.schema) {
             return Err(Error::Invalid(format!(
-                "sandbox config schema {} is not supported (expected {CONFIG_SCHEMA})",
+                "sandbox config schema {} is not supported by this build (understands 1..={CONFIG_SCHEMA})",
                 self.schema
             )));
         }
@@ -165,6 +320,9 @@ impl SandboxConfig {
         for (platform, runner) in &self.runners {
             validate_platform(platform)?;
             validate_runner_label(platform, runner)?;
+        }
+        if let Some(workflow) = &self.workflow {
+            validate_workflow_policy(workflow)?;
         }
         if self.bundles.is_empty() {
             return Err(Error::Invalid(
@@ -245,15 +403,13 @@ impl SandboxConfig {
             }
             return Ok(runner.clone());
         }
-        let default = match platform {
-            "linux-64" => Some("ubuntu-latest"),
-            // `macos-14` is Apple Silicon on GitHub-hosted runners. Override it when using a
-            // self-hosted runner or a different hosted label.
-            "osx-arm64" => Some("macos-14"),
-            "osx-64" => Some("macos-13"),
-            "win-64" => Some("windows-latest"),
-            _ => None,
-        };
+        // Delegates to `Platform::gh_runner` (task-55/task-60) instead of its own match; a
+        // platform string this project does not recognise at all falls through the same
+        // "no safe default" error as one it recognises but has no hosted runner for
+        // (`linux-aarch64` today).
+        let default = Platform::from_str(platform)
+            .ok()
+            .and_then(Platform::gh_runner);
         default.map(str::to_string).ok_or_else(|| {
             Error::Invalid(format!(
                 "platform {platform:?} needs runners.{platform:?}; no safe default runner is known"
@@ -308,6 +464,81 @@ fn validate_platform(value: &str) -> Result<()> {
     {
         return Err(Error::Invalid(format!(
             "platform {value:?} must use only lowercase ASCII letters, digits, and hyphens"
+        )));
+    }
+    Ok(())
+}
+
+/// At most a generous sanity bound, not GitHub's own ceiling (which varies by plan): a
+/// misconfigured `0` or an implausible multi-day value is far more likely to be a typo than an
+/// intentional policy, and failing fast beats a silently useless `timeout-minutes:`.
+const MAX_TIMEOUT_MINUTES: u32 = 1440;
+
+fn validate_workflow_policy(workflow: &WorkflowPolicy) -> Result<()> {
+    if let Some(paths) = &workflow.push_paths {
+        if paths.is_empty() {
+            return Err(Error::Invalid(
+                "workflow.push_paths must not be empty when present; omit the key to derive it \
+                 or to keep the unfiltered trigger"
+                    .to_string(),
+            ));
+        }
+        for path in paths {
+            validate_workflow_path(path)?;
+        }
+    }
+    if let Some(concurrency) = &workflow.concurrency {
+        if concurrency.group.trim().is_empty()
+            || concurrency.group != concurrency.group.trim()
+            || concurrency.group.chars().any(char::is_control)
+        {
+            return Err(Error::Invalid(
+                "workflow.concurrency.group must be a non-empty label without leading/trailing \
+                 whitespace or control characters"
+                    .to_string(),
+            ));
+        }
+    }
+    if let Some(timeouts) = &workflow.timeouts {
+        for (field, value) in [("plan", timeouts.plan), ("publish", timeouts.publish)] {
+            if let Some(minutes) = value {
+                if minutes == 0 || minutes > MAX_TIMEOUT_MINUTES {
+                    return Err(Error::Invalid(format!(
+                        "workflow.timeouts.{field} must be between 1 and {MAX_TIMEOUT_MINUTES} \
+                         minutes, got {minutes}"
+                    )));
+                }
+            }
+        }
+    }
+    if let Some(version) = &workflow.pixi_version {
+        if version.trim().is_empty()
+            || version != version.trim()
+            || version.chars().any(|c| c.is_control() || c.is_whitespace())
+        {
+            return Err(Error::Invalid(
+                "workflow.pixi_version must be a non-empty version with no whitespace or \
+                 control characters"
+                    .to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A `paths:` entry is interpolated straight into the committed workflow's YAML; forbid the
+/// characters that would make that interpolation ambiguous or let an entry escape a plain
+/// relative path. A leading `!` is allowed — GitHub Actions' own negation syntax for `paths:`.
+fn validate_workflow_path(value: &str) -> Result<()> {
+    let bare = value.strip_prefix('!').unwrap_or(value);
+    if bare.is_empty()
+        || value.chars().any(|c| c.is_control())
+        || bare.starts_with('/')
+        || bare.contains("..")
+    {
+        return Err(Error::Invalid(format!(
+            "workflow.push_paths entry {value:?} must be a non-empty relative path with no \
+             control characters, leading '/', or '..' component"
         )));
     }
     Ok(())

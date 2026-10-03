@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@agent'
 created_date: '2026-10-02 20:30'
-updated_date: '2026-10-02 21:05'
+updated_date: '2026-10-03 10:11'
 labels:
   - bug
   - init
@@ -17,7 +17,9 @@ references:
   - crates/pixi-sandbox/tests/cli.rs
   - docs/src/content/docs/guides/using-in-your-project.mdx
   - backlog/tasks/task-34 - Add-the-Archont561-prefix-namespace-during-init.md
-  - backlog/tasks/task-41 - Preserve-pixi.toml-comments-when-init-adds-the-canonical-channel.md
+  - >-
+    backlog/tasks/task-41 -
+    Preserve-pixi.toml-comments-when-init-adds-the-canonical-channel.md
 priority: high
 type: bug
 ordinal: 49000
@@ -61,6 +63,7 @@ never reads project channels).
 <!-- AC:END -->
 
 ## Implementation Plan
+
 <!-- SECTION:PLAN:BEGIN -->
 Decide first (AC#1), then implement the chosen branch. **Option 1** — change
 `ARCHONT561_CHANNEL` to `https://prefix.dev/archont561/pixi-sandbox` (the same URL the
@@ -135,14 +138,58 @@ is drafted below verbatim for a one-click filing from a personal token:
 > lock` alone is enough to fix a bad channel entry. Real-world occurrence: a tool appended
 > the namespace-root URL to a four-environment monorepo and every environment failed with
 > the unhelpful message (Archont561/pixi-sandbox#71).
+
+2026-10-03 (follow-up session): re-verified this task's state rather than re-doing the
+implementation, which was already complete and merged (PR #73, D17) before this branch was
+created. Findings:
+
+- AC#1/#3/#4/#5 reconfirmed in the current checkout (now at v0.5.0, two releases past the
+  fix): `ensure_archont561_channel`/`append_channel`/`normalized_channel`/`ARCHONT561_CHANNEL`
+  are gone from the tree; `commands/init.rs::ensure_pixi_project` only checks the manifest
+  exists and never parses or mutates it; `init_leaves_the_consumer_pixi_manifest_untouched`
+  and `init_still_refuses_a_directory_without_a_pixi_manifest` (crates/pixi-sandbox/tests/cli.rs)
+  both pass; the project guide's "Channel configured by init" section states the no-mutation
+  behavior and the 0.4.3 remediation. D17 in .knowledge/decisions.md matches the shipped code.
+
+- AC#6 (ships in a released patch): confirmed via `gh release view v0.4.4` — the fix (PR #73)
+  shipped in v0.4.4, published 2026-10-02T22:56:26Z, about 40 minutes after the PR merged; the
+  fix remains in the current v0.5.0 release. Issue #71 is closed (auto-closed by the PR merge).
+  Left unchecked anyway because the AC's remaining clause — "whose init passes the reproduction
+  probe on a clean connected host" — is the same live `pixi lock` proof AC#2 asks for, not a
+  separate one; checking AC#6 without that probe would overclaim.
+
+- AC#2 (live `pixi lock` probe): still blocked. This sandbox can reach only github.com (confirmed
+  again this session: prefix.dev, crates.io and static.rust-lang.org all fail at the TLS layer).
+  Since init no longer touches `pixi.toml` at all, the probe has reduced to "pixi lock succeeds
+  on an untouched project with a dependency" on any host that can reach prefix.dev — genuinely a
+  five-minute check once someone is on a connected host with pixi-sandbox v0.4.4+ installed, but
+  not something this session can produce.
+
+- AC#7 (upstream pixi report): retried this session with `gh issue create --repo prefix-dev/pixi`
+  and `gh api repos/prefix-dev/pixi/issues` directly — both fail identically to the prior attempt,
+  `Resource not accessible by integration` (HTTP 403). This is a GitHub App installation token
+  scoped to Archont561/pixi-sandbox only, not a personal token; it cannot create issues on a repo
+  it is not installed on, by design. The drafted report text above is unchanged and still ready
+  for a one-click filing from a personal token or the web UI.
+
+No code or doc changes made this session — everything above is verification only. The task
+stays In Progress at 4/7; AC#2 and AC#7 are the two items a connected-host/online session (or a
+maintainer with a personal GitHub token) needs to close.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
-<!-- SECTION:SUMMARY:BEGIN -->
-In progress in PR #73: the channel append is gone (D17), the manifest is byte-identical by
-construction and by test, the docs tell the truth and carry the 0.4.3 remediation. Open: the
-live `pixi lock` probe on a connected host, the patch release (merge + auto-release
-dispatch), and the upstream pixi report (drafted in the notes; the session token cannot file
-cross-repo).
-<!-- SECTION:SUMMARY:END -->
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented and merged (PR #73, D17): the channel append is gone, the consumer's pixi.toml
+is left byte-identical by construction and by test, the docs tell the truth and carry the
+0.4.3 remediation. Confirmed shipped in the v0.4.4 release (2026-10-02T22:56:26Z) and still
+present in the current v0.5.0; issue #71 is closed.
+
+Still open (4/7 ACs done), both requiring access this sandbox does not have:
+- AC#2/#6's live `pixi lock` probe needs a host that can reach prefix.dev (this sandbox only
+  reaches github.com).
+- AC#7's upstream pixi report needs a personal GitHub token or the web UI — the installation
+  token here is scoped to this repo only and gets `Resource not accessible by integration` on
+  cross-repo issue creation (retried and reconfirmed this session). The drafted report text is
+  in the implementation notes, ready to file by hand.
+<!-- SECTION:FINAL_SUMMARY:END -->

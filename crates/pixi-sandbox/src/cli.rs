@@ -331,8 +331,14 @@ pub struct InitArgs {
 
     /// Replace a user-owned file at a selected generated path. Files carrying pixi-sandbox's
     /// generation marker are safely regenerated without this flag.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "check")]
     pub force: bool,
+
+    /// Render every owned file fresh and compare it to what is on disk; write nothing. Exits
+    /// non-zero naming each drifted file (remedy: `pixi-sandbox init`) and each foreign-owned
+    /// file separately (remedy: `--force`); a clean tree exits 0 (task-47 AC#4 / decision D16).
+    #[arg(long)]
+    pub check: bool,
 }
 
 #[derive(Debug, Args)]

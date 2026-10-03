@@ -3,6 +3,7 @@
 
 use pixi_sandbox_core::manifest::Manifest;
 use pixi_sandbox_core::verify::{Kind, Linkage, linkage_of, manifest_path, verify};
+use rstest::{fixture, rstest};
 use std::fs;
 use std::path::Path;
 
@@ -42,24 +43,30 @@ fn manifest_json(sha: &str, size: usize) -> String {
     )
 }
 
-/// A transport dir whose single blob matches the given digest.
-fn transport(dir: &Path, sha: &str) -> Manifest {
-    let pack = dir.join(".pixi-sandbox/envs/dev/pack/channel/noarch");
+fn sha256_of(bytes: &[u8]) -> String {
+    pixi_sandbox_core::shard::sha256_bytes(bytes)
+}
+
+/// A transport dir whose single blob matches the given digest. Defaults to the digest that
+/// actually matches `BLOB_BODY`, so the common case (a transport that verifies cleanly) needs
+/// no override; tests that want a deliberately wrong manifest digest pass `#[with(...)]`.
+#[fixture]
+fn transport(#[default(sha256_of(BLOB_BODY))] sha: String) -> (tempfile::TempDir, Manifest) {
+    let dir = tempfile::tempdir().unwrap();
+    let pack = dir
+        .path()
+        .join(".pixi-sandbox/envs/dev/pack/channel/noarch");
     fs::create_dir_all(&pack).unwrap();
     fs::write(pack.join("a.conda"), BLOB_BODY).unwrap();
     fs::write(pack.join("big.conda.part000"), SPLIT_PARTS[0]).unwrap();
     fs::write(pack.join("big.conda.part001"), SPLIT_PARTS[1]).unwrap();
-    let manifest: Manifest = serde_json::from_str(&manifest_json(sha, BLOB_BODY.len())).unwrap();
+    let manifest: Manifest = serde_json::from_str(&manifest_json(&sha, BLOB_BODY.len())).unwrap();
     fs::write(
-        manifest_path(dir),
+        manifest_path(dir.path()),
         serde_json::to_string_pretty(&manifest).unwrap(),
     )
     .unwrap();
-    manifest
-}
-
-fn sha256_of(bytes: &[u8]) -> String {
-    pixi_sandbox_core::shard::sha256_bytes(bytes)
+    (dir, manifest)
 }
 
 #[test]
@@ -71,10 +78,9 @@ fn manifest_path_points_into_the_pixi_sandbox_directory() {
     );
 }
 
-#[test]
-fn a_good_transport_verifies() {
-    let dir = tempfile::tempdir().unwrap();
-    let manifest = transport(dir.path(), &sha256_of(BLOB_BODY));
+#[rstest]
+fn a_good_transport_verifies(transport: (tempfile::TempDir, Manifest)) {
+    let (dir, manifest) = transport;
     let report = verify(&manifest, dir.path(), None);
     assert!(report.ok(), "unexpected failures: {:?}", report.failures);
     // two logical blobs: one whole file, one that arrived as two parts
@@ -86,37 +92,97 @@ fn a_good_transport_verifies() {
     );
 }
 
-#[test]
-fn a_tampered_blob_is_reported_as_an_integrity_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    let manifest = transport(dir.path(), &sha256_of(BLOB_BODY));
-    // same length on purpose: the size check must not mask the digest check
-    fs::write(
-        dir.path()
-            .join(".pixi-sandbox/envs/dev/pack/channel/noarch/a.conda"),
-        b"conda-PAYLOAD",
-    )
-    .unwrap();
+/// A corruption applied to the transport's `a.conda` blob before verification, paired with the
+/// `Kind` of failure it must produce. Tampering and deleting are different mutations but the
+/// same shape of test: corrupt one known blob, verify, and check exactly one failure of the
+/// expected kind is reported against that blob's path — a textbook `#[case]` table.
+#[rstest]
+#[case::tampered(
+    |path: &Path| {
+        // same length on purpose: the size check must not mask the digest check
+        fs::write(path, b"conda-PAYLOAD").unwrap();
+    },
+    Kind::Integrity
+)]
+#[case::missing(|path: &Path| fs::remove_file(path).unwrap(), Kind::Missing)]
+fn a_corrupted_blob_is_reported_with_the_matching_failure_kind(
+    transport: (tempfile::TempDir, Manifest),
+    #[case] corrupt: fn(&Path),
+    #[case] expected: Kind,
+) {
+    let (dir, manifest) = transport;
+    let blob = dir
+        .path()
+        .join(".pixi-sandbox/envs/dev/pack/channel/noarch/a.conda");
+    corrupt(&blob);
 
     let report = verify(&manifest, dir.path(), None);
     assert!(!report.ok());
-    assert_eq!(report.failures[0].kind, Kind::Integrity);
+    assert_eq!(report.failures[0].kind, expected);
     assert!(report.failures[0].path.ends_with("a.conda"));
 }
 
-#[test]
-fn a_missing_blob_is_reported_as_missing() {
-    let dir = tempfile::tempdir().unwrap();
-    let manifest = transport(dir.path(), &sha256_of(BLOB_BODY));
-    fs::remove_file(
-        dir.path()
-            .join(".pixi-sandbox/envs/dev/pack/channel/noarch/a.conda"),
-    )
-    .unwrap();
+// ---------------------------------------------------------------- property: any corruption is caught
+//
+// The example-based tests above pin the exact failure shape (which `Kind`, which path) for one
+// hand-picked tamper. This property instead ranges over every blob the fixture carries (the
+// whole file and both halves of the split one) and every way a single byte inside it can
+// change, and checks the one invariant verify() exists to guarantee: a blob that still matches
+// its recorded digest always passes, and one that does not always fails. Bounded to 64 cases —
+// enough to range over all three files and the flip/no-flip split without adding meaningful
+// runtime to the suite.
+mod verify_catches_corruption {
+    use super::{BLOB_BODY, SPLIT_PARTS, sha256_of, transport};
+    use pixi_sandbox_core::verify::verify;
+    use proptest::prelude::*;
+    use std::fs;
 
-    let report = verify(&manifest, dir.path(), None);
-    assert!(!report.ok());
-    assert_eq!(report.failures[0].kind, Kind::Missing);
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        /// `file_index` picks which of the transport's three on-disk blobs to touch,
+        /// `offset_seed` is reduced into that file's length so it always lands in bounds, and
+        /// `flip_mask` is never zero so XOR-ing it in always changes the byte. `flip` is the
+        /// property's other half: when false, nothing is touched and verification must still
+        /// pass — the proof that this property cannot pass by always tampering.
+        #[test]
+        fn single_byte_flips_are_always_caught_and_untouched_blobs_never_are(
+            file_index in 0usize..3,
+            offset_seed in any::<u8>(),
+            flip_mask in 1u8..=255u8,
+            flip in any::<bool>(),
+        ) {
+            let (dir, manifest) = transport(sha256_of(BLOB_BODY));
+            let root = dir.path().join(".pixi-sandbox/envs/dev/pack/channel/noarch");
+            let paths = [
+                root.join("a.conda"),
+                root.join("big.conda.part000"),
+                root.join("big.conda.part001"),
+            ];
+            // Sanity: the fixture's own sizes, so a future edit to `transport()` cannot shrink
+            // a file to zero bytes without this property noticing via a division panic.
+            prop_assert_eq!(fs::metadata(&paths[0]).unwrap().len(), BLOB_BODY.len() as u64);
+            prop_assert_eq!(fs::metadata(&paths[1]).unwrap().len(), SPLIT_PARTS[0].len() as u64);
+            prop_assert_eq!(fs::metadata(&paths[2]).unwrap().len(), SPLIT_PARTS[1].len() as u64);
+
+            if flip {
+                let path = &paths[file_index];
+                let mut bytes = fs::read(path).unwrap();
+                let offset = (offset_seed as usize) % bytes.len();
+                bytes[offset] ^= flip_mask;
+                fs::write(path, &bytes).unwrap();
+            }
+
+            let report = verify(&manifest, dir.path(), None);
+            prop_assert_eq!(
+                report.ok(),
+                !flip,
+                "flip={} failures={:?}",
+                flip,
+                report.failures
+            );
+        }
+    }
 }
 
 #[test]

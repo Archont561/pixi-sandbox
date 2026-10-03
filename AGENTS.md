@@ -10,6 +10,23 @@ and, after the pull request merges, the session report that closes the task file
 the next session's opening prompt. Its four templates are in
 `.agents/skills/session/standup-template.md`.
 
+**Adding a feature or fixing a bug?** Two skills are mandatory, in order, not merged into one
+pass:
+
+1. `.agents/skills/tdd/SKILL.md` for the implementation loop — agree the seams up front, red
+   before green, one slice at a time. New behavior in `pixi-sandbox-core`/`pixi-sandbox-git`
+   lands as a library test; a `commands/*` change is black-box from `tests/` (see the repo map
+   below for which modules are promoted through `lib.rs` for that reason).
+2. `.agents/skills/refactor/SKILL.md` once the tests are green — cleanup is its own step, never
+   mixed into the red→green cycle (the TDD skill's own rule). Keep it to the task at hand: fix
+   the code you just touched, don't open an unrelated refactor mid-task. For anything larger —
+   a repo-wide pass, a smell that spans files the current task doesn't touch — write it up as
+   its own backlog task or plan doc (see `backlog/docs/plans/`) instead of folding it in.
+
+Either way, the loop still ends at the house rules below: one focused conventional commit,
+`pixi run --frozen test` not dropping below its last known count, and a task file closed in its
+own format.
+
 ## What this project is
 
 `pixi-sandbox` packs pixi environments into a git orphan branch and restores them on machines

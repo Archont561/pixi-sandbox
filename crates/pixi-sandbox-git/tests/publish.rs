@@ -9,7 +9,7 @@ use pixi_sandbox_git::{
     Command, Error, FakeGit, GitProtocol, Output, RecordingRunner, Runner, ShellGit, Snapshot,
     snapshot_bytes, snapshot_files,
 };
-use rstest::rstest;
+use rstest::{fixture, rstest};
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use std::sync::Arc;
@@ -67,6 +67,7 @@ fn run_git(args: &[&str], cwd: &Path) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
+#[fixture]
 fn bare_remote() -> (tempfile::TempDir, String) {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("remote.git");
@@ -260,9 +261,11 @@ fn both_implementations_refuse_a_symlink_in_the_transport(#[case] implementation
 
 // --------------------------------------------------- the real thing (a local bare remote)
 
-#[test]
-fn the_shell_implementation_publishes_and_fetches_byte_for_byte() {
-    let (tmp, remote) = bare_remote();
+#[rstest]
+fn the_shell_implementation_publishes_and_fetches_byte_for_byte(
+    bare_remote: (tempfile::TempDir, String),
+) {
+    let (tmp, remote) = bare_remote;
     let transport = snapshot(&[
         (".pixi-sandbox/manifest.json", b"{\"schema\":1}"),
         (
@@ -298,9 +301,9 @@ fn the_shell_implementation_publishes_and_fetches_byte_for_byte() {
     );
 }
 
-#[test]
-fn a_second_publish_replaces_the_branch_history() {
-    let (tmp, remote) = bare_remote();
+#[rstest]
+fn a_second_publish_replaces_the_branch_history(bare_remote: (tempfile::TempDir, String)) {
+    let (tmp, remote) = bare_remote;
     let git = ShellGit::new();
     let first = snapshot(&[("payload.txt", b"first")]);
     git.publish(&Snapshot {
@@ -343,9 +346,11 @@ fn a_second_publish_replaces_the_branch_history() {
 /// Task-3 against a real remote: four publishes with `keep 2` must leave a branch that serves
 /// two snapshots — the newest on top, the one before it as its parent — and each kept commit
 /// must still serve its own payload, or "rotation" would just be truncation of the content.
-#[test]
-fn the_shell_implementation_rebuilds_a_bounded_history_on_the_remote() {
-    let (_tmp, remote) = bare_remote();
+#[rstest]
+fn the_shell_implementation_rebuilds_a_bounded_history_on_the_remote(
+    bare_remote: (tempfile::TempDir, String),
+) {
+    let (_tmp, remote) = bare_remote;
     let git = ShellGit::new();
 
     for round in 1..=4 {
@@ -384,9 +389,11 @@ fn the_shell_implementation_rebuilds_a_bounded_history_on_the_remote() {
 
 /// The claim design §2 will not take on faith: rotation has to be able to make an existing
 /// history *smaller*, not merely stop it from growing.
-#[test]
-fn lowering_keep_shrinks_a_history_that_is_already_on_the_remote() {
-    let (_tmp, remote) = bare_remote();
+#[rstest]
+fn lowering_keep_shrinks_a_history_that_is_already_on_the_remote(
+    bare_remote: (tempfile::TempDir, String),
+) {
+    let (_tmp, remote) = bare_remote;
     let git = ShellGit::new();
     let bare = PathBuf::from(&remote);
 
@@ -423,9 +430,11 @@ fn lowering_keep_shrinks_a_history_that_is_already_on_the_remote() {
 /// and tree, never its blobs, and the payload is the whole weight of a transport. If the filter
 /// or the depth is ever dropped, a rotation starts downloading hundreds of MiB to rewrite a
 /// commit object — and nothing else in the suite would notice.
-#[test]
-fn a_rotating_publish_fetches_metadata_only_and_a_default_one_does_not_fetch_at_all() {
-    let (_tmp, remote) = bare_remote();
+#[rstest]
+fn a_rotating_publish_fetches_metadata_only_and_a_default_one_does_not_fetch_at_all(
+    bare_remote: (tempfile::TempDir, String),
+) {
+    let (_tmp, remote) = bare_remote;
     let seed = snapshot(&[("payload.txt", b"snapshot 1")]);
     ShellGit::new()
         .publish(&Snapshot {
@@ -472,9 +481,11 @@ fn a_rotating_publish_fetches_metadata_only_and_a_default_one_does_not_fetch_at_
     );
 }
 
-#[test]
-fn the_shell_implementation_never_writes_into_the_transport() {
-    let (_tmp, _remote) = bare_remote();
+#[rstest]
+fn the_shell_implementation_never_writes_into_the_transport(
+    bare_remote: (tempfile::TempDir, String),
+) {
+    let (_tmp, _remote) = bare_remote;
     let transport = snapshot(&[("payload.txt", b"payload")]);
     let before = snapshot_files(transport.path()).unwrap();
 
@@ -502,9 +513,11 @@ fn the_shell_implementation_never_writes_into_the_transport() {
     );
 }
 
-#[test]
-fn the_recording_runner_makes_the_orphan_and_the_force_visible() {
-    let (_tmp, remote) = bare_remote();
+#[rstest]
+fn the_recording_runner_makes_the_orphan_and_the_force_visible(
+    bare_remote: (tempfile::TempDir, String),
+) {
+    let (_tmp, remote) = bare_remote;
     let transport = snapshot(&[("payload.txt", b"payload")]);
     let recorded = Arc::new(RecordingRunner::new());
     let git = ShellGit::with_runner(Box::new(recorded.clone()));
@@ -591,9 +604,11 @@ fn transport_commits_are_authored_by_the_bot_identity() {
     );
 }
 
-#[test]
-fn the_remote_size_is_knowable_for_a_local_remote_and_not_for_a_url() {
-    let (_tmp, remote) = bare_remote();
+#[rstest]
+fn the_remote_size_is_knowable_for_a_local_remote_and_not_for_a_url(
+    bare_remote: (tempfile::TempDir, String),
+) {
+    let (_tmp, remote) = bare_remote;
     let transport = snapshot(&[("payload.txt", b"payload payload payload")]);
     let git = ShellGit::new();
     git.publish(&Snapshot {

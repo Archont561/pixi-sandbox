@@ -323,14 +323,11 @@ pub fn host_platform() -> Option<&'static str> {
 /// Rust's host spelling (`std::env::consts::{OS, ARCH}`) to the pixi platform label. Pure,
 /// so every supported row — and the unsupported one — is exercised without needing that
 /// host; keep it in step with the matrix in `release.yml`.
+///
+/// Thin wrapper over [`pixi_sandbox_core::platform::Platform`], the single source of this
+/// mapping (task-55); kept as its own function so the `&'static str` boundary this module's
+/// callers and tests already depend on does not change.
 #[doc(hidden)] // test boundary: named rows, not API.
 pub fn platform(os: &str, arch: &str) -> Option<&'static str> {
-    match (os, arch) {
-        ("linux", "x86_64") => Some("linux-64"),
-        ("linux", "aarch64") => Some("linux-aarch64"),
-        ("macos", "x86_64") => Some("osx-64"),
-        ("macos", "aarch64") => Some("osx-arm64"),
-        ("windows", "x86_64") => Some("win-64"),
-        _ => None,
-    }
+    pixi_sandbox_core::platform::Platform::from_os_arch(os, arch).map(|platform| platform.as_str())
 }

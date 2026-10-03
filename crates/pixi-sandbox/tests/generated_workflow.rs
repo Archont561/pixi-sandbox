@@ -3,7 +3,8 @@
 //! actionlint validates GitHub's full schema through xtask. These tests own the contracts it
 //! cannot evaluate: indentation-derived matrix shape and agreement with the planner's JSON keys.
 
-use pixi_sandbox::generated::{GithubWorkflowOptions, render_github_workflow};
+use pixi_sandbox::generated::{GithubWorkflowOptions, parse_version_stamp, render_github_workflow};
+use pixi_sandbox_core::platform::Platform;
 use pixi_sandbox_core::sandbox_config::plan_override;
 use rstest::rstest;
 use serde_json::Value;
@@ -11,12 +12,33 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const VERSION: &str = "9.8.7";
 const CONFIG_PATH: &str = "config/pixi-sandbox.toml";
+const WORKFLOW_PATH: &str = ".github/workflows/publish-sandbox.yml";
+const RELOCK_PATH: &str = ".github/workflows/relock.yml";
+const RELOCK_CI_WORKFLOW: &str = "ci.yml";
+const SCRIPT_PATH: &str = "restore.sh";
+const BRANCH: &str = "sandbox/developer-linux-64";
 
-fn workflow() -> String {
-    render_github_workflow(GithubWorkflowOptions {
+fn base_options() -> GithubWorkflowOptions<'static> {
+    GithubWorkflowOptions {
         version: VERSION,
         config_path: CONFIG_PATH,
-    })
+        workflow_path: WORKFLOW_PATH,
+        relock_workflow_path: RELOCK_PATH,
+        relock_ci_workflow: RELOCK_CI_WORKFLOW,
+        script_path: SCRIPT_PATH,
+        branch: BRANCH,
+        push_paths: &[],
+        scoped_permissions: false,
+        concurrency: None,
+        plan_timeout_minutes: None,
+        publish_timeout_minutes: None,
+        pixi_version: None,
+        setup_pixi_cache: None,
+    }
+}
+
+fn workflow() -> String {
+    render_github_workflow(base_options())
 }
 
 /// The generated subset uses mappings, sequences of mappings, flow arrays, comments, and plain
@@ -107,6 +129,169 @@ fn generated_workflow_matches_the_reviewed_golden_file() {
     );
 }
 
+/// task-47 AC#3: the publisher workflow carries a parseable version stamp naming the exact CLI
+/// release `init` rendered it with, within the marker window the ownership check already reads.
+#[test]
+fn generated_workflow_carries_a_parseable_version_stamp() {
+    assert_eq!(parse_version_stamp(&workflow()), Some(VERSION));
+}
+
+/// task-47 AC#6-#8: the generated upgrade job, scheduled and manually dispatchable, never
+/// floats a production pin and never pushes to main directly.
+mod upgrade_job {
+    use super::{CONFIG_PATH, RELOCK_PATH, SCRIPT_PATH, WORKFLOW_PATH, workflow};
+
+    #[test]
+    fn the_workflow_gains_a_schedule_and_an_opt_in_dispatch_input() {
+        let workflow = workflow();
+        assert!(workflow.contains("schedule:"), "{workflow}");
+        assert!(workflow.contains("cron:"), "{workflow}");
+        assert!(workflow.contains("inputs:\n      upgrade:"), "{workflow}");
+        // An ordinary manual dispatch (today's only form) must keep working exactly as before:
+        // the new input defaults to blank, which routes to the normal publish, not the upgrade.
+        assert!(workflow.contains("default: \"\""), "{workflow}");
+    }
+
+    /// The normal publish lane and the upgrade lane are mutually exclusive by construction:
+    /// no event can satisfy both `if:` conditions at once, so they can never double-run.
+    #[test]
+    fn the_publish_lane_and_the_upgrade_lane_can_never_both_fire() {
+        let workflow = workflow();
+        assert!(
+            workflow.contains(
+                "if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.upgrade == '')"
+            ),
+            "{workflow}"
+        );
+        assert!(
+            workflow.contains(
+                "if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.upgrade != '')"
+            ),
+            "{workflow}"
+        );
+    }
+
+    /// The upgrade job never trusts a package manager's "latest" for anything that ends up in
+    /// a committed file (decision-4 / D16): it bootstraps the exact pinned, checksum-verified
+    /// binary and only that binary's own `self-update` ever decides the new version.
+    #[test]
+    fn the_upgrade_job_bootstraps_a_verified_binary_before_self_updating_it() {
+        let workflow = workflow();
+        assert!(
+            workflow.contains("Download currently pinned pixi-sandbox"),
+            "{workflow}"
+        );
+        assert!(
+            workflow.contains("sha256sum --check --status"),
+            "{workflow}"
+        );
+        assert!(
+            workflow.contains("self-update --dest \"$BIN\""),
+            "{workflow}"
+        );
+        assert!(
+            workflow.contains("self-update --dest \"$BIN\" --version \"$UPGRADE_VERSION\""),
+            "a manual dispatch must pass the requested exact version through: {workflow}"
+        );
+    }
+
+    /// `init --check` runs against the exact paths and branch this project was generated with
+    /// — never defaults that could silently diverge from a customised init invocation — and
+    /// only a positive drift finding triggers a real `init` run.
+    #[test]
+    fn drift_check_and_regeneration_use_the_exact_generation_arguments() {
+        let workflow = workflow();
+        let upgrade_job = workflow
+            .split("\n  upgrade:\n")
+            .nth(1)
+            .expect("the upgrade job exists");
+        for flag in [
+            "--github-workflow-path .github/workflows/publish-sandbox.yml",
+            "--relock-workflow-path .github/workflows/relock.yml",
+            "--relock-ci-workflow ci.yml",
+            "--script-path restore.sh",
+            "--config config/pixi-sandbox.toml",
+            "--branch sandbox/developer-linux-64",
+        ] {
+            assert_eq!(
+                upgrade_job.matches(flag).count(),
+                2,
+                "expected `{flag}` in both the --check and the regenerate invocation: {upgrade_job}"
+            );
+        }
+        assert!(workflow.contains("\"$BIN\" init --check"), "{workflow}");
+        assert!(
+            workflow.contains("if: steps.check.outputs.drift == 'true'"),
+            "{workflow}"
+        );
+    }
+
+    /// Config is reviewed data (D16): the upgrade job's own commit never stages it, even when
+    /// `init` regenerated the other three files.
+    #[test]
+    fn the_regenerated_commit_never_stages_the_config() {
+        let workflow = workflow();
+        let add_line = workflow
+            .lines()
+            .find(|line| line.trim_start().starts_with("git add "))
+            .expect("the upgrade job stages its regenerated files");
+        assert!(!add_line.contains(CONFIG_PATH), "{add_line}");
+        assert!(add_line.contains(WORKFLOW_PATH), "{add_line}");
+        assert!(add_line.contains(RELOCK_PATH), "{add_line}");
+        assert!(add_line.contains(SCRIPT_PATH), "{add_line}");
+    }
+
+    /// task-47 AC#8: because a `github.token` push starts no `on: push` workflow (task-44's
+    /// lesson, restated here for the upgrade lane), the job opens a reviewable pull request
+    /// against a side branch — never a direct push to `main` — and its own body spells out the
+    /// explicit dispatch an automated merge still requires.
+    #[test]
+    fn the_job_opens_a_pull_request_instead_of_pushing_main() {
+        let workflow = workflow();
+        assert!(
+            !workflow.contains("git push --force origin main"),
+            "{workflow}"
+        );
+        assert!(!workflow.contains("git push origin main"), "{workflow}");
+        assert!(workflow.contains("gh pr create"), "{workflow}");
+        assert!(workflow.contains("--base main"), "{workflow}");
+        assert!(
+            workflow.contains("gh workflow run .github/workflows/publish-sandbox.yml --ref main"),
+            "the PR body must name the explicit post-merge dispatch: {workflow}"
+        );
+    }
+
+    /// The bot identity matches the one the relock workflow already established (task-39's
+    /// precedent): one recognisable automation identity across every generated bot commit.
+    #[test]
+    fn the_upgrade_commit_uses_the_same_bot_identity_as_relock() {
+        let workflow = workflow();
+        assert!(workflow.contains("pixi-sandbox[bot]"), "{workflow}");
+        assert!(
+            workflow.contains("41898282+github-actions[bot]@users.noreply.github.com"),
+            "{workflow}"
+        );
+    }
+
+    /// A job-level `permissions:` block replaces the workflow-level one rather than adding to
+    /// it (the trap `relock.yml` already documents) — `pull-requests: write` must be spelled
+    /// out explicitly on the upgrade job or `gh pr create` gets a 403.
+    #[test]
+    fn the_upgrade_job_grants_itself_pull_request_permission() {
+        let workflow = workflow();
+        let upgrade_job = workflow
+            .split("\n  upgrade:\n")
+            .nth(1)
+            .expect("the upgrade job exists");
+        let permissions_block = upgrade_job
+            .split("permissions:\n")
+            .nth(1)
+            .expect("the upgrade job declares its own permissions");
+        assert!(permissions_block.contains("contents: write"));
+        assert!(permissions_block.contains("pull-requests: write"));
+    }
+}
+
 #[rstest]
 #[case("on")]
 #[case("jobs")]
@@ -173,6 +358,47 @@ fn generated_workflow_downloads_a_verified_release_binary_for_publishing() {
     assert!(workflow.contains("--self-bin \"$SELF_BIN\""));
 }
 
+/// Issue #80: the release-download step named the *consumer's* repository, so any consumer
+/// publishing no GitHub releases of its own got a 404 before anything was packed. The
+/// download base must name this project's own repository — the one that actually publishes
+/// `pixi-sandbox-*` release assets and `SHA256SUMS` — in both the bash and the pwsh leg, and
+/// `GITHUB_REPOSITORY` must never appear in a release-download URL again. The constant is
+/// shared with `self_update::DEFAULT_REPO` so the template and the updater cannot drift apart.
+#[test]
+fn generated_workflow_downloads_release_assets_from_the_pixi_sandbox_repository_not_the_consumers()
+{
+    let workflow = workflow();
+    let expected_base = format!(
+        "$GITHUB_SERVER_URL/{}/releases/download/v${{PIXI_SANDBOX_VERSION}}",
+        pixi_sandbox::release::PIXI_SANDBOX_REPO
+    );
+    let expected_pwsh_base = format!(
+        "$env:GITHUB_SERVER_URL/{}/releases/download/v$env:PIXI_SANDBOX_VERSION",
+        pixi_sandbox::release::PIXI_SANDBOX_REPO
+    );
+    assert!(
+        workflow.contains(&expected_base),
+        "bash leg must download from the pixi-sandbox repository:\n{workflow}"
+    );
+    assert!(
+        workflow.contains(&expected_pwsh_base),
+        "pwsh leg must download from the pixi-sandbox repository:\n{workflow}"
+    );
+    assert_eq!(
+        pixi_sandbox::release::PIXI_SANDBOX_REPO,
+        pixi_sandbox::self_update::DEFAULT_REPO,
+        "the renderer and self-update's default --repo must name the same repository"
+    );
+    for (index, _) in workflow.match_indices("releases/download") {
+        let window_start = index.saturating_sub(80);
+        let window = &workflow[window_start..index];
+        assert!(
+            !window.contains("GITHUB_REPOSITORY"),
+            "a release-download URL must never resolve against the consumer's own repository:\n{workflow}"
+        );
+    }
+}
+
 #[test]
 fn generated_workflow_only_reads_matrix_keys_the_plan_emits() {
     let workflow = workflow();
@@ -211,6 +437,192 @@ fn generated_workflow_only_reads_matrix_keys_the_plan_emits() {
             assert!(
                 entry.contains_key(key),
                 "the workflow reads matrix.{key}, which plan JSON does not emit: {entry:?}"
+            );
+        }
+    }
+}
+
+/// The embedded bash/PowerShell case/switch arms that pick a release asset name cannot call
+/// into `Platform` (task-55) at render time the way other call sites were migrated (task-58,
+/// task-59, task-60): they are literal text inside a workflow that a plain GitHub runner
+/// executes before any pixi-sandbox binary exists to ask. Keeping that text a hand-typed
+/// literal inside the render function is still a duplicate of `Platform::asset_name`, so this
+/// test is the structural guarantee a doc comment used to be: every platform's asset name in
+/// the rendered workflow must agree with `Platform`, for both the bash and the PowerShell
+/// branch.
+#[test]
+fn every_rendered_asset_name_agrees_with_platform() {
+    let workflow = workflow();
+    for platform in Platform::ALL {
+        assert!(
+            workflow.contains(platform.asset_name()),
+            "rendered workflow is missing {}'s asset name {}",
+            platform.as_str(),
+            platform.asset_name()
+        );
+    }
+}
+
+/// task-53 (issue #79): the generated publisher's `[workflow]`-table-derived CI policy.
+mod workflow_policy {
+    use super::{GithubWorkflowOptions, base_options, render_github_workflow, workflow};
+
+    /// AC#1: an unconfigured render carries none of the new blocks at all — this is the
+    /// byte-identical migration path for every existing consumer, held directly by the golden
+    /// fixture test above; this test names the absence explicitly, block by block.
+    #[test]
+    fn default_options_add_no_new_yaml() {
+        let rendered = workflow();
+        assert!(!rendered.contains("    paths:"));
+        assert!(rendered.contains("permissions:\n  contents: write"));
+        assert!(!rendered.contains("concurrency:"));
+        assert!(!rendered.contains("timeout-minutes:"));
+        assert!(!rendered.contains("pixi-version:"));
+        assert!(!rendered.contains("cache:"));
+    }
+
+    #[test]
+    fn push_paths_render_as_a_paths_allowlist_under_the_push_trigger() {
+        let paths = vec!["pixi-sandbox.toml".to_string(), "pixi.toml".to_string()];
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            push_paths: &paths,
+            ..base_options()
+        });
+        let push_index = rendered.find("push:\n").expect("on.push exists");
+        let schedule_index = rendered.find("schedule:").expect("on.schedule exists");
+        let push_block = &rendered[push_index..schedule_index];
+        assert!(push_block.contains("    paths:\n"));
+        for path in &paths {
+            assert!(
+                push_block.contains(&format!("      - {path:?}\n")),
+                "missing {path:?} in {push_block}"
+            );
+        }
+    }
+
+    #[test]
+    fn scoped_permissions_reads_top_level_and_scopes_the_publish_job() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            scoped_permissions: true,
+            ..base_options()
+        });
+        assert!(rendered.contains("permissions:\n  contents: read\n"));
+        let publish_index = rendered.find("\n  publish:\n").expect("publish job exists");
+        let steps_index = rendered[publish_index..]
+            .find("    steps:\n")
+            .expect("publish job has steps");
+        let publish_header = &rendered[publish_index..publish_index + steps_index];
+        assert!(
+            publish_header.contains("    permissions:\n      contents: write\n"),
+            "publish job is missing its own scoped permissions: {publish_header}"
+        );
+        // Only the publish job gets write — the plan job stays covered by the read-only
+        // workflow-level default, never regaining its own write grant.
+        let plan_index = rendered.find("\n  plan:\n").expect("plan job exists");
+        let plan_outputs = rendered[plan_index..]
+            .find("    outputs:\n")
+            .expect("plan job has outputs");
+        let plan_header = &rendered[plan_index..plan_index + plan_outputs];
+        assert!(!plan_header.contains("permissions:"));
+    }
+
+    #[test]
+    fn concurrency_renders_a_workflow_level_group_and_cancel_policy() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            concurrency: Some(("publish-sandbox", true)),
+            ..base_options()
+        });
+        assert!(
+            rendered.contains(
+                "concurrency:\n  group: \"publish-sandbox\"\n  cancel-in-progress: true\n"
+            )
+        );
+    }
+
+    #[test]
+    fn timeouts_render_on_the_plan_and_publish_jobs_independently() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            plan_timeout_minutes: Some(15),
+            ..base_options()
+        });
+        assert!(rendered.contains("runs-on: ubuntu-latest\n    timeout-minutes: 15\n    outputs:"));
+        assert!(!rendered.contains("runs-on: ${{ matrix.runner }}\n    timeout-minutes:"));
+
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            publish_timeout_minutes: Some(60),
+            ..base_options()
+        });
+        assert!(
+            rendered.contains("runs-on: ${{ matrix.runner }}\n    timeout-minutes: 60\n    steps:")
+        );
+        assert!(!rendered.contains("runs-on: ubuntu-latest\n    timeout-minutes:"));
+    }
+
+    #[test]
+    fn pixi_version_and_cache_render_on_every_setup_pixi_step() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            pixi_version: Some("0.81.0"),
+            setup_pixi_cache: Some(false),
+            ..base_options()
+        });
+        let occurrences = rendered.matches("prefix-dev/setup-pixi@").count();
+        assert_eq!(
+            occurrences, 2,
+            "expected exactly plan + publish setup-pixi steps"
+        );
+        assert_eq!(
+            rendered.matches("pixi-version: \"0.81.0\"").count(),
+            occurrences,
+            "every setup-pixi step must carry the pin"
+        );
+        assert_eq!(
+            rendered.matches("cache: false").count(),
+            occurrences,
+            "every setup-pixi step must carry the cache policy"
+        );
+    }
+
+    /// AC#4: unset, no `cache:` key at all — the action's own default, matching the pre-task-53
+    /// template exactly (distinct from an explicit `setup_pixi_cache = Some(false)` above).
+    #[test]
+    fn unset_setup_pixi_cache_emits_no_cache_key() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            pixi_version: Some("0.81.0"),
+            ..base_options()
+        });
+        assert!(!rendered.contains("cache:"));
+    }
+
+    /// Every combination together must still produce exactly one actionlint-parseable
+    /// `on.push.paths:`, `permissions:`, `concurrency:`, `timeout-minutes:`, and `cache:` shape
+    /// — xtask's `lint-generated-workflow` holds the GitHub-schema side of this across the same
+    /// combination table; this holds that nothing here corrupts a neighbouring block.
+    #[test]
+    fn every_block_can_be_configured_at_once_without_corrupting_its_neighbours() {
+        let paths = vec!["pixi-sandbox.toml".to_string()];
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            push_paths: &paths,
+            scoped_permissions: true,
+            concurrency: Some(("publish-sandbox", false)),
+            plan_timeout_minutes: Some(15),
+            publish_timeout_minutes: Some(60),
+            pixi_version: Some("0.81.0"),
+            setup_pixi_cache: Some(true),
+            ..base_options()
+        });
+        for needle in [
+            "    paths:\n",
+            "permissions:\n  contents: read\n",
+            "    permissions:\n      contents: write\n",
+            "concurrency:\n  group: \"publish-sandbox\"\n  cancel-in-progress: false\n",
+            "    timeout-minutes: 15\n",
+            "    timeout-minutes: 60\n",
+            "pixi-version: \"0.81.0\"",
+            "cache: true",
+        ] {
+            assert!(
+                rendered.contains(needle),
+                "missing {needle:?} in:\n{rendered}"
             );
         }
     }
