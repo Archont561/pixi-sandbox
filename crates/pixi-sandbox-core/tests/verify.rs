@@ -119,6 +119,70 @@ fn a_missing_blob_is_reported_as_missing() {
     assert_eq!(report.failures[0].kind, Kind::Missing);
 }
 
+// ---------------------------------------------------------------- property: any corruption is caught
+//
+// The example-based tests above pin the exact failure shape (which `Kind`, which path) for one
+// hand-picked tamper. This property instead ranges over every blob the fixture carries (the
+// whole file and both halves of the split one) and every way a single byte inside it can
+// change, and checks the one invariant verify() exists to guarantee: a blob that still matches
+// its recorded digest always passes, and one that does not always fails. Bounded to 64 cases —
+// enough to range over all three files and the flip/no-flip split without adding meaningful
+// runtime to the suite.
+mod verify_catches_corruption {
+    use super::{BLOB_BODY, SPLIT_PARTS, sha256_of, transport};
+    use pixi_sandbox_core::verify::verify;
+    use proptest::prelude::*;
+    use std::fs;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        /// `file_index` picks which of the transport's three on-disk blobs to touch,
+        /// `offset_seed` is reduced into that file's length so it always lands in bounds, and
+        /// `flip_mask` is never zero so XOR-ing it in always changes the byte. `flip` is the
+        /// property's other half: when false, nothing is touched and verification must still
+        /// pass — the proof that this property cannot pass by always tampering.
+        #[test]
+        fn single_byte_flips_are_always_caught_and_untouched_blobs_never_are(
+            file_index in 0usize..3,
+            offset_seed in any::<u8>(),
+            flip_mask in 1u8..=255u8,
+            flip in any::<bool>(),
+        ) {
+            let dir = tempfile::tempdir().unwrap();
+            let manifest = transport(dir.path(), &sha256_of(BLOB_BODY));
+            let root = dir.path().join(".pixi-sandbox/envs/dev/pack/channel/noarch");
+            let paths = [
+                root.join("a.conda"),
+                root.join("big.conda.part000"),
+                root.join("big.conda.part001"),
+            ];
+            // Sanity: the fixture's own sizes, so a future edit to `transport()` cannot shrink
+            // a file to zero bytes without this property noticing via a division panic.
+            prop_assert_eq!(fs::metadata(&paths[0]).unwrap().len(), BLOB_BODY.len() as u64);
+            prop_assert_eq!(fs::metadata(&paths[1]).unwrap().len(), SPLIT_PARTS[0].len() as u64);
+            prop_assert_eq!(fs::metadata(&paths[2]).unwrap().len(), SPLIT_PARTS[1].len() as u64);
+
+            if flip {
+                let path = &paths[file_index];
+                let mut bytes = fs::read(path).unwrap();
+                let offset = (offset_seed as usize) % bytes.len();
+                bytes[offset] ^= flip_mask;
+                fs::write(path, &bytes).unwrap();
+            }
+
+            let report = verify(&manifest, dir.path(), None);
+            prop_assert_eq!(
+                report.ok(),
+                !flip,
+                "flip={} failures={:?}",
+                flip,
+                report.failures
+            );
+        }
+    }
+}
+
 #[test]
 fn a_script_is_not_a_dynamic_binary() {
     let dir = tempfile::tempdir().unwrap();

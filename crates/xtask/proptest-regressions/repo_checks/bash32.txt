@@ -1,0 +1,4 @@
+# Seeds for property tests in `repo_checks/bash32.rs`.
+#
+# Keep in version control so a minimized forbidden-token or allow-listed-vocabulary
+# disagreement with the Bash-4 surface regex stays reproducible on every host.

@@ -226,6 +226,57 @@ mod tests {
         );
     }
 
+    /// `staged_name`/`binary_name` are pure string transforms over *any* target triple (see
+    /// the doc comment on the next test for why that stays true rather than narrowing to the
+    /// five published platforms). This ranges over realistic triple components — never the
+    /// literal word `windows` unless the case means to be a Windows target — and checks the
+    /// one invariant both functions exist to guarantee: the `.exe` suffix appears exactly when
+    /// the triple's OS component is `windows`, never otherwise. Bounded to 128 cases.
+    mod staged_and_binary_name_properties {
+        use super::super::{binary_name, staged_name};
+        use proptest::prelude::*;
+
+        /// Components a real target triple is built from, deliberately excluding "windows" so
+        /// the non-Windows branch can never accidentally spell it.
+        fn triple_component() -> impl Strategy<Value = String> {
+            prop::sample::select(
+                [
+                    "x86_64", "aarch64", "i686", "unknown", "pc", "apple", "gnu", "musl", "msvc",
+                    "linux", "darwin", "freebsd",
+                ]
+                .as_slice(),
+            )
+            .prop_map(str::to_string)
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(128))]
+
+            #[test]
+            fn the_exe_suffix_appears_exactly_when_the_os_component_is_windows(
+                arch in triple_component(),
+                vendor in triple_component(),
+                non_windows_os in triple_component(),
+                windows in any::<bool>(),
+            ) {
+                let os = if windows { "windows".to_string() } else { non_windows_os };
+                let target = format!("{arch}-{vendor}-{os}");
+
+                let staged = staged_name(&target);
+                prop_assert!(staged.starts_with("pixi-sandbox-"), "{}", staged);
+                prop_assert_eq!(staged.ends_with(".exe"), windows, "{}", staged);
+                prop_assert_eq!(
+                    staged.clone(),
+                    format!("pixi-sandbox-{target}{}", if windows { ".exe" } else { "" })
+                );
+
+                let binary = binary_name(&target);
+                prop_assert_eq!(binary == "pixi-sandbox.exe", windows, "{}", binary);
+                prop_assert_eq!(binary == "pixi-sandbox", !windows, "{}", binary);
+            }
+        }
+    }
+
     /// `staged_name` stays pure over *any* target triple on purpose (D10: testable without a
     /// Windows host, and tolerant of a target this project does not yet publish for). It is
     /// deliberately not migrated onto `Platform` (task-55) the way `conda_platforms.rs` and
