@@ -114,6 +114,9 @@ jobs:
           git clone "$remote" "$checkout"
           git -C "$checkout" fetch origin sandbox/consumer-proof-linux-64
           git -C "$checkout" checkout --detach FETCH_HEAD
+          # restore requires --output-path to already exist (support::existing_dir) — the
+          # e2e fixture tests mkdir it first for the same reason.
+          mkdir -p "$restored"
           env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$checkout/.pixi-sandbox/tools/linux-64/pixi-sandbox" restore --branch-location "$checkout" --output-path "$restored" --user-tools skip | tee "$RUNNER_TEMP/evidence/restore.log"
           env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$restored/.pixi/tools/linux-64/pixi" --version | tee "$RUNNER_TEMP/evidence/restored-pixi-version.txt"
           cp "$transport/.pixi-sandbox/manifest.json" "$RUNNER_TEMP/evidence/manifest.json"
