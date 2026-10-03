@@ -305,15 +305,19 @@ platforms = ["linux-64"]
     keys.sort_unstable();
     assert_eq!(
         keys,
-        ["include", "schema"],
+        ["include", "push_paths", "schema"],
         "unexpected plan --json top level"
     );
 
     for key in &keys {
         let is_matrix_key = matches!(*key, "include" | "exclude");
         let is_known_scalar = *key == "schema";
+        // `push_paths` (task-53 AC#3) is a known extra array, not a matrix dimension: the
+        // generated workflow's `matrix: { include: ${{ fromJSON(...).include }} }` only ever
+        // reads `.include`, so a sibling array here is inert the same way `schema` already is.
+        let is_known_extra_array = *key == "push_paths";
         assert!(
-            is_matrix_key || is_known_scalar,
+            is_matrix_key || is_known_scalar || is_known_extra_array,
             "{key} would be read as a matrix dimension and must be an array"
         );
     }
@@ -1438,6 +1442,64 @@ fn init_honours_path_overrides_and_safely_regenerates_owned_files() {
         fs::read_to_string(&config_path).unwrap(),
         "user-edited config\n"
     );
+}
+
+/// task-53 AC#5: with policy carried in `[workflow]`, `init` on an existing project reproduces
+/// the consumer's workflow byte-identically — no hand edits, no `--force` ritual. `init --check`
+/// after a first `init` must also report clean, the same "nothing to re-apply" guarantee the
+/// unconfigured case already holds (task-47 AC#4).
+#[test]
+fn init_with_workflow_policy_reproduces_byte_identically_with_no_hand_edits() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        project.join(".pixi-sandbox.toml"),
+        r#"
+schema = 1
+branch_prefix = "sandbox"
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+
+[workflow]
+push_paths = ["pixi-sandbox.toml", "pixi.toml", "pixi.lock"]
+permissions = true
+pixi_version = "0.81.0"
+setup_pixi_cache = true
+
+[workflow.concurrency]
+group = "publish-sandbox"
+cancel_in_progress = false
+
+[workflow.timeouts]
+plan = 15
+publish = 60
+"#,
+    )
+    .unwrap();
+
+    init_command(&project).assert().success();
+    let workflow_path = project.join(".github/workflows/publish-sandbox.yml");
+    let first = fs::read_to_string(&workflow_path).unwrap();
+    assert!(first.contains("    paths:\n"));
+    assert!(first.contains("permissions:\n  contents: read\n"));
+    assert!(first.contains("concurrency:\n  group: \"publish-sandbox\"\n"));
+    assert!(first.contains("timeout-minutes: 15"));
+    assert!(first.contains("timeout-minutes: 60"));
+    assert!(first.contains("pixi-version: \"0.81.0\""));
+    assert!(first.contains("cache: true"));
+
+    // A clean tree, no hand edits applied: `init --check` reports no drift at all.
+    init_command(&project).arg("--check").assert().success();
+
+    // A second ordinary `init` reproduces the exact same bytes — the config carries the
+    // policy, so there is nothing left for a consumer to re-apply "by ritual" (issue #79).
+    init_command(&project).assert().success();
+    let second = fs::read_to_string(&workflow_path).unwrap();
+    assert_eq!(first, second, "init must regenerate byte-identically");
 }
 
 #[test]

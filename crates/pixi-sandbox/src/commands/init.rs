@@ -8,7 +8,9 @@ use pixi_sandbox::generated::{
     embedded_pixi_pin, plan_vendors_cargo, render_github_workflow, render_relock_workflow,
     version_stamp_line,
 };
-use pixi_sandbox_core::sandbox_config::{CONFIG_SCHEMA, peek_schema, schema_supported};
+use pixi_sandbox_core::sandbox_config::{
+    CONFIG_SCHEMA, SandboxConfig, peek_schema, schema_supported,
+};
 use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -63,10 +65,58 @@ impl Targets {
     /// order `init` itself writes them.
     fn owned(&self) -> [(&'static str, &Path, &str); 3] {
         [
-            ("GitHub workflow", &self.workflow.0, self.workflow.1.as_str()),
+            (
+                "GitHub workflow",
+                &self.workflow.0,
+                self.workflow.1.as_str(),
+            ),
             ("relock workflow", &self.relock.0, self.relock.1.as_str()),
             ("launcher", &self.script.0, self.script.1.as_str()),
         ]
+    }
+}
+
+/// The generated publisher's `[workflow]`-table-derived CI policy (issue #79, task-53), already
+/// resolved into exactly what the renderer needs — never a loaded [`SandboxConfig`] directly, so
+/// the renderer stays config-shape-agnostic and testable with plain values. A missing or
+/// unreadable config (first `init` on a fresh project, or a config this build cannot parse)
+/// degrades to every default — the same graceful-degradation precedent `plan_vendors_cargo`
+/// already uses — which is also exactly the pre-task-53 render (task-53 AC#1).
+struct ResolvedWorkflowPolicy {
+    push_paths: Vec<String>,
+    scoped_permissions: bool,
+    concurrency: Option<(String, bool)>,
+    plan_timeout_minutes: Option<u32>,
+    publish_timeout_minutes: Option<u32>,
+    pixi_version: Option<String>,
+    setup_pixi_cache: Option<bool>,
+}
+
+impl ResolvedWorkflowPolicy {
+    fn resolve(config: &Path, repo_root: &Path, config_display: &str) -> Self {
+        let loaded = SandboxConfig::load(config).ok();
+        let push_paths = loaded
+            .as_ref()
+            .map(|c| c.resolved_push_paths(repo_root, config_display))
+            .unwrap_or_default();
+        let policy = loaded.as_ref().and_then(|c| c.workflow.as_ref());
+        Self {
+            push_paths,
+            scoped_permissions: policy.is_some_and(|p| p.permissions),
+            concurrency: policy
+                .and_then(|p| p.concurrency.as_ref())
+                .map(|c| (c.group.clone(), c.cancel_in_progress)),
+            plan_timeout_minutes: policy
+                .and_then(|p| p.timeouts.as_ref())
+                .and_then(|t| t.plan),
+            publish_timeout_minutes: policy
+                .and_then(|p| p.timeouts.as_ref())
+                .and_then(|t| t.publish),
+            pixi_version: policy.and_then(|p| p.pixi_version.clone()),
+            // Once `[workflow]` is present at all, cache defaults to off (decision D18) unless
+            // explicitly re-enabled; absent the table entirely, `None` renders no `cache:` key.
+            setup_pixi_cache: policy.map(|p| p.setup_pixi_cache.unwrap_or(false)),
+        }
     }
 }
 
@@ -103,6 +153,8 @@ fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
     let workflow_reference = project_reference(root, &workflow);
     let relock_reference = project_reference(root, &relock);
     let script_reference = project_reference(root, &script);
+    let workflow_policy =
+        ResolvedWorkflowPolicy::resolve(&config, root, &config_reference.to_string_lossy());
     let workflow_content = render_github_workflow(GithubWorkflowOptions {
         version: CLI_VERSION,
         config_path: &config_reference.to_string_lossy(),
@@ -111,6 +163,16 @@ fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
         relock_ci_workflow: &args.relock_ci_workflow,
         script_path: &script_reference.to_string_lossy(),
         branch: &args.branch,
+        push_paths: &workflow_policy.push_paths,
+        scoped_permissions: workflow_policy.scoped_permissions,
+        concurrency: workflow_policy
+            .concurrency
+            .as_ref()
+            .map(|(group, cancel)| (group.as_str(), *cancel)),
+        plan_timeout_minutes: workflow_policy.plan_timeout_minutes,
+        publish_timeout_minutes: workflow_policy.publish_timeout_minutes,
+        pixi_version: workflow_policy.pixi_version.as_deref(),
+        setup_pixi_cache: workflow_policy.setup_pixi_cache,
     });
     let relock_content = render_relock_workflow(RelockWorkflowOptions {
         cli_version: CLI_VERSION,
@@ -253,10 +315,7 @@ fn check(root: &Path, args: &InitArgs) -> Result<()> {
         return Ok(());
     }
     // Non-zero is the point: the generated upgrade job and any human audit key on this.
-    bail!(
-        "{} finding(s); see above",
-        findings.len()
-    )
+    bail!("{} finding(s); see above", findings.len())
 }
 
 /// Config is reviewed data `init` only ever seeds when absent (D17, AC#5): a schema mismatch is
@@ -583,7 +642,11 @@ mod tests {
 
     #[test]
     fn launchers_are_bootstraps_not_installers() {
-        let shell = posix_restore("1.2.3", "sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
+        let shell = posix_restore(
+            "1.2.3",
+            "sandbox/developer-linux-64",
+            Path::new(PREFERRED_CONFIG),
+        );
         assert!(shell.contains("git -C \"$ROOT\" archive \"$REF\""));
         assert!(shell.contains("PIXI_SANDBOX_FETCH:-auto"));
         assert!(shell.contains("refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"));
@@ -598,8 +661,11 @@ mod tests {
         assert!(shell.contains("PIXI_SANDBOX_USER_TOOLS=\"${PIXI_SANDBOX_USER_TOOLS:-register}\""));
         assert!(shell.contains("exec \"$BIN\" restore --branch-location \"$TRANSPORT\" --output-path \"$ROOT\" --force \"$@\""));
         assert!(!shell.contains("--user-tools \""));
-        let powershell =
-            powershell_restore("1.2.3", "sandbox/developer-win-64", Path::new(PREFERRED_CONFIG));
+        let powershell = powershell_restore(
+            "1.2.3",
+            "sandbox/developer-win-64",
+            Path::new(PREFERRED_CONFIG),
+        );
         assert!(powershell.contains("git -C $Root archive --format=tar --output=$Archive $Ref"));
         assert!(powershell.contains("$env:PIXI_SANDBOX_FETCH -eq 'skip'"));
         assert!(powershell.contains("refs/heads/${Branch}:refs/remotes/origin/${Branch}"));
@@ -617,13 +683,20 @@ mod tests {
     /// marker, in the same window `ensure_replaceable` and `is_generated` already read.
     #[test]
     fn launchers_carry_a_parseable_version_stamp() {
-        let shell = posix_restore("7.8.9", "sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
+        let shell = posix_restore(
+            "7.8.9",
+            "sandbox/developer-linux-64",
+            Path::new(PREFERRED_CONFIG),
+        );
         assert_eq!(
             pixi_sandbox::generated::parse_version_stamp(&shell),
             Some("7.8.9")
         );
-        let powershell =
-            powershell_restore("7.8.9", "sandbox/developer-win-64", Path::new(PREFERRED_CONFIG));
+        let powershell = powershell_restore(
+            "7.8.9",
+            "sandbox/developer-win-64",
+            Path::new(PREFERRED_CONFIG),
+        );
         assert_eq!(
             pixi_sandbox::generated::parse_version_stamp(&powershell),
             Some("7.8.9")
@@ -665,7 +738,11 @@ mod tests {
 
     #[test]
     fn an_explicit_branch_still_wins_over_the_config() {
-        let shell = posix_restore("1.2.3", "sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
+        let shell = posix_restore(
+            "1.2.3",
+            "sandbox/developer-linux-64",
+            Path::new(PREFERRED_CONFIG),
+        );
         let override_at = shell.find("BRANCH=${PIXI_SANDBOX_BRANCH:-}").unwrap();
         let derive_at = shell.find("CONFIG=$ROOT/pixi-sandbox.toml").unwrap();
         assert!(override_at < derive_at);
@@ -716,11 +793,13 @@ mod tests {
             let project = project();
             run(args(project.path())).unwrap();
 
-            let before = fs::read_to_string(project.path().join(".github/workflows/publish-sandbox.yml"))
-                .unwrap();
+            let before =
+                fs::read_to_string(project.path().join(".github/workflows/publish-sandbox.yml"))
+                    .unwrap();
             run(checked(project.path())).unwrap();
-            let after = fs::read_to_string(project.path().join(".github/workflows/publish-sandbox.yml"))
-                .unwrap();
+            let after =
+                fs::read_to_string(project.path().join(".github/workflows/publish-sandbox.yml"))
+                    .unwrap();
             assert_eq!(before, after, "--check must never write");
         }
 
@@ -738,7 +817,10 @@ mod tests {
             assert!(error.contains("finding"), "{error}");
 
             let untouched = fs::read_to_string(&workflow).unwrap();
-            assert!(untouched.ends_with("# a stale local edit\n"), "--check must not rewrite it");
+            assert!(
+                untouched.ends_with("# a stale local edit\n"),
+                "--check must not rewrite it"
+            );
         }
 
         /// A file that exists but carries no ownership marker is foreign, not drifted: the
@@ -779,10 +861,18 @@ mod tests {
             let before = fs::read_to_string(&config).unwrap();
 
             run(args(project.path())).unwrap();
-            assert_eq!(fs::read_to_string(&config).unwrap(), before, "init must not rewrite it");
+            assert_eq!(
+                fs::read_to_string(&config).unwrap(),
+                before,
+                "init must not rewrite it"
+            );
 
             let _ = run(checked(project.path()));
-            assert_eq!(fs::read_to_string(&config).unwrap(), before, "--check must not rewrite it");
+            assert_eq!(
+                fs::read_to_string(&config).unwrap(),
+                before,
+                "--check must not rewrite it"
+            );
         }
 
         /// A config schema newer than this CLI understands is a named finding with its own

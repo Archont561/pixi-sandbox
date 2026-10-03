@@ -24,6 +24,25 @@ pub struct GithubWorkflowOptions<'a> {
     /// cannot decide, so the upgrade job's `init --check` needs the same value to compare
     /// against the exact bytes `init` would have written.
     pub branch: &'a str,
+    /// Resolved `on.push.paths:` allowlist (task-53 AC#2/#3) — already derived or overridden by
+    /// the caller. Empty renders no `paths:` filter at all, matching the pre-task-53 template
+    /// exactly (task-53 AC#1).
+    pub push_paths: &'a [String],
+    /// Scope `permissions:` to least privilege when `true` — `contents: read` top-level,
+    /// `contents: write` only on the `publish` job (task-53 AC#2). `false` keeps today's
+    /// unconditional top-level `contents: write`.
+    pub scoped_permissions: bool,
+    /// `(group, cancel_in_progress)` for a workflow-level `concurrency:` block, when configured.
+    pub concurrency: Option<(&'a str, bool)>,
+    /// `timeout-minutes:` for the `plan` job, when configured.
+    pub plan_timeout_minutes: Option<u32>,
+    /// `timeout-minutes:` for the `publish` job, when configured.
+    pub publish_timeout_minutes: Option<u32>,
+    /// Pin for `setup-pixi`'s own `pixi-version:` input, when configured.
+    pub pixi_version: Option<&'a str>,
+    /// `setup-pixi`'s `cache:` input, when configured. `None` renders no `cache:` key at all —
+    /// the action's own default — matching the pre-task-53 template exactly.
+    pub setup_pixi_cache: Option<bool>,
 }
 
 fn shell_word(value: &str) -> String {
@@ -36,6 +55,13 @@ fn shell_word(value: &str) -> String {
     } else {
         format!("'{}'", value.replace('\'', "'\"'\"'"))
     }
+}
+
+/// Quote a scalar as a double-quoted YAML string. Always quotes, even where YAML would accept
+/// a plain scalar — simple and unambiguous beats minimal for values that come from config, not
+/// from a reviewed template (push-path entries, pin versions, a concurrency group name).
+fn yaml_string(value: &str) -> String {
+    format!("{value:?}")
 }
 
 /// Render the connected-side publisher workflow.
@@ -52,6 +78,7 @@ name: publish sandbox
 on:
   push:
     branches: [main]
+__PUSH_PATHS_BLOCK__
   # A bare `schedule:` run and a `workflow_dispatch` naming `upgrade` both route to the
   # `upgrade` job below instead of an ordinary publish — see that job's `if:` and its
   # neighbours'. Leaving `upgrade` blank on a manual dispatch keeps today's behaviour exactly.
@@ -67,9 +94,8 @@ on:
         default: ""
 
 permissions:
-  contents: write
-
-env:
+  __TOP_PERMISSIONS__
+__CONCURRENCY_BLOCK__env:
   PIXI_SANDBOX_VERSION: __VERSION__
   PIXI_SANDBOX_CHANNEL: https://prefix.dev/archont561/archont561
 
@@ -79,14 +105,14 @@ jobs:
     # instead; an ordinary dispatch (the input left blank) still runs the normal publish.
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.upgrade == '')
     runs-on: ubuntu-latest
-    outputs:
+__PLAN_TIMEOUT_BLOCK__    outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           run-install: false
-      - name: Install pixi-sandbox CLI
+__SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
         shell: bash
         run: >-
           pixi global install
@@ -99,21 +125,21 @@ jobs:
 
   publish:
     needs: plan
-    strategy:
+__PUBLISH_PERMISSIONS_BLOCK__    strategy:
       fail-fast: false
       # `include:` nested under `matrix:`, not `matrix:` itself. `plan --json` emits
       # {"schema":1,"include":[...]}, and Actions requires strategy.matrix to be an object.
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix).include }}
     runs-on: ${{ matrix.runner }}
-    steps:
+__PUBLISH_TIMEOUT_BLOCK__    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           run-install: false
-      - name: Install pixi-sandbox CLI
+__SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
         shell: bash
         run: >-
           pixi global install
@@ -338,9 +364,71 @@ jobs:
             --head "$branch" \
             || echo "::notice::a pull request already exists for $branch"
 "#;
+
+    // Every block below defaults to the exact string that disappears the placeholder line
+    // entirely, so an unconfigured `GithubWorkflowOptions` renders byte-identical to the
+    // pre-task-53 template (task-53 AC#1) — that property is the migration path for every
+    // existing consumer, and is held directly by a golden-file test.
+    let push_paths_block = if options.push_paths.is_empty() {
+        String::new()
+    } else {
+        let mut block = String::from("    paths:\n");
+        for path in options.push_paths {
+            block.push_str(&format!("      - {}\n", yaml_string(path)));
+        }
+        block
+    };
+
+    let top_permissions = if options.scoped_permissions {
+        "contents: read"
+    } else {
+        "contents: write"
+    };
+
+    let publish_permissions_block = if options.scoped_permissions {
+        "    permissions:\n      contents: write\n".to_string()
+    } else {
+        String::new()
+    };
+
+    let concurrency_block = match options.concurrency {
+        Some((group, cancel_in_progress)) => format!(
+            "\nconcurrency:\n  group: {}\n  cancel-in-progress: {}\n\n",
+            yaml_string(group),
+            cancel_in_progress
+        ),
+        None => "\n".to_string(),
+    };
+
+    let plan_timeout_block = match options.plan_timeout_minutes {
+        Some(minutes) => format!("    timeout-minutes: {minutes}\n"),
+        None => String::new(),
+    };
+    let publish_timeout_block = match options.publish_timeout_minutes {
+        Some(minutes) => format!("    timeout-minutes: {minutes}\n"),
+        None => String::new(),
+    };
+
+    let setup_pixi_extra = {
+        let mut block = String::new();
+        if let Some(version) = options.pixi_version {
+            block.push_str(&format!(
+                "          pixi-version: {}\n",
+                yaml_string(version)
+            ));
+        }
+        if let Some(cache) = options.setup_pixi_cache {
+            block.push_str(&format!("          cache: {cache}\n"));
+        }
+        block
+    };
+
     template
         .replace("__GENERATED_MARKER__", GENERATED_MARKER)
-        .replace("__VERSION_STAMP__", &super::version_stamp_line(options.version))
+        .replace(
+            "__VERSION_STAMP__",
+            &super::version_stamp_line(options.version),
+        )
         .replace("__VERSION__", options.version)
         .replace("__CONFIG_PATH__", &shell_word(options.config_path))
         .replace("__RELEASE_REPO__", PIXI_SANDBOX_REPO)
@@ -354,4 +442,11 @@ jobs:
         .replace("__BRANCH__", &shell_word(options.branch))
         .replace("__BOT_NAME__", BOT_NAME)
         .replace("__BOT_EMAIL__", BOT_EMAIL)
+        .replace("__PUSH_PATHS_BLOCK__\n", &push_paths_block)
+        .replace("__TOP_PERMISSIONS__", top_permissions)
+        .replace("__CONCURRENCY_BLOCK__", &concurrency_block)
+        .replace("__PLAN_TIMEOUT_BLOCK__", &plan_timeout_block)
+        .replace("__PUBLISH_PERMISSIONS_BLOCK__", &publish_permissions_block)
+        .replace("__PUBLISH_TIMEOUT_BLOCK__", &publish_timeout_block)
+        .replace("__SETUP_PIXI_EXTRA__", &setup_pixi_extra)
 }

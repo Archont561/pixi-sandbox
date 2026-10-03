@@ -369,7 +369,10 @@ fn peek_schema_reads_the_field_even_when_the_rest_of_the_file_is_unrecognisable(
     assert_eq!(peek_schema(&path).unwrap(), 7);
 
     fs::write(&path, "branch_prefix = \"sandbox\"\n").unwrap();
-    assert!(peek_schema(&path).is_err(), "no schema key at all is a real error");
+    assert!(
+        peek_schema(&path).is_err(),
+        "no schema key at all is a real error"
+    );
 }
 
 /// `SandboxConfig::load` refuses a schema newer than this build understands — it could mean
@@ -381,4 +384,193 @@ fn load_refuses_a_schema_newer_than_this_build_understands() {
     );
     assert!(message.contains("schema 2 is not supported"), "{message}");
     assert!(message.contains("understands 1..=1"), "{message}");
+}
+
+/// task-53: an optional `[workflow]` table, within schema 1 (issue #79 / AC#1).
+mod workflow_policy {
+    use super::*;
+
+    const BASE: &str = r#"
+schema = 1
+branch_prefix = "sandbox"
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+"#;
+
+    fn with_workflow(extra: &str) -> SandboxConfig {
+        config(&format!("{BASE}\n{extra}"))
+    }
+
+    /// AC#1: absent entirely, `workflow` is `None` — the renderer's cue to stay byte-identical.
+    #[test]
+    fn absent_workflow_table_is_none() {
+        let config = config(BASE);
+        assert!(config.workflow.is_none());
+    }
+
+    /// AC#1: present but empty is still a real `Some`, distinct from absent — it is the signal
+    /// `push_paths`/`setup_pixi_cache` use to switch to their safer defaults (decision D18).
+    #[test]
+    fn empty_workflow_table_is_some_with_every_field_default() {
+        let config = with_workflow("[workflow]\n");
+        let workflow = config.workflow.as_ref().expect("table is present");
+        assert!(workflow.push_paths.is_none());
+        assert!(!workflow.permissions);
+        assert!(workflow.concurrency.is_none());
+        assert!(workflow.timeouts.is_none());
+        assert!(workflow.pixi_version.is_none());
+        assert!(workflow.setup_pixi_cache.is_none());
+    }
+
+    #[test]
+    fn unknown_workflow_key_is_rejected_naming_the_field() {
+        let message = config_error(&format!("{BASE}\n[workflow]\nbogus = true\n"));
+        assert!(message.contains("bogus"), "{message}");
+    }
+
+    #[test]
+    fn unknown_concurrency_key_is_rejected_naming_the_field() {
+        let message = config_error(&format!(
+            "{BASE}\n[workflow.concurrency]\ngroup = \"g\"\nbogus = true\n"
+        ));
+        assert!(message.contains("bogus"), "{message}");
+    }
+
+    #[test]
+    fn unknown_timeouts_key_is_rejected_naming_the_field() {
+        let message = config_error(&format!("{BASE}\n[workflow.timeouts]\nbogus = 1\n"));
+        assert!(message.contains("bogus"), "{message}");
+    }
+
+    #[test]
+    fn fully_populated_table_parses() {
+        let config = with_workflow(
+            r#"
+[workflow]
+push_paths = ["pixi-sandbox.toml", "pixi.toml", "pixi.lock"]
+permissions = true
+pixi_version = "0.81.0"
+setup_pixi_cache = true
+
+[workflow.concurrency]
+group = "publish-sandbox"
+cancel_in_progress = false
+
+[workflow.timeouts]
+plan = 15
+publish = 60
+"#,
+        );
+        let workflow = config.workflow.as_ref().unwrap();
+        assert_eq!(
+            workflow.push_paths,
+            Some(vec![
+                "pixi-sandbox.toml".to_string(),
+                "pixi.toml".to_string(),
+                "pixi.lock".to_string(),
+            ])
+        );
+        assert!(workflow.permissions);
+        assert_eq!(workflow.pixi_version.as_deref(), Some("0.81.0"));
+        assert_eq!(workflow.setup_pixi_cache, Some(true));
+        let concurrency = workflow.concurrency.as_ref().unwrap();
+        assert_eq!(concurrency.group, "publish-sandbox");
+        assert!(!concurrency.cancel_in_progress);
+        let timeouts = workflow.timeouts.as_ref().unwrap();
+        assert_eq!(timeouts.plan, Some(15));
+        assert_eq!(timeouts.publish, Some(60));
+    }
+
+    #[test]
+    fn empty_push_paths_is_rejected_in_favour_of_omitting_the_key() {
+        let message = config_error(&format!("{BASE}\n[workflow]\npush_paths = []\n"));
+        assert!(message.contains("push_paths"), "{message}");
+    }
+
+    #[test]
+    fn a_push_path_with_dot_dot_is_rejected() {
+        let message = config_error(&format!(
+            "{BASE}\n[workflow]\npush_paths = [\"../escape\"]\n"
+        ));
+        assert!(message.contains("push_paths"), "{message}");
+    }
+
+    #[test]
+    fn a_push_path_negation_prefix_is_accepted() {
+        let config = with_workflow("[workflow]\npush_paths = [\"!README.md\", \"pixi.toml\"]\n");
+        assert_eq!(
+            config.workflow.unwrap().push_paths.unwrap(),
+            vec!["!README.md".to_string(), "pixi.toml".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_blank_concurrency_group_is_rejected() {
+        let message = config_error(&format!("{BASE}\n[workflow.concurrency]\ngroup = \"  \"\n"));
+        assert!(message.contains("concurrency.group"), "{message}");
+    }
+
+    #[test]
+    fn a_zero_timeout_is_rejected() {
+        let message = config_error(&format!("{BASE}\n[workflow.timeouts]\nplan = 0\n"));
+        assert!(message.contains("timeouts.plan"), "{message}");
+    }
+
+    #[test]
+    fn a_whitespace_pixi_version_is_rejected() {
+        let message = config_error(&format!("{BASE}\n[workflow]\npixi_version = \"0.81.0 \"\n"));
+        assert!(message.contains("pixi_version"), "{message}");
+    }
+
+    /// AC#3: no `[workflow]` table at all keeps the pre-task-53 unfiltered trigger — no paths.
+    #[test]
+    fn resolved_push_paths_is_empty_when_the_table_is_absent() {
+        let config = config(BASE);
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            config
+                .resolved_push_paths(dir.path(), "pixi-sandbox.toml")
+                .is_empty()
+        );
+    }
+
+    /// AC#3: the table present but silent on `push_paths` derives from the known transport
+    /// inputs, including only the vendor manifests that actually exist under the repo root.
+    #[test]
+    fn resolved_push_paths_derives_from_present_transport_inputs() {
+        let config = with_workflow("[workflow]\n");
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "").unwrap();
+        fs::write(dir.path().join("Cargo.lock"), "").unwrap();
+        let derived = config.resolved_push_paths(dir.path(), "pixi-sandbox.toml");
+        assert_eq!(
+            derived,
+            vec![
+                "Cargo.lock".to_string(),
+                "Cargo.toml".to_string(),
+                "pixi-sandbox.toml".to_string(),
+                "pixi.lock".to_string(),
+                "pixi.toml".to_string(),
+            ]
+        );
+        // No package.json/bun.lock on disk — the derivation must not invent them.
+        assert!(!derived.contains(&"package.json".to_string()));
+        assert!(!derived.contains(&"bun.lock".to_string()));
+    }
+
+    /// AC#3: an explicit `push_paths` always overrides the derivation, even when every
+    /// candidate vendor manifest exists on disk.
+    #[test]
+    fn an_explicit_push_paths_overrides_the_derivation() {
+        let config = with_workflow("[workflow]\npush_paths = [\"only-this.toml\"]\n");
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "").unwrap();
+        assert_eq!(
+            config.resolved_push_paths(dir.path(), "pixi-sandbox.toml"),
+            vec!["only-this.toml".to_string()]
+        );
+    }
 }

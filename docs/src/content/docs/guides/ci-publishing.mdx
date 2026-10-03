@@ -13,6 +13,43 @@ Regenerate after changing the init contract and validate the workflow with actio
 projects migrating from v0.3.x should replace root/setup/publish Action calls and reusable-workflow
 calls with the newly generated file; immutable old refs remain available for historical jobs.
 
+## Carrying CI policy in `pixi-sandbox.toml`
+
+Every real repository wants to change something about the generated workflow: a `paths:`
+allowlist so an unrelated change does not repack and force-push the transport, tighter
+`permissions:`, a `concurrency:` guard against two publishes racing, `timeout-minutes:` so a
+hung `pack` does not hold a runner for six hours, or a pinned `pixi-version:`/disabled cache on
+`setup-pixi`. Older guidance was to hand-edit the generated file for these and re-apply the same
+five edits after every `init --force` — with nothing confirming the re-applied edit still
+matched what the *current* generator would produce.
+
+**That ritual is retired.** An optional `[workflow]` table in `pixi-sandbox.toml` carries this
+policy instead, and `init` renders it straight into the workflow — no hand edits, ever:
+
+```toml
+[workflow]
+push_paths = ["pixi-sandbox.toml", "pixi.toml", "pixi.lock"]
+permissions = true
+pixi_version = "0.81.0"
+setup_pixi_cache = true
+
+[workflow.concurrency]
+group = "publish-sandbox"
+cancel_in_progress = false
+
+[workflow.timeouts]
+plan = 15
+publish = 60
+```
+
+See the [Configuration Reference](/pixi-sandbox/reference/configuration/#workflow--generated-publisher-ci-policy)
+for every field and its default. No `[workflow]` table at all keeps rendering the historical,
+unconditional template — nothing changes for an existing project until it opts in. Run
+`pixi-sandbox init` again any time policy changes (or let the scheduled upgrade job below do
+it): the output always matches exactly what the config describes, which is also what makes the
+upgrade job's own regenerated pull requests trustworthy — they come from the same renderer this
+local `init` does, with no local edit left to disagree with it.
+
 ## Where the published binary comes from
 
 The workflow's "Download released pixi-sandbox" step always downloads the standalone

@@ -18,8 +18,8 @@ const RELOCK_CI_WORKFLOW: &str = "ci.yml";
 const SCRIPT_PATH: &str = "restore.sh";
 const BRANCH: &str = "sandbox/developer-linux-64";
 
-fn workflow() -> String {
-    render_github_workflow(GithubWorkflowOptions {
+fn base_options() -> GithubWorkflowOptions<'static> {
+    GithubWorkflowOptions {
         version: VERSION,
         config_path: CONFIG_PATH,
         workflow_path: WORKFLOW_PATH,
@@ -27,7 +27,18 @@ fn workflow() -> String {
         relock_ci_workflow: RELOCK_CI_WORKFLOW,
         script_path: SCRIPT_PATH,
         branch: BRANCH,
-    })
+        push_paths: &[],
+        scoped_permissions: false,
+        concurrency: None,
+        plan_timeout_minutes: None,
+        publish_timeout_minutes: None,
+        pixi_version: None,
+        setup_pixi_cache: None,
+    }
+}
+
+fn workflow() -> String {
+    render_github_workflow(base_options())
 }
 
 /// The generated subset uses mappings, sequences of mappings, flow arrays, comments, and plain
@@ -166,9 +177,18 @@ mod upgrade_job {
     #[test]
     fn the_upgrade_job_bootstraps_a_verified_binary_before_self_updating_it() {
         let workflow = workflow();
-        assert!(workflow.contains("Download currently pinned pixi-sandbox"), "{workflow}");
-        assert!(workflow.contains("sha256sum --check --status"), "{workflow}");
-        assert!(workflow.contains("self-update --dest \"$BIN\""), "{workflow}");
+        assert!(
+            workflow.contains("Download currently pinned pixi-sandbox"),
+            "{workflow}"
+        );
+        assert!(
+            workflow.contains("sha256sum --check --status"),
+            "{workflow}"
+        );
+        assert!(
+            workflow.contains("self-update --dest \"$BIN\""),
+            "{workflow}"
+        );
         assert!(
             workflow.contains("self-update --dest \"$BIN\" --version \"$UPGRADE_VERSION\""),
             "a manual dispatch must pass the requested exact version through: {workflow}"
@@ -200,7 +220,10 @@ mod upgrade_job {
             );
         }
         assert!(workflow.contains("\"$BIN\" init --check"), "{workflow}");
-        assert!(workflow.contains("if: steps.check.outputs.drift == 'true'"), "{workflow}");
+        assert!(
+            workflow.contains("if: steps.check.outputs.drift == 'true'"),
+            "{workflow}"
+        );
     }
 
     /// Config is reviewed data (D16): the upgrade job's own commit never stages it, even when
@@ -225,7 +248,10 @@ mod upgrade_job {
     #[test]
     fn the_job_opens_a_pull_request_instead_of_pushing_main() {
         let workflow = workflow();
-        assert!(!workflow.contains("git push --force origin main"), "{workflow}");
+        assert!(
+            !workflow.contains("git push --force origin main"),
+            "{workflow}"
+        );
         assert!(!workflow.contains("git push origin main"), "{workflow}");
         assert!(workflow.contains("gh pr create"), "{workflow}");
         assert!(workflow.contains("--base main"), "{workflow}");
@@ -434,5 +460,170 @@ fn every_rendered_asset_name_agrees_with_platform() {
             platform.as_str(),
             platform.asset_name()
         );
+    }
+}
+
+/// task-53 (issue #79): the generated publisher's `[workflow]`-table-derived CI policy.
+mod workflow_policy {
+    use super::{GithubWorkflowOptions, base_options, render_github_workflow, workflow};
+
+    /// AC#1: an unconfigured render carries none of the new blocks at all — this is the
+    /// byte-identical migration path for every existing consumer, held directly by the golden
+    /// fixture test above; this test names the absence explicitly, block by block.
+    #[test]
+    fn default_options_add_no_new_yaml() {
+        let rendered = workflow();
+        assert!(!rendered.contains("    paths:"));
+        assert!(rendered.contains("permissions:\n  contents: write"));
+        assert!(!rendered.contains("concurrency:"));
+        assert!(!rendered.contains("timeout-minutes:"));
+        assert!(!rendered.contains("pixi-version:"));
+        assert!(!rendered.contains("cache:"));
+    }
+
+    #[test]
+    fn push_paths_render_as_a_paths_allowlist_under_the_push_trigger() {
+        let paths = vec!["pixi-sandbox.toml".to_string(), "pixi.toml".to_string()];
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            push_paths: &paths,
+            ..base_options()
+        });
+        let push_index = rendered.find("push:\n").expect("on.push exists");
+        let schedule_index = rendered.find("schedule:").expect("on.schedule exists");
+        let push_block = &rendered[push_index..schedule_index];
+        assert!(push_block.contains("    paths:\n"));
+        for path in &paths {
+            assert!(
+                push_block.contains(&format!("      - {path:?}\n")),
+                "missing {path:?} in {push_block}"
+            );
+        }
+    }
+
+    #[test]
+    fn scoped_permissions_reads_top_level_and_scopes_the_publish_job() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            scoped_permissions: true,
+            ..base_options()
+        });
+        assert!(rendered.contains("permissions:\n  contents: read\n"));
+        let publish_index = rendered.find("\n  publish:\n").expect("publish job exists");
+        let steps_index = rendered[publish_index..]
+            .find("    steps:\n")
+            .expect("publish job has steps");
+        let publish_header = &rendered[publish_index..publish_index + steps_index];
+        assert!(
+            publish_header.contains("    permissions:\n      contents: write\n"),
+            "publish job is missing its own scoped permissions: {publish_header}"
+        );
+        // Only the publish job gets write — the plan job stays covered by the read-only
+        // workflow-level default, never regaining its own write grant.
+        let plan_index = rendered.find("\n  plan:\n").expect("plan job exists");
+        let plan_outputs = rendered[plan_index..]
+            .find("    outputs:\n")
+            .expect("plan job has outputs");
+        let plan_header = &rendered[plan_index..plan_index + plan_outputs];
+        assert!(!plan_header.contains("permissions:"));
+    }
+
+    #[test]
+    fn concurrency_renders_a_workflow_level_group_and_cancel_policy() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            concurrency: Some(("publish-sandbox", true)),
+            ..base_options()
+        });
+        assert!(
+            rendered.contains(
+                "concurrency:\n  group: \"publish-sandbox\"\n  cancel-in-progress: true\n"
+            )
+        );
+    }
+
+    #[test]
+    fn timeouts_render_on_the_plan_and_publish_jobs_independently() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            plan_timeout_minutes: Some(15),
+            ..base_options()
+        });
+        assert!(rendered.contains("runs-on: ubuntu-latest\n    timeout-minutes: 15\n    outputs:"));
+        assert!(!rendered.contains("runs-on: ${{ matrix.runner }}\n    timeout-minutes:"));
+
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            publish_timeout_minutes: Some(60),
+            ..base_options()
+        });
+        assert!(
+            rendered.contains("runs-on: ${{ matrix.runner }}\n    timeout-minutes: 60\n    steps:")
+        );
+        assert!(!rendered.contains("runs-on: ubuntu-latest\n    timeout-minutes:"));
+    }
+
+    #[test]
+    fn pixi_version_and_cache_render_on_every_setup_pixi_step() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            pixi_version: Some("0.81.0"),
+            setup_pixi_cache: Some(false),
+            ..base_options()
+        });
+        let occurrences = rendered.matches("prefix-dev/setup-pixi@").count();
+        assert_eq!(
+            occurrences, 2,
+            "expected exactly plan + publish setup-pixi steps"
+        );
+        assert_eq!(
+            rendered.matches("pixi-version: \"0.81.0\"").count(),
+            occurrences,
+            "every setup-pixi step must carry the pin"
+        );
+        assert_eq!(
+            rendered.matches("cache: false").count(),
+            occurrences,
+            "every setup-pixi step must carry the cache policy"
+        );
+    }
+
+    /// AC#4: unset, no `cache:` key at all — the action's own default, matching the pre-task-53
+    /// template exactly (distinct from an explicit `setup_pixi_cache = Some(false)` above).
+    #[test]
+    fn unset_setup_pixi_cache_emits_no_cache_key() {
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            pixi_version: Some("0.81.0"),
+            ..base_options()
+        });
+        assert!(!rendered.contains("cache:"));
+    }
+
+    /// Every combination together must still produce exactly one actionlint-parseable
+    /// `on.push.paths:`, `permissions:`, `concurrency:`, `timeout-minutes:`, and `cache:` shape
+    /// — xtask's `lint-generated-workflow` holds the GitHub-schema side of this across the same
+    /// combination table; this holds that nothing here corrupts a neighbouring block.
+    #[test]
+    fn every_block_can_be_configured_at_once_without_corrupting_its_neighbours() {
+        let paths = vec!["pixi-sandbox.toml".to_string()];
+        let rendered = render_github_workflow(GithubWorkflowOptions {
+            push_paths: &paths,
+            scoped_permissions: true,
+            concurrency: Some(("publish-sandbox", false)),
+            plan_timeout_minutes: Some(15),
+            publish_timeout_minutes: Some(60),
+            pixi_version: Some("0.81.0"),
+            setup_pixi_cache: Some(true),
+            ..base_options()
+        });
+        for needle in [
+            "    paths:\n",
+            "permissions:\n  contents: read\n",
+            "    permissions:\n      contents: write\n",
+            "concurrency:\n  group: \"publish-sandbox\"\n  cancel-in-progress: false\n",
+            "    timeout-minutes: 15\n",
+            "    timeout-minutes: 60\n",
+            "pixi-version: \"0.81.0\"",
+            "cache: true",
+        ] {
+            assert!(
+                rendered.contains(needle),
+                "missing {needle:?} in:\n{rendered}"
+            );
+        }
     }
 }

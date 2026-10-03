@@ -65,7 +65,7 @@ pub fn lint_generated_workflow(actionlint: &Path) -> Result<()> {
     fs::create_dir_all(parent)
         .with_context(|| format!("creating generated workflow directory {}", parent.display()))?;
 
-    let workflow = render_github_workflow(GithubWorkflowOptions {
+    let base = GithubWorkflowOptions {
         version: env!("CARGO_PKG_VERSION"),
         config_path: "pixi-sandbox.toml",
         workflow_path: WORKFLOW_PATH,
@@ -73,11 +73,87 @@ pub fn lint_generated_workflow(actionlint: &Path) -> Result<()> {
         relock_ci_workflow: "ci.yml",
         script_path: "restore.sh",
         branch: "sandbox/developer-linux-64",
-    });
+        push_paths: &[],
+        scoped_permissions: false,
+        concurrency: None,
+        plan_timeout_minutes: None,
+        publish_timeout_minutes: None,
+        pixi_version: None,
+        setup_pixi_cache: None,
+    };
+    let workflow = render_github_workflow(base);
     fs::write(&workflow_path, workflow)
         .with_context(|| format!("writing generated workflow {}", workflow_path.display()))?;
 
     run_actionlint(actionlint, project.path(), Path::new(WORKFLOW_PATH))?;
+
+    // task-53 AC#2: every `[workflow]`-table block, individually and combined, stays
+    // actionlint-clean. The default (above) and every other row here share one base so the
+    // only thing varying is the policy under test.
+    let push_paths = ["pixi-sandbox.toml".to_string(), "pixi.toml".to_string()];
+    let combinations: [(&str, GithubWorkflowOptions<'_>); 5] = [
+        (
+            "publish-sandbox.push-paths.yml",
+            GithubWorkflowOptions {
+                push_paths: &push_paths,
+                ..base
+            },
+        ),
+        (
+            "publish-sandbox.permissions.yml",
+            GithubWorkflowOptions {
+                scoped_permissions: true,
+                ..base
+            },
+        ),
+        (
+            "publish-sandbox.concurrency.yml",
+            GithubWorkflowOptions {
+                concurrency: Some(("publish-sandbox", true)),
+                ..base
+            },
+        ),
+        (
+            "publish-sandbox.timeouts.yml",
+            GithubWorkflowOptions {
+                plan_timeout_minutes: Some(15),
+                publish_timeout_minutes: Some(60),
+                ..base
+            },
+        ),
+        (
+            "publish-sandbox.pixi-pin-and-cache.yml",
+            GithubWorkflowOptions {
+                pixi_version: Some("0.81.0"),
+                setup_pixi_cache: Some(true),
+                ..base
+            },
+        ),
+    ];
+    for (relative, options) in combinations {
+        let path = project.path().join(relative);
+        fs::write(&path, render_github_workflow(options))
+            .with_context(|| format!("writing generated workflow {}", path.display()))?;
+        run_actionlint(actionlint, project.path(), Path::new(relative))?;
+    }
+    // And every block configured at once — the combination most likely to interact badly.
+    let everything_relative = "publish-sandbox.everything.yml";
+    let everything_path = project.path().join(everything_relative);
+    fs::write(
+        &everything_path,
+        render_github_workflow(GithubWorkflowOptions {
+            push_paths: &push_paths,
+            scoped_permissions: true,
+            concurrency: Some(("publish-sandbox", true)),
+            plan_timeout_minutes: Some(15),
+            publish_timeout_minutes: Some(60),
+            pixi_version: Some("0.81.0"),
+            setup_pixi_cache: Some(true),
+            ..base
+        }),
+    )
+    .with_context(|| format!("writing generated workflow {}", everything_path.display()))?;
+    run_actionlint(actionlint, project.path(), Path::new(everything_relative))?;
 
     // The second generated artifact, linted the same way. Its content for *this* repository is
     // additionally byte-checked by `check-repository`; here it is the consumer render that

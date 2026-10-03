@@ -79,6 +79,60 @@ sandbox/developer-win-64
 sandbox/minimal-linux-64
 ```
 
+## `[workflow]` — generated-publisher CI policy
+
+Optional, within schema 1. Every real repository wants to change a handful of the generated
+`publish-sandbox.yml`'s defaults (the push trigger, token permissions, concurrency, job
+timeouts, the pixi pin and its cache). Before this table existed, those were hand edits a
+consumer re-applied by ritual every time `init --force` regenerated the file, with nothing
+confirming the re-applied edit still matched what the current generator would have produced.
+Carrying the same policy in config instead means `init` reproduces the consumer's exact
+workflow with **no hand edits at all** — run `init` again any time, including from the
+scheduled upgrade job (see [Staying current](/pixi-sandbox/guides/ci-publishing/#staying-current-the-upgrade-job)),
+and the output never drifts from what the table describes.
+
+No `[workflow]` table at all renders byte-identically to the historical, pre-policy template —
+existing projects need no changes. Once the table is present **at all**, even empty, two fields
+move to a safer default unless given an explicit value (decision D18 in
+`.knowledge/decisions.md`): `setup_pixi_cache` defaults to `false`, and `push_paths` defaults to
+a derivation instead of the unfiltered trigger. The other fields stay fully opt-in per key.
+
+```toml
+[workflow]
+push_paths = ["pixi-sandbox.toml", "pixi.toml", "pixi.lock"]  # optional, see below
+permissions = true            # optional, default false
+pixi_version = "0.81.0"       # optional, default unset (setup-pixi resolves its own default)
+setup_pixi_cache = true       # optional, default false once [workflow] is present at all
+
+[workflow.concurrency]        # optional
+group = "publish-sandbox"
+cancel_in_progress = false    # optional, default false
+
+[workflow.timeouts]           # optional
+plan = 15
+publish = 60
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `push_paths` | string[] | derived (see below) once `[workflow]` is present; otherwise no filter | `on.push.paths:` allowlist. A plain entry is a path; a `!`-prefixed entry is GitHub's negation syntax. No `..` component or leading `/`. |
+| `permissions` | bool | `false` | When `true`, the workflow-level `permissions:` becomes `contents: read` and only the `publish` job regains `contents: write`, scoped to the job that needs it. `false` keeps the historical unconditional top-level `contents: write`. |
+| `concurrency.group` | string | unset | `concurrency: { group: ... }` for the whole workflow — prevents two publishes racing to force-push the same orphan branch. |
+| `concurrency.cancel_in_progress` | bool | `false` | Paired with `concurrency.group`. |
+| `timeouts.plan` | int (minutes) | unset | `timeout-minutes:` on the `plan` job. |
+| `timeouts.publish` | int (minutes) | unset | `timeout-minutes:` on the `publish` job — a hung `pack` should not hold a runner for the six-hour default. |
+| `pixi_version` | string | unset | Pins `setup-pixi`'s own `pixi-version:` input on every `setup-pixi` step. |
+| `setup_pixi_cache` | bool | `false` once `[workflow]` is present, otherwise unset (no `cache:` key at all) | `setup-pixi`'s `cache:` input. pixi-sandbox owns the native `pixi install` while packing; a cache keyed on the consumer manifest can restore a solve the pack will not reuse — a correctness hazard, not mere staleness (decision D18). Set `true` explicitly to keep the old best-effort caching. |
+
+### `push_paths` derivation
+
+Unset, once `[workflow]` is present, `init` derives the allowlist from the transport inputs
+`plan` already depends on: the sandbox config itself, `pixi.toml`, `pixi.lock` (always), plus
+whichever of `package.json`, `bun.lock`, `Cargo.toml`, `Cargo.lock` actually exist in the
+project. `pixi-sandbox plan --config pixi-sandbox.toml --json` surfaces the same derivation
+under its `push_paths` key, so a consumer can diff what the next `init` would write before
+running it. An explicit `push_paths` always overrides the derivation.
+
 ## Validation
 
 ```bash
