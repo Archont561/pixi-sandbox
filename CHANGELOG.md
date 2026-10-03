@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.4.5](https://github.com/Archont561/pixi-sandbox/compare/v0.4.4...79e4f838ba9384cab87b2a16c0898c63d908dcf6) (2026-10-03)
+## [v0.5.0](https://github.com/Archont561/pixi-sandbox/compare/v0.4.5...83d3dc2e5e12df043ddf46d5d76e9240de69be21) (2026-10-03)
+
+### Documentation
+
+* **context:** record the dangling v0.4.5 tag and the preMajor bump policy (#78)
+([83d3dc2](https://github.com/Archont561/pixi-sandbox/commit/83d3dc2e5e12df043ddf46d5d76e9240de69be21)),
+closes [#78](https://github.com/Archont561/pixi-sandbox/issues/78)
+[#77](https://github.com/Archont561/pixi-sandbox/issues/77)
+* **context:** close the self-update core session (#77)
+([dc7ec03](https://github.com/Archont561/pixi-sandbox/commit/dc7ec033017dbc94715fd120a496a13f0f6a4dc3)),
+closes [#77](https://github.com/Archont561/pixi-sandbox/issues/77)
+[#76](https://github.com/Archont561/pixi-sandbox/issues/76)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+
+### [v0.4.5](https://github.com/Archont561/pixi-sandbox/compare/v0.4.4...v0.4.5) (2026-10-02)
 
 #### Features
 
