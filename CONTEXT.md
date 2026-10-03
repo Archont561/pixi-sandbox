@@ -810,3 +810,27 @@ deserves its own backlog task rather than an opportunistic refactor.
 > `production_sources_carry_no_inline_test_modules` may only shrink. Session procedure and
 > templates are in `.agents/skills/session/`.
 
+### 2026-10-03 — task-54 landed; its two leftover proofs are connected-host work
+
+`fix(pack): refuse self-bins that cannot run standalone` (#82) merged. Task-54 stays In
+Progress at 4/6 with two named gaps, both blocked by this sandbox, not by design:
+
+- **AC#1 asset check** — `gh release download v0.5.0` fails here with EOF because
+  `release-assets.githubusercontent.com` is egress-blocked. On a connected host: download
+  the standalone asset, run it with `--version` under an empty HOME, record the outcome in
+  the task. Pipeline-level evidence (assets are staged with `xtask stage-release-binary`
+  from cargo's release output) says it cannot be a trampoline, but the byte-level proof the
+  AC asks for is still owed.
+- **AC#6 release + consumer repack** — auto-release is dispatch-only and this sandbox's
+  token gets `HTTP 403: Resource not accessible by integration` on
+  `gh workflow run auto-release.yml` (same class as `gh issue comment`). Cut v0.5.1 via the
+  Actions tab or a scoped token, then repack the consumer transport with the standalone
+  self-bin and run one fresh consumer restore before closing the task.
+
+Two session-procedure lessons worth promoting: (1) `gh pr merge --delete-branch` deletes the
+fixed Arena session branch — it had to be re-pushed afterwards; merge without the flag.
+(2) Smoke-test the built binary with *relative* paths: the suite ran green while a relative
+`--branch-location` produced a bogus ENOENT, because the probe runner chdir'd and the
+relative exe re-resolved. Also seen once: killing a probed child reaches one pid only — an
+orphaned grandchild kept inherited pipes open and hung joined reader threads; the timeout
+path detaches readers now.
