@@ -9,6 +9,9 @@ use pixi_sandbox_core::sandbox_config::plan_override;
 use rstest::rstest;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::process::Command;
+use tempfile::tempdir;
 
 const VERSION: &str = "9.8.7";
 const CONFIG_PATH: &str = "config/pixi-sandbox.toml";
@@ -336,6 +339,75 @@ fn generated_workflow_invokes_the_expected_cli(#[case] command: &str) {
     assert!(
         workflow.contains(command),
         "missing expected `{command}` invocation"
+    );
+}
+
+fn unix_publish_checksum_command() -> String {
+    workflow()
+        .lines()
+        .find(|line| {
+            line.contains("SHA256 verification failed") && line.contains("sha256sum --check")
+        })
+        .expect("the Unix publish bootstrap carries its checksum command")
+        .trim()
+        .to_string()
+}
+
+fn run_unix_publish_checksum(
+    asset_bytes: Option<&[u8]>,
+    expected_digest: &str,
+) -> std::process::Output {
+    let temp = tempdir().expect("temporary runner directory");
+    let asset = "pixi-sandbox-x86_64-unknown-linux-musl";
+    let path = temp.path().join(asset);
+    if let Some(bytes) = asset_bytes {
+        fs::write(&path, bytes).expect("write release asset fixture");
+    }
+    fs::write(
+        temp.path().join("SHA256SUMS"),
+        format!("{expected_digest}  {asset}\n"),
+    )
+    .expect("write checksum fixture");
+
+    Command::new("bash")
+        .arg("-c")
+        .arg(unix_publish_checksum_command())
+        .env("RUNNER_TEMP", temp.path())
+        .env("asset", asset)
+        .env("path", &path)
+        .output()
+        .expect("execute the generated Unix checksum command")
+}
+
+#[test]
+fn unix_publish_bootstrap_accepts_the_downloaded_asset_at_its_runner_temp_path() {
+    // SHA256("released bytes") is an independent worked example, not computed by the code under test.
+    let output = run_unix_publish_checksum(
+        Some(b"released bytes"),
+        "2f9e0acbd320f87ceff2b9d259c99ec87830fc87d99bf914cef87394294a6682",
+    );
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[rstest]
+#[case::missing_asset(None)]
+#[case::mismatched_asset(Some(&b"tampered bytes"[..]))]
+fn unix_publish_bootstrap_fails_closed_and_names_checksum_verification(
+    #[case] asset_bytes: Option<&[u8]>,
+) {
+    let output = run_unix_publish_checksum(
+        asset_bytes,
+        "2f9e0acbd320f87ceff2b9d259c99ec87830fc87d99bf914cef87394294a6682",
+    );
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("SHA256 verification failed for pixi-sandbox-x86_64-unknown-linux-musl"),
+        "stdout: {stdout}"
     );
 }
 

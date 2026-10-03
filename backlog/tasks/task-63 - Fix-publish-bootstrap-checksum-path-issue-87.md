@@ -34,7 +34,7 @@ The upgrade bootstrap in the same generated workflow already rewrites the checks
 - [x] #1 The Unix publish bootstrap verifies the downloaded asset at its `$RUNNER_TEMP` path, without depending on the consumer checkout containing a copy of the asset
 - [x] #2 A checksum mismatch or missing asset fails with a clear error naming the asset and verification step; successful verification remains fail-closed and executes no unverified binary
 - [x] #3 Generated workflow fixtures and renderer expectations are updated, and the generated workflow remains actionlint-clean for both publish and upgrade paths
-- [ ] #4 Fixture-based execution tests run the generated Unix bootstrap against a valid temporary asset and `SHA256SUMS`, and cover missing/mismatched assets; tests do not use this repository or a real HOME
+- [x] #4 Fixture-based execution tests run the generated Unix bootstrap against a valid temporary asset and `SHA256SUMS`, and cover missing/mismatched assets; tests do not use this repository or a real HOME
 - [x] #5 The Windows bootstrap remains correct and is covered by the existing renderer/execution assertions
 - [ ] #6 The fix is included in a released patch and a consumer-shaped publish proof succeeds using the released generated workflow; record the workflow run in this task and issue #87
 - [x] #7 Formatting, lint, generated-workflow checks, and the full test suite pass
@@ -51,5 +51,7 @@ Change the publish Unix template to rewrite the checksum entry from the bare ass
 
 2026-10-03, evidence reconciliation — v0.5.2 contains the absolute `$RUNNER_TEMP` checksum rewrite and explicit failure message. CI run 37136644662 passed formatting, lint, actionlint/generated-workflow checks, and the full suite; the reviewed fixture covers the unchanged PowerShell path. AC#1-3, #5, and #7 are complete.
 
-Still open: AC#4 and #6. There is no execution-level fixture test for valid/missing/mismatched Unix checksum inputs yet, and consumer-proof run 37137917674 inspects the generated publisher but does not execute its publish bootstrap. Add that test, then run a consumer-shaped publish using the v0.5.2-generated workflow and record it here and on issue #87.
+2026-10-03, local completion — AC#4 now executes the checksum command extracted from the public rendered-workflow seam against tempdir fixtures. The worked valid digest succeeds at the `$RUNNER_TEMP` path; missing and tampered assets both fail closed and name the asset plus SHA256 verification. The tests use neither this checkout nor a real HOME.
+
+Still open: AC#6. Consumer-proof run 37137917674 inspects the generated publisher but does not execute its publish bootstrap. The expanded proof workflow now runs the released binary through pack, doctor, local publish, fresh fetch, and offline restore; a connected run still must prove that lifecycle and a real consumer-shaped generated publisher run must be recorded here and on issue #87.
 <!-- SECTION:NOTES:END -->
