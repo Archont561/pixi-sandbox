@@ -226,6 +226,26 @@ mod tests {
         );
     }
 
+    /// `staged_name` stays pure over *any* target triple on purpose (D10: testable without a
+    /// Windows host, and tolerant of a target this project does not yet publish for). It is
+    /// deliberately not migrated onto `Platform` (task-55) the way `conda_platforms.rs` and
+    /// `airlock.rs` were (task-59) — doing so would narrow it to the five known platforms. This
+    /// test is the structural guarantee that keeps the two independent implementations from
+    /// drifting apart for the platforms they do share: run it instead of a doc comment's promise.
+    #[test]
+    fn staged_name_agrees_with_platform_asset_name_for_every_known_platform() {
+        use pixi_sandbox_core::platform::Platform;
+
+        for platform in Platform::ALL {
+            assert_eq!(
+                staged_name(platform.target_triple()),
+                platform.asset_name(),
+                "staged_name({:?}) must agree with Platform::asset_name for {platform:?}",
+                platform.target_triple()
+            );
+        }
+    }
+
     #[test]
     fn built_binaries_nest_the_triple_directory_only_for_explicit_targets() {
         assert_eq!(

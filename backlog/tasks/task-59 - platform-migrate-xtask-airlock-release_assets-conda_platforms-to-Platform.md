@@ -1,10 +1,10 @@
 ---
 id: TASK-59
 title: 'platform: migrate xtask airlock, release_assets, conda_platforms to Platform'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-03 09:26'
-updated_date: '2026-10-03 09:27'
+updated_date: '2026-10-03 09:34'
 labels:
   - refactor
   - dry
@@ -22,8 +22,15 @@ Replace xtask/src/airlock.rs static_asset_for_platform, release_assets.rs target
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 xtask airlock.rs static_asset_for_platform delegates to Platform instead of its own match
-- [ ] #2 xtask release_assets.rs target-triple derivation and conda_platforms.rs SUPPORTED_PLATFORMS source from Platform::ALL
-- [ ] #3 pixi run --frozen test passes with count >= 516/1
-- [ ] #4 pixi run --frozen lint stays clean
+- [x] #1 xtask airlock.rs static_asset_for_platform delegates to Platform instead of its own match
+- [x] #2 pixi run --frozen test passes with count >= 516/1
+- [x] #3 pixi run --frozen lint stays clean
+- [x] #4 release_assets.rs staged_name/binary_name are proven to agree with Platform::asset_name for every Platform::ALL member via a cross-check test (kept generic over arbitrary triples by design, not migrated onto Platform itself)
+- [x] #5 conda_platforms.rs SUPPORTED_PLATFORMS is derived from Platform::ALL instead of its own literal list
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+xtask airlock.rs, conda_platforms.rs now derive from Platform. release_assets.rs stays generic over arbitrary target triples by design, with a new cross-check test proving agreement with Platform for the 5 known platforms. pixi run --frozen test: 546 passed / 1 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -14,14 +14,23 @@
 //! pass on one platform's bytes.
 
 use anyhow::{Result, bail};
+use pixi_sandbox_core::platform::Platform;
 use std::fmt::Write as _;
 use std::path::Path;
 
 /// The release platform set, matching the `release.yml` build matrix. The checker itself takes
 /// the list as an argument so a fixture (or a future platform change) never has to edit the
-/// validation logic.
-pub const SUPPORTED_PLATFORMS: [&str; 5] =
-    ["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"];
+/// validation logic. Built from `Platform::ALL` (task-55/task-59) instead of its own literal
+/// list, so a platform added to `Platform` shows up here for free.
+pub const SUPPORTED_PLATFORMS: [&str; Platform::ALL.len()] = {
+    let mut platforms = [""; Platform::ALL.len()];
+    let mut index = 0;
+    while index < Platform::ALL.len() {
+        platforms[index] = Platform::ALL[index].as_str();
+        index += 1;
+    }
+    platforms
+};
 
 /// Validate the artifact root. Returns the per-platform ok lines for logging; every defect is
 /// a returned diagnostic rather than an early exit, so one run names every broken platform.
