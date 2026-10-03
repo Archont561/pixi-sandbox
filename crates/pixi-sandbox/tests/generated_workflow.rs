@@ -174,6 +174,47 @@ fn generated_workflow_downloads_a_verified_release_binary_for_publishing() {
     assert!(workflow.contains("--self-bin \"$SELF_BIN\""));
 }
 
+/// Issue #80: the release-download step named the *consumer's* repository, so any consumer
+/// publishing no GitHub releases of its own got a 404 before anything was packed. The
+/// download base must name this project's own repository — the one that actually publishes
+/// `pixi-sandbox-*` release assets and `SHA256SUMS` — in both the bash and the pwsh leg, and
+/// `GITHUB_REPOSITORY` must never appear in a release-download URL again. The constant is
+/// shared with `self_update::DEFAULT_REPO` so the template and the updater cannot drift apart.
+#[test]
+fn generated_workflow_downloads_release_assets_from_the_pixi_sandbox_repository_not_the_consumers()
+{
+    let workflow = workflow();
+    let expected_base = format!(
+        "$GITHUB_SERVER_URL/{}/releases/download/v${{PIXI_SANDBOX_VERSION}}",
+        pixi_sandbox::release::PIXI_SANDBOX_REPO
+    );
+    let expected_pwsh_base = format!(
+        "$env:GITHUB_SERVER_URL/{}/releases/download/v$env:PIXI_SANDBOX_VERSION",
+        pixi_sandbox::release::PIXI_SANDBOX_REPO
+    );
+    assert!(
+        workflow.contains(&expected_base),
+        "bash leg must download from the pixi-sandbox repository:\n{workflow}"
+    );
+    assert!(
+        workflow.contains(&expected_pwsh_base),
+        "pwsh leg must download from the pixi-sandbox repository:\n{workflow}"
+    );
+    assert_eq!(
+        pixi_sandbox::release::PIXI_SANDBOX_REPO,
+        pixi_sandbox::self_update::DEFAULT_REPO,
+        "the renderer and self-update's default --repo must name the same repository"
+    );
+    for (index, _) in workflow.match_indices("releases/download") {
+        let window_start = index.saturating_sub(80);
+        let window = &workflow[window_start..index];
+        assert!(
+            !window.contains("GITHUB_REPOSITORY"),
+            "a release-download URL must never resolve against the consumer's own repository:\n{workflow}"
+        );
+    }
+}
+
 #[test]
 fn generated_workflow_only_reads_matrix_keys_the_plan_emits() {
     let workflow = workflow();

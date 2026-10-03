@@ -855,3 +855,33 @@ limitation task-54 hit on `gh workflow run`. The drafted report text is unchange
 task-48's implementation notes. Task-48 stays **In Progress**; nothing here needs a backlog
 task of its own, it's the same two open ACs waiting on the same online-host/personal-token
 access the task already named.
+
+### 2026-10-03 — task-52: the generated publisher stopped downloading from the consumer's own repo
+
+Issue #80's other half: the generated consumer workflow's "Download released pixi-sandbox"
+step built its release URL from `$GITHUB_REPOSITORY`/`$env:GITHUB_REPOSITORY` — always the
+*consumer's* repository at Actions runtime — so any consumer repo with no GitHub releases of
+its own got a `curl: (22)` 404 before `pack` ever ran. Regression traced to the v0.3.2 →
+v0.4.3 inlining of the composite `setup` action (task-29 era), which dropped the owner/repo
+the old action resolved against.
+
+Fix: a new `release::PIXI_SANDBOX_REPO` constant (`Archont561/pixi-sandbox`), re-exported as
+`self_update::DEFAULT_REPO` so the CLI's `--repo` default and the generated download URL share
+one source of truth and cannot drift apart again. `generated/github_workflow.rs` renders both
+the bash and pwsh download bases from it via a new `__RELEASE_REPO__` placeholder;
+`GITHUB_SERVER_URL` (still correct on GHES) and the unrelated `REMOTE:` line (the consumer's
+own repo, correctly used for `publish`'s git push) are untouched. SHA256SUMS verification is
+byte-identical — nothing unverified is ever executed.
+
+Test-first: a new fixture/golden-render test
+(`generated_workflow_downloads_release_assets_from_the_pixi_sandbox_repository_not_the_consumers`)
+confirmed red (failed to compile) before the constant existed, green after; the committed
+golden fixture was updated in lockstep. `xtask lint-generated-workflow` (actionlint) and
+`check-repository` both pass; `git status --short .github/` is empty, confirming this repo's
+own committed `publish-sandbox.yml` (vestigial — not regenerated or byte-checked by any
+tooling, per `crates/xtask/src/workflow.rs`) stayed untouched as the task requires. The
+ci-publishing guide now states the download source and the pre-fix 404 remediation.
+`pixi run --frozen test`: 557 passed / 1 skipped (the baseline's one new test). Task-52 moved
+from **To Do** to **In Progress at 5/6 ACs** — AC#6 (shipping in a released patch plus a live
+consumer-repo repro) stays open, named, and waiting on a connected host and a cut release,
+same pattern as task-48 and task-54's remaining gaps.

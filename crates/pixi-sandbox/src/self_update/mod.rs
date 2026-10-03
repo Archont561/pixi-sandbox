@@ -29,8 +29,10 @@ use ownership::Ownership;
 use replace::{ReplaceStrategy, Replacement};
 use resolver::Resolved;
 
-/// The release that publishes pixi-sandbox's standalone binaries.
-pub const DEFAULT_REPO: &str = "Archont561/pixi-sandbox";
+/// The release that publishes pixi-sandbox's standalone binaries. Re-exported from
+/// `release::PIXI_SANDBOX_REPO` so this default and the generated workflow's release-download
+/// URL are the same constant, not two literals that can drift apart (issue #80).
+pub const DEFAULT_REPO: &str = crate::release::PIXI_SANDBOX_REPO;
 
 /// The checksum manifest `xtask release-checksums` writes for every release.
 pub const SUMS_ASSET: &str = "SHA256SUMS";

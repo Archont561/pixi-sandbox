@@ -12,3 +12,18 @@ workflow is involved.
 Regenerate after changing the init contract and validate the workflow with actionlint. Existing
 projects migrating from v0.3.x should replace root/setup/publish Action calls and reusable-workflow
 calls with the newly generated file; immutable old refs remain available for historical jobs.
+
+## Where the published binary comes from
+
+The workflow's "Download released pixi-sandbox" step always downloads the standalone
+`pixi-sandbox-<target>` asset and its `SHA256SUMS` manifest from this project's own
+repository (`github.com/Archont561/pixi-sandbox/releases/download/v<version>`) — never from
+the consumer repository the workflow runs in. The downloaded bytes are checksum-verified
+against `SHA256SUMS` before `chmod +x`/execution in every leg; a mismatch fails the job.
+
+> **Regenerate if you generated this workflow with v0.4.3, v0.4.4, or v0.5.0.** Those
+> versions built the download URL from `$GITHUB_REPOSITORY` (the consumer's own repository),
+> which publishes no such release assets, so the step failed with `curl: (22)` (a 404) before
+> anything was packed (issue #80). Re-run `pixi-sandbox init --force` with a patched CLI to
+> regenerate the workflow against the fixed template; no other part of the generated file
+> changes.
