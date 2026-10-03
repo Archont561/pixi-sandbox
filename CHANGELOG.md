@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.5.1](https://github.com/Archont561/pixi-sandbox/compare/v0.5.0...6a31874043b35dc4fe854f4243b9b1c5e0bb92bd) (2026-10-03)
+### [v0.5.2](https://github.com/Archont561/pixi-sandbox/compare/v0.5.1...bc31d866498f05c000909f3eab6bdf4686b0908d) (2026-10-03)
+
+#### Fixes
+
+* **workflow:** add consumer release proof
+([bc31d86](https://github.com/Archont561/pixi-sandbox/commit/bc31d866498f05c000909f3eab6bdf4686b0908d))
+
+### [v0.5.1](https://github.com/Archont561/pixi-sandbox/compare/v0.5.0...v0.5.1) (2026-10-03)
 
 #### Features
 
