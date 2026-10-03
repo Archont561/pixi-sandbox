@@ -53,5 +53,7 @@ Change the publish Unix template to rewrite the checksum entry from the bare ass
 
 2026-10-03, local completion — AC#4 now executes the checksum command extracted from the public rendered-workflow seam against tempdir fixtures. The worked valid digest succeeds at the `$RUNNER_TEMP` path; missing and tampered assets both fail closed and name the asset plus SHA256 verification. The tests use neither this checkout nor a real HOME.
 
-Still open: AC#6. Consumer-proof run 37137917674 inspects the generated publisher but does not execute its publish bootstrap. The expanded proof workflow now runs the released binary through pack, doctor, local publish, fresh fetch, and offline restore; a connected run still must prove that lifecycle and a real consumer-shaped generated publisher run must be recorded here and on issue #87.
+2026-10-03, PR proof — the execution-level valid/missing/tampered bootstrap tests passed in PR #89's CI run 37139743475, together with actionlint, generated-workflow lint, the 609-test suite, coverage and Codecov patch. PR #89 merged to main as 0160ef4; post-merge CI run 37140085490 also passed.
+
+Still open: AC#6. Consumer-proof run 37137917674 inspects the generated publisher but does not execute its publish bootstrap. The expanded proof workflow now runs the released binary through pack, doctor, local publish, fresh fetch, and offline restore, but this session's integration cannot dispatch it (`403 Resource not accessible by integration`). A maintainer must dispatch `consumer-proof.yml` with `release-tag: v0.5.2`, then a real consumer-shaped generated publisher run must be recorded here and on issue #87.
 <!-- SECTION:NOTES:END -->

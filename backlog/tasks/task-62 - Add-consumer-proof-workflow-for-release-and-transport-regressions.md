@@ -65,5 +65,7 @@ Run the proof after a release is published, with a manual tag override for recov
 
 2026-10-03, local implementation — the proof now installs Pixi without solving the owner checkout, creates and locks a clean committed consumer fixture, and drives the downloaded release binary through pack with `--self-bin`, doctor verification, publish to a throwaway bare remote, fresh clone/fetch, and restore under an empty environment with user registration disabled. Evidence now includes the release checksum manifest, packed manifest, and pack/doctor/publish/restore logs. The restore ends by executing the restored Pixi binary. Actionlint and the 609-test local suite are green.
 
-Still open: AC#6 and #7 require a connected run of this expanded workflow. Keep both unchecked until that run proves the lifecycle and its uploaded artifact is inspected.
+2026-10-03, PR proof — PR #89 passed CI (run 37139743475, including actionlint, the 609-test suite, coverage and Codecov patch) and the complete released-binary airlock lifecycle (run 37139743512), then squash-merged to main as 0160ef4. Post-merge CI, docs, and transport repack runs 37140085490, 37140085488, and 37140085491 all passed.
+
+Still open: AC#6 and #7 require a connected run of this expanded workflow and inspection of its uploaded artifact. The session integration cannot dispatch workflows (`403 Resource not accessible by integration`), so these remain honestly unchecked until a maintainer dispatches `consumer-proof.yml` on main with `release-tag: v0.5.2`.
 <!-- SECTION:NOTES:END -->
