@@ -4,7 +4,7 @@ title: Give consumers a self-updating binary and reviewed generated-file upgrade
 status: In Progress
 assignee: []
 created_date: '2026-10-02 20:05'
-updated_date: '2026-10-03 10:53'
+updated_date: '2026-10-03 14:33'
 labels:
   - ci
   - init
@@ -20,6 +20,7 @@ references:
   - crates/pixi-sandbox/src/commands/doctor.rs
   - .github/workflows/publish-sandbox.yml
   - docs/src/content/docs/guides/ci-publishing.mdx
+  - crates/pixi-sandbox/tests/self_update_replace.rs
 priority: medium
 type: enhancement
 ordinal: 48000
@@ -60,7 +61,7 @@ lands on main.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 `pixi-sandbox self-update` supports latest-by-default and an exact `--version X.Y.Z`; it maps every supported host to the canonical standalone release asset, downloads that asset plus `SHA256SUMS`, refuses a missing checksum entry or digest mismatch, and never executes or installs unverified bytes — resolver, platform-map, checksum, HTTP-failure, and pinned-version paths are fixture-tested without live network access
-- [ ] #2 Self-update stages beside the destination and replaces atomically on Unix and Windows without leaving a partial executable; `--check` reports the current and resolved versions without writing; package-managed binaries/global-install trampolines are refused with a remedy, while an explicit CI-managed standalone path is supported and covered by tests
+- [x] #2 Self-update stages beside the destination and replaces atomically on Unix and Windows without leaving a partial executable; `--check` reports the current and resolved versions without writing; package-managed binaries/global-install trampolines are refused with a remedy, while an explicit CI-managed standalone path is supported and covered by tests
 - [x] #3 Every file `init` writes carries a machine-readable version stamp beside the ownership marker (a `pixi-sandbox-version: X.Y.Z` line, within the first three lines the marker check already reads) for the publisher workflow, the relock workflow, and the launcher; fixture tests cover presence and parsing on every render
 - [x] #4 `pixi-sandbox init --check` renders fresh, writes nothing, and exits non-zero naming each drifted file with its remedy (`pixi-sandbox init`) and each foreign-owned file separately (`--force`); a clean tree exits 0 — fixture-tested in both directions (D10)
 - [x] #5 `init` and `--check` never rewrite an existing config; a config whose `schema` is older than the CLI's is reported as a finding naming the explicit migration path (no `config migrate` command is built while config schema is 1 — it exists only once a schema bump gives it something to do), and config readers keep accepting older schemas for a deprecation window, mirroring the manifest reader policy
@@ -71,6 +72,7 @@ lands on main.
 <!-- AC:END -->
 
 ## Implementation Plan
+
 <!-- SECTION:PLAN:BEGIN -->
 Build the updater as a transport-independent slice first: a release resolver (latest or exact
 version), reviewed host-to-asset map, checksum parser/verifier, and injected downloader, followed
@@ -306,23 +308,32 @@ a connected GitHub host and a real cut release.
 Evidence: `cargo clippy --workspace --all-targets -- -D warnings` clean; `xtask lint-generated-
 workflow` and `xtask check-repository` clean; `pixi run docs` and `pixi run lint-docs` clean;
 `pixi run --frozen test`: **581 passed / 1 skipped** (573 before this slice).
+
+2026-10-03 slice 4 — the Windows running-image proof (AC#2), and the three defects the first CI run exposed.
+
+AC#2 is checked. ci.yml gained a `replace-running-image` job on windows-latest running `test-self-update-replace` against the empty `package` environment: `pixi.lock` carries no win-64 entries, so nothing else resolves on that runner, and the job therefore uses the runner-provided Rust toolchain exactly as the release build leg already does. The test spawns a copy of itself as a child that holds the mapped image open, replaces it through `windows_swap`, and asserts the corpse survives this update at its original byte length, that no staged file is left, that the running process is undisturbed, and that the corpse is swept by the next update once the image is released.
+
+It does not make win-64 a supported platform: `pixi.lock` still carries no win-64 entries, the README Windows gap (no conda-forge `bun`, D11) stands, and `.pixi-sandbox.toml` still publishes linux-64 only.
+
+`self_update = 1.3.0` (crates.io) had been added to `crates/pixi-sandbox/Cargo.toml` and was never referenced: `mod self_update` in `commands/mod.rs` shadows the extern prelude, so every `self_update::` in the tree is the local module. It dragged in reqwest -> rustls -> aws-lc-rs -> aws-lc-sys, whose C build needs cmake and cannot link against conda glibc (`rust-lld: undefined symbol: __isoc23_sscanf`); that failed `ci` at `lint-generated-workflow` and the airlock matrix job before either reached a test. Dropped, and `Cargo.lock` sheds 1485 lines. The trust boundary stays hand-written, as recorded in slice 1.
+
+The torn-write canary watched the destination from before the swap and flagged every read that was not the expected bytes, so the first reads of the untouched image counted as torn and the windows job failed on the size of the destination itself (`observed [3727360, 3727360]`) before reaching a single Windows assertion. A read of either endpoint is legitimate; only a third value is a torn write.
+
+`feature = "ci"` on the permission-edge test compiled it out of every run that exists: `ci` is passed only by the airlock replay (`nextest archive --test e2e --features ci`), `pixi run test` enables no features, and the new job is windows-latest while the test is `cfg(unix)`. Replaced with a probe for the premise the test asserts — a host that enforces directory permissions — verified in both directions here: as uid 0 it reports the missing premise and stops, as uid 65534 it asserts and passes.
+
+check-repository check 10 also rejected the relock dispatch as a hand-edit of a generated file (98 committed lines against 93 rendered). It now renders from the template behind a `publisher_workflow` option, taken from the file name of the publisher path `init` was handed — the `ci_workflow` precedent, because a literal would leave a consumer that renamed `--workflow-path` dispatching a workflow that does not exist.
+
+Evidence: `pixi run --frozen lint` green; `pixi run --frozen test` 606 passed / 1 skipped; `pixi run --frozen test-doc` green. On the PR: `ci (lint . test . coverage)` pass, `validate airlock plan` pass, `airlock linux-64` pass, `codecov/patch` pass, and `replace a running image (windows)` pass with `a_genuinely_running_image_is_replaced_and_its_corpse_is_reaped_by_the_next_update ... ok`. The windows-only arms were type-checked here too, by compiling the file with its `cfg(windows)` gates enabled.
+
+AC#7 stays unchecked by necessity, unchanged from slice 3: it needs a live cut release and a reviewed regeneration cycle.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
-<!-- SECTION:SUMMARY:BEGIN -->
-Slice 1 of task-47 delivered the self-update core as the v0.5.0 feature: `pixi-sandbox
-self-update` with latest-by-default resolution, exact `--version X.Y.Z`, non-writing `--check`,
-and an explicit CI-managed `--dest`. The trust boundary is the enforcement order and is tested
-as one — resolve, classify the destination, then download; `SHA256SUMS` before the binary; a
-missing entry and a digest mismatch as distinct refusals; nothing downloaded ever executed.
-Ownership is judged on path provenance, so a conda/Pixi prefix, a `pixi global` trampoline, a
-managed launcher and a restored transport tool are each refused with a remedy that works, and
-there is no `--force`. Replacement stages beside the destination and swaps atomically, Unix by
-renaming over the running binary's inode and Windows by renaming the image aside and sweeping
-it on the next run.
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Task-47 stands at AC#1-#6 and #8-#9 met, with AC#7 the only criterion left. Slice 1 delivered the self-update core as the v0.5.0 feature: `pixi-sandbox self-update` with latest-by-default resolution, exact `--version X.Y.Z`, non-writing `--check`, and an explicit CI-managed `--dest`. The trust boundary is the enforcement order and is tested as one — resolve, classify the destination, then download; `SHA256SUMS` before the binary; a missing entry and a digest mismatch as distinct refusals; nothing downloaded ever executed. Ownership is judged on path provenance, so a conda/Pixi prefix, a `pixi global` trampoline, a managed launcher and a restored transport tool are each refused with a remedy that works, and there is no `--force`. Replacement stages beside the destination and swaps atomically, Unix by renaming over the running binary inode and Windows by renaming the image aside and sweeping it on the next run.
 
-AC#1 is met and checked. AC#2's behaviour is implemented and covered but stays unchecked
-pending a Windows runner. AC#3-#9 were out of scope by instruction and are untouched, so the
-task remains In Progress and decision-4 remains proposed.
-<!-- SECTION:SUMMARY:END -->
+Slices 2 and 3 added the version stamps, `init --check`, and the generated upgrade lane with its explicit dispatch. Slice 4 closed AC#2 with the one proof no local run can produce: a windows-latest job replacing a genuinely mapped image, asserting the corpse survives the update whole, the running process is undisturbed, and the corpse is reaped once the image is released.
+
+AC#7 is blocked on a live cut release and a reviewed regeneration cycle rather than on code, so the task remains In Progress and decision-4 remains proposed.
+<!-- SECTION:FINAL_SUMMARY:END -->
