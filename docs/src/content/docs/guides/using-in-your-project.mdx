@@ -133,6 +133,16 @@ This emits a GitHub Actions matrix — one job per `bundle × platform`.
   </TabItem>
 </Tabs>
 
+> **Never pack `$(command -v pixi-sandbox)`.** Installed with `pixi global install`, that
+> path is a *launcher trampoline*, not the standalone binary: it looks for
+> `trampoline_configuration/pixi-sandbox.json` beside the executable, which only exists in
+> the global prefix — so the packed branch passes every hash check and then dies at restore
+> with `Couldn't open "…/trampoline_configuration/pixi-sandbox.json"` (issue #81). Pack
+> probes `--self-bin` by executing it under an empty environment and refuses such files;
+> `doctor --verify` applies the same check to a transport before anyone restores it. The
+> only correct sources are the release asset (`pixi-sandbox-<target>`, verified against the
+> release's `SHA256SUMS`) or a binary you built yourself.
+
 ## 4. What gets published?
 
 ```text

@@ -46,9 +46,23 @@ pixi-sandbox pack \
 | `--fetch-tools` | Fetch pinned tools (sha256-verified) |
 | `--tools-lock` | Override tools.lock.json path |
 | `--tools-cache` | Tools cache dir |
-| `--self-bin` | Release binary to embed only under `.pixi-sandbox/tools/<platform>/pixi-sandbox` (`.exe` on Windows) |
+| `--self-bin` | **Standalone** binary to embed only under `.pixi-sandbox/tools/<platform>/pixi-sandbox` (`.exe` on Windows) — see below |
 
 No override means embedded pins from `tools.lock.json` compiled into binary.
+
+**The self-bin must run standalone.** A transport is executed on machines that never saw
+your prefix — no `pixi global` installation, no conda activation, no shell profile — so pack
+probes the embedded copy with `--version` under an empty environment and refuses a binary
+that cannot answer. The classic trap is `$(command -v pixi-sandbox)` after
+`pixi global install`: that is a *launcher trampoline*, not the binary; it looks for
+`trampoline_configuration/pixi-sandbox.json` beside the executable and dies at restore, and
+it passed every other check (faithful copy, static linkage — the self-bin's content is not
+pinned into the manifest). Pack the checksum-verified release asset
+(`pixi-sandbox-<target>` from the release, checked against its `SHA256SUMS`) or a binary you
+built yourself. A `pixi global` trampoline and a managed launcher script (the
+`~/.local/bin/pixi-sandbox` indirection a restore registers) are refused outright, before
+any embedding. Packing for a platform other than the host skips the probe with a printed
+note — `doctor --verify` on the target host is the same guard there.
 
 ## doctor
 
@@ -59,6 +73,14 @@ pixi-sandbox doctor --branch-location .sandbox-out --verify
 pixi-sandbox doctor --branch-location .sandbox-out --verify --envs dev
 pixi-sandbox doctor --branch-location .sandbox-out --verify --json
 ```
+
+With `--verify` and an embedded `pixi-sandbox` tool, doctor also runs the *standalone
+probe*: after — and only after — every declared byte matches the manifest, it executes the
+tool's `--version` under an empty environment, so a hash-green branch whose bootstrap cannot
+run (a packed `pixi global` trampoline, see `--self-bin` above) is diagnosed here with the
+remedy instead of on the airlock. The probe is skipped, with a printed reason, when the
+hash report is not green (unverified bytes are never executed) or when the manifest
+platform is not this host's; a failed probe makes doctor exit non-zero.
 
 Verify a **restored project** against the manifest's per-file list, not just the branch:
 

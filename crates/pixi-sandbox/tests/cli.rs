@@ -1026,6 +1026,204 @@ fn pack_keeps_the_self_binary_only_in_tools_and_the_branch_root_documentation_on
     assert_eq!(root_files, ["AGENTS.md", "README.md"]);
 }
 
+#[cfg(unix)]
+#[test]
+fn pack_refuses_a_pixi_global_trampoline_self_bin_before_embedding() {
+    // Issue #81's exact shape: the CI workaround packed `$(command -v pixi-sandbox)` after
+    // `pixi global install` — a trampoline whose sibling configuration lives in the global
+    // prefix, which is precisely the context a transport can never ship. The refusal is
+    // structural (no execution needed) and must fire before the embed step copies anything.
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path().join("project-source");
+    let tools = temp.path().join("fake-tools");
+    let transport = temp.path().join("transport");
+    let global_bin = temp.path().join("global/bin");
+    fs::create_dir_all(&repo).unwrap();
+    fs::write(repo.join("pixi.lock"), "version: 7\n").unwrap();
+    fs::create_dir_all(&global_bin).unwrap();
+    fake_tools(&tools);
+    let self_bin = global_bin.join("pixi-sandbox");
+    write_executable(&self_bin, "#!/bin/sh\necho trampoline\n");
+    fs::create_dir_all(global_bin.join("trampoline_configuration")).unwrap();
+    fs::write(
+        global_bin.join("trampoline_configuration/pixi-sandbox.json"),
+        "{}",
+    )
+    .unwrap();
+
+    let assert = bin()
+        .env("PATH", path_with_fake_tools(&tools))
+        .args([
+            "pack",
+            "--repo-root",
+            repo.to_str().unwrap(),
+            "--envs",
+            "demo",
+            "--output-dir",
+            transport.to_str().unwrap(),
+            "--self-bin",
+            self_bin.to_str().unwrap(),
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(
+        stderr.contains("`pixi global install` trampoline"),
+        "the refusal names the shape: {stderr}"
+    );
+    assert!(
+        stderr.contains("standalone release asset `pixi-sandbox-<target>`")
+            && stderr.contains("SHA256SUMS"),
+        "the refusal names the remedy that packs a runnable binary: {stderr}"
+    );
+    assert!(
+        !transport
+            .join(".pixi-sandbox/tools/linux-64/pixi-sandbox")
+            .exists(),
+        "refused before the embed step copied anything"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn pack_refuses_a_self_bin_that_cannot_leave_its_prefix() {
+    // The behavioural half: a candidate whose brokenness only execution can see — a
+    // trampoline-shaped script with no configuration anywhere, exactly the state the
+    // relocation to `tools/<platform>/` creates. Hashes are blind to it (a self-bin's
+    // content is never pinned), the linkage check is blind to it (scripts and static
+    // binaries pass); `--version` under the probe's empty environment is not.
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path().join("project-source");
+    let tools = temp.path().join("fake-tools");
+    let transport = temp.path().join("transport");
+    let self_bin = temp.path().join("self-bin");
+    fs::create_dir_all(&repo).unwrap();
+    fs::write(repo.join("pixi.lock"), "version: 7\n").unwrap();
+    fake_tools(&tools);
+    write_executable(
+        &self_bin,
+        r#"#!/bin/sh
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+config="$dir/trampoline_configuration/$(basename "$0").json"
+if [ ! -f "$config" ]; then
+  printf "Couldn't open \"%s\"\n" "$config" >&2
+  exit 1
+fi
+echo 'pixi-sandbox 0.5.0'
+"#,
+    );
+
+    let assert = bin()
+        .env("PATH", path_with_fake_tools(&tools))
+        .args([
+            "pack",
+            "--repo-root",
+            repo.to_str().unwrap(),
+            "--envs",
+            "demo",
+            "--output-dir",
+            transport.to_str().unwrap(),
+            "--platform",
+            host_platform(),
+            "--self-bin",
+            self_bin.to_str().unwrap(),
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(stderr.contains("does not run standalone"), "{stderr}");
+    assert!(
+        stderr.contains("Couldn't open") && stderr.contains("trampoline_configuration"),
+        "the child's own failure text is the evidence: {stderr}"
+    );
+    assert!(
+        stderr.contains("standalone release asset `pixi-sandbox-<target>`"),
+        "the remedy is attached: {stderr}"
+    );
+    assert!(
+        !transport.join(".pixi-sandbox-standalone-probe").exists(),
+        "the probe scratch is removed even when the pack is refused"
+    );
+}
+
+#[cfg(all(unix, target_os = "linux"))]
+#[test]
+fn doctor_flags_a_hash_green_transport_whose_tool_cannot_run_standalone() {
+    // Recreated issue #81: the fixture transport's self tool is replaced by a
+    // trampoline-shaped script and the manifest is updated to stay faithful to the *new*
+    // bytes — a faithful copy of a broken tool, which is the whole failure mode. The
+    // fixture is linux-64, so the probe runs only on a linux host.
+    let transport = transport_copy();
+    let tool = transport
+        .path()
+        .join(".pixi-sandbox/tools/linux-64/pixi-sandbox");
+    write_executable(
+        &tool,
+        r#"#!/bin/sh
+printf "Couldn't open \"%s/trampoline_configuration/pixi-sandbox.json\"\n" "$(dirname "$0")" >&2
+exit 1
+"#,
+    );
+    let manifest_path = transport.path().join(".pixi-sandbox/manifest.json");
+    let mut manifest: Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    manifest["tools"]["pixi-sandbox"]["size_bytes"] =
+        Value::from(fs::metadata(&tool).unwrap().len());
+    fs::write(
+        &manifest_path,
+        format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
+    )
+    .unwrap();
+
+    bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.path().to_str().unwrap(),
+            "--verify",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "OK — every declared byte matches the manifest",
+        ))
+        .stdout(predicate::str::contains(
+            "FAILED — the embedded tool does not run standalone",
+        ))
+        .stdout(predicate::str::contains(
+            "trampoline_configuration/pixi-sandbox.json",
+        ))
+        .stdout(predicate::str::contains("standalone release asset"));
+}
+
+#[cfg(all(unix, target_os = "linux"))]
+#[test]
+fn doctor_never_executes_bytes_the_hash_report_rejected() {
+    // The trust order made testable: tamper *without* updating the manifest and the probe
+    // must refuse to run at all — executing first and hashing later would be the bug.
+    let transport = transport_copy();
+    let tool = transport
+        .path()
+        .join(".pixi-sandbox/tools/linux-64/pixi-sandbox");
+    write_executable(&tool, "#!/bin/sh\necho tampered\n");
+
+    bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.path().to_str().unwrap(),
+            "--verify",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "FAILED — do not restore from this branch",
+        ))
+        .stdout(predicate::str::contains(
+            "skipped — the hash report is not green",
+        ));
+}
+
 fn init_command(project: &Path) -> Command {
     let manifest = project.join("pixi.toml");
     if !manifest.exists() {
