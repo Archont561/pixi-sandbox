@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-03 08:04'
-updated_date: '2026-10-03 10:12'
+updated_date: '2026-10-03 14:47'
 labels:
   - bug
   - pack
@@ -76,7 +76,7 @@ unrestorable transport.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Root cause pinned and recorded in this task: the consumer transport's embedded tool is a pixi global trampoline introduced by the issue-#80 workaround, and the issue's release-asset theory is resolved one way or the other — a downloaded v0.5.0 standalone asset executed with `--version` in an isolated bare HOME on a connected host (impossible from this sandbox: `release-assets.githubusercontent.com` is egress-blocked), with the outcome recorded here
+- [x] #1 Root cause pinned and recorded in this task: the consumer transport's embedded tool is a pixi global trampoline introduced by the issue-#80 workaround, and the issue's release-asset theory is resolved one way or the other — a downloaded v0.5.0 standalone asset executed with `--version` in an isolated bare HOME on a connected host (impossible from this sandbox: `release-assets.githubusercontent.com` is egress-blocked), with the outcome recorded here
 - [x] #2 `pack --self-bin` runs a standalone-execution probe before embedding — executes the candidate's `--version` with an isolated environment (empty tempdir HOME, no pixi/conda prefixes) — and refuses a failing candidate with a remedy naming the standalone release asset; the probe sits behind an injected runner (the `ReleaseSource` precedent) so fixture tests exercise a trampoline-shaped fake that demands `trampoline_configuration` and a healthy static fake, with no network and no real HOME (D10)
 - [x] #3 `doctor` flags an embedded tool that fails the same standalone probe (or its structural trampoline signature), so a fetched branch in the consumer's exact state — faithful copy, unrestorable tool — is diagnosed *before* a restore is attempted, while a healthy transport passes unchanged
 - [x] #4 The e2e lifecycle (`tests/e2e.rs`, pack → publish → restore) gains an isolated-environment assertion that the packed branch's `tools/<platform>/pixi-sandbox --version` executes without any pixi global prefix, so a green publisher run proves the embedded bootstrap is executable — closing the "successful publish ≠ restorable" gap the issue names
@@ -85,6 +85,7 @@ unrestorable transport.
 <!-- AC:END -->
 
 ## Implementation Plan
+
 <!-- SECTION:PLAN:BEGIN -->
 Behavioural probe first, structural hints second. Add a `StandaloneProbe` in the library
 (promoted `pub mod` per the test conventions — one test file under `tests/`), modelled on
@@ -181,10 +182,17 @@ command on a connected host closes it.
 
 AC#6 is untouched by definition (merge → auto-release patch → consumer repack → fresh
 consumer restore). It stays open with the release flow.
+
+2026-10-03 — AC#1 resolved, and it resolves against the issue: the v0.5.0 release asset is a standalone binary, not a trampoline. The egress claim in AC#1 no longer holds; `release-assets.githubusercontent.com` is reachable from this sandbox.
+
+Evidence: `gh release download v0.5.0 --pattern pixi-sandbox-x86_64-unknown-linux-musl`, then `env -i HOME=<bare> <asset> --version` prints `pixi-sandbox 0.5.0` and exits 0. `--help` likewise works with no PATH at all, so it needs neither a pixi prefix nor `trampoline_configuration`. The bytes match the published `SHA256SUMS` (`2101d96fe2edc58eedc430104426261ab07e98d4311732d429e38c1119c31cfd`) and the file is an ELF. Issue #81 therefore misattributes the origin: the trampoline in the consumer transport came from the issue-#80 workaround, which embedded the `pixi global install` launcher as `--self-bin` while the release download returned 404 — not from the release asset. PR #82 stands on its own regardless: pack now refuses such a binary by provenance, and then executes the exact bytes it is about to ship.
+
+AC#6 remains the whole of what is left: a patch release, then the affected consumer transport repacked with a standalone self-bin and a fresh restore. Neither the release nor the repack can happen from this sandbox.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
 <!-- SECTION:SUMMARY:BEGIN -->
 The hole issue #81 exposed is closed at both ends of the pipeline, as a behavioural oracle
 rather than another declarative check. `pack --self-bin` refuses the known-broken shapes on
@@ -203,6 +211,4 @@ AC#2–#5 are met and checked. AC#1's root-cause half is recorded; its asset-exe
 and AC#6 (patch release + consumer repack + fresh restore) remain open — both need a
 connected host or a release, so the task stays In Progress naming exactly those proofs.
 <!-- SECTION:SUMMARY:END -->
-
-
-
+<!-- SECTION:FINAL_SUMMARY:END -->
