@@ -6,10 +6,12 @@
 //! Actions matrix without coupling the transport format to a CI provider.
 
 use crate::error::{Error, Result};
+use crate::platform::Platform;
 use crate::tools_lock::ToolsLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::str::FromStr;
 
 /// Schema understood by this build.
 pub const CONFIG_SCHEMA: u32 = 1;
@@ -245,15 +247,13 @@ impl SandboxConfig {
             }
             return Ok(runner.clone());
         }
-        let default = match platform {
-            "linux-64" => Some("ubuntu-latest"),
-            // `macos-14` is Apple Silicon on GitHub-hosted runners. Override it when using a
-            // self-hosted runner or a different hosted label.
-            "osx-arm64" => Some("macos-14"),
-            "osx-64" => Some("macos-13"),
-            "win-64" => Some("windows-latest"),
-            _ => None,
-        };
+        // Delegates to `Platform::gh_runner` (task-55/task-60) instead of its own match; a
+        // platform string this project does not recognise at all falls through the same
+        // "no safe default" error as one it recognises but has no hosted runner for
+        // (`linux-aarch64` today).
+        let default = Platform::from_str(platform)
+            .ok()
+            .and_then(Platform::gh_runner);
         default.map(str::to_string).ok_or_else(|| {
             Error::Invalid(format!(
                 "platform {platform:?} needs runners.{platform:?}; no safe default runner is known"

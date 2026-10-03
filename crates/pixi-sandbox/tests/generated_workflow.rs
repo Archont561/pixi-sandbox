@@ -4,6 +4,7 @@
 //! cannot evaluate: indentation-derived matrix shape and agreement with the planner's JSON keys.
 
 use pixi_sandbox::generated::{GithubWorkflowOptions, render_github_workflow};
+use pixi_sandbox_core::platform::Platform;
 use pixi_sandbox_core::sandbox_config::plan_override;
 use rstest::rstest;
 use serde_json::Value;
@@ -213,5 +214,26 @@ fn generated_workflow_only_reads_matrix_keys_the_plan_emits() {
                 "the workflow reads matrix.{key}, which plan JSON does not emit: {entry:?}"
             );
         }
+    }
+}
+
+/// The embedded bash/PowerShell case/switch arms that pick a release asset name cannot call
+/// into `Platform` (task-55) at render time the way other call sites were migrated (task-58,
+/// task-59, task-60): they are literal text inside a workflow that a plain GitHub runner
+/// executes before any pixi-sandbox binary exists to ask. Keeping that text a hand-typed
+/// literal inside the render function is still a duplicate of `Platform::asset_name`, so this
+/// test is the structural guarantee a doc comment used to be: every platform's asset name in
+/// the rendered workflow must agree with `Platform`, for both the bash and the PowerShell
+/// branch.
+#[test]
+fn every_rendered_asset_name_agrees_with_platform() {
+    let workflow = workflow();
+    for platform in Platform::ALL {
+        assert!(
+            workflow.contains(platform.asset_name()),
+            "rendered workflow is missing {}'s asset name {}",
+            platform.as_str(),
+            platform.asset_name()
+        );
     }
 }

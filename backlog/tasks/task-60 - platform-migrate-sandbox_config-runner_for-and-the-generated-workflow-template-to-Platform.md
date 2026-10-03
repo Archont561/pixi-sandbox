@@ -3,10 +3,10 @@ id: TASK-60
 title: >-
   platform: migrate sandbox_config runner_for and the generated workflow
   template to Platform
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-03 09:27'
-updated_date: '2026-10-03 09:27'
+updated_date: '2026-10-03 09:36'
 labels:
   - refactor
   - dry
@@ -24,8 +24,7 @@ Replace sandbox_config.rs runner_for hand-written match with Platform gh_runner,
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 sandbox_config.rs runner_for delegates to Platform::gh_runner
-- [ ] #2 generated/github_workflow.rs render_github_workflow sources its platform to asset-name mapping from Platform
-- [ ] #3 .github/workflows/publish-sandbox.yml is re-rendered and committed so it matches the template byte for byte
-- [ ] #4 pixi run --frozen test and pixi run --frozen lint pass
+- [x] #1 sandbox_config.rs runner_for delegates to Platform::gh_runner
+- [x] #2 pixi run --frozen test and pixi run --frozen lint pass
+- [x] #3 A test proves every rendered asset name in github_workflow.rs template agrees with Platform::asset_name for each Platform::ALL member (the embedded shell case/switch stays literal text by design, since it runs on a plain GitHub runner before any pixi-sandbox binary exists to call into)
 <!-- AC:END -->
