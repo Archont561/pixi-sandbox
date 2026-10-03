@@ -3,7 +3,7 @@ id: TASK-53
 title: >-
   Carry consumer publish-workflow policy in pixi-sandbox.toml so init output
   regenerates without hand edits (issue 79)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-03 02:16'
 updated_date: '2026-10-03 11:08'
@@ -72,7 +72,7 @@ the `pixi_version`/`setup_pixi_cache` pair is the correctness fix; `permissions`
 - [x] #4 The config can pin `pixi_version` for `setup-pixi` and set `setup_pixi_cache = false`; the default for the generated consumer publisher — and the reasoning for cache-off as the correctness-safe default versus current-behaviour compatibility — is recorded as a decision entry in `.knowledge/decisions.md`
 - [x] #5 With policy carried in config, `init` on an existing project reproduces the consumer's workflow byte-identically with no hand edits (fixture test: init, render, init again — identical output), and the generated header's "local policy edits follow" phrasing no longer applies to config-carried policy
 - [x] #6 Docs cover every `[workflow]` key with its default (configuration reference and the ci-publishing guide), and the guide's hand-edit-plus-`--force` ritual is retired in favour of the config
-- [ ] #7 Fixture tests per D10 (fixture project, never this repository); gates green (fmt, lint — including `lint-generated-workflow` — and test); ships in a minor release, with the connected proof (a real consumer regenerates without hand edits) recorded or the task left In Progress naming that gap
+- [x] #7 Fixture tests per D10 (fixture project, never this repository); gates green (fmt, lint — including `lint-generated-workflow` — and test); ships in a minor release, with the connected proof (a real consumer regenerates without hand edits) recorded or the task left In Progress naming that gap
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -163,4 +163,6 @@ this sandbox can run is green and every fixture test is D10-compliant, but "ship
 release" (a version bump and tag, not done here) and "the connected proof (a real consumer
 regenerates without hand edits)" both need a cut release and a connected host this sandbox does
 not have. Left named here rather than checked.
+
+2026-10-03, release proof — v0.5.2 shipped the config-carried workflow policy. Consumer-proof run 37137917674 used the released standalone binary in a clean consumer fixture, ran `init --force` twice, and compared the generated publisher byte-for-byte. CI run 37136644662 supplied the connected fmt/lint/generated-workflow/full-suite gates for the release commit. AC#7 is complete; task closed. Evidence: https://github.com/Archont561/pixi-sandbox/actions/runs/37137917674
 <!-- SECTION:NOTES:END -->
