@@ -1,5 +1,5 @@
 use pixi_sandbox_core::sandbox_config::{
-    CONFIG_SCHEMA, SandboxConfig, is_safe_git_ref, plan_override,
+    CONFIG_SCHEMA, SandboxConfig, is_safe_git_ref, peek_schema, plan_override, schema_supported,
 };
 use pixi_sandbox_core::tools_lock::ToolsLock;
 use proptest::prelude::*;
@@ -332,4 +332,53 @@ fn every_platform_with_a_hosted_runner_has_complete_embedded_helper_pins(
         lock.pin(tool, platform).is_some(),
         "{tool} has no pin for {platform}"
     );
+}
+
+/// Mirrors `manifest::schema_supported`'s policy exactly (task-47 AC#5 / decision D16): every
+/// schema from 1 up to the current one is understood, zero is not a schema that ever existed,
+/// and only a schema newer than this build knows about is refused. The range reads as `{1}`
+/// today only because `CONFIG_SCHEMA` has never bumped — this property holds for the function
+/// itself, independent of that one current value.
+#[test]
+fn schema_support_is_an_inclusive_range_from_one_to_current() {
+    assert!(!schema_supported(0));
+    assert!(schema_supported(1));
+    assert!(schema_supported(CONFIG_SCHEMA));
+    assert!(!schema_supported(CONFIG_SCHEMA + 1));
+    assert!(!schema_supported(CONFIG_SCHEMA + 50));
+}
+
+/// `peek_schema` must read the schema out of a config this build cannot otherwise parse at all
+/// (a newer schema, or `deny_unknown_fields`-violating content from a hypothetical different
+/// shape) — that is the whole point of keeping it separate from `SandboxConfig::load`.
+#[test]
+fn peek_schema_reads_the_field_even_when_the_rest_of_the_file_is_unrecognisable() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pixi-sandbox.toml");
+
+    fs::write(&path, "schema = 1\nbranch_prefix = \"sandbox\"\n").unwrap();
+    assert_eq!(peek_schema(&path).unwrap(), 1);
+
+    // A schema this build has never shipped, carrying a field set `SandboxConfig::load` would
+    // reject outright under `deny_unknown_fields` — peek still reports the schema number.
+    fs::write(
+        &path,
+        "schema = 7\nsome_future_field = \"this build has no idea what this is\"\n",
+    )
+    .unwrap();
+    assert_eq!(peek_schema(&path).unwrap(), 7);
+
+    fs::write(&path, "branch_prefix = \"sandbox\"\n").unwrap();
+    assert!(peek_schema(&path).is_err(), "no schema key at all is a real error");
+}
+
+/// `SandboxConfig::load` refuses a schema newer than this build understands — it could mean
+/// anything — naming both the found and the understood schema so the remedy is obvious.
+#[test]
+fn load_refuses_a_schema_newer_than_this_build_understands() {
+    let message = config_error(
+        "schema = 2\nbranch_prefix = \"sandbox\"\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n",
+    );
+    assert!(message.contains("schema 2 is not supported"), "{message}");
+    assert!(message.contains("understands 1..=1"), "{message}");
 }

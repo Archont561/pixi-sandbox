@@ -4,7 +4,7 @@ title: Give consumers a self-updating binary and reviewed generated-file upgrade
 status: In Progress
 assignee: []
 created_date: '2026-10-02 20:05'
-updated_date: '2026-10-03 23:55'
+updated_date: '2026-10-03 10:45'
 labels:
   - ci
   - init
@@ -61,9 +61,9 @@ lands on main.
 <!-- AC:BEGIN -->
 - [x] #1 `pixi-sandbox self-update` supports latest-by-default and an exact `--version X.Y.Z`; it maps every supported host to the canonical standalone release asset, downloads that asset plus `SHA256SUMS`, refuses a missing checksum entry or digest mismatch, and never executes or installs unverified bytes — resolver, platform-map, checksum, HTTP-failure, and pinned-version paths are fixture-tested without live network access
 - [ ] #2 Self-update stages beside the destination and replaces atomically on Unix and Windows without leaving a partial executable; `--check` reports the current and resolved versions without writing; package-managed binaries/global-install trampolines are refused with a remedy, while an explicit CI-managed standalone path is supported and covered by tests
-- [ ] #3 Every file `init` writes carries a machine-readable version stamp beside the ownership marker (a `pixi-sandbox-version: X.Y.Z` line, within the first three lines the marker check already reads) for the publisher workflow, the relock workflow, and the launcher; fixture tests cover presence and parsing on every render
-- [ ] #4 `pixi-sandbox init --check` renders fresh, writes nothing, and exits non-zero naming each drifted file with its remedy (`pixi-sandbox init`) and each foreign-owned file separately (`--force`); a clean tree exits 0 — fixture-tested in both directions (D10)
-- [ ] #5 `init` and `--check` never rewrite an existing config; a config whose `schema` is older than the CLI's is reported as a finding naming the explicit migration path (no `config migrate` command is built while config schema is 1 — it exists only once a schema bump gives it something to do), and config readers keep accepting older schemas for a deprecation window, mirroring the manifest reader policy
+- [x] #3 Every file `init` writes carries a machine-readable version stamp beside the ownership marker (a `pixi-sandbox-version: X.Y.Z` line, within the first three lines the marker check already reads) for the publisher workflow, the relock workflow, and the launcher; fixture tests cover presence and parsing on every render
+- [x] #4 `pixi-sandbox init --check` renders fresh, writes nothing, and exits non-zero naming each drifted file with its remedy (`pixi-sandbox init`) and each foreign-owned file separately (`--force`); a clean tree exits 0 — fixture-tested in both directions (D10)
+- [x] #5 `init` and `--check` never rewrite an existing config; a config whose `schema` is older than the CLI's is reported as a finding naming the explicit migration path (no `config migrate` command is built while config schema is 1 — it exists only once a schema bump gives it something to do), and config readers keep accepting older schemas for a deprecation window, mirroring the manifest reader policy
 - [ ] #6 The generated `publish-sandbox.yml` gains a scheduled and manually dispatchable upgrade job that bootstraps its currently pinned standalone binary with checksum verification, runs `self-update` (latest by default, exact version for manual dispatch), then uses that updated binary for `init --check` and regeneration; drift opens a pull request and never pushes to main or touches config, and the workflow remains actionlint-clean
 - [ ] #7 The regenerated pull request contains a new exact `PIXI_SANDBOX_VERSION` and the templates emitted by that same binary; a human merge triggers the normal publisher, which uses the exact matching released binary for plan, pack, doctor, publish, and `--self-bin`, and the resulting manifest names that version — no production step resolves `latest`
 - [ ] #8 Because a `github.token` push starts no `on: push` workflows (task-44's lesson), any automated-merge path ends in an explicit `gh workflow run publish-sandbox.yml` dispatch; the workflow and docs distinguish this from a human merge and tests hold the dispatch behavior
@@ -183,6 +183,67 @@ OS behaviour the Windows arm assumes — that a running image can be renamed but
 not exercised by any run that has happened. Live-network resolution is likewise unproven: the
 dev sandbox's egress proxy terminates TLS with a CA `ureq` does not trust, so the binary cannot
 reach `api.github.com` from it. Both belong to a later slice with a native matrix.
+
+2026-10-03 slice 2 — version stamps and the `init --check` drift gate (AC#3-#5), done offline
+per owner direction to implement task-47 and task-53 locally in one pass and open a PR.
+
+AC#3: `generated::MARKER_WINDOW = 3` replaces the hardcoded 3 `ensure_replaceable` and the new
+drift classifier both read, so the ownership-marker window and the version-stamp window can
+never drift apart. `version_stamp_line`/`parse_version_stamp` render and parse a bare
+`pixi-sandbox-version: X.Y.Z` line (comment-syntax prefix supplied by each template, matching
+how `GENERATED_MARKER` already works, so one convention covers YAML, POSIX `sh` and pwsh — a
+first draft that had the helper own the `#` doubled it in the YAML template, caught immediately
+by the golden-fixture test). The publisher template, the relock template (stamped with the new
+`RelockWorkflowOptions::cli_version`, a field distinct from the existing `pixi_version` which
+pins the sandboxed pixi binary, not the CLI release — tests assert the two are never confused),
+and both launcher templates (`posix_restore`/`powershell_restore`, now taking a `version`
+parameter) all carry it. Tests: `tests/generated_stamp.rs` (new — `generated/mod.rs` has no
+inline tests because it is not in `tests/fixtures.rs`'s `LEGACY` grandfather list), a new
+`generated_workflow_carries_a_parseable_version_stamp` in `tests/generated_workflow.rs`, an
+inline relock test asserting the stamp names the CLI release and never the pinned pixi version,
+and an inline `launchers_carry_a_parseable_version_stamp` in `commands/init.rs`.
+
+AC#4: `init --check` shares a new `render_targets()`/`Targets` builder with the writing path, so
+the comparison is always against the exact bytes `init` would write — never a second
+implementation that could drift. Each owned file (workflow, relock, launcher) classifies as
+Missing / Foreign (exists, no marker — remedy `--force`) / Stale (owned, content differs —
+remedy `pixi-sandbox init`) / Current; config is audited separately (AC#5). All findings print,
+nothing is written in either success or failure, and the command exits non-zero iff there is at
+least one finding. New `--check` flag on `InitArgs`, `conflicts_with = "check"` on `--force`.
+Fixture-tested in both directions under `commands::init::tests::check` (new inline tests — this
+module is in `tests/fixtures.rs`'s `LEGACY` list already): a freshly-initialised tree passes and
+provably writes nothing byte-for-byte; a hand-edited owned file is reported as drifted and left
+untouched; a file with no marker is reported as foreign, separately, and classified correctly;
+a missing owned file is its own finding; a config schema newer than this CLI is a named finding.
+
+AC#5: mirrored `manifest.rs`'s exact reader policy into `sandbox_config.rs` — doc comment,
+`schema_supported(schema) -> (1..=CONFIG_SCHEMA).contains(&schema)`, and `validate()` now calls
+it instead of a hard `!=` bail, so an older schema stays accepted for a deprecation window and
+only a newer one is refused. Added `peek_schema(path) -> Result<u32>` (a minimal
+`#[derive(Deserialize)] struct SchemaOnly { schema: u32 }`) so `init --check` can name a schema
+finding even when the rest of the file would fail `SandboxConfig::load`'s stricter
+`deny_unknown_fields`. `init`'s `default_config()` already only wrote when the config was
+absent, so "never rewrite" required no change — `--check` reuses the same existing-file guard.
+No `config migrate` command is built, as the AC anticipates: schema has never bumped past 1, so
+there is nothing yet to migrate. Tests: `schema_support_is_an_inclusive_range_from_one_to_current`,
+`peek_schema_reads_the_field_even_when_the_rest_of_the_file_is_unrecognisable`,
+`load_refuses_a_schema_newer_than_this_build_understands` (sandbox_config.rs), plus
+`init_never_rewrites_an_existing_config_in_either_mode`, `a_newer_config_schema_is_a_named_finding`
+and `the_current_schema_produces_no_finding` (init.rs).
+
+The committed `.github/workflows/relock.yml` was re-rendered via `xtask render-relock` to pick
+up its new version-stamp line (`xtask check-repository`'s check #10 catches exactly this drift
+and did, correctly, before the re-render). The repo's own committed `publish-sandbox.yml` is
+left untouched, per task-52's established precedent — it is documented vestigial, not
+regenerated or byte-checked by any gate.
+
+Evidence: `cargo clippy --workspace --all-targets -- -D warnings` clean; `xtask
+lint-generated-workflow` and `xtask check-repository` both clean; `pixi run --frozen test`:
+**573 passed / 1 skipped** (557 at session start after task-52, net +16 from this slice).
+
+Still open after this slice: AC#2 (unchanged, blocked on a Windows runner), AC#6-#9 (the
+generated upgrade job, exact-version pinning through to the transport, the explicit post-merge
+dispatch, and docs) — targeted next in the same session.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

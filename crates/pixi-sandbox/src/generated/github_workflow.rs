@@ -32,6 +32,7 @@ fn shell_word(value: &str) -> String {
 #[must_use]
 pub fn render_github_workflow(options: GithubWorkflowOptions<'_>) -> String {
     let template = r#"# __GENERATED_MARKER__
+# __VERSION_STAMP__
 name: publish sandbox
 
 on:
@@ -199,6 +200,7 @@ jobs:
 "#;
     template
         .replace("__GENERATED_MARKER__", GENERATED_MARKER)
+        .replace("__VERSION_STAMP__", &super::version_stamp_line(options.version))
         .replace("__VERSION__", options.version)
         .replace("__CONFIG_PATH__", &shell_word(options.config_path))
         .replace("__RELEASE_REPO__", PIXI_SANDBOX_REPO)

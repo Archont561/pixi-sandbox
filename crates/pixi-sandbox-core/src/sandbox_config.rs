@@ -13,8 +13,44 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::str::FromStr;
 
-/// Schema understood by this build.
+/// Bumped only for incompatible changes; readers refuse anything newer but keep accepting every
+/// older schema they understand for a deprecation window (task-47 AC#5 / decision D16), mirroring
+/// `manifest::SCHEMA_VERSION`'s policy exactly. Config is reviewed data and is never rewritten
+/// automatically to a newer schema — unlike a transport manifest, which this build itself wrote,
+/// a sandbox config is maintained by the consumer, so bumping it is their edit to make. No
+/// `config migrate` command exists while this constant is still `1`: there is only one schema
+/// shape to migrate *from*, so there is nothing for it to do yet.
 pub const CONFIG_SCHEMA: u32 = 1;
+
+/// True when this build can act on a config's schema (see [`CONFIG_SCHEMA`]).
+#[must_use]
+pub fn schema_supported(schema: u32) -> bool {
+    (1..=CONFIG_SCHEMA).contains(&schema)
+}
+
+/// Read only the `schema` field, tolerating any other shape the rest of this file might have.
+///
+/// `SandboxConfig::load` enforces `deny_unknown_fields` against *today's* field set, which is
+/// correct for every caller that needs the config's contents but wrong for a diagnostic that
+/// must still say something useful about a schema this build cannot otherwise parse at all —
+/// `init --check` uses this to turn a schema mismatch into a named finding instead of an opaque
+/// parse failure (task-47 AC#5).
+///
+/// # Errors
+/// Returns an error if the file cannot be read or contains no parseable `schema` key, which
+/// means the file is not a sandbox config at all rather than merely an old or new one.
+pub fn peek_schema(path: &Path) -> Result<u32> {
+    #[derive(Deserialize)]
+    struct SchemaOnly {
+        schema: u32,
+    }
+    let text = std::fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
+    let peek: SchemaOnly = toml::from_str(&text).map_err(|error| Error::InvalidManifest {
+        path: path.display().to_string(),
+        reason: error.to_string(),
+    })?;
+    Ok(peek.schema)
+}
 
 /// Default project-level declaration consumed by `pixi-sandbox plan`.
 pub const DEFAULT_FILE: &str = ".pixi-sandbox.toml";
@@ -157,9 +193,13 @@ impl SandboxConfig {
     }
 
     fn validate(&self) -> Result<()> {
-        if self.schema != CONFIG_SCHEMA {
+        // A reviewed config outlives the CLI version that last touched it, the same way a
+        // published transport manifest outlives the binary that packed it: an older schema is
+        // still accepted (there is only ever one to accept today), and only a newer one — which
+        // could mean anything this build does not understand — is refused.
+        if !schema_supported(self.schema) {
             return Err(Error::Invalid(format!(
-                "sandbox config schema {} is not supported (expected {CONFIG_SCHEMA})",
+                "sandbox config schema {} is not supported by this build (understands 1..={CONFIG_SCHEMA})",
                 self.schema
             )));
         }

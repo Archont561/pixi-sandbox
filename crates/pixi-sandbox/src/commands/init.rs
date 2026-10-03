@@ -4,14 +4,18 @@ use crate::cli::InitArgs;
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox::generated::{
-    GENERATED_MARKER, GithubWorkflowOptions, RelockWorkflowOptions, embedded_pixi_pin,
-    plan_vendors_cargo, render_github_workflow, render_relock_workflow,
+    GENERATED_MARKER, GithubWorkflowOptions, MARKER_WINDOW, RelockWorkflowOptions,
+    embedded_pixi_pin, plan_vendors_cargo, render_github_workflow, render_relock_workflow,
+    version_stamp_line,
 };
+use pixi_sandbox_core::sandbox_config::{CONFIG_SCHEMA, peek_schema, schema_supported};
+use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 const PREFERRED_CONFIG: &str = "pixi-sandbox.toml";
 const LEGACY_CONFIG: &str = ".pixi-sandbox.toml";
+const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone, Copy)]
 enum LauncherKind {
@@ -35,32 +39,57 @@ impl LauncherKind {
         }
     }
 
-    fn render(self, branch: &str, config: &Path) -> String {
+    fn render(self, version: &str, branch: &str, config: &Path) -> String {
         match self {
-            Self::Posix => posix_restore(branch, config),
-            Self::PowerShell => powershell_restore(&windows_branch(branch), config),
+            Self::Posix => posix_restore(version, branch, config),
+            Self::PowerShell => powershell_restore(version, &windows_branch(branch), config),
         }
     }
 }
 
-pub fn run(args: InitArgs) -> Result<()> {
-    let root = support::existing_dir(&args.project_root, "--project-root")?;
-    let workflow = resolve(&root, &args.github_workflow_path);
-    let relock = resolve(&root, &args.relock_workflow_path);
-    let config = select_config(&root, args.config.as_deref());
-    let config_reference = project_reference(&root, &config);
+/// The three marker-carrying files `init` owns and `init --check` audits. The sandbox config is
+/// deliberately not one of these: it is reviewed data `init` only ever seeds when absent, never
+/// regenerates, so "drift" is not a concept that applies to it the way it does to these three
+/// (AC#5 / D16) — its own check is [`config_schema_finding`].
+struct Targets {
+    workflow: (PathBuf, String),
+    relock: (PathBuf, String),
+    script: (PathBuf, String),
+    config: PathBuf,
+}
+
+impl Targets {
+    /// Every `(label, path, fresh render)` triple `init --check` compares against disk, in the
+    /// order `init` itself writes them.
+    fn owned(&self) -> [(&'static str, &Path, &str); 3] {
+        [
+            ("GitHub workflow", &self.workflow.0, self.workflow.1.as_str()),
+            ("relock workflow", &self.relock.0, self.relock.1.as_str()),
+            ("launcher", &self.script.0, self.script.1.as_str()),
+        ]
+    }
+}
+
+/// Resolve every path `init` touches and render fresh content for everything it owns outright.
+/// Shared by the writing path and `--check` so a render can never drift between the two: the
+/// comparison `--check` makes is only meaningful against the exact bytes `init` would write.
+fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
+    let workflow = resolve(root, &args.github_workflow_path);
+    let relock = resolve(root, &args.relock_workflow_path);
+    let config = select_config(root, args.config.as_deref());
+    let config_reference = project_reference(root, &config);
     let launcher_kind = LauncherKind::current();
     let script_argument = args
         .script_path
         .as_deref()
         .unwrap_or_else(|| launcher_kind.default_path());
-    let script = resolve(&root, script_argument);
+    let script = resolve(root, script_argument);
 
-    let generated = [&workflow, &relock, &script, &config];
-    if generated
+    let paths = [&workflow, &relock, &script, &config];
+    if paths
         .iter()
         .enumerate()
-        .any(|(index, path)| generated[index + 1..].contains(path))
+        .any(|(index, path)| paths[index + 1..].contains(path))
     {
         bail!(
             "generated workflow, relock workflow, launcher, and config paths must be distinct (workflow {}, relock {}, launcher {}, config {})",
@@ -70,50 +99,185 @@ pub fn run(args: InitArgs) -> Result<()> {
             config.display()
         );
     }
-    for path in [&workflow, &relock, &script] {
+
+    let workflow_content = render_github_workflow(GithubWorkflowOptions {
+        version: CLI_VERSION,
+        config_path: &config_reference.to_string_lossy(),
+    });
+    let relock_content = render_relock_workflow(RelockWorkflowOptions {
+        cli_version: CLI_VERSION,
+        pixi_version: &embedded_pixi_pin()
+            .context("the embedded tools lock declares no pixi pin")?,
+        cargo: plan_vendors_cargo(&config),
+        ci_workflow: &args.relock_ci_workflow,
+    });
+    let script_content = launcher_kind.render(CLI_VERSION, &args.branch, &config_reference);
+
+    Ok(Targets {
+        workflow: (workflow, workflow_content),
+        relock: (relock, relock_content),
+        script: (script, script_content),
+        config,
+    })
+}
+
+pub fn run(args: InitArgs) -> Result<()> {
+    let root = support::existing_dir(&args.project_root, "--project-root")?;
+    if args.check {
+        return check(&root, &args);
+    }
+    ensure_pixi_project(&root)?;
+    let targets = render_targets(&root, &args)?;
+    for (path, _) in [&targets.workflow, &targets.relock, &targets.script] {
         ensure_replaceable(path, args.force)?;
     }
 
-    ensure_pixi_project(&root)?;
-
-    write(
-        &workflow,
-        &render_github_workflow(GithubWorkflowOptions {
-            version: env!("CARGO_PKG_VERSION"),
-            config_path: &config_reference.to_string_lossy(),
-        }),
-    )?;
-    if !config.exists() {
-        write(&config, &default_config(current_platform()?))?;
+    let launcher_kind = LauncherKind::current();
+    write(&targets.workflow.0, &targets.workflow.1)?;
+    if !targets.config.exists() {
+        write(&targets.config, &default_config(current_platform()?))?;
     }
-    write(
-        &relock,
-        &render_relock_workflow(RelockWorkflowOptions {
-            pixi_version: &embedded_pixi_pin()
-                .context("the embedded tools lock declares no pixi pin")?,
-            cargo: plan_vendors_cargo(&config),
-            ci_workflow: &args.relock_ci_workflow,
-        }),
-    )?;
-    write(
-        &script,
-        &launcher_kind.render(&args.branch, &config_reference),
-    )?;
+    write(&targets.relock.0, &targets.relock.1)?;
+    write(&targets.script.0, &targets.script.1)?;
     if matches!(launcher_kind, LauncherKind::Posix) {
-        support::make_executable(&script)?;
+        support::make_executable(&targets.script.0)?;
     }
 
     println!(
         "generated GitHub sandbox workflow at {}",
-        workflow.display()
+        targets.workflow.0.display()
     );
     println!(
         "generated lockfile-refresh workflow at {}",
-        relock.display()
+        targets.relock.0.display()
     );
-    println!("using sandbox config at {}", config.display());
-    println!("generated offline launcher at {}", script.display());
+    println!("using sandbox config at {}", targets.config.display());
+    println!(
+        "generated offline launcher at {}",
+        targets.script.0.display()
+    );
     Ok(())
+}
+
+/// Whether `content`'s leading [`MARKER_WINDOW`] lines carry the ownership marker — the one
+/// signal that decides whether a file is pixi-sandbox's to replace (`ensure_replaceable`) or to
+/// report as drifted rather than foreign (`classify`). Kept as the single implementation both
+/// read, so the two can never disagree about what "owned" means.
+fn is_generated(content: &str) -> bool {
+    content
+        .lines()
+        .take(MARKER_WINDOW)
+        .any(|line| line.contains(GENERATED_MARKER))
+}
+
+/// How one owned file on disk compares to the render `init` would write for it right now.
+#[derive(Debug, PartialEq, Eq)]
+enum Drift {
+    /// Does not exist yet; `init` would create it.
+    Missing,
+    /// Exists, carries no ownership marker, and is therefore not `init`'s to touch without
+    /// `--force` — reported separately from drift because the remedy is different (AC#4).
+    Foreign,
+    /// Exists, is owned, and no longer matches a fresh render.
+    Stale,
+    /// Exists, is owned, and matches a fresh render exactly.
+    Current,
+}
+
+fn classify(path: &Path, fresh: &str) -> Result<Drift> {
+    if !path.exists() {
+        return Ok(Drift::Missing);
+    }
+    let current =
+        fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    if !is_generated(&current) {
+        return Ok(Drift::Foreign);
+    }
+    Ok(if current == fresh {
+        Drift::Current
+    } else {
+        Drift::Stale
+    })
+}
+
+/// Render fresh, write nothing, and name every finding (task-47 AC#4 / decision D16): this is
+/// `init`'s drift gate, run by the generated workflow's upgrade job (AC#6) ahead of regenerating
+/// anything, and usable by a consumer directly to audit a tree before deciding to run `init`.
+fn check(root: &Path, args: &InitArgs) -> Result<()> {
+    ensure_pixi_project(root)?;
+    let targets = render_targets(root, args)?;
+
+    let mut findings = Vec::new();
+    for (label, path, fresh) in targets.owned() {
+        match classify(path, fresh)? {
+            Drift::Missing => findings.push(format!(
+                "{label} {} is missing; run `pixi-sandbox init` to generate it",
+                path.display()
+            )),
+            Drift::Foreign => findings.push(format!(
+                "{label} {} exists and is not owned by pixi-sandbox; run `pixi-sandbox init --force` to replace it",
+                path.display()
+            )),
+            Drift::Stale => findings.push(format!(
+                "{label} {} no longer matches a fresh render; run `pixi-sandbox init` to regenerate it",
+                path.display()
+            )),
+            Drift::Current => {}
+        }
+    }
+
+    if targets.config.exists() {
+        if let Some(finding) = config_schema_finding(&targets.config)? {
+            findings.push(finding);
+        }
+    } else {
+        findings.push(format!(
+            "sandbox config {} is missing; run `pixi-sandbox init` to generate it",
+            targets.config.display()
+        ));
+    }
+
+    for finding in &findings {
+        println!("{finding}");
+    }
+    if findings.is_empty() {
+        println!("every owned file matches a fresh render; sandbox config schema is supported");
+        return Ok(());
+    }
+    // Non-zero is the point: the generated upgrade job and any human audit key on this.
+    bail!(
+        "{} finding(s); see above",
+        findings.len()
+    )
+}
+
+/// Config is reviewed data `init` only ever seeds when absent (D17, AC#5): a schema mismatch is
+/// reported as a named finding rather than surfacing `SandboxConfig::load`'s validation error
+/// verbatim, because the right remedy differs by direction and `--check` must say so without
+/// requiring the rest of the file to parse under today's exact field set.
+fn config_schema_finding(config: &Path) -> Result<Option<String>> {
+    let schema = peek_schema(config).with_context(|| {
+        format!(
+            "{} does not declare a schema; it is not a recognisable sandbox config",
+            config.display()
+        )
+    })?;
+    if schema_supported(schema) {
+        return Ok(None);
+    }
+    Ok(Some(match schema.cmp(&CONFIG_SCHEMA) {
+        Ordering::Greater => format!(
+            "sandbox config {} declares schema {schema}, newer than this CLI's {CONFIG_SCHEMA} \
+             — upgrade pixi-sandbox before running init or plan against it",
+            config.display()
+        ),
+        _ => format!(
+            "sandbox config {} declares schema {schema}, which this CLI has never understood \
+             (supports 1..={CONFIG_SCHEMA}) — it is not a config this or any pixi-sandbox release \
+             can read",
+            config.display()
+        ),
+    }))
 }
 
 /// Init writes only files it owns (D17): the publisher workflow, the relock workflow, the
@@ -164,11 +328,7 @@ fn ensure_replaceable(path: &Path, force: bool) -> Result<()> {
         return Ok(());
     }
     let generated = fs::read_to_string(path)
-        .map(|text| {
-            text.lines()
-                .take(3)
-                .any(|line| line.contains(GENERATED_MARKER))
-        })
+        .map(|text| is_generated(&text))
         .unwrap_or(false);
     if generated {
         return Ok(());
@@ -239,7 +399,7 @@ fn powershell_config(config: &Path) -> String {
     }
 }
 
-fn posix_restore(branch: &str, config: &Path) -> String {
+fn posix_restore(version: &str, branch: &str, config: &Path) -> String {
     // The launcher stays a bootstrap: POSIX sh and no dependency on the tool it is about to
     // unpack. Branch identity comes from the same selected config as the publisher, with the
     // branch reviewed at init time as a fallback when the config cannot decide. If a connected
@@ -247,6 +407,7 @@ fn posix_restore(branch: &str, config: &Path) -> String {
     // PIXI_SANDBOX_FETCH=skip and rely on the branch already being present.
     let template = r#"#!/bin/sh
 # __GENERATED_MARKER__
+# __VERSION_STAMP__
 set -eu
 ROOT=$(git rev-parse --show-toplevel)
 case $(uname -s)-$(uname -m) in
@@ -307,6 +468,7 @@ exec "$BIN" restore --branch-location "$TRANSPORT" --output-path "$ROOT" --force
 "#;
     template
         .replace("__GENERATED_MARKER__", GENERATED_MARKER)
+        .replace("__VERSION_STAMP__", &version_stamp_line(version))
         .replace("__BRANCH__", branch)
         .replace("__CONFIG__", &posix_config(config))
 }
@@ -317,8 +479,9 @@ fn windows_branch(branch: &str) -> String {
         .map_or_else(|| branch.to_string(), |prefix| format!("{prefix}win-64"))
 }
 
-fn powershell_restore(branch: &str, config: &Path) -> String {
+fn powershell_restore(version: &str, branch: &str, config: &Path) -> String {
     let template = r#"# __GENERATED_MARKER__
+# __VERSION_STAMP__
 $ErrorActionPreference = 'Stop'
 $Root = (git rev-parse --show-toplevel).Trim()
 $DefaultBranch = '__BRANCH__'
@@ -379,6 +542,7 @@ exit $LASTEXITCODE
 "#;
     template
         .replace("__GENERATED_MARKER__", GENERATED_MARKER)
+        .replace("__VERSION_STAMP__", &version_stamp_line(version))
         .replace("__BRANCH__", branch)
         .replace("__CONFIG__", &powershell_config(config))
 }
@@ -411,7 +575,7 @@ mod tests {
 
     #[test]
     fn launchers_are_bootstraps_not_installers() {
-        let shell = posix_restore("sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
+        let shell = posix_restore("1.2.3", "sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
         assert!(shell.contains("git -C \"$ROOT\" archive \"$REF\""));
         assert!(shell.contains("PIXI_SANDBOX_FETCH:-auto"));
         assert!(shell.contains("refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"));
@@ -427,7 +591,7 @@ mod tests {
         assert!(shell.contains("exec \"$BIN\" restore --branch-location \"$TRANSPORT\" --output-path \"$ROOT\" --force \"$@\""));
         assert!(!shell.contains("--user-tools \""));
         let powershell =
-            powershell_restore("sandbox/developer-win-64", Path::new(PREFERRED_CONFIG));
+            powershell_restore("1.2.3", "sandbox/developer-win-64", Path::new(PREFERRED_CONFIG));
         assert!(powershell.contains("git -C $Root archive --format=tar --output=$Archive $Ref"));
         assert!(powershell.contains("$env:PIXI_SANDBOX_FETCH -eq 'skip'"));
         assert!(powershell.contains("refs/heads/${Branch}:refs/remotes/origin/${Branch}"));
@@ -441,6 +605,23 @@ mod tests {
         assert!(!powershell.contains("--user-tools $"));
     }
 
+    /// task-47 AC#3: both launchers carry a parseable version stamp beside the ownership
+    /// marker, in the same window `ensure_replaceable` and `is_generated` already read.
+    #[test]
+    fn launchers_carry_a_parseable_version_stamp() {
+        let shell = posix_restore("7.8.9", "sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
+        assert_eq!(
+            pixi_sandbox::generated::parse_version_stamp(&shell),
+            Some("7.8.9")
+        );
+        let powershell =
+            powershell_restore("7.8.9", "sandbox/developer-win-64", Path::new(PREFERRED_CONFIG));
+        assert_eq!(
+            pixi_sandbox::generated::parse_version_stamp(&powershell),
+            Some("7.8.9")
+        );
+    }
+
     #[test]
     fn conventional_linux_branch_maps_to_windows() {
         assert_eq!(
@@ -452,6 +633,7 @@ mod tests {
     #[test]
     fn launchers_read_the_branch_off_the_selected_plan() {
         let shell = posix_restore(
+            "1.2.3",
             "sandbox/developer-linux-64",
             Path::new("config/sandbox plan.toml"),
         );
@@ -462,6 +644,7 @@ mod tests {
         assert!(shell.contains("DEFAULT_BRANCH=sandbox/developer-linux-64"));
 
         let powershell = powershell_restore(
+            "1.2.3",
             "sandbox/developer-win-64",
             Path::new("config/sandbox plan.toml"),
         );
@@ -474,10 +657,152 @@ mod tests {
 
     #[test]
     fn an_explicit_branch_still_wins_over_the_config() {
-        let shell = posix_restore("sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
+        let shell = posix_restore("1.2.3", "sandbox/developer-linux-64", Path::new(PREFERRED_CONFIG));
         let override_at = shell.find("BRANCH=${PIXI_SANDBOX_BRANCH:-}").unwrap();
         let derive_at = shell.find("CONFIG=$ROOT/pixi-sandbox.toml").unwrap();
         assert!(override_at < derive_at);
         assert!(shell.contains("if [ -z \"$BRANCH\" ] && [ -r \"$CONFIG\" ]; then"));
+    }
+
+    /// task-47 AC#3/AC#4/AC#5 — `init --check` is the drift gate: render fresh, compare, write
+    /// nothing, and exit non-zero naming each finding. These exercise `run()` itself (both
+    /// modes), not just the pure renderers above, because the whole point of `--check` is that
+    /// it sees exactly what `init` would have written.
+    mod check {
+        use super::super::{Drift, classify, config_schema_finding, run};
+        use crate::cli::InitArgs;
+        use std::fs;
+        use std::path::{Path, PathBuf};
+
+        fn project() -> tempfile::TempDir {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join("pixi.toml"), "[workspace]\nchannels = []\n").unwrap();
+            dir
+        }
+
+        fn args(root: &Path) -> InitArgs {
+            InitArgs {
+                project_root: root.to_path_buf(),
+                github_workflow_path: PathBuf::from(".github/workflows/publish-sandbox.yml"),
+                relock_workflow_path: PathBuf::from(".github/workflows/relock.yml"),
+                relock_ci_workflow: "ci.yml".to_string(),
+                script_path: None,
+                config: None,
+                branch: "sandbox/developer-linux-64".to_string(),
+                force: false,
+                check: false,
+            }
+        }
+
+        fn checked(root: &Path) -> InitArgs {
+            InitArgs {
+                check: true,
+                ..args(root)
+            }
+        }
+
+        /// The exact behaviour the generated upgrade job (AC#6) depends on: a tree `init` just
+        /// wrote passes `--check` cleanly, and nothing on disk changes because `--check` ran.
+        #[test]
+        fn a_freshly_initialised_tree_passes_check_and_check_writes_nothing() {
+            let project = project();
+            run(args(project.path())).unwrap();
+
+            let before = fs::read_to_string(project.path().join(".github/workflows/publish-sandbox.yml"))
+                .unwrap();
+            run(checked(project.path())).unwrap();
+            let after = fs::read_to_string(project.path().join(".github/workflows/publish-sandbox.yml"))
+                .unwrap();
+            assert_eq!(before, after, "--check must never write");
+        }
+
+        /// A hand-edited (or stale) owned file is reported as drifted, named with its remedy,
+        /// and `--check` still writes nothing even though it found a problem.
+        #[test]
+        fn a_hand_edited_owned_file_is_reported_as_drifted_not_silently_fixed() {
+            let project = project();
+            run(args(project.path())).unwrap();
+            let workflow = project.path().join(".github/workflows/publish-sandbox.yml");
+            let marked = fs::read_to_string(&workflow).unwrap();
+            fs::write(&workflow, format!("{marked}# a stale local edit\n")).unwrap();
+
+            let error = run(checked(project.path())).unwrap_err().to_string();
+            assert!(error.contains("finding"), "{error}");
+
+            let untouched = fs::read_to_string(&workflow).unwrap();
+            assert!(untouched.ends_with("# a stale local edit\n"), "--check must not rewrite it");
+        }
+
+        /// A file that exists but carries no ownership marker is foreign, not drifted: the
+        /// remedy is `--force`, never a plain `init` that would otherwise silently clobber a
+        /// file this CLI does not own.
+        #[test]
+        fn a_foreign_file_is_reported_separately_from_drift() {
+            let project = project();
+            fs::create_dir_all(project.path().join(".github/workflows")).unwrap();
+            let workflow = project.path().join(".github/workflows/publish-sandbox.yml");
+            fs::write(&workflow, "name: hand-written\n").unwrap();
+
+            assert_eq!(
+                classify(&workflow, "irrelevant fresh render").unwrap(),
+                Drift::Foreign
+            );
+            let error = run(checked(project.path())).unwrap_err().to_string();
+            assert!(error.contains("finding"), "{error}");
+        }
+
+        /// A missing owned file is its own finding, distinct from drift and from foreign
+        /// ownership — the remedy (`pixi-sandbox init`) is the same as drift's, but the file
+        /// never existed to compare against.
+        #[test]
+        fn a_missing_owned_file_is_its_own_finding() {
+            let project = project();
+            let error = run(checked(project.path())).unwrap_err().to_string();
+            assert!(error.contains("finding"), "{error}");
+        }
+
+        /// Config is reviewed data: `init` never rewrites it once it exists, in either mode.
+        #[test]
+        fn init_never_rewrites_an_existing_config_in_either_mode() {
+            let project = project();
+            run(args(project.path())).unwrap();
+            let config = project.path().join("pixi-sandbox.toml");
+            fs::write(&config, "schema = 1\nbranch_prefix = \"custom\"\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n").unwrap();
+            let before = fs::read_to_string(&config).unwrap();
+
+            run(args(project.path())).unwrap();
+            assert_eq!(fs::read_to_string(&config).unwrap(), before, "init must not rewrite it");
+
+            let _ = run(checked(project.path()));
+            assert_eq!(fs::read_to_string(&config).unwrap(), before, "--check must not rewrite it");
+        }
+
+        /// A config schema newer than this CLI understands is a named finding with its own
+        /// remedy, never a generic parse-error crash (AC#5).
+        #[test]
+        fn a_newer_config_schema_is_a_named_finding() {
+            let project = project();
+            let config = project.path().join("pixi-sandbox.toml");
+            fs::write(
+                &config,
+                "schema = 2\nbranch_prefix = \"sandbox\"\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n",
+            )
+            .unwrap();
+            let finding = config_schema_finding(&config).unwrap().unwrap();
+            assert!(finding.contains("newer than this CLI's"), "{finding}");
+        }
+
+        /// The schema this CLI actually ships produces no finding at all.
+        #[test]
+        fn the_current_schema_produces_no_finding() {
+            let project = project();
+            let config = project.path().join("pixi-sandbox.toml");
+            fs::write(
+                &config,
+                "schema = 1\nbranch_prefix = \"sandbox\"\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n",
+            )
+            .unwrap();
+            assert_eq!(config_schema_finding(&config).unwrap(), None);
+        }
     }
 }

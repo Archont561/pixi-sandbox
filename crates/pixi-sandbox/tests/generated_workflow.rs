@@ -3,7 +3,7 @@
 //! actionlint validates GitHub's full schema through xtask. These tests own the contracts it
 //! cannot evaluate: indentation-derived matrix shape and agreement with the planner's JSON keys.
 
-use pixi_sandbox::generated::{GithubWorkflowOptions, render_github_workflow};
+use pixi_sandbox::generated::{GithubWorkflowOptions, parse_version_stamp, render_github_workflow};
 use pixi_sandbox_core::platform::Platform;
 use pixi_sandbox_core::sandbox_config::plan_override;
 use rstest::rstest;
@@ -106,6 +106,13 @@ fn generated_workflow_matches_the_reviewed_golden_file() {
         include_str!("fixtures/generated/publish-sandbox.yml"),
         "the generated consumer workflow changed; review and update the golden file intentionally"
     );
+}
+
+/// task-47 AC#3: the publisher workflow carries a parseable version stamp naming the exact CLI
+/// release `init` rendered it with, within the marker window the ownership check already reads.
+#[test]
+fn generated_workflow_carries_a_parseable_version_stamp() {
+    assert_eq!(parse_version_stamp(&workflow()), Some(VERSION));
 }
 
 #[rstest]
