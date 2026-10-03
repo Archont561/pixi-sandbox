@@ -85,6 +85,8 @@ jobs:
         # multiline-run-allowed: released-binary consumer lifecycle is the proof subject
         run: |
           set -euo pipefail
+          exec > >(tee "$RUNNER_TEMP/evidence/lifecycle-full.log") 2>&1
+          trap 'rc=$?; echo "::error::lifecycle step failed (exit $rc) at line $LINENO: $BASH_COMMAND"; tail -n 80 "$RUNNER_TEMP/evidence/lifecycle-full.log" | while IFS= read -r line; do printf "::error::%s\n" "$line"; done; exit $rc' ERR
           consumer="$RUNNER_TEMP/consumer"
           transport="$RUNNER_TEMP/transport"
           remote="$RUNNER_TEMP/consumer-proof.git"
