@@ -166,7 +166,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
           path="$RUNNER_TEMP/$asset"
           curl --fail --location --silent --show-error "$base/$asset" --output "$path"
           curl --fail --location --silent --show-error "$base/SHA256SUMS" --output "$RUNNER_TEMP/SHA256SUMS"
-          grep "  $asset$" "$RUNNER_TEMP/SHA256SUMS" | sha256sum --check --status -
+          grep "  $asset$" "$RUNNER_TEMP/SHA256SUMS" | sed "s#  $asset\$#  $path#" | sha256sum --check --status - || { echo "::error::SHA256 verification failed for $asset"; exit 1; }
           chmod +x "$path"
           echo "path=$path" >> "$GITHUB_OUTPUT"
 
