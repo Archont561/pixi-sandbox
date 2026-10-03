@@ -49,6 +49,14 @@ jobs:
           name = "consumer-proof"
           channels = ["https://prefix.dev/conda-forge"]
           platforms = ["linux-64"]
+
+          [dependencies]
+          # A dependency-free environment solves to no platform-specific lock entry at all
+          # (pixi omits per-platform data when there is nothing to record), so pixi-pack later
+          # fails with "platform not found in lockfile: linux-64" and an empty candidate list.
+          # One small, fast-to-fetch package (same choice as tests/fixtures/demo-project) is
+          # enough to make the environment real without slowing the proof down.
+          ripgrep = "*"
           EOF
           printf '%s\n' "consumer fixture: $RELEASE_TAG" > "$RUNNER_TEMP/consumer/README.md"
 
@@ -85,8 +93,6 @@ jobs:
         # multiline-run-allowed: released-binary consumer lifecycle is the proof subject
         run: |
           set -euo pipefail
-          exec > >(tee "$RUNNER_TEMP/evidence/lifecycle-full.log") 2>&1
-          trap 'rc=$?; echo "::error::lifecycle step failed (exit $rc) at line $LINENO: $BASH_COMMAND"; tail -n 80 "$RUNNER_TEMP/evidence/lifecycle-full.log" | while IFS= read -r line; do printf "::error::%s\n" "$line"; done; exit $rc' ERR
           consumer="$RUNNER_TEMP/consumer"
           transport="$RUNNER_TEMP/transport"
           remote="$RUNNER_TEMP/consumer-proof.git"
