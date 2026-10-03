@@ -834,3 +834,24 @@ fixed Arena session branch — it had to be re-pushed afterwards; merge without 
 relative exe re-resolved. Also seen once: killing a probed child reaches one pid only — an
 orphaned grandchild kept inherited pipes open and hung joined reader threads; the timeout
 path detaches readers now.
+
+### 2026-10-03 — task-48 re-verified; still 4/7, same two connected-host gaps
+
+A later session picked task-48 back up expecting to implement it, found the fix already
+merged (PR #73, D17) and shipped in **v0.4.4** (confirmed via `gh release view`, published
+2026-10-02T22:56:26Z, ~40 minutes after the PR merged) and still present in the current
+**v0.5.0**; issue #71 is closed. Re-ran the init test suite to reconfirm nothing regressed
+(`init_leaves_the_consumer_pixi_manifest_untouched` and
+`init_still_refuses_a_directory_without_a_pixi_manifest` both pass) and re-read the guide
+section and D17 — both still match the shipped code. No code or doc changes were needed.
+
+The two remaining gaps are exactly what the prior session left: AC#2/#6's live `pixi lock`
+probe needs a connected host (this sandbox still reaches only github.com — prefix.dev,
+crates.io and static.rust-lang.org all fail at the TLS layer, confirmed again this session),
+and AC#7's upstream `prefix-dev/pixi` report needs a personal GitHub token or the web UI —
+`gh issue create --repo prefix-dev/pixi` and the equivalent `gh api` call both still return
+`Resource not accessible by integration` (HTTP 403), the same class of installation-token
+limitation task-54 hit on `gh workflow run`. The drafted report text is unchanged in
+task-48's implementation notes. Task-48 stays **In Progress**; nothing here needs a backlog
+task of its own, it's the same two open ACs waiting on the same online-host/personal-token
+access the task already named.
