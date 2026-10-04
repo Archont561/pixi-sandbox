@@ -1,0 +1,14 @@
+{
+  "name": "@repo/xtask",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "cargo nextest run -p xtask --no-tests pass",
+    "lint": "cargo clippy -p xtask --all-targets -- -D warnings"
+  },
+  "dependencies": {
+    "@repo/pixi-sandbox": "workspace:*",
+    "@repo/pixi-sandbox-core": "workspace:*",
+    "@repo/pixi-sandbox-git": "workspace:*"
+  }
+}

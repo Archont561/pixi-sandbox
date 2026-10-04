@@ -98,8 +98,8 @@ The current redesign is planned in Backlog milestone **m-0 — v1 standalone cro
 - **TASK-22** — generate a disposable workflow that installs `pixi-sandbox` from `@archont561/pixi-sandbox` and calls the binary directly, without Archont561 composite Actions.
 - **TASK-23** — publish Pixi/Conda package variants for `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64`, and `win-64`, while retaining standalone release binaries for transport bootstrap.
 - **TASK-24** — measure standalone transport/restore orchestration and tool deduplication before changing the existing D2/D3 `pixi-pack`/`pixi-unpack` decisions; schema compatibility is required.
-- **TASK-25** — move npm-compatible tooling such as Biome and Astro to `package.json`/`bun.lock`, keep Bun in a separate web environment, and decide the Windows Node/Bun fallback.
-- **TASK-26** — evaluate Turbo only after multiple JavaScript workspaces justify dependency-aware orchestration and caching.
+- **TASK-25** — moved npm-compatible tooling such as Biome and Astro to `package.json`/`bun.lock`; task-70 later folded Bun into the one developer environment for cross-language orchestration.
+- **TASK-26 / TASK-70** — the JS-only Turbo spike deferred adoption, then Pathway's measured Rust-package model supplied a new use case; D15 now records Turbo as the cross-language graph.
 
 The v1 proposal is now an accepted architectural decision: backlog `decision-1` is accepted
 (through task-24's measurements, recorded in `decision-2` and `doc-7`), with the boundary that
@@ -228,8 +228,7 @@ mandatory on a restored host.
 `crates/pixi-sandbox/src/generated/relock_workflow.rs` rendered by `pixi-sandbox init`
 (`--relock-workflow-path`, `--relock-ci-workflow`) and committed here as
 `.github/workflows/relock.yml`, held byte-equal by `check-repository` check 10 with
-`pixi run xtask render-relock` as the only way to change it. Also: the session skill's missing
-half (`.agents/skills/session/`) — the opening-prompt and session-report templates, and a
+`pixi run xtask render-relock` as the only way to change it. Also: thealf (`.agents/skills/session/`) — the opening-prompt and session-report templates, and a
 post-merge phase that forbids closing a task on an AC no machine here can prove.
 
 **The finding that made the generated shape cheap:** the check-9 generated-file exemption, which
@@ -995,3 +994,4 @@ Next session should start with:
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do
 > not implement goes in `CONTEXT.md`, not into the files it speculates about), the session
 > procedure and its templates are in `.agents/skills/session/`.
+.agents/skills/session/`.

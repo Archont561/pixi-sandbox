@@ -1,0 +1,13 @@
+{
+  "name": "@repo/pixi-sandbox",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "cargo nextest run -p pixi-sandbox && cargo test --doc -p pixi-sandbox",
+    "lint": "cargo clippy -p pixi-sandbox --all-targets -- -D warnings"
+  },
+  "dependencies": {
+    "@repo/pixi-sandbox-core": "workspace:*",
+    "@repo/pixi-sandbox-git": "workspace:*"
+  }
+}

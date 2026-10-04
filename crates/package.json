@@ -1,0 +1,13 @@
+{
+  "name": "@repo/rust",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workspace-wide Rust checks that deliberately remain one Cargo invocation.",
+  "scripts": {
+    "lint": "bun run lint:fmt && bun run lint:deps",
+    "lint:fmt": "cargo fmt --all --check",
+    "lint:deps": "cargo deny --manifest-path ../Cargo.toml check",
+    "fmt": "cargo fmt --all",
+    "coverage": "cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --ignore-filename-regex 'release/github\\.rs$'"
+  }
+}

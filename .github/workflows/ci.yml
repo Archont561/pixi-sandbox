@@ -32,24 +32,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
-          environments: default web
+          environments: default
           cache: true
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ github.ref_name }}-
+            turbo-${{ runner.os }}-
       - run: pixi run fmt --check
-      - run: pixi run lint-rust
-      - run: pixi run deny
-      - run: pixi run lint-actions
-      - run: pixi run xtask lint-generated-workflow
-      - run: pixi run sandbox-plan --json
-      - run: pixi run lint-toml
-      - run: pixi run lint-docs
-      - run: pixi run xtask check-repository
+      - run: pixi run lint
       - run: pixi run test
-      - run: pixi run test-doc
       - run: pixi run coverage
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          files: lcov.info
+          files: crates/lcov.info
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
       - run: pixi run docs build
