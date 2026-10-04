@@ -3,10 +3,10 @@ id: TASK-54
 title: >-
   Make pack refuse a self-bin that cannot run standalone and prove the embedded
   tool executes (issue 81)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-03 08:04'
-updated_date: '2026-10-03 14:47'
+updated_date: '2026-10-04 20:31'
 labels:
   - bug
   - pack
@@ -81,7 +81,7 @@ unrestorable transport.
 - [x] #3 `doctor` flags an embedded tool that fails the same standalone probe (or its structural trampoline signature), so a fetched branch in the consumer's exact state — faithful copy, unrestorable tool — is diagnosed *before* a restore is attempted, while a healthy transport passes unchanged
 - [x] #4 The e2e lifecycle (`tests/e2e.rs`, pack → publish → restore) gains an isolated-environment assertion that the packed branch's `tools/<platform>/pixi-sandbox --version` executes without any pixi global prefix, so a green publisher run proves the embedded bootstrap is executable — closing the "successful publish ≠ restorable" gap the issue names
 - [x] #5 The ci-publishing guide (and any `--self-bin` reference) states the source must be a standalone binary, names the `command -v pixi-sandbox`-from-`pixi global install` trap explicitly, and gives the correct interim recipe (checksum-verified standalone asset download) until task-52 ships
-- [ ] #6 The fix ships in a patch release; the affected consumer transport is repacked with a standalone self-bin and a fresh consumer restore passes — a connected/CI proof recorded here, or the task stays In Progress naming exactly this gap
+- [x] #6 The fix ships in a patch release; the affected consumer transport is repacked with a standalone self-bin and a fresh consumer restore passes — a connected/CI proof recorded here, or the task stays In Progress naming exactly this gap
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -187,7 +187,9 @@ consumer restore). It stays open with the release flow.
 
 Evidence: `gh release download v0.5.0 --pattern pixi-sandbox-x86_64-unknown-linux-musl`, then `env -i HOME=<bare> <asset> --version` prints `pixi-sandbox 0.5.0` and exits 0. `--help` likewise works with no PATH at all, so it needs neither a pixi prefix nor `trampoline_configuration`. The bytes match the published `SHA256SUMS` (`2101d96fe2edc58eedc430104426261ab07e98d4311732d429e38c1119c31cfd`) and the file is an ELF. Issue #81 therefore misattributes the origin: the trampoline in the consumer transport came from the issue-#80 workaround, which embedded the `pixi global install` launcher as `--self-bin` while the release download returned 404 — not from the release asset. PR #82 stands on its own regardless: pack now refuses such a binary by provenance, and then executes the exact bytes it is about to ship.
 
-AC#6 remains the whole of what is left: a patch release, then the affected consumer transport repacked with a standalone self-bin and a fresh restore. Neither the release nor the repack can happen from this sandbox.
+2026-10-04 — AC#6 closed against the affected qgis-rs consumer. The guard shipped in v0.5.2. The current `sandbox/developer-linux-64` transport is commit `66c09905bf2227af45934e6effed29f14de47d8c`; its manifest names pixi-sandbox 0.5.2 and was packed from qgis-rs source `4af4125`. The embedded tool blob (`ede1fbd8e173e71c9ae6eee1ceb2cb2f9879fb7c`, sha256 `d905c9f44c5f6b6fa629b141ca383b4d4382df5afa05efffcc548ae443e9dadf`) was fetched through the GitHub object API and executed under `env -i` with a bare HOME, printing `pixi-sandbox 0.5.2`.
+
+A fresh depth-one clone of qgis-rs then ran its generated `scripts/restore.sh` with user-tool registration disabled. The launcher fetched that exact transport, verified all 8,708 blobs / 1,705.4 MiB, materialised pixi 0.81.0, pixi-sandbox 0.5.2 and pixi-unpack 0.7.11, restored both environments plus 162 vendored crates, and finished `verify restored tree` with 75,732 entries checked and zero failures for each environment. This is the affected-consumer repack and fresh restore proof AC#6 required.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -207,8 +209,9 @@ transport after, and only after, every declared byte matches; the recreated cons
 push. The e2e lifecycle asserts the packed branch's embedded tool executes with no pixi
 prefix, and the docs name the trap in both the guide and the CLI reference.
 
-AC#2–#5 are met and checked. AC#1's root-cause half is recorded; its asset-execution half
-and AC#6 (patch release + consumer repack + fresh restore) remain open — both need a
-connected host or a release, so the task stays In Progress naming exactly those proofs.
+All criteria are met. The v0.5.0 release asset was independently proven standalone, the guard
+shipped in v0.5.2, and the affected qgis-rs transport now embeds v0.5.2. A fresh restore of
+that 1.7 GiB transport verified all declared blobs, restored both environments and the Cargo
+vendor tree, and reported zero restored-tree failures.
 <!-- SECTION:SUMMARY:END -->
 <!-- SECTION:FINAL_SUMMARY:END -->
