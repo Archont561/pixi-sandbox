@@ -127,7 +127,7 @@ jobs:
       # fail first with a message about installation, when the fact worth reporting is that the
       # lock no longer satisfies the manifest.
       - run: pixi lock --check
-
+__CARGO_GUARD__
   relock:
     name: relock
     needs: guard
@@ -189,6 +189,11 @@ __CARGO_STEP__      - id: commit
           GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ github.head_ref }}
 "#;
+    let cargo_guard = if options.cargo {
+        "      # Cargo's locked fetch is the non-writing Cargo.lock counterpart to `pixi lock\n      # --check`: it fails before CI or packing when a Rust manifest changed without a relock.\n      - run: cargo fetch --locked\n"
+    } else {
+        ""
+    };
     let cargo_step = if options.cargo {
         "      # Resolves only what the new constraint forces; `cargo update` would move the\n      # whole workspace, which is a different intent and a different pull request.\n      - run: cargo fetch\n"
     } else {
@@ -213,6 +218,7 @@ __CARGO_STEP__      - id: commit
             &super::version_stamp_line(options.cli_version),
         )
         .replace("__PIXI_VERSION__", options.pixi_version)
+        .replace("__CARGO_GUARD__", cargo_guard)
         .replace("__CARGO_STEP__", cargo_step)
         .replace("__LOCK_FILES__", lock_files)
         .replace("__LOCK_COMMANDS__", lock_commands)
