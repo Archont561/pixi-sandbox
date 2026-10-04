@@ -1,11 +1,11 @@
 ---
 id: TASK-70
 title: Adopt the Pathway Turbo and cargo-nextest orchestration model
-status: In Progress
+status: Done
 assignee:
   - '@agent'
 created_date: '2026-10-04 17:50'
-updated_date: '2026-10-04 18:00'
+updated_date: '2026-10-04 20:11'
 labels:
   - tooling
   - turbo
@@ -26,7 +26,7 @@ Replace the split Pixi Cargo and Bun task graph with the proven Archont561/pathw
 <!-- AC:BEGIN -->
 - [x] #1 Root package.json and bun.lock pin Turbo and expose one repo-wide script per build/check verb; Pixi public test lint fmt coverage and docs commands delegate to that graph without duplicate Cargo flags
 - [x] #2 Each Cargo crate is represented by a private Turbo workspace package with dependency edges matching Cargo path dependencies; per-crate test scripts use cargo nextest and include doctests where applicable
-- [ ] #3 The default Pixi environment carries Bun with Rust and repository tools; the redundant web environment is removed from the publish plan and restored developer workflow — implementation is complete, but a fresh connected `pixi install --frozen` or CI run must prove the merged lock installs on both locked platforms
+- [x] #3 The default Pixi environment carries Bun with Rust and repository tools; the redundant web environment is removed from the publish plan and restored developer workflow; connected PR CI proved the merged lock through successful setup-pixi installations and Linux/Windows jobs
 - [x] #4 Turbo inputs invalidate on Cargo manifests Cargo.lock pixi.lock source tests task configuration and relevant repo policy files; mutable and release tasks are never incorrectly cache-skipped
 - [x] #5 CI restores the local Turbo cache and runs the same Pixi public commands used locally; remote caching remains disabled
 - [x] #6 Repository policy checks exercise the Turbo graph and reject drift or phantom task wiring; fmt lint test docs build and generated-workflow checks pass
@@ -48,7 +48,7 @@ The Pixi default lock now contains the former default and web package sets as on
 
 Evidence: Turbo dry-run selected exactly four test tasks from @repo/xtask... with no phantom package; pixi run test passed all crate suites and a repeat was FULL TURBO in 35 ms; coverage independently ran 626 passing / 1 skipped; pixi run lint passed 11 graph tasks; docs build produced 13 pages; fmt --check passed. D15 records why Pathway cross-language evidence supersedes the JS-only deferral.
 
-One proof remains: this airlocked checkout has the old transport's two physical prefixes and no cached Bun `.conda` archive. The merged `pixi.lock` is accepted by `pixi install --frozen --offline` (it proceeds to the expected missing-package fetch), but a fresh installation cannot complete without conda egress. AC#3 therefore stays open until the branch CI or another connected host completes `pixi install --frozen`; do not close this task from the local graph evidence alone.
+Connected proof completed in PR #99: GitHub Actions run 37223002673 installed with the pinned setup-pixi action and passed the consolidated Linux CI gate (fmt, lint, test, coverage, and docs) plus the Windows replacement test. Lock guard, airlock planning, and the linux-64 airlock job also passed in runs 37223002753 and 37223002708. This closes AC#3 and the task.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
