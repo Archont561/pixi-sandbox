@@ -15,6 +15,27 @@ pixi-sandbox --version
 pixi sandbox --help   # via pixi extension
 ```
 
+## Pipeline diagnostics
+
+`pack`, `doctor`, and `publish` share two diagnostics controls:
+
+```bash
+pixi-sandbox pack ... -v
+pixi-sandbox doctor ... -vv --log-file /var/tmp/pixi-sandbox-doctor.log
+pixi-sandbox publish ... --log-file ./publish-attempt.log
+```
+
+`-v` writes phase boundaries to stderr; `-vv` also includes reviewed context such as local paths,
+platform, environment count, and helper-tool paths. `--log-file <PATH>` creates a durable plain
+text log and flushes every phase plus the complete causal error chain before exit. It works with
+or without `-v`, so CI can keep normal stdout unchanged while retaining evidence. The destination
+must not already exist: pixi-sandbox refuses to overwrite the only copy of an earlier failure.
+
+Diagnostics never dump argv or the environment. A configured Git remote is recorded only as
+`<configured>`, and URL credentials plus common token/password query fields are redacted from
+nested process errors. Choose a log path outside the transport output: the log is operator
+evidence, not payload.
+
 ## pack
 
 Create transport directory from pixi envs.

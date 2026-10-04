@@ -69,8 +69,22 @@ pub struct SelfUpdateArgs {
     pub repo: String,
 }
 
+#[derive(Debug, Args, Default)]
+pub struct DiagnosticsArgs {
+    /// Increase diagnostic detail on stderr (`-v` for phases, `-vv` for reviewed context).
+    #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count)]
+    pub verbose: u8,
+
+    /// Create a durable diagnostic log, flushed after every phase and never overwriting a file.
+    #[arg(long, value_name = "PATH")]
+    pub log_file: Option<PathBuf>,
+}
+
 #[derive(Debug, Args)]
 pub struct PackArgs {
+    #[command(flatten)]
+    pub diagnostics: DiagnosticsArgs,
+
     /// Project root containing `pixi.lock` (and `Cargo.lock` when vendoring).
     #[arg(long, default_value = ".")]
     pub repo_root: PathBuf,
@@ -128,6 +142,9 @@ pub enum VendorModeArg {
 
 #[derive(Debug, Args)]
 pub struct PublishArgs {
+    #[command(flatten)]
+    pub diagnostics: DiagnosticsArgs,
+
     /// Transport directory produced by `pack`.
     #[arg(long)]
     pub input_dir: PathBuf,
@@ -265,6 +282,9 @@ pub struct UnpackArgs {
 
 #[derive(Debug, Args)]
 pub struct DoctorArgs {
+    #[command(flatten)]
+    pub diagnostics: DiagnosticsArgs,
+
     /// A transport directory or an extracted branch.
     #[arg(long)]
     pub branch_location: PathBuf,
@@ -426,6 +446,7 @@ pub fn run() -> Result<()> {
     if std::env::args_os().nth(1).is_none() {
         if let Some(branch) = inferred_branch_location() {
             commands::doctor(DoctorArgs {
+                diagnostics: DiagnosticsArgs::default(),
                 branch_location: branch.clone(),
                 verify: true,
                 verify_restored: None,
@@ -459,7 +480,8 @@ pub fn run() -> Result<()> {
     }
 
     let cli = Cli::parse();
-    match cli.command {
+    let diagnostics = diagnostics_for(&cli.command)?;
+    let result = match cli.command {
         Command::Pack(args) => commands::pack(args),
         Command::Publish(args) => commands::publish(args),
         Command::Restore(args) => commands::restore(args),
@@ -469,7 +491,69 @@ pub fn run() -> Result<()> {
         Command::Plan(args) => commands::plan(args),
         Command::Tools(args) => commands::tools(args),
         Command::SelfUpdate(args) => commands::self_update(args),
+    };
+
+    match result {
+        Ok(()) => {
+            if let Some(session) = diagnostics {
+                session.finish_success()?;
+            }
+            Ok(())
+        }
+        Err(error) => {
+            if let Some(session) = diagnostics {
+                session.finish_failure(&error)?;
+            }
+            Err(error)
+        }
     }
+}
+
+fn diagnostics_for(command: &Command) -> Result<Option<crate::diagnostics::Session>> {
+    let (name, options, context) = match command {
+        Command::Pack(args) => (
+            "pack",
+            &args.diagnostics,
+            format!(
+                "repo={} output={} platform={} environments={} cargo-vendor={}",
+                args.repo_root.display(),
+                args.output_dir.display(),
+                args.platform,
+                args.envs.len(),
+                args.cargo_vendor
+            ),
+        ),
+        Command::Doctor(args) => (
+            "doctor",
+            &args.diagnostics,
+            format!(
+                "branch={} verify={} verify-restored={} environments={} json={}",
+                args.branch_location.display(),
+                args.verify,
+                args.verify_restored.is_some(),
+                args.envs.len(),
+                args.json
+            ),
+        ),
+        Command::Publish(args) => (
+            "publish",
+            &args.diagnostics,
+            format!(
+                "input={} branch={} remote={} keep={} dry-run={}",
+                args.input_dir.display(),
+                args.branch_name,
+                if args.remote.is_some() {
+                    "<configured>"
+                } else {
+                    "<default>"
+                },
+                args.keep,
+                args.dry_run
+            ),
+        ),
+        _ => return Ok(None),
+    };
+    crate::diagnostics::Session::start(name, options, &context).map(Some)
 }
 
 fn inferred_branch_location() -> Option<PathBuf> {

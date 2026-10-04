@@ -159,6 +159,176 @@ fn documents_every_verb(mut bin: Command, #[case] verb: &str) {
     assert!(text.contains("Verify and unpack a sandbox branch"));
 }
 
+#[rstest]
+#[case("pack")]
+#[case("doctor")]
+#[case("publish")]
+fn pipeline_commands_document_durable_diagnostics(mut bin: Command, #[case] verb: &str) {
+    let output = bin.args([verb, "--help"]).output().expect("CLI help");
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).expect("UTF-8 help");
+    assert!(
+        help.contains("-v"),
+        "{verb} help has no verbosity flag\n{help}"
+    );
+    assert!(
+        help.contains("--log-file"),
+        "{verb} help has no durable log destination\n{help}"
+    );
+
+    support::bin()
+        .args([verb, "--diagnostic-level", "debug"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unexpected argument"));
+}
+
+#[test]
+fn doctor_writes_phase_boundaries_to_a_durable_log_without_changing_normal_stdout() {
+    let scratch = tempfile::tempdir().expect("diagnostic scratch");
+    let log = scratch.path().join("doctor.log");
+    let home = scratch.path().join("home");
+    fs::create_dir(&home).expect("isolated HOME");
+    let branch = fixture_transport();
+
+    let normal = bin()
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .args(["doctor", "--branch-location"])
+        .arg(&branch)
+        .output()
+        .expect("ordinary doctor");
+    let diagnosed = bin()
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .args(["doctor", "--branch-location"])
+        .arg(&branch)
+        .args(["--log-file"])
+        .arg(&log)
+        .output()
+        .expect("diagnosed doctor");
+
+    assert!(normal.status.success());
+    assert!(diagnosed.status.success());
+    assert_eq!(
+        diagnosed.stdout, normal.stdout,
+        "default stdout must not change"
+    );
+    assert!(diagnosed.stderr.is_empty(), "log-only mode stays quiet");
+
+    let contents = fs::read_to_string(log).expect("durable log");
+    assert!(
+        contents.contains("command=doctor event=start"),
+        "{contents}"
+    );
+    assert!(contents.contains("phase=load-manifest"), "{contents}");
+    assert!(contents.contains("phase=standalone-probe"), "{contents}");
+    assert!(contents.contains("result=success"), "{contents}");
+}
+
+#[test]
+fn diagnostic_log_keeps_the_complete_failure_chain_and_verbose_mode_surfaces_phases() {
+    let scratch = tempfile::tempdir().expect("diagnostic scratch");
+    let missing = scratch.path().join("missing-transport");
+    let log = scratch.path().join("doctor.log");
+    let home = scratch.path().join("home");
+    fs::create_dir(&home).expect("isolated HOME");
+    let output = bin()
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .args(["doctor", "--branch-location"])
+        .arg(&missing)
+        .args(["-vv", "--log-file"])
+        .arg(&log)
+        .output()
+        .expect("failing doctor");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("load-manifest"), "{stderr}");
+    let contents = fs::read_to_string(log).expect("failure log");
+    assert!(contents.contains("result=failure"), "{contents}");
+    assert!(contents.contains("loading"), "{contents}");
+    assert!(contents.contains("manifest.json"), "{contents}");
+    assert!(contents.contains("Caused by:"), "{contents}");
+}
+
+#[test]
+fn diagnostics_refuse_to_overwrite_the_only_copy_and_never_record_remote_credentials() {
+    let scratch = tempfile::tempdir().expect("diagnostic scratch");
+    let existing = scratch.path().join("existing.log");
+    let home = scratch.path().join("home");
+    fs::create_dir(&home).expect("isolated HOME");
+    fs::write(&existing, "operator evidence\n").expect("existing evidence");
+    bin()
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .args(["doctor", "--branch-location"])
+        .arg(fixture_transport())
+        .args(["--log-file"])
+        .arg(&existing)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("refusing to overwrite"));
+    assert_eq!(
+        fs::read_to_string(&existing).expect("preserved evidence"),
+        "operator evidence\n"
+    );
+
+    let log = scratch.path().join("publish.log");
+    bin()
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .args(["publish", "--input-dir"])
+        .arg(scratch.path().join("missing"))
+        .args([
+            "--branch-name",
+            "sandbox/test-linux-64",
+            "--remote",
+            "https://operator:top-secret@example.invalid/repo.git?token=also-secret",
+            "--log-file",
+        ])
+        .arg(&log)
+        .assert()
+        .failure();
+    let contents = fs::read_to_string(log).expect("redacted failure log");
+    assert!(!contents.contains("top-secret"), "{contents}");
+    assert!(!contents.contains("also-secret"), "{contents}");
+    assert!(contents.contains("remote=<configured>"), "{contents}");
+}
+
+#[test]
+fn diagnostic_failure_chain_redacts_credentials_returned_by_git() {
+    let scratch = tempfile::tempdir().expect("diagnostic scratch");
+    let home = scratch.path().join("home");
+    fs::create_dir(&home).expect("isolated HOME");
+    let transport = transport_copy();
+    let log = scratch.path().join("publish.log");
+    let output = bin()
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .args(["publish", "--input-dir"])
+        .arg(transport.path())
+        .args([
+            "--branch-name",
+            "sandbox/test-linux-64",
+            "--remote",
+            "https://operator:top-secret@127.0.0.1:9/repo.git?token=also-secret",
+            "--log-file",
+        ])
+        .arg(&log)
+        .output()
+        .expect("failing publish");
+    assert!(!output.status.success());
+
+    let contents = fs::read_to_string(log).expect("redacted Git failure log");
+    assert!(!contents.contains("top-secret"), "{contents}");
+    assert!(!contents.contains("also-secret"), "{contents}");
+    assert!(contents.contains("<redacted>@127.0.0.1"), "{contents}");
+    assert!(contents.contains("token=<redacted>"), "{contents}");
+}
+
 #[test]
 fn pack_requires_envs_and_output_dir() {
     // the transport contract must be explicit, not defaulted

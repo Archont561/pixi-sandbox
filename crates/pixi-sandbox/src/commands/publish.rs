@@ -20,7 +20,9 @@ use std::path::Path;
 pub fn run(args: PublishArgs) -> Result<()> {
     // ShellGit changes cwd to the work tree while creating its temporary index. Keep the
     // transport absolute so GIT_DIR/GIT_INDEX_FILE never become relative to that new cwd.
+    crate::diagnostics::phase("validate-transport", "checking the input directory");
     let input = support::existing_dir(&args.input_dir, "--input-dir")?;
+    crate::diagnostics::phase("load-manifest", "loading the transport identity");
     let manifest_path = Manifest::path_in(&input);
     let manifest = Manifest::load(&manifest_path)
         .with_context(|| format!("loading {}", manifest_path.display()))?;
@@ -32,6 +34,10 @@ pub fn run(args: PublishArgs) -> Result<()> {
     } else {
         Box::new(ShellGit::new())
     };
+    crate::diagnostics::phase(
+        "publish-snapshot",
+        "creating and pushing the orphan snapshot through GitProtocol",
+    );
     let published = git
         .publish(&Snapshot {
             dir: &input,
@@ -40,7 +46,7 @@ pub fn run(args: PublishArgs) -> Result<()> {
             message: &message,
             keep: args.keep,
         })
-        .with_context(|| format!("publishing {} to {remote}", input.display()))?;
+        .with_context(|| format!("publishing {} to the configured remote", input.display()))?;
 
     if args.dry_run {
         println!(
@@ -79,6 +85,10 @@ pub fn run(args: PublishArgs) -> Result<()> {
             args.keep
         );
     }
+    crate::diagnostics::phase(
+        "inspect-remote",
+        "querying branch size when the remote is local",
+    );
     match git.remote_size(&remote, &args.branch_name) {
         // A local remote (or one mounted as a path) can answer this; a URL cannot.
         Ok(Some(bytes)) => println!("  branch stores {} MiB", mib(bytes)),

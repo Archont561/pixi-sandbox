@@ -6,6 +6,7 @@
 
 mod cli;
 mod commands;
+mod diagnostics;
 
 use std::process::ExitCode;
 

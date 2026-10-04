@@ -25,9 +25,27 @@ const TOOL_NAME: &str = env!("CARGO_PKG_NAME");
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn run(args: PackArgs) -> Result<()> {
+    crate::diagnostics::phase(
+        "validate-plan",
+        "checking lockfiles, paths, and environment names",
+    );
     let plan = PackPlan::from_args(args)?;
+    crate::diagnostics::phase("resolve-tools", "resolving pixi-pack and pixi-unpack");
     let tools = plan.resolve_tools()?;
+    crate::diagnostics::phase(
+        "helpers-ready",
+        format!(
+            "pixi-pack={} pixi-unpack={}",
+            tools.packer.display(),
+            tools.unpacker.display()
+        ),
+    );
+    crate::diagnostics::phase(
+        "assemble",
+        "packing environments, tools, and optional Cargo vendor",
+    );
     let artifacts = plan.assemble_artifacts(&tools)?;
+    crate::diagnostics::phase("write-manifest", "recording hashes and transport guides");
     plan.write_manifest_and_docs(artifacts)
 }
 
@@ -1208,6 +1226,7 @@ mod tests {
     /// states the field it means to exercise.
     fn args(repo_root: &Path, output_dir: &Path, envs: &[&str]) -> crate::cli::PackArgs {
         crate::cli::PackArgs {
+            diagnostics: crate::cli::DiagnosticsArgs::default(),
             repo_root: repo_root.to_path_buf(),
             envs: envs.iter().map(|&s| s.to_string()).collect(),
             output_dir: output_dir.to_path_buf(),
