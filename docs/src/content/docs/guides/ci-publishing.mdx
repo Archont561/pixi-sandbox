@@ -81,11 +81,27 @@ job that closes that gap without ever floating a production pin:
   an older released version to propose downgrading the generated files to it.
 
 If `init --check` finds no drift, the job stops — nothing is written, nothing is proposed. If it
-finds drift, the updated binary re-runs `init` for real and the job opens a pull request
+finds drift, the updated binary re-runs `init` for real and the job prepares a pull request
 containing only the regenerated workflow, relock workflow, and launcher. **It never pushes to
 `main` and never touches `pixi-sandbox.toml`** — config is reviewed data, and a config whose
 `schema` the updated binary no longer understands is reported as a finding in that same
 `init --check` output for a human to act on, never edited automatically.
+
+### Delivering workflow-file upgrades
+
+GitHub's built-in `GITHUB_TOKEN` cannot create or update files under `.github/workflows/`, even
+when the job grants `contents: write` and `pull-requests: write`. To let the generated job open
+its PR automatically, add a consumer secret named `PIXI_SANDBOX_UPGRADE_TOKEN` containing a PAT
+or GitHub App token with permission to write workflow files. The upgrade job uses that token for
+checkout, the branch push, and `gh pr create`; it does not use it to push `main`.
+
+The secret is optional. Without it, or when GitHub refuses the configured token, the scheduled
+job stays green and writes an actionable error and step summary naming the missing `Workflows:
+write` permission. It uploads `pixi-sandbox-upgrade-artifacts`, including a `git apply`-able
+patch for the exact regenerated files, so a maintainer can apply and review the upgrade manually.
+This fallback preserves exact version pins and does not bypass the human review gate. There is
+no separate upgrade workflow to configure: the generated publisher owns the versioned paths and
+keeps the upgrade and publish lanes mutually exclusive.
 
 Review the diff like any other dependency bump — it is, after all, exactly the file `init
 --force` would produce locally with the same binary — then merge it. Because a `github.token`
