@@ -995,3 +995,42 @@ Next session should start with:
 > not implement goes in `CONTEXT.md`, not into the files it speculates about), the session
 > procedure and its templates are in `.agents/skills/session/`.
 .agents/skills/session/`.
+
+### 2026-10-04 — v0.5.3 consumer-proof access block; TASK-66 proposed
+
+PR #100 merged as `bcb4df8` while this session was observing it. Its post-merge `ci` run
+37227726829, `docs` run 37227726840, and `publish sandbox` run 37227726831 all passed. The
+published `sandbox/developer-linux-64` transport now reports `source.commit` `bcb4df8`,
+`pixi-sandbox` `0.5.3`, and static linkage. The local restored baseline is 626 passing / 1
+skipped (21 git, 142 core, 378 sandbox with one skip, and 85 xtask).
+
+The requested Castellan cycle could not be dispatched or inspected: the repository-scoped
+GitHub token returns `Resource not accessible by integration` for `gh repo view
+Archont561/castellan`. No consumer PR, publisher run, shells-pack result, or manifest proof
+was fabricated; TASK-47 AC#7 and TASK-69 AC#6 remain open pending those live links and exact
+manifest evidence.
+
+With Castellan inaccessible, the next local slice is TASK-66: implement the generated relock
+workflow's authoritative PR-visible verdict for repaired heads. Keep the existing fork-safety,
+lock-guard, configured-CI, publish-validation, real-lock-commit dispatch, and loop-avoidance
+rules; use fixture/tempdir tests for clean, repaired, failed-validation, and fork paths;
+regenerate the committed workflow and keep actionlint/init byte-identical. Do not claim AC#6
+until a connected consumer PR visibly carries the repaired-head check rollup.
+
+Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything not
+implemented belongs in `CONTEXT.md`, not speculative production files), the session procedure
+and templates are in `.agents/skills/session/`.
+
+### 2026-10-04 — follow-up correction: TASK-69 closed; upgrade delivery implemented
+
+The earlier access-block entry was superseded during this session. Castellan PR #13 and run
+37230019375 supplied the connected TASK-69 proof: the shells publisher passed with pixi-sandbox
+0.5.3, the transport ref was 1252ae53, and its manifest/files oracle includes
+`man/man3/App::Cpan.3`. TASK-69 is Done; posting to issue #95 remains blocked by the
+repository-scoped token.
+
+TASK-71's generated upgrade lane now supports the optional `PIXI_SANDBOX_UPGRADE_TOKEN`, emits
+an actionable summary for missing or refused `Workflows: write`, and uploads an apply-able patch
+artifact without pushing main. Local fmt, lint, and test gates are green at 631 passing / 1
+skipped. Its connected delivery proof remains open. TASK-72 records the transport-budget spike;
+TASK-73 records the owner-operated GitHub App proof cycle.
