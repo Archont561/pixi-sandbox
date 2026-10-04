@@ -110,6 +110,12 @@ jobs:
         id: prep
         run: pixi run xtask prepare-release ${{ inputs.version != '' && inputs.version || inputs.bump }}
 
+      # Compile against the prepared version and run every consistency oracle before anything
+      # can be committed. This is the release-commit counterpart to CI, whose push trigger is
+      # suppressed when commit-release uses GITHUB_TOKEN.
+      - name: Validate prepared repository
+        run: pixi run xtask check-repository
+
       # commit-release checks the remote tag first, then prints the prepared diff and stops:
       # no staging, no commit, no tag, no push.
       - name: Dry-run — show diff and stop

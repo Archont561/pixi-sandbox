@@ -23,10 +23,12 @@ pub const RELOCK_PATH: &str = ".github/workflows/relock.yml";
 /// the cargo half decided by the reviewed publish plan, and this repository's own CI workflow
 /// as the dispatch target.
 pub fn relock_render(root: &Path) -> Result<String> {
+    let cli_version = crate::version::workspace_version(root)
+        .context("reading the workspace version for the relock workflow")?;
     let pixi_version =
         embedded_pixi_pin().context("the embedded tools lock declares no pixi pin")?;
     Ok(render_relock_workflow(RelockWorkflowOptions {
-        cli_version: env!("CARGO_PKG_VERSION"),
+        cli_version: &cli_version,
         pixi_version: &pixi_version,
         cargo: plan_vendors_cargo(&root.join(DEFAULT_FILE)),
         ci_workflow: "ci.yml",
@@ -220,9 +222,32 @@ fn run_actionlint(actionlint: &Path, project: &Path, workflow: &Path) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{WORKFLOW_PATH, run_actionlint};
+    use super::{WORKFLOW_PATH, relock_render, run_actionlint};
     use std::fs;
     use std::path::Path;
+
+    #[test]
+    fn the_repository_relock_stamp_comes_from_the_workspace_being_rendered() {
+        let project = tempfile::tempdir().expect("temp project");
+        fs::write(
+            project.path().join("Cargo.toml"),
+            "[workspace]\n\n[workspace.package]\nversion = \"9.8.7\"\n",
+        )
+        .expect("workspace manifest");
+
+        let rendered = relock_render(project.path()).expect("render relock");
+        assert!(
+            rendered.contains("# pixi-sandbox-version: 9.8.7"),
+            "the just-stamped workspace version must win over the xtask binary's compile-time version:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains(concat!(
+                "# pixi-sandbox-version: ",
+                env!("CARGO_PKG_VERSION")
+            )),
+            "the fixture deliberately differs from the compiled xtask version"
+        );
+    }
 
     #[test]
     fn a_missing_generated_file_names_the_expected_artifact() {
