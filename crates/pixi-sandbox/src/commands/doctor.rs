@@ -19,6 +19,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub fn run(args: DoctorArgs) -> Result<()> {
+    crate::diagnostics::phase("load-manifest", "locating and parsing manifest.json");
     let path = locate(&args.branch_location);
     let manifest = Manifest::load(&path).with_context(|| format!("loading {}", path.display()))?;
     let only = if args.envs.is_empty() {
@@ -33,9 +34,15 @@ pub fn run(args: DoctorArgs) -> Result<()> {
 
     // The restored-tree check trusts the manifest as its oracle, so it always verifies the
     // transport first — an unchecked oracle would turn the check into theater.
-    let report = (args.verify || project.is_some())
-        .then(|| verify::verify(&manifest, &args.branch_location, only));
+    let report = (args.verify || project.is_some()).then(|| {
+        crate::diagnostics::phase("verify-transport", "checking every declared transport byte");
+        verify::verify(&manifest, &args.branch_location, only)
+    });
     let restored = project.as_deref().map(|project| {
+        crate::diagnostics::phase(
+            "verify-restored",
+            "checking restored files against the oracle",
+        );
         (
             project,
             verify::verify_restored(
@@ -52,8 +59,16 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     // declared file; only executing it — under the empty environment an airlock has —
     // proves it *runs*. The order is the trust boundary: probe only what verified green,
     // on a host that matches the manifest platform, and never write into the branch.
+    crate::diagnostics::phase(
+        "standalone-probe",
+        "checking the embedded pixi-sandbox helper when verified and host-compatible",
+    );
     let standalone = standalone_probe(&args.branch_location, &manifest, report.as_ref());
 
+    crate::diagnostics::phase(
+        "render-report",
+        "writing the requested human or JSON report",
+    );
     let restored_section = restored
         .as_ref()
         .map(|(project, report)| (*project, report));

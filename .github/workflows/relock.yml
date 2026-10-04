@@ -33,6 +33,9 @@ jobs:
       # fail first with a message about installation, when the fact worth reporting is that the
       # lock no longer satisfies the manifest.
       - run: pixi lock --check
+      # Cargo's locked fetch is the non-writing Cargo.lock counterpart to `pixi lock
+      # --check`: it fails before CI or packing when a Rust manifest changed without a relock.
+      - run: cargo fetch --locked
 
   relock:
     name: relock

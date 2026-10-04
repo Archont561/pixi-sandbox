@@ -60,6 +60,25 @@ require local Git objects only. Set `PIXI_SANDBOX_BRANCH` to pin an exact branch
 This checks every sha256 in `manifest.json` and reports the payload breakdown. It writes
 nothing. Treat any failure as a hard stop.
 
+### Keep evidence when the primary log is unreachable
+
+If an Actions or operator log cannot cross the airlock boundary, ask the connected side to rerun
+`pack`, `doctor`, or `publish` with a fresh `--log-file <PATH>`. The file is flushed after every
+phase and includes the complete causal error chain on failure; `-v` mirrors phase names to stderr
+and `-vv` adds reviewed non-secret context. Transfer that bounded text file beside the incident
+report, **not inside the transport branch**. Never reuse its path: pixi-sandbox refuses to
+overwrite an existing diagnostic log so the first failure is not silently destroyed. Remote
+credentials and common token/password query values are not recorded.
+
+For a local airlock check, the same binary can write evidence without changing doctor’s normal
+report:
+
+```bash
+/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
+    --branch-location /tmp/sb --verify \
+    --log-file /path/to/new/doctor-attempt.log
+```
+
 ## 3. Restore
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
