@@ -186,6 +186,72 @@ fn a_files_manifest_with_a_bad_path_entries_or_digest_is_refused() {
 }
 
 #[test]
+fn a_windows_drive_prefix_is_refused_wherever_a_path_appears() {
+    // A colon alone is a legal POSIX byte (issue #95); a Windows drive prefix is what the
+    // relative-path guard exists to catch, in every position it guards.
+    let cases = [
+        // (label, needle, drive-prefixed replacement)
+        (
+            "blob path",
+            "\"path\": \"envs/dev/pack/channel/noarch/a.conda\"",
+            "\"path\": \"C:/envs/dev/pack/channel/noarch/a.conda\"",
+        ),
+        (
+            "pack_path",
+            ".pixi-sandbox/envs/dev/pack",
+            "E:.pixi-sandbox/envs/dev/pack",
+        ),
+        (
+            "tool path",
+            "\"path\": \"tools/linux-64/pixi-unpack\"",
+            "\"path\": \"C:/tools/linux-64/pixi-unpack\"",
+        ),
+    ];
+    for (label, needle, replacement) in cases {
+        let text = valid_manifest().replace(needle, replacement);
+        let err = match parse(&text).validate() {
+            Ok(()) => panic!("{label}: a drive prefix must be refused"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains("must be relative"),
+            "{label}: got {err}"
+        );
+    }
+
+    // part path: a well-formed parts array (summing to the blob size) whose one part
+    // carries the drive prefix — the sum check passes, the part path must not.
+    let part = valid_manifest().replace(
+        r#""size": 4,
+           "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08""#,
+        r#""size": 4,
+           "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+           "parts": [ { "path": "C:\\envs\\dev\\part000", "size": 4,
+                        "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" } ]"#,
+    );
+    let err = parse(&part)
+        .validate()
+        .expect_err("a drive-prefixed part path must be refused");
+    assert!(
+        err.to_string().contains("must be relative"),
+        "part path: got {err}"
+    );
+
+    // absolute paths stay refused by the same guard, colon or not
+    let absolute = valid_manifest().replace(
+        "\"path\": \"envs/dev/pack/channel/noarch/a.conda\"",
+        "\"path\": \"/etc/passwd\"",
+    );
+    let err = parse(&absolute)
+        .validate()
+        .expect_err("an absolute blob path must be refused");
+    assert!(
+        err.to_string().contains("must be relative"),
+        "absolute: got {err}"
+    );
+}
+
+#[test]
 fn a_blob_path_that_escapes_the_transport_is_refused() {
     let text = valid_manifest().replace(
         "\"path\": \"envs/dev/pack/channel/noarch/a.conda\"",

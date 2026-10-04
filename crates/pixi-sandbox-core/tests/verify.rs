@@ -288,6 +288,10 @@ mod restored {
             "// not relevant for pixi\n",
         )
         .unwrap();
+        // issue #95: perl's module man pages carry `Package::Name.3` names — a legal POSIX
+        // byte the oracle must record, not reject (an env resolving perl could never pack).
+        fs::create_dir_all(staged.join("man/man3")).unwrap();
+        fs::write(staged.join("man/man3/App::Cpan.3"), "doc stub\n").unwrap();
         std::os::unix::fs::symlink("thing.pc", staged.join("lib/link.pc")).unwrap();
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(staged.join("bin/tool"), fs::Permissions::from_mode(0o755)).unwrap();

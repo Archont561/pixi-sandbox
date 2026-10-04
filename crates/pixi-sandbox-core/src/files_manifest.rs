@@ -116,6 +116,14 @@ impl FilesDoc {
     }
 
     pub fn validate(&self) -> Result<()> {
+        self.validate_labelled("files manifest entry")
+    }
+
+    /// The same rules, worded for the side that produced the entries: at pack time the
+    /// list is being scanned off disk and no manifest exists yet, so a path rejection must
+    /// name the scanned file rather than the document it was going to be written into
+    /// (issue #95's diagnosis detour).
+    fn validate_labelled(&self, what: &str) -> Result<()> {
         if self.schema != DOC_SCHEMA {
             return Err(Error::Invalid(format!(
                 "files manifest schema {} is not supported (expected {DOC_SCHEMA})",
@@ -127,7 +135,7 @@ impl FilesDoc {
         }
         let mut seen = std::collections::BTreeSet::new();
         for entry in &self.files {
-            check_rel_path(&entry.p, "files manifest entry")?;
+            check_rel_path(&entry.p, what)?;
             if !seen.insert(entry.p.clone()) {
                 return Err(Error::Invalid(format!(
                     "files manifest lists {} twice",
@@ -369,7 +377,7 @@ pub fn scan_prefix(prefix: &Path, candidates: &[Vec<u8>]) -> Result<(FilesDoc, u
         excluded: RESTORE_MARKERS.iter().map(|s| s.to_string()).collect(),
         files,
     };
-    doc.validate()?;
+    doc.validate_labelled("scanned environment file")?;
     Ok((doc, bytes))
 }
 

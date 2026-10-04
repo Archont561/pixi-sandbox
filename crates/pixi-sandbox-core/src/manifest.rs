@@ -295,7 +295,13 @@ pub(crate) fn check_rel_path(path: &str, what: &str) -> Result<()> {
     if path.is_empty() {
         return Err(Error::Invalid(format!("empty {what}")));
     }
-    if path.starts_with('/') || path.starts_with('\\') || path.contains(':') {
+    // A Windows drive prefix (`C:…`, any ASCII letter) is absolute in disguise; a colon
+    // anywhere else is a legal POSIX byte — perl's module man pages are
+    // `man/man3/App::Cpan.3` — so only the drive shape rejects, never the bare colon
+    // (issue #95: an environment that resolved perl could not pack).
+    let bytes = path.as_bytes();
+    let drive_prefix = bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+    if path.starts_with('/') || path.starts_with('\\') || drive_prefix {
         return Err(Error::Invalid(format!("{what} must be relative: {path}")));
     }
     if Path::new(path)
