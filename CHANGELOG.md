@@ -6,7 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.5.2](https://github.com/Archont561/pixi-sandbox/compare/v0.5.1...bc31d866498f05c000909f3eab6bdf4686b0908d) (2026-10-03)
+### [v0.5.3](https://github.com/Archont561/pixi-sandbox/compare/v0.5.2...fe130fa482a80756f8815e4374ea7e2f8afce684) (2026-10-04)
+
+#### Features
+
+* **workflow:** surface publish failures and preserve healthy transport (#98)
+([c0f6a37](https://github.com/Archont561/pixi-sandbox/commit/c0f6a3770f7b50c3c5f6fb97e541d058e8d6c0a0)),
+closes [#98](https://github.com/Archont561/pixi-sandbox/issues/98)
+
+#### Fixes
+
+* **pack:** reject only Windows drive prefixes so POSIX colons can pack (#96)
+([888af6d](https://github.com/Archont561/pixi-sandbox/commit/888af6dad498ca6a0d5659fd71c681aee5b9c843)),
+closes [#96](https://github.com/Archont561/pixi-sandbox/issues/96)
+[#95](https://github.com/Archont561/pixi-sandbox/issues/95)
+* **pipeline:** guard lock drift and persist diagnostics (#94)
+([8e070d4](https://github.com/Archont561/pixi-sandbox/commit/8e070d48c79adb522c8bfc6d162fdb23d6023de0)),
+closes [#94](https://github.com/Archont561/pixi-sandbox/issues/94)
+* **consumer-proof:** fixture needs a real dependency for pixi-pack to find its platform (#91)
+([b13a7fd](https://github.com/Archont561/pixi-sandbox/commit/b13a7fddb9f1dbb9b225c46fcda6b078ad74ea3e)),
+closes [#91](https://github.com/Archont561/pixi-sandbox/issues/91)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+* **workflow:** complete consumer release proof (#89)
+([0160ef4](https://github.com/Archont561/pixi-sandbox/commit/0160ef4a6ef36e247d2c19bdc9086bc4ff198c74)),
+closes [#89](https://github.com/Archont561/pixi-sandbox/issues/89)
+
+#### Documentation
+
+* **context:** record the task-69 session and next opening prompt (#97)
+([297e4fe](https://github.com/Archont561/pixi-sandbox/commit/297e4fecbf96685316c997f474b3ef1df541e9c3)),
+closes [#97](https://github.com/Archont561/pixi-sandbox/issues/97)
+[#96](https://github.com/Archont561/pixi-sandbox/issues/96)
+* **backlog:** record PR 89 connected proofs (#90)
+([e517305](https://github.com/Archont561/pixi-sandbox/commit/e5173053fa120380b3646dbbe1217933f065326c)),
+closes [#90](https://github.com/Archont561/pixi-sandbox/issues/90)
+
+#### Build System
+
+* **tooling:** adopt Turbo nextest orchestration (#70) (#99)
+([fe130fa](https://github.com/Archont561/pixi-sandbox/commit/fe130fa482a80756f8815e4374ea7e2f8afce684)),
+closes [#70](https://github.com/Archont561/pixi-sandbox/issues/70)
+[#99](https://github.com/Archont561/pixi-sandbox/issues/99)
+
+### [v0.5.2](https://github.com/Archont561/pixi-sandbox/compare/v0.5.1...v0.5.2) (2026-10-03)
 
 #### Fixes
 
