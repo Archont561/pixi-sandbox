@@ -18,11 +18,12 @@ tags:
 ## Status
 
 **Complete.** All 8 sequenced tasks below landed as separate backlog tasks (task-55 through
-task-62), each its own focused conventional commit with tests green before and after, per the
-`.agents/skills/refactor/SKILL.md` identify-then-fix process. Item 9 (`split cli.rs`) was
-dropped before implementation — see "Correction after checking the backlog" below. Final test
-count: `pixi run --frozen test` → 556 passed, 1 skipped (up from the 516/1 baseline this plan
-started from), with `clippy -D warnings`, `fmt`, and `lint` all clean as of the task-62 commit.
+task-61, then task-64), each its own focused conventional commit with tests green before and
+after, per the `.agents/skills/refactor/SKILL.md` identify-then-fix process. Item 9 (`split
+cli.rs`) was dropped before implementation — see "Correction after checking the backlog" below.
+Final test count: `pixi run --frozen test` → 556 passed, 1 skipped (up from the 516/1 baseline
+this plan started from), with `clippy -D warnings`, `fmt`, and `lint` all clean as of the task-64
+commit.
 
 ## Source context and method
 
@@ -216,7 +217,7 @@ task-38 did **not** touch:
 5. **`xtask: split repo_checks.rs into one module per check`** (A2). Mechanical move, each check's existing tests move with it; add the `CHECKS` table last so `check_repository`'s call site changes once. — **Done, task-56 (`1521bcc`).**
 6. **`pack/restore/doctor: extract pipeline steps out of long run() functions`** (A3). Do one command per task (`pack` first — it already has the most helper extraction to build on). — **Done, task-57 (`5d896bc`)**, scoped to `pack::run` per the task's own notes.
 7. **`tests: add proptest coverage for release_assets, bash32_surface, verify, manifest round-trip`** (B.1). Independent of 1–6; can start immediately and is the lowest-risk, highest-learning item to do first if sequencing is flexible. — **Done, task-61 (`c53a10c`)**, covering `verify()`, `release_assets` staged/binary names, and `bash32_surface`; the manifest round-trip property already existed from task-38.
-8. **`tests: formalize transport()/scratch()/bare_remote() as rstest fixtures`** (B.3). Independent, low risk, mechanical. — **Done, task-62 (`159cdcd`)**, with `self_update.rs`'s `request()` and `publish.rs`'s analogous helpers deliberately kept as plain functions rather than fixtures — see that task's notes for the rstest composition limitation this ran into.
+8. **`tests: formalize transport()/scratch()/bare_remote() as rstest fixtures`** (B.3). Independent, low risk, mechanical. — **Done, task-64 (`159cdcd`)**, with `self_update.rs`'s `request()` and `publish.rs`'s analogous helpers deliberately kept as plain functions rather than fixtures — see that task's notes for the rstest composition limitation this ran into.
 9. ~~`tests: split cli.rs into per-command files`~~ — **dropped**, see "Correction after checking the backlog" above: task-38's `#[once]` fixture design makes the single file the right shape today.
 
 ## Acceptance strategy for any task drawn from this plan
