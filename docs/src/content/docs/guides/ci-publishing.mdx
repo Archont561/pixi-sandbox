@@ -105,3 +105,22 @@ request contained.
 This repository's own publisher is unaffected by any of this: it builds pixi-sandbox from
 source and never installs or self-updates a released CLI, so there is nothing here for it to
 depend on.
+
+## Pipeline diagnostics and transport preservation
+
+Publish failures inside the generated workflow (`install` → `pack` → `doctor` → `publish`) do
+not require access to the live Actions log CDN to diagnose:
+
+- **Durable diagnostics artifact**: every publish leg records bounded execution logs into
+  `$RUNNER_TEMP/pixi-sandbox-logs/` (with `--log-file` for `pack`, `doctor`, and `publish`) and
+  uploads them via `actions/upload-artifact` as `publish-diagnostics-<platform>` with 7-day retention.
+- **Secondary GitHub failure surface**: if any phase fails, the step formats an actionable failure
+  report directly into `$GITHUB_STEP_SUMMARY` naming the failed phase, target branch, the uploaded
+  diagnostic artifact name, and a bounded 50-line excerpt without leaking tokens or secrets.
+- **Transport preservation**: failures during `install`, `pack`, or `doctor` halt before `publish`
+  is called. A rejected push or publish error never commits over or corrupts an existing healthy
+  orphan transport snapshot on the remote branch, leaving the existing transport byte-identical and
+  fetchable.
+- **Separation of concerns**: diagnostic logs remain in runner temporary storage and are uploaded as
+  standard workflow artifacts; they are never committed into or published over the transport branch.
+

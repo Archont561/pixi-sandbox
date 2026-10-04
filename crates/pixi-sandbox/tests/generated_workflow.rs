@@ -699,3 +699,56 @@ mod workflow_policy {
         }
     }
 }
+
+/// task-68 AC#1-#3, AC#5: the publish lane logs durable diagnostics, uploads them as a workflow
+/// artifact on always(), and formats an actionable step summary on failure.
+mod publish_diagnostics {
+    use super::workflow;
+
+    #[test]
+    fn publish_lane_uploads_diagnostics_artifact_with_retention() {
+        let workflow = workflow();
+        assert!(
+            workflow.contains("name: Upload publish diagnostic log"),
+            "missing upload diagnostics step in:\n{workflow}"
+        );
+        assert!(
+            workflow
+                .contains("uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"),
+            "upload artifact action must use the repository-pinned version in:\n{workflow}"
+        );
+        assert!(
+            workflow.contains("name: publish-diagnostics-${{ matrix.platform }}"),
+            "missing artifact name in:\n{workflow}"
+        );
+        assert!(
+            workflow.contains("retention-days: 7"),
+            "missing artifact retention in:\n{workflow}"
+        );
+    }
+
+    #[test]
+    fn publish_lane_records_diagnostics_and_surfaces_step_summary_on_failure() {
+        let workflow = workflow();
+        assert!(
+            workflow.contains("LOG_DIR=\"$RUNNER_TEMP/pixi-sandbox-logs\""),
+            "missing LOG_DIR definition in:\n{workflow}"
+        );
+        assert!(
+            workflow.contains("--log-file \"$LOG_DIR/pack.log\""),
+            "missing pack --log-file in:\n{workflow}"
+        );
+        assert!(
+            workflow.contains("--log-file \"$LOG_DIR/doctor.log\""),
+            "missing doctor --log-file in:\n{workflow}"
+        );
+        assert!(
+            workflow.contains("--log-file \"$LOG_DIR/publish.log\""),
+            "missing publish --log-file in:\n{workflow}"
+        );
+        assert!(
+            workflow.contains("GITHUB_STEP_SUMMARY"),
+            "publish step must emit failure details to GITHUB_STEP_SUMMARY:\n{workflow}"
+        );
+    }
+}

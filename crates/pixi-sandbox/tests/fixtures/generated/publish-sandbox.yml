@@ -127,28 +127,67 @@ jobs:
           PUSH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          LOG_DIR="$RUNNER_TEMP/pixi-sandbox-logs"
+          LOG_FILE="$LOG_DIR/pipeline.log"
+          rm -rf "$LOG_DIR"
+          mkdir -p "$LOG_DIR"
+          fail_phase() {
+            local phase="$1"
+            local exit_code="$2"
+            echo "::error::publish pipeline failed during $phase (exit $exit_code)"
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              {
+                echo "### ❌ pixi-sandbox publish failed on ${{ matrix.platform }}"
+                echo ""
+                echo "- **Failed phase**: \`$phase\` (exit code $exit_code)"
+                echo "- **Branch**: \`${{ matrix.branch }}\`"
+                echo "- **Diagnostic log**: uploaded as workflow artifact \`publish-diagnostics-${{ matrix.platform }}\`"
+                echo ""
+                if [ -s "$LOG_FILE" ]; then
+                  echo "<details><summary>Diagnostic log excerpt (last 50 lines)</summary>"
+                  echo ""
+                  echo '```text'
+                  tail -n 50 "$LOG_FILE"
+                  echo '```'
+                  echo "</details>"
+                fi
+              } >> "$GITHUB_STEP_SUMMARY" || true
+            fi
+            exit "$exit_code"
+          }
+          record() {
+            local phase="$1"; shift
+            echo "command=pipeline phase=$phase event=start" >> "$LOG_FILE"
+            if ! "$@" 2>&1 | tee -a "$LOG_FILE"; then
+              local status=${PIPESTATUS[0]}
+              echo "command=pipeline phase=$phase result=failure exit=$status" >> "$LOG_FILE"
+              fail_phase "$phase" "$status"
+            fi
+            echo "command=pipeline phase=$phase result=success" >> "$LOG_FILE"
+          }
           IFS=',' read -ra ENVS <<< "$ENVIRONMENTS"
           for ENVIRONMENT in "${ENVS[@]}"; do
-            pixi install --frozen -e "${ENVIRONMENT//[[:space:]]/}"
+            record install pixi install --frozen -e "${ENVIRONMENT//[[:space:]]/}"
           done
           TRANSPORT="$RUNNER_TEMP/pixi-sandbox-transport"
           rm -rf "$TRANSPORT"
           CARGO_VENDOR_ARG=
           if [ "$CARGO_VENDOR" = true ]; then CARGO_VENDOR_ARG=--cargo-vendor; fi
-          "$SELF_BIN" pack \
+          record pack "$SELF_BIN" pack \
             --repo-root . \
             --envs "$ENVIRONMENTS" \
             --output-dir "$TRANSPORT" \
             --platform "$PLATFORM" \
             --fetch-tools \
             --self-bin "$SELF_BIN" \
+            --log-file "$LOG_DIR/pack.log" \
             $CARGO_VENDOR_ARG
-          "$SELF_BIN" doctor --branch-location "$TRANSPORT" --verify
+          record doctor "$SELF_BIN" doctor --branch-location "$TRANSPORT" --verify --log-file "$LOG_DIR/doctor.log"
           BASIC_AUTH=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 | tr -d '\r\n')
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=http.extraheader
           export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $BASIC_AUTH"
-          "$SELF_BIN" publish --input-dir "$TRANSPORT" --branch-name "$BRANCH" --remote "$REMOTE"
+          record publish "$SELF_BIN" publish --input-dir "$TRANSPORT" --branch-name "$BRANCH" --remote "$REMOTE" --log-file "$LOG_DIR/publish.log"
 
       - name: Pack, verify, and publish
         if: runner.os == 'Windows'
@@ -164,21 +203,63 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
+          $logDir = Join-Path $env:RUNNER_TEMP 'pixi-sandbox-logs'
+          $logFile = Join-Path $logDir 'pipeline.log'
+          Remove-Item -Recurse -Force $logDir -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+          function Fail-Phase($phase, $ex) {
+            Write-Error "publish pipeline failed during $phase"
+            if ($env:GITHUB_STEP_SUMMARY) {
+              $summary = "### ❌ pixi-sandbox publish failed on ${{ matrix.platform }}`n`n- **Failed phase**: ``$phase```n- **Branch**: ``${{ matrix.branch }}```n- **Diagnostic log**: uploaded as workflow artifact ``publish-diagnostics-${{ matrix.platform }}```n"
+              if (Test-Path $logFile) {
+                $lines = Get-Content $logFile -Tail 50
+                $summary += "`n<details><summary>Diagnostic log excerpt (last 50 lines)</summary>`n`n``````text`n" + ($lines -join "`n") + "`n```````n</details>`n"
+              }
+              $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            }
+            throw $ex
+          }
+          function Invoke-Phase($phase, [scriptblock]$action) {
+            "command=pipeline phase=$phase event=start" | Out-File -FilePath $logFile -Append -Encoding utf8
+            try {
+              & $action 2>&1 | Tee-Object -FilePath $logFile -Append
+              if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {
+                throw "Command exited with status $LASTEXITCODE"
+              }
+              "command=pipeline phase=$phase result=success" | Out-File -FilePath $logFile -Append -Encoding utf8
+            } catch {
+              "command=pipeline phase=$phase result=failure error=$($_)" | Out-File -FilePath $logFile -Append -Encoding utf8
+              Fail-Phase $phase $_
+            }
+          }
           foreach ($environment in ($env:ENVIRONMENTS -split ',')) {
-            pixi install --frozen -e $environment.Trim()
+            $envName = $environment.Trim()
+            Invoke-Phase "install" { pixi install --frozen -e $envName }
           }
           $transport = Join-Path $env:RUNNER_TEMP 'pixi-sandbox-transport'
           Remove-Item -Recurse -Force $transport -ErrorAction SilentlyContinue
-          $packArgs = @('pack', '--repo-root', '.', '--envs', $env:ENVIRONMENTS, '--output-dir', $transport, '--platform', $env:PLATFORM, '--fetch-tools', '--self-bin', $env:SELF_BIN)
+          $packLog = Join-Path $logDir 'pack.log'
+          $packArgs = @('pack', '--repo-root', '.', '--envs', $env:ENVIRONMENTS, '--output-dir', $transport, '--platform', $env:PLATFORM, '--fetch-tools', '--self-bin', $env:SELF_BIN, '--log-file', $packLog)
           if ($env:CARGO_VENDOR -eq 'true') { $packArgs += '--cargo-vendor' }
-          & $env:SELF_BIN @packArgs
-          & $env:SELF_BIN doctor --branch-location $transport --verify
+          Invoke-Phase "pack" { & $env:SELF_BIN @packArgs }
+          $doctorLog = Join-Path $logDir 'doctor.log'
+          Invoke-Phase "doctor" { & $env:SELF_BIN doctor --branch-location $transport --verify --log-file $doctorLog }
           $bytes = [System.Text.Encoding]::UTF8.GetBytes("x-access-token:$env:PUSH_TOKEN")
           $basic = [System.Convert]::ToBase64String($bytes)
           $env:GIT_CONFIG_COUNT = '1'
           $env:GIT_CONFIG_KEY_0 = 'http.extraheader'
           $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: basic $basic"
-          & $env:SELF_BIN publish --input-dir $transport --branch-name $env:BRANCH --remote $env:REMOTE
+          $publishLog = Join-Path $logDir 'publish.log'
+          Invoke-Phase "publish" { & $env:SELF_BIN publish --input-dir $transport --branch-name $env:BRANCH --remote $env:REMOTE --log-file $publishLog }
+
+      - name: Upload publish diagnostic log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: publish-diagnostics-${{ matrix.platform }}
+          path: ${{ runner.temp }}/pixi-sandbox-logs
+          if-no-files-found: ignore
+          retention-days: 7
 
   upgrade:
     name: upgrade
