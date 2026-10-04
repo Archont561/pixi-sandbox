@@ -293,6 +293,52 @@ mod upgrade_job {
         assert!(permissions_block.contains("contents: write"));
         assert!(permissions_block.contains("pull-requests: write"));
     }
+
+    #[test]
+    fn the_upgrade_job_uses_an_optional_workflow_capable_token() {
+        let workflow = workflow();
+        assert!(
+            workflow.contains("PIXI_SANDBOX_UPGRADE_TOKEN"),
+            "{workflow}"
+        );
+        assert!(
+            workflow.contains("token: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN || github.token }}"),
+            "checkout must use the same optional token as delivery: {workflow}"
+        );
+        assert!(
+            workflow
+                .contains("GH_TOKEN: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN || github.token }}"),
+            "gh must use the same optional token as delivery: {workflow}"
+        );
+    }
+
+    #[test]
+    fn the_upgrade_job_preserves_a_patch_when_delivery_is_unavailable() {
+        let workflow = workflow();
+        assert!(workflow.contains("git diff HEAD^ HEAD"), "{workflow}");
+        assert!(workflow.contains("GITHUB_STEP_SUMMARY"), "{workflow}");
+        assert!(workflow.contains("Workflows: write"), "{workflow}");
+        assert!(
+            workflow.contains("pixi-sandbox-upgrade-artifacts"),
+            "{workflow}"
+        );
+        assert!(workflow.contains("actions/upload-artifact@"), "{workflow}");
+        assert!(workflow.contains("if-no-files-found: ignore"), "{workflow}");
+    }
+
+    #[test]
+    fn delivery_refusal_does_not_turn_the_scheduled_lane_into_a_bare_failure() {
+        let workflow = workflow();
+        assert!(workflow.contains("UPGRADE_TOKEN"), "{workflow}");
+        assert!(
+            workflow.contains("git push --force origin \"$branch\""),
+            "{workflow}"
+        );
+        assert!(
+            workflow.contains("delivery_refused=1") || workflow.contains("delivery refused"),
+            "{workflow}"
+        );
+    }
 }
 
 #[rstest]
