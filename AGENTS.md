@@ -85,11 +85,12 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
     them reads as a decision nobody made. A scratchpad entry graduates only by becoming a
     backlog task, a decision in `.knowledge/decisions.md`, or a deletion.
 11. **Pixi is the sole environment entrypoint.** Do not source `.pixi/sandbox-env.sh` (restore no
-    longer generates it) and do not run bare `cargo`, `rustc`, `bun`, `taplo`, `convco`, etc.
-    Repository automation goes through `pixi run --frozen <task>`; Rust internals through
-    `pixi run --frozen xtask <subcommand>` or `pixi run --frozen -- cargo <cmd> -p <crate>`; JS package
-    scripts through `pixi run --frozen bun --filter=<workspace-package> run <script>`; repo-wide
-    JS CLIs through `pixi run --frozen bunx <tool>`.
+    longer generates it) and do not run bare `cargo`, `rustc`, `bun`, `turbo`, `taplo`, `convco`,
+    etc. Repository verbs go through `pixi run --frozen <task>`; `test`, `lint`, `fmt`, `coverage`
+    and `docs` enter the Bun/Turbo graph from there. Focused Rust work uses
+    `pixi run --frozen bunx turbo run test --filter=@repo/<package>` (same graph) or
+    `pixi run --frozen -- cargo <cmd> -p <crate>` for a Cargo operation that is not a repository
+    gate; repository automation stays `pixi run --frozen xtask <subcommand>`.
 
 ## Commands
 
@@ -113,19 +114,18 @@ is the only sanctioned shell bootstrap. A reviewed exception (a generated consum
 say) carries `multiline-run-allowed` on the step.
 
 ```bash
-# one development environment, so every task is `pixi run --frozen <task>` with no -e flag.
-# The bun tasks are declared under `[feature.web.tasks]`, and pixi runs them in the `web`
-# environment anyway — including as a dependency of `lint` — so these lines do not change.
-pixi run --frozen lint           # fmt --check + clippy -D warnings + deny + actionlint (committed + generated workflows) + taplo + biome + repo-consistency
-pixi run --frozen test           # nextest workspace, including fixture-backed offline lifecycle tests
-pixi run --frozen coverage       # cargo llvm-cov → lcov.info (CI uploads to codecov)
-pixi run --frozen fmt            # rewrite; `pixi run --frozen fmt --check` is the gate form
-pixi run --frozen docs dev       # Astro dev server for docs/ (bun --filter=pixi-sandbox-docs)
-pixi run --frozen docs-install   # bun install --frozen-lockfile at the root of the bun workspace
-pixi run --frozen bunx backlog   # repo backlog (the bunx task runs docs-install itself)
-pixi run --frozen bunx skills    # agent skills CLI, same workspace
-pixi run --frozen bun --filter=pixi-sandbox-docs run build  # package-scoped bun, not bare bun
-pixi run --frozen -- cargo check -p pixi-sandbox            # crate-scoped cargo, not bare cargo
+# One development environment. Pixi supplies it; Turbo owns the cross-language task graph.
+pixi run --frozen lint           # per-crate clippy + fmt/deny + workflow/TOML/Biome/repo checks
+pixi run --frozen test           # per-crate nextest + doctests; full merge gate
+pixi run --frozen coverage       # workspace llvm-cov → crates/lcov.info
+pixi run --frozen fmt            # rewrite Rust; `pixi run --frozen fmt --check` is the gate form
+pixi run --frozen docs dev       # Turbo-filtered Astro dev server
+pixi run --frozen docs build     # Turbo-filtered Astro production build
+pixi run --frozen bun-install    # frozen root Bun workspace install
+pixi run --frozen bunx backlog   # repo backlog
+pixi run --frozen bunx skills    # agent skills CLI
+pixi run --frozen bunx turbo run test --affected  # focused changed-package loop, not the CI gate
+pixi run --frozen -- cargo check -p pixi-sandbox  # focused Cargo operation, not a second gate
 
 # every repository-automation subcommand goes through ONE task (crates/xtask); extra arguments
 # follow the subcommand, and `--` separates them when there is more than one.

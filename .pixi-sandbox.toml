@@ -16,5 +16,7 @@ cargo_vendor = true
 
 [[bundle]]
 name = "developer"
-environments = ["default", "web"]
+# One prefix now carries Rust, Bun and repository utilities so the restored developer runs the
+# same Pixi → Turbo → package command path as CI; Cargo dependencies remain separately vendored.
+environments = ["default"]
 platforms = ["linux-64"]

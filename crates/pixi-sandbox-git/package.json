@@ -1,0 +1,9 @@
+{
+  "name": "@repo/pixi-sandbox-git",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "cargo nextest run -p pixi-sandbox-git && cargo test --doc -p pixi-sandbox-git",
+    "lint": "cargo clippy -p pixi-sandbox-git --all-targets -- -D warnings"
+  }
+}

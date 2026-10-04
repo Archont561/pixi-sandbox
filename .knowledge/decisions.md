@@ -392,39 +392,46 @@ new trigger: a real airlock blocked by *combined* disk (git store + checkout + r
 doc-7's option C′ (restore from the git object store, no checkout; −845 MiB measured) is the
 first lever because it changes no binary and no format.
 
-## D15 — Turbo is deferred until the JS workspace graph earns it (task-26's threshold)
+## D15 — Turbo owns the cross-language task graph; Pixi remains the environment facade
 
-**Decision.** No Turbo today. The bun workspace has one JS package (`docs`), no cross-package
-JS edge, and a ~27 s docs CI build job; Pixi already expresses the only task graph that exists
-(`docs-install → docs-build`, `docs-install → lint-docs`, reused by the pre-commit hook as
-`lint-docs-write`). Recorded as backlog decision-3 (deferred), evaluation in backlog doc-8.
+**Decision.** Adopt Archont561/pathway's current orchestration model (task-70), superseding the
+JS-only deferral recorded by task-26 and decision-3. Bun owns the workspace dependencies;
+Turbo owns build/check ordering, affected selection and the local task cache; Pixi remains the
+only environment and command entrypoint. The `default` environment therefore carries Bun with
+the Rust and repository tools, and the published developer bundle contains that one environment
+instead of parallel `default` and `web` prefixes.
 
-**Adoption threshold (all three, doc-8 §2).** (1) ≥ 3 JS packages in the bun workspace —
-two packages still fit two pixi tasks; (2) a real cross-package edge — some package imports
-another workspace package; (3) ≥ ~60 s of repeated JS work on the CI path a cache would
-prune, or a local feedback loop past ~10 s for unchanged packages. Any PR adding a second or
-third JS package re-checks the triggers; a hit reopens the decision rather than silently
-accumulating pixi task duplication.
+Each Cargo crate is a private Bun workspace package only for `test` and `lint`: its scripts run
+`cargo nextest -p …` plus doctests and crate-scoped clippy, and its workspace dependencies mirror
+the Cargo path edges so `turbo --affected` includes dependants. Cargo is still authoritative for
+compilation and dependency resolution. Workspace-wide operations that cannot be split honestly
+(rustfmt, cargo-deny and llvm-cov) live in the single `@repo/rust` package. Pixi's public verbs
+(`test`, `lint`, `fmt`, `coverage`, `docs`) are thin facades over those scripts; Cargo flags have
+one owner rather than being copied into Pixi tasks.
 
-**If adopted.** Turbo is a root `package.json` devDependency pinned through `bun.lock` (like
-`@biomejs/biome`), never a conda/pixi dependency — the sandbox branch's payload budget is not
-spent on a CI-only tool. Invoked as `bun x turbo …` inside the `web` environment; pixi
-per-package tasks become thin `bun x turbo <task>` facades with `turbo.json` mirroring the
-pixi task names. Local `.turbo` cache for developers; published builds run `--force`; CI
-caches `.turbo` keyed on `bun.lock` + OS; **remote caching stays off** (third-party cache
-round-trips contradict the airlock posture — flipping it on is a new decision, not a config
-change).
+**Why this reverses the earlier decision.** Task-26 measured only the JavaScript surface and was
+correct that one docs package did not earn an orchestrator. Pathway supplied a new, measured
+use case: Rust crates can participate as task packages without replacing Cargo, allowing docs-
+only and unrelated-crate changes to replay successful checks while retaining nextest process
+isolation. pixi-sandbox has four Rust crates with real dependency edges, so the relevant graph is
+no longer the one-package JS graph task-26 evaluated.
 
-**Why.** With one package there is nothing to parallelise, deduplicate, or prune; Turbo would
-add a dependency and a second place where "what runs when" is expressed, in exchange for
-caching a build that already finishes faster than the runner takes to boot.
+**Cache policy.** `.turbo/cache` is local and restored by CI using OS/ref/commit keys; Turbo
+rehashes declared inputs, including Cargo and Pixi lockfiles, before accepting a hit. Remote
+caching remains off because a third-party cache round-trip conflicts with the airlock posture.
+Mutable tasks and release-producing commands are not cacheable. The full suite remains the
+merge gate; `--affected` is a focused developer command, not permission to skip required CI.
 
-**Evidence ✅.** Measured 2026-10-01 (doc-8 §1): `package.json` workspaces = `["docs"]`;
-docs workflow build job 27 s wall on `ubuntu-latest` including runner bootstrap (run
-36879920379); recent full runs ~30–80 s including the Pages deploy.
+**Evidence ✅.** The adopted graph parses at the public dry-run seam, selects the four Rust
+packages from `@repo/xtask...`, and `pixi run test` executes the same 626-test baseline through
+four crate-scoped nextest invocations (1 skipped). `pixi run lint` covers per-crate clippy plus
+the workspace and repository gates, and `pixi run docs build` produces the Astro site through
+the same graph. Pathway commit `4d2ebac` is the reference shape; pixi-sandbox keeps its stricter
+Pixi-only entrypoint and generated-workflow checks.
 
-**What would change it.** Meeting the §2 threshold, or committing to the docs site as the
-only JS package forever — then close as rejected instead of deferred.
+**What would change it.** Incorrect invalidation, a measurable regression from Cargo target-lock
+contention that outweighs affected/cache wins, or inability to keep the Cargo and workspace
+edges mechanically aligned would collapse Rust back to one opaque `@repo/rust` task package.
 
 ## D16 — Consumer upgrades regenerate generated files behind a review gate; pins never float (decision-4, task-47)
 

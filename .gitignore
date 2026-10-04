@@ -15,6 +15,8 @@ target/
 # bun hoists a workspace install to the root node_modules (see the root package.json),
 # so this is not a docs-only path any more.
 node_modules/
+# local Turbo task logs/cache; CI restores only .turbo/cache
+.turbo/
 docs/dist/
 docs/.astro/
 # python scratch (the reference prototype is run directly, never imported)

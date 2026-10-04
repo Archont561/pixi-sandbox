@@ -2,10 +2,30 @@
   "name": "pixi-sandbox",
   "private": true,
   "packageManager": "bun@1.3.11",
-  "workspaces": ["docs"],
+  "workspaces": ["docs", "crates", "crates/*"],
+  "scripts": {
+    "test": "turbo run test --filter=@repo/xtask...",
+    "test:affected": "turbo run test --affected",
+    "lint": "turbo run lint lint:biome lint:actions lint:toml lint:generated lint:plan lint:repo",
+    "lint:rust": "turbo run lint --filter=@repo/rust --filter=@repo/pixi-sandbox-core --filter=@repo/pixi-sandbox-git --filter=@repo/pixi-sandbox --filter=@repo/xtask",
+    "lint:docs": "turbo run lint:biome",
+    "lint:biome": "biome check docs",
+    "lint:actions": "actionlint",
+    "lint:toml": "taplo fmt --check pixi.toml .pixi-sandbox.toml Cargo.toml crates/pixi-sandbox-core/Cargo.toml crates/pixi-sandbox/Cargo.toml crates/pixi-sandbox/pixi.toml crates/pixi-sandbox-git/Cargo.toml crates/xtask/Cargo.toml deny.toml",
+    "lint:generated": "cargo run -q -p xtask -- lint-generated-workflow",
+    "lint:plan": "cargo run -q -p pixi-sandbox --release -- plan --config .pixi-sandbox.toml --json",
+    "lint:repo": "cargo run -q -p xtask -- check-repository",
+    "fmt": "turbo run fmt --",
+    "fmt:biome": "biome check --write docs",
+    "coverage": "turbo run coverage --filter=@repo/rust",
+    "docs:build": "turbo run build --filter=pixi-sandbox-docs",
+    "docs:dev": "turbo run dev --filter=pixi-sandbox-docs",
+    "docs:preview": "turbo run preview --filter=pixi-sandbox-docs"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
     "backlog.md": "^1.53.0",
-    "skills": "^1.7.0"
+    "skills": "^1.7.0",
+    "turbo": "^2.11.5"
   }
 }

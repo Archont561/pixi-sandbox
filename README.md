@@ -325,7 +325,7 @@ Tools dominate small bundles — expected, git stores each tool blob once.
 | `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals, opencode installed by `.devcontainer/setup.sh` with a global `bun add` |
 | `lefthook.yml` | Git hooks — every hook calls a pixi task so hooks and CI cannot drift; `pre-commit` stays formatter-only (no cargo), every Rust gate runs once at `pre-push` |
 | `docs/` | Starlight + astro-icon + Iconify docs (12 pages) |
-| `package.json` + `bun.lock` | Root bun workspace: `docs` member + repo-wide `backlog.md` / `skills` devDependencies |
+| `package.json` + `bun.lock` + `turbo.json` | Root Bun workspace and cross-language task graph: docs plus private Cargo-crate task packages; Turbo, Biome, backlog and skills are lock-pinned |
 | `.knowledge/` | Open Knowledge Format: decisions D1–D11, design, benchmarks |
 | `CHANGELOG.md` | Changelog via convco |
 
