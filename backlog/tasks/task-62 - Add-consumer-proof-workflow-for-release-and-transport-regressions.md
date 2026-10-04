@@ -1,10 +1,10 @@
 ---
 id: TASK-62
 title: 'Add a consumer-proof workflow for release and transport regressions'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-03'
-updated_date: '2026-10-03'
+updated_date: '2026-10-04'
 labels:
   - testing
   - ci
@@ -77,3 +77,9 @@ AC#6 and #7 remain open: this session still cannot dispatch `workflow_dispatch` 
 
 2026-10-03, connected proof — the maintainer re-dispatched once more; run [37142607209](https://github.com/Archont561/pixi-sandbox/actions/runs/37142607209) passed end to end (26s). Inspected the full job log directly: pack produced `default: 7 files · 3.5 MiB packed · 10.2 MiB unpacked · 29 file entries`, embedded `pixi 0.81.0`, `pixi-unpack 0.7.11`, and `pixi-sandbox 0.5.2`, and printed `self-bin: runs standalone (--version, empty environment)`; doctor verified `11 blob(s), 98.6 MiB checked, 0 failure(s)` and `probe tool pixi-sandbox v0.5.2: runs standalone`; publish pushed `14 file(s), 98.6 MiB` to the throwaway bare remote; a fresh `git clone` + `fetch` + `checkout --detach FETCH_HEAD` landed on the published commit; the embedded `tools/linux-64/pixi-sandbox restore` verified the transport (`11 blob(s) … every declared byte matches`), materialised tools and the `default` environment, verified the restored tree against the manifest (`29 entry(ies), 0 failure(s)` — `OK — the restored tree matches the manifest`), and printed `restore complete`; the restored `tools/linux-64/pixi --version` answered `pixi 0.81.0`. The uploaded `consumer-proof-v0.5.2` artifact holds 11 files — `version.txt`, `help.txt`, `publish-sandbox.first.yml`, `publish-sandbox.yml`, `pack.log`, `doctor.log`, `publish.log`, `restore.log`, `restored-pixi-version.txt`, `manifest.json`, `SHA256SUMS` — covering the selected tag/asset/checksums/generated workflow/manifest/restore output/test logs, with no secrets or tokens in any of them. AC#6 and #7 are now complete. All ten acceptance criteria are satisfied; this task is done pending merge of PR #91.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+<!-- SECTION:SUMMARY:BEGIN -->
+The consumer-proof workflow (`.github/workflows/consumer-proof.yml`) proves current releases end to end on native runners: downloading verified standalone binaries, creating clean isolated consumer fixtures, verifying byte-identical publisher workflow regeneration, and executing the full pack, doctor, publish, fetch, and offline restore lifecycle. Connected run 37142607209 confirmed all 10 acceptance criteria, and PR #91 merged to main.
+<!-- SECTION:SUMMARY:END -->
+

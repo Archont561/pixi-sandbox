@@ -887,6 +887,75 @@ fn publish_keep_rotates_the_branch_instead_of_replacing_it() {
     );
 }
 
+/// Task-68 AC#4: A failed or rejected publish leaves any previously published healthy transport
+/// branch completely byte-identical and fetchable.
+#[test]
+fn publish_failure_preserves_the_existing_healthy_transport_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let transport = transport_copy();
+    let remote = bare_remote(tmp.path());
+    let branch = "sandbox/demo-linux-64";
+
+    // 1. Initial healthy publish succeeds
+    bin()
+        .args([
+            "publish",
+            "--input-dir",
+            transport.path().to_str().unwrap(),
+            "--branch-name",
+            branch,
+            "--remote",
+            &remote,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("published"));
+
+    let initial_commit = run_git(&["rev-parse", branch], Path::new(&remote));
+    assert!(!initial_commit.is_empty());
+
+    // 2. An invalid publish attempt fails (e.g. invalid directory missing manifest)
+    let bad_dir = tmp.path().join("invalid-transport");
+    fs::create_dir(&bad_dir).unwrap();
+
+    bin()
+        .args([
+            "publish",
+            "--input-dir",
+            bad_dir.to_str().unwrap(),
+            "--branch-name",
+            branch,
+            "--remote",
+            &remote,
+        ])
+        .assert()
+        .failure();
+
+    // 3. The remote branch head is untouched and identical
+    let after_commit = run_git(&["rev-parse", branch], Path::new(&remote));
+    assert_eq!(
+        initial_commit, after_commit,
+        "failed publish must not alter the healthy branch commit"
+    );
+
+    // 4. Offline doctor verification against the branch remains valid
+    let worktree = tmp.path().join("worktree");
+    run_git(
+        &["worktree", "add", worktree.to_str().unwrap(), branch],
+        Path::new(&remote),
+    );
+
+    bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            worktree.to_str().unwrap(),
+            "--verify",
+        ])
+        .assert()
+        .success();
+}
+
 /// Task-6: an operator with no network must never be sent to a reference that no longer exists.
 /// It used to send them to a reference implementation that 0.2.0 deleted from the repository,
 /// which is exactly the kind of dead end an airlock cannot resolve. `tools update` was the last
