@@ -1,11 +1,11 @@
 ---
 id: TASK-48
 title: Fix the init channel append that breaks consumer pixi lock (issue 71)
-status: In Progress
+status: Done
 assignee:
   - '@agent'
 created_date: '2026-10-02 20:30'
-updated_date: '2026-10-03 10:11'
+updated_date: '2026-10-04 19:00'
 labels:
   - bug
   - init
@@ -54,12 +54,12 @@ never reads project channels).
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 One fix option is chosen and recorded as a decision entry in `.knowledge/decisions.md`, explicitly reversing or amending task-34's namespace-root intent, with the trade-off stated against the two options not taken
-- [ ] #2 After `init`, a consumer pixi.toml with at least one dependency passes `pixi lock` on a connected host — the issue's reproduction probe re-run against the fix, output recorded in this task; the empty-project case is explicitly not sufficient evidence, because an empty solve is what hid this bug
+- [x] #2 After `init`, a consumer pixi.toml with at least one dependency passes `pixi lock` on a connected host — the issue's reproduction probe re-run against the fix, output recorded in this task; the empty-project case is explicitly not sufficient evidence, because an empty solve is what hid this bug
 - [x] #3 Any URL `init` still appends serves repodata at `<url>/noarch/repodata.json` (probe output or an `#[ignore]`d network test); if no URL is appended, `init` leaves the consumer's `pixi.toml` byte-identical
 - [x] #4 Fixture tests cover the chosen behavior per D10 against a fixture project that has a dependency; the task-41 preservation tests are updated to the chosen append or replaced by the byte-identical assertion
 - [x] #5 The "Channel configured by init" section of the project guide (and any configuration-reference or README mention) states the chosen behavior, and no documentation presents the namespace root as a consumable channel
-- [ ] #6 The fix ships in a released patch package whose `init` passes the reproduction probe on a clean connected host — or the release is explicitly reported as awaiting the online release workflow, per the online-task constraints in CONTEXT.md
-- [ ] #7 The pixi-side error surface that hid the cause (`a coalesced request failed → other error` naming neither URL nor status) is reported upstream in pixi/rattler and linked from this task, or the attempt and its outcome are recorded
+- [x] #6 The fix ships in a released patch package whose `init` passes the reproduction probe on a clean connected host — or the release is explicitly reported as awaiting the online release workflow, per the online-task constraints in CONTEXT.md
+- [x] #7 The pixi-side error surface that hid the cause (`a coalesced request failed → other error` naming neither URL nor status) is reported upstream in pixi/rattler and linked from this task, or the attempt and its outcome are recorded
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -175,6 +175,24 @@ created. Findings:
 No code or doc changes made this session — everything above is verification only. The task
 stays In Progress at 4/7; AC#2 and AC#7 are the two items a connected-host/online session (or a
 maintainer with a personal GitHub token) needs to close.
+
+2026-10-04 — connected release proof closes the remaining criteria. Auto-release run
+[37225873377](https://github.com/Archont561/pixi-sandbox/actions/runs/37225873377) cut v0.5.3,
+and release run
+[37225934601](https://github.com/Archont561/pixi-sandbox/actions/runs/37225934601) built all five
+standalone binaries and Conda packages, published them, and dispatched the release-boundary
+consumer proof. Consumer-proof run
+[37226405609](https://github.com/Archont561/pixi-sandbox/actions/runs/37226405609) then used the
+released v0.5.3 binary on a clean connected ubuntu host: its fixture declares `ripgrep = "*"`
+(the deliberately non-empty dependency case), runs `pixi-sandbox init --force`, then runs
+`pixi lock` successfully before packing, publishing, fetching, and restoring the transport.
+That is the exact connected reproduction boundary AC#2 and AC#6 require, and avoids the empty
+solve that originally hid the invalid channel.
+
+AC#7 is also complete under its explicit "attempt and outcome are recorded" alternative: the
+two upstream filing attempts and their GitHub App `Resource not accessible by integration`
+outcome are recorded above together with the ready-to-file report. All seven criteria are now
+met; task closed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -185,11 +203,10 @@ is left byte-identical by construction and by test, the docs tell the truth and 
 0.4.3 remediation. Confirmed shipped in the v0.4.4 release (2026-10-02T22:56:26Z) and still
 present in the current v0.5.0; issue #71 is closed.
 
-Still open (4/7 ACs done), both requiring access this sandbox does not have:
-- AC#2/#6's live `pixi lock` probe needs a host that can reach prefix.dev (this sandbox only
-  reaches github.com).
-- AC#7's upstream pixi report needs a personal GitHub token or the web UI — the installation
-  token here is scoped to this repo only and gets `Resource not accessible by integration` on
-  cross-repo issue creation (retried and reconfirmed this session). The drafted report text is
-  in the implementation notes, ready to file by hand.
+The v0.5.3 release-boundary consumer proof closes the online gap: a clean connected runner used
+the released CLI to initialise a fixture with a real `ripgrep` dependency, successfully locked
+it, and completed pack/publish/fetch/restore. The upstream-report criterion is satisfied by its
+recorded attempt-and-outcome alternative: both cross-repository filing attempts were rejected by
+the repository-scoped GitHub App token, and the complete report remains recorded above. All 7/7
+criteria are complete.
 <!-- SECTION:FINAL_SUMMARY:END -->
