@@ -928,3 +928,70 @@ before this session's work); `pixi run lint` (fmt, clippy, deny, actionlint, lin
 workflow, sandbox-plan --json, lint-toml, lint-docs, check-repository) all green; `pixi run docs`
 builds the new MDX cleanly. Commit `a57e915` carries task-47's slice; task-53's commit follows
 in this same session before the PR opens.
+
+### 2026-10-04 — task-69: POSIX colons pack; the consumer proofs queue behind one release
+
+User instruction this session: "Load session skill, restore env, look issues ans workflow runs
+and tell what to do", then "Create task for new issues and do task 69".
+
+Issue #95 (opened minutes into the session): `check_rel_path` rejected any path containing a
+colon, but a colon is a legal POSIX byte — perl's `man/man3/App::Cpan.3` man pages made every
+environment that resolves perl (the conda gtk/webkit stack) unbuildable, so castellan's
+`shells` environment failed its generated publisher on every push. TASK-69 was created for it
+and implemented test-first at three public seams: a new `tests/files_manifest.rs` reproducing
+the incident (scan records and parse accepts the man page; `C:/x`, `C:\x`, `C:x`, `/x`, `\x`
+refused; the scan-time wording asserted), `tests/manifest.rs` freezing every label
+`check_rel_path` guards (blob, part, pack_path, tool path), and the verify.rs `World` fixture
+now carrying the man page so the faithful-restore test proves the restore-side oracle
+round-trips colon names. Only a Windows drive prefix (any ASCII letter + colon) is refused
+now, and `FilesDoc` gained a labelled validate so the pack-time rejection reads "scanned
+environment file must be relative" instead of pointing at a manifest that does not exist yet
+(the issue's diagnosis note). Merged as PR #96 → main at `888af6d`; PR checks green including
+airlock linux-64 (4m19s); post-merge ci (37214102074), docs (37214102076) and the transport
+repack (37214102104) all green — `sandbox/developer-linux-64` now packs from `888af6d`
+(created 2026-10-04T15:46:54Z), so the fix is in the published branch. Suite 623 passing /
+1 skipped (619/1 baseline); issue #95 closed by the merge.
+
+Not implemented, carried forward:
+
+- **TASK-69 AC#6** — castellan's shells environment has not packed green yet. The fix is on
+  main and in the repacked transport, but consumer publishers bootstrap the newest *release*
+  (v0.5.2 predates the fix), so the proof needs the next release and then any castellan push
+  to main. Record the run in the task, then close it.
+- **One patch release would settle three tasks at once** (v0.5.3, maintainer's dispatch —
+  the session token gets 403 on `workflow_dispatch`): TASK-69 AC#6 (castellan repack),
+  TASK-65 AC#6 (issue #92 — the relock guard shipped in #94 but is unreleased; a qgis-rs
+  stale-Cargo.lock repair run would close it and unblock TASK-66), and TASK-54 AC#6 (its
+  consumer-proof shape; note the v0.5.2 consumer-proof run 37142607209 already proves the
+  standalone-self-bin release lifecycle end to end — whether that satisfies AC#6's strict
+  "patch release + consumer repack" reading is the maintainer's call, not taken here).
+- **TASK-62 is 10/10 with every proof recorded** (PR #91 merged); its file only needs
+  flipping to Done — left untouched because this session's scope was narrowed to task-69.
+- TASK-66 stays blocked by task-65's AC#6; TASK-68 is the next unblocked To Do task.
+
+Next session should start with:
+
+> Restore the sandbox and baseline the suite (expect 623 passing / 1 skipped — the published
+> transport was repacked at 888af6d carrying the POSIX-colon fix; its manifest still reports
+> tool version 0.5.2 because that is the last tagged release, but the embedded pixi-sandbox
+> is source-built from 888af6d; nothing new needs vendoring before the tree builds offline),
+> then read `CONTEXT.md` § Session scratchpad — the 2026-10-04 heading lists the
+> release-gated proofs.
+>
+> First, one look at the repo state: `gh release list`. If a release newer than v0.5.2
+> exists, three tasks lose their last open path at once — TASK-69 AC#6 (watch castellan's
+> next push to main pack its shells environment green), TASK-65 AC#6 (the qgis-rs relock
+> repair, which then unblocks TASK-66), and TASK-54 AC#6. Record the runs and close what is
+> proven. If no new release exists, ask the maintainer to dispatch auto-release.yml with a
+> patch bump — the session token cannot dispatch workflows — and take TASK-68 while waiting.
+>
+> I want to take task-68 this session — surface publish failures outside Actions logs and
+> preserve the last healthy transport (issue #93). Decisions already made: build on
+> task-67's durable diagnostics (Done: -v/-vv, --log-file on pack/doctor/publish), keep the
+> generated workflow one-line-step shaped, and prove transport preservation with tempdir /
+> bare-remote tests, never this checkout. Locally provable slices first (renderer, tests,
+> docs); the connected consumer run (AC#7) waits for the release lane.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do
+> not implement goes in `CONTEXT.md`, not into the files it speculates about), the session
+> procedure and its templates are in `.agents/skills/session/`.

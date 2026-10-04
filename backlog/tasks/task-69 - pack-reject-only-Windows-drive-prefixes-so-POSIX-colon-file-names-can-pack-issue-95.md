@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@agent'
 created_date: '2026-10-04 15:29'
-updated_date: '2026-10-04 15:36'
+updated_date: '2026-10-04 15:49'
 labels:
   - bug
   - pack
@@ -55,6 +55,8 @@ Tests: new tests/files_manifest.rs freezes the incident (the scan records and Fi
 AC#4 note — no schema change: SCHEMA_VERSION and the wire format are untouched, the fix relaxes validation only. Forward compatibility: a files.json carrying colon-named entries parses only on binaries with this fix; every transport embeds its own pixi-sandbox (self-bin), so a packed branch restores self-consistently, but a stale standalone binary doctoring such a transport fails with the old message — that is the release dependency AC#6 records.
 
 AC#6 stays open: it needs the next pixi-sandbox release, then a castellan push whose shells environment packs green and repacks the transport — to be recorded here and on issue #95.
+
+2026-10-04 — merged as PR #96 (squash 888af6d, title "fix(pack): reject only Windows drive prefixes so POSIX colons can pack (#96)"). PR checks all green (ci 1m30s, lock guard, replace-a-running-image windows, validate airlock plan, airlock linux-64 4m19s, codecov patch). Post-merge runs on main all green: ci 37214102074 (1m23s), docs 37214102076 (39s), publish sandbox 37214102104 (4m5s) — the transport sandbox/developer-linux-64 repacked at 2026-10-04T15:46:54Z from commit 888af6d, so the fix is in the published branch. Issue #95 closed by the merge. AC#6 remains the only open criterion: castellan generated publishers bootstrap the newest release (v0.5.2 predates the fix), so the consumer proof needs the next release plus one castellan push to main.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
