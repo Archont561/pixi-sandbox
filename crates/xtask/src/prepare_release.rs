@@ -79,6 +79,12 @@ pub fn run(root: &Path, selector: &str) -> Result<String> {
         }
     }
 
+    // The committed relock workflow stamps the CLI version. Render it only after Cargo.toml
+    // carries the target version, and read that manifest at runtime: this xtask process was
+    // compiled before the bump, so env!("CARGO_PKG_VERSION") still names the old release.
+    // The v0.5.3 release exposed that skew by committing a 0.5.2 workflow stamp.
+    refresh_generated_files(root)?;
+
     // Keep Cargo.lock's workspace-member versions in step so a later `cargo build --locked`
     // does not trip over a stale lock. `--workspace` touches only the members, not external
     // pins; prefer offline (the vendor/cache is enough because no new dependency appears).
@@ -144,6 +150,11 @@ fn resolve_version(root: &Path, selector: &str) -> Result<String> {
             bail!("unrecognised version selector: '{other}' (use auto|major|minor|patch|vX.Y.Z)")
         }
     }
+}
+
+fn refresh_generated_files(root: &Path) -> Result<()> {
+    eprintln!("→ refreshing version-stamped generated files");
+    crate::workflow::render_relock(root).context("rendering the release-version relock workflow")
 }
 
 fn convco(root: &Path, args: &[&str]) -> Result<String> {
@@ -237,7 +248,10 @@ fn write_touched_report(root: &Path, touched_file: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{reversion_line, stamp_internal_pins, stamp_version, write_touched_report};
+    use super::{
+        refresh_generated_files, reversion_line, stamp_internal_pins, stamp_version,
+        write_touched_report,
+    };
     use std::fs;
     use std::path::Path;
     use std::process::Command as StdCommand;
@@ -301,6 +315,27 @@ mod tests {
             Some("version = \"2.0.0\" # keep me\n".to_string())
         );
         assert_eq!(reversion_line("  version = \"1.0.0\"\n", "2.0.0"), None);
+    }
+
+    #[test]
+    fn generated_files_follow_the_version_just_stamped_into_the_workspace() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let manifest = dir.path().join("Cargo.toml");
+        fs::write(
+            &manifest,
+            "[workspace]\n\n[workspace.package]\nversion = \"1.2.3\"\n",
+        )
+        .expect("workspace manifest");
+
+        stamp_version(&manifest, "1.2.4").expect("stamp release version");
+        refresh_generated_files(dir.path()).expect("refresh generated files");
+
+        let relock = fs::read_to_string(dir.path().join(crate::workflow::RELOCK_PATH))
+            .expect("rendered relock workflow");
+        assert!(
+            relock.contains("# pixi-sandbox-version: 1.2.4"),
+            "the generated file must carry the new release, not the xtask binary's old version:\n{relock}"
+        );
     }
 
     #[test]
