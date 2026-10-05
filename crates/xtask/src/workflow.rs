@@ -31,6 +31,7 @@ pub fn relock_render(root: &Path) -> Result<String> {
         cli_version: &cli_version,
         pixi_version: &pixi_version,
         cargo: plan_vendors_cargo(&root.join(DEFAULT_FILE)),
+        relock_workflow: "relock.yml",
         ci_workflow: "ci.yml",
         publisher_workflow: PUBLISHER_WORKFLOW,
     }))
@@ -175,6 +176,7 @@ pub fn lint_generated_workflow(actionlint: &Path) -> Result<()> {
             pixi_version: &embedded_pixi_pin()
                 .context("the embedded tools lock declares no pixi pin")?,
             cargo,
+            relock_workflow: "relock.yml",
             ci_workflow: "ci.yml",
             publisher_workflow: PUBLISHER_WORKFLOW,
         });

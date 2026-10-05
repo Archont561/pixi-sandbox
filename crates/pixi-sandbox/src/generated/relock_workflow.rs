@@ -50,6 +50,10 @@ pub struct RelockWorkflowOptions<'a> {
     /// Whether the project vendors Cargo dependencies, i.e. whether `Cargo.lock` is part of
     /// the lane. A project with no Rust in its transport gets no `cargo fetch` step.
     pub cargo: bool,
+    /// This workflow's generated path, relative to `.github/workflows/`. The bot dispatches it
+    /// once after a repair so its guard can validate the new commit and its verdict job can
+    /// observe the independently dispatched CI and publisher results.
+    pub relock_workflow: &'a str,
     /// Workflow file the bot dispatches after pushing a lock commit, relative to
     /// `.github/workflows/`.
     pub ci_workflow: &'a str,
@@ -105,6 +109,11 @@ name: relock
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      repaired_sha:
+        description: Internal repaired commit SHA; only the relock bot supplies this.
+        required: false
+        type: string
 
 concurrency:
   group: relock-${{ github.head_ref || github.ref }}
@@ -141,6 +150,7 @@ __CARGO_GUARD__
     permissions:
       contents: write
       actions: write
+      checks: write
     steps:
       # A fork PR downgrades `contents: write` to read, so the push below cannot succeed. Say
       # that, instead of letting a permissions wall read as a flaky push.
@@ -166,28 +176,233 @@ __CARGO_STEP__      - id: commit
           commit_user_email: __BOT_EMAIL__
           commit_author: __BOT_NAME__ <__BOT_EMAIL__>
           file_pattern: __LOCK_FILES__
-      # The push above used GITHUB_TOKEN, so it started nothing. These three dispatches are the
-      # only verdict the lock commit will ever get: the consumer's CI, this workflow again
-      # so its own guard reports green on the commit that fixed the drift, and the publisher so
-      # the lockfile just refreshed reaches the transport instead of stalling on the branch.
-      # The branch name reaches the command as an environment variable, never as inline
-      # ${{ }}: a branch name is attacker-controlled text on a pull request, and interpolating
-      # it into a shell line is the script-injection hole actionlint rejects.
-      - if: ${{ steps.commit.outputs.changes_detected == 'true' }}
-        run: gh workflow run __CI_WORKFLOW__ --ref "$HEAD_REF"
+      # A repaired commit becomes the PR head, while the failing guard belongs to the stale
+      # commit. Start a Check Run explicitly on the repaired SHA so the eventual verdict is
+      # attached to the reviewable commit rather than hidden in detached dispatch runs.
+      - name: Start repaired-head validation
+        if: ${{ steps.commit.outputs.changes_detected == 'true' }}
+        id: validation
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_REF: ${{ github.head_ref }}
-      - if: ${{ steps.commit.outputs.changes_detected == 'true' }}
-        run: gh workflow run relock.yml --ref "$HEAD_REF"
+          REPAIRED_SHA: ${{ steps.commit.outputs.commit_hash }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const check = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'pixi-sandbox relock validation',
+              head_sha: process.env.REPAIRED_SHA,
+              status: 'in_progress',
+              external_id: `pixi-sandbox-relock:${process.env.PR_NUMBER}`,
+              output: {
+                title: 'Waiting for repaired-head validation',
+                summary: 'The lock repair committed successfully. Lock guard, configured CI, and sandbox publishing must now pass on this commit.',
+              },
+            });
+            core.setOutput('check_run_id', check.data.id);
+      # Check the freshly committed tree locally first. This replaces the old detached relock
+      # dispatch: a second `workflow_dispatch` supplied no PR-visible verdict and could create
+      # a loop, while these commands validate the exact repaired SHA before CI is started.
+      - name: Validate repaired Pixi lock
+        if: ${{ steps.commit.outputs.changes_detected == 'true' }}
+        run: pixi lock --check
+__CARGO_REPAIRED_GUARD__      - name: Mark local validation failure on the repaired head
+        if: ${{ failure() && steps.validation.outputs.check_run_id != '' }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_REF: ${{ github.head_ref }}
-      - if: ${{ steps.commit.outputs.changes_detected == 'true' }}
-        run: gh workflow run __PUBLISHER_WORKFLOW__ --ref "$HEAD_REF"
+          CHECK_RUN_ID: ${{ steps.validation.outputs.check_run_id }}
+        with:
+          script: |
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: Number(process.env.CHECK_RUN_ID),
+              status: 'completed',
+              conclusion: 'failure',
+              output: {
+                title: 'Repaired lock validation failed',
+                summary: 'The generated repair did not pass its own locked validation. Inspect this relock run; CI and sandbox publishing were not dispatched.',
+              },
+            });
+      # A GITHUB_TOKEN push starts no workflows. Dispatch the configured CI and publisher only
+      # after the local repaired-head guard passes, then dispatch this relock workflow once with
+      # the repaired SHA. Its input-gated verdict job turns the detached conclusions into the one
+      # Check Run reviewers see on the pull request.
+      - name: Dispatch repaired-head CI and publisher validation
+        if: ${{ success() && steps.commit.outputs.changes_detected == 'true' }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          GH_TOKEN: ${{ github.token }}
+          CHECK_RUN_ID: ${{ steps.validation.outputs.check_run_id }}
+          REPAIRED_SHA: ${{ steps.commit.outputs.commit_hash }}
           HEAD_REF: ${{ github.head_ref }}
+          RELOCK_WORKFLOW: __RELOCK_WORKFLOW_JSON__
+          CI_WORKFLOW: __CI_WORKFLOW_JSON__
+          PUBLISHER_WORKFLOW: __PUBLISHER_WORKFLOW_JSON__
+        with:
+          script: |
+            try {
+              await Promise.all([
+                ...[process.env.CI_WORKFLOW, process.env.PUBLISHER_WORKFLOW].map((workflow_id) =>
+                  github.rest.actions.createWorkflowDispatch({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    workflow_id,
+                    ref: process.env.HEAD_REF,
+                  })),
+                github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: process.env.RELOCK_WORKFLOW,
+                  ref: process.env.HEAD_REF,
+                  inputs: { repaired_sha: process.env.REPAIRED_SHA },
+                }),
+              ]);
+            } catch (error) {
+              await github.rest.checks.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                check_run_id: Number(process.env.CHECK_RUN_ID),
+                status: 'completed',
+                conclusion: 'failure',
+                output: {
+                  title: 'Could not dispatch repaired-head validation',
+                  summary: `CI and publisher validation were not both dispatched: ${error.message}`,
+                },
+              });
+              core.setFailed(`could not dispatch repaired-head validation: ${error.message}`);
+            }
+
+  # The bot dispatches this workflow once after pushing its repair. This job is the only
+  # long-running observer: it never checks out PR code, reads only GitHub's run metadata, and
+  # updates the already-created Check Run on the repaired SHA. The regular relock job cannot run
+  # from this dispatch, so observing never creates another repair/publish loop.
+  verdict:
+    name: relock verdict
+    needs: guard
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.repaired_sha != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    permissions:
+      actions: read
+      checks: write
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          HEAD_SHA: ${{ inputs.repaired_sha }}
+          LOCK_GUARD_RESULT: ${{ needs.guard.result }}
+          CI_WORKFLOW: __CI_WORKFLOW_JSON__
+          PUBLISHER_WORKFLOW: __PUBLISHER_WORKFLOW_JSON__
+        with:
+          script: |
+            const checkName = 'pixi-sandbox relock validation';
+            const { data: checks } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.HEAD_SHA,
+              check_name: checkName,
+              filter: 'latest',
+              per_page: 100,
+            });
+            const check = checks.check_runs.find((candidate) =>
+              candidate.status === 'in_progress'
+              && candidate.external_id?.startsWith('pixi-sandbox-relock:'));
+            if (!check) {
+              core.setFailed(`no in-progress ${checkName} check exists for ${process.env.HEAD_SHA}`);
+              return;
+            }
+
+            const update = async (status, conclusion, title, summary) => github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: check.id,
+              status,
+              ...(conclusion ? { conclusion } : {}),
+              output: { title, summary },
+            });
+            if (process.env.LOCK_GUARD_RESULT !== 'success') {
+              await update(
+                'completed',
+                'failure',
+                'Repaired lock guard failed',
+                'The bot-created commit did not pass the lock guard. CI and sandbox publishing are not trusted.',
+              );
+              core.setFailed('the repaired lock guard failed');
+              return;
+            }
+
+            const workflows = [process.env.CI_WORKFLOW, process.env.PUBLISHER_WORKFLOW];
+            const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+            for (let attempt = 0; attempt < 360; attempt += 1) {
+              let expected;
+              try {
+                expected = await Promise.all(workflows.map(async (workflow_id) => {
+                  const runs = await github.rest.actions.listWorkflowRuns({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    workflow_id,
+                    head_sha: process.env.HEAD_SHA,
+                    event: 'workflow_dispatch',
+                    per_page: 100,
+                  });
+                  const startedAt = Date.parse(check.started_at);
+                  const run = runs.data.workflow_runs
+                    .filter((candidate) => Date.parse(candidate.created_at) >= startedAt)
+                    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))[0];
+                  return { workflow: workflow_id, run };
+                }));
+              } catch (error) {
+                await update(
+                  'completed',
+                  'failure',
+                  'Could not read repaired-head validation',
+                  `The relock verdict could not inspect its configured CI and publisher workflows: ${error.message}`,
+                );
+                core.setFailed(`could not inspect repaired-head validation: ${error.message}`);
+                return;
+              }
+
+              const missing = expected.filter(({ run }) => !run).map(({ workflow }) => workflow);
+              const failed = expected.filter(({ run }) =>
+                run?.status === 'completed' && run.conclusion !== 'success');
+              if (failed.length > 0) {
+                await update(
+                  'completed',
+                  'failure',
+                  'Repaired-head validation failed',
+                  failed.map(({ workflow, run }) => `${workflow}: ${run.conclusion}`).join('\n'),
+                );
+                return;
+              }
+              const pending = expected.filter(({ run }) => !run || run.status !== 'completed');
+              if (missing.length === 0 && pending.length === 0) {
+                await update(
+                  'completed',
+                  'success',
+                  'Repaired-head validation passed',
+                  expected.map(({ workflow, run }) => `${workflow}: ${run.conclusion}`).join('\n'),
+                );
+                return;
+              }
+              const waiting = [
+                ...missing.map((workflow) => `${workflow}: not started`),
+                ...pending.filter(({ run }) => run).map(({ workflow, run }) => `${workflow}: ${run.status}`),
+              ];
+              await update(
+                'in_progress',
+                undefined,
+                'Waiting for repaired-head validation',
+                waiting.join('\n'),
+              );
+              await wait(10_000);
+            }
+            await update(
+              'completed',
+              'failure',
+              'Repaired-head validation timed out',
+              'CI and sandbox publishing did not both complete within one hour. Inspect their dispatched runs before retrying.',
+            );
+            core.setFailed('repaired-head validation timed out');
 "#;
     let cargo_guard = if options.cargo {
         "      # Cargo's locked fetch is the non-writing Cargo.lock counterpart to `pixi lock\n      # --check`: it fails before CI or packing when a Rust manifest changed without a relock.\n      - run: cargo fetch --locked\n"
@@ -196,6 +411,11 @@ __CARGO_STEP__      - id: commit
     };
     let cargo_step = if options.cargo {
         "      # Resolves only what the new constraint forces; `cargo update` would move the\n      # whole workspace, which is a different intent and a different pull request.\n      - run: cargo fetch\n"
+    } else {
+        ""
+    };
+    let cargo_repaired_guard = if options.cargo {
+        "      - name: Validate repaired Cargo lock\n        if: ${{ steps.commit.outputs.changes_detected == 'true' }}\n        run: cargo fetch --locked\n"
     } else {
         ""
     };
@@ -211,6 +431,14 @@ __CARGO_STEP__      - id: commit
     } else {
         "pixi.lock"
     };
+    // JSON strings are valid YAML quoted scalars. Unlike shell quoting, this protects the
+    // JavaScript action's environment from punctuation in a configured workflow filename.
+    let ci_workflow_json =
+        serde_json::to_string(options.ci_workflow).expect("a workflow filename is serialisable");
+    let publisher_workflow_json = serde_json::to_string(options.publisher_workflow)
+        .expect("a workflow filename is serialisable");
+    let relock_workflow_json = serde_json::to_string(options.relock_workflow)
+        .expect("a workflow filename is serialisable");
     template
         .replace("__GENERATED_MARKER__", GENERATED_MARKER)
         .replace(
@@ -220,10 +448,12 @@ __CARGO_STEP__      - id: commit
         .replace("__PIXI_VERSION__", options.pixi_version)
         .replace("__CARGO_GUARD__", cargo_guard)
         .replace("__CARGO_STEP__", cargo_step)
+        .replace("__CARGO_REPAIRED_GUARD__", cargo_repaired_guard)
         .replace("__LOCK_FILES__", lock_files)
         .replace("__LOCK_COMMANDS__", lock_commands)
-        .replace("__CI_WORKFLOW__", options.ci_workflow)
-        .replace("__PUBLISHER_WORKFLOW__", options.publisher_workflow)
+        .replace("__CI_WORKFLOW_JSON__", &ci_workflow_json)
+        .replace("__PUBLISHER_WORKFLOW_JSON__", &publisher_workflow_json)
+        .replace("__RELOCK_WORKFLOW_JSON__", &relock_workflow_json)
         .replace("__BOT_NAME__", BOT_NAME)
         .replace("__BOT_EMAIL__", BOT_EMAIL)
 }
@@ -248,6 +478,7 @@ mod tests {
             cli_version: "9.8.7",
             pixi_version: "0.81.0",
             cargo,
+            relock_workflow: "relock.yml",
             ci_workflow: "ci.yml",
             publisher_workflow: "publish-sandbox.yml",
         })
@@ -337,62 +568,65 @@ mod tests {
         );
     }
 
-    /// A `GITHUB_TOKEN` push triggers nothing, so the dispatches are the lock commit's only
-    /// verdict — and they only fire when a commit actually happened. The publisher is among
-    /// them: a lockfile refreshed on the branch but never republished leaves the published
-    /// transport holding the one the bot just replaced.
+    /// A `GITHUB_TOKEN` push triggers nothing, so the repair uses the Actions API to dispatch
+    /// CI, publication, and one input-marked relock observer only after a real commit. The
+    /// observer never invokes the repair job again, which makes the dispatch graph acyclic.
     #[test]
-    fn the_dispatches_are_explicit_and_gated_on_a_real_commit() {
+    fn the_dispatches_are_explicit_gated_and_loop_free() {
         let workflow = render(true);
-        assert!(
-            workflow.contains(r#"run: gh workflow run ci.yml --ref "$HEAD_REF""#),
-            "{workflow}"
-        );
-        assert!(
-            workflow.contains(r#"run: gh workflow run relock.yml --ref "$HEAD_REF""#),
-            "{workflow}"
-        );
-        assert!(
-            workflow.contains(r#"run: gh workflow run publish-sandbox.yml --ref "$HEAD_REF""#),
-            "{workflow}"
-        );
-        // A branch name is attacker-controlled on a pull request, so it travels as an
-        // environment variable instead of being interpolated into the command line.
-        assert_eq!(
-            workflow.matches("HEAD_REF: ${{ github.head_ref }}").count(),
-            3
-        );
-        for line in workflow.lines().filter(|line| line.contains("run: ")) {
-            assert!(!line.contains("${{"), "inline interpolation in {line}");
+        for workflow_id in [
+            "process.env.CI_WORKFLOW",
+            "process.env.PUBLISHER_WORKFLOW",
+            "process.env.RELOCK_WORKFLOW",
+        ] {
+            assert!(workflow.contains(workflow_id), "{workflow}");
         }
-        assert_eq!(
-            workflow
-                .matches("if: ${{ steps.commit.outputs.changes_detected == 'true' }}")
-                .count(),
-            3
+        assert!(
+            workflow.contains("inputs: { repaired_sha: process.env.REPAIRED_SHA }"),
+            "the observer dispatch must name the bot-created SHA: {workflow}"
         );
-        assert_eq!(workflow.matches("GH_TOKEN: ${{ github.token }}").count(), 3);
+        assert!(
+            workflow.contains("HEAD_REF: ${{ github.head_ref }}"),
+            "a pull-request branch reaches the API only as data: {workflow}"
+        );
+        assert!(
+            workflow.contains(
+                "if: ${{ success() && steps.commit.outputs.changes_detected == 'true' }}"
+            ),
+            "CI/publishing must start only after the local repaired-head guard: {workflow}"
+        );
+        assert!(
+            !directives(&workflow).contains("gh workflow run"),
+            "{workflow}"
+        );
+        assert!(
+            !workflow.contains("github.event_name == 'workflow_dispatch' }}\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write"),
+            "the observer dispatch cannot gain the repair job's write authority: {workflow}"
+        );
     }
 
-    /// The publisher dispatch names the publisher this project actually has, not a literal: a
-    /// project that renamed its publisher via `--workflow-path` would otherwise get a relock bot
-    /// dispatching a workflow that does not exist, and the failure lands on the bot, not on init.
+    /// The publisher and observer dispatches name the files this project actually has, not
+    /// literals: renamed generated files must remain connected to the validation graph.
     #[test]
-    fn the_publisher_dispatch_follows_the_publisher_the_project_was_given() {
+    fn dispatches_follow_the_workflow_paths_the_project_was_given() {
         let workflow = render_relock_workflow(RelockWorkflowOptions {
             cli_version: "9.8.7",
             pixi_version: "0.81.0",
             cargo: true,
+            relock_workflow: "refresh-locks.yaml",
             ci_workflow: "ci.yml",
             publisher_workflow: "publish-fork-sandbox.yaml",
         });
         assert!(
-            workflow
-                .contains(r#"run: gh workflow run publish-fork-sandbox.yaml --ref "$HEAD_REF""#),
+            workflow.contains("RELOCK_WORKFLOW: \"refresh-locks.yaml\""),
             "{workflow}"
         );
         assert!(
-            !workflow.contains("gh workflow run publish-sandbox.yml"),
+            workflow.contains("PUBLISHER_WORKFLOW: \"publish-fork-sandbox.yaml\""),
+            "{workflow}"
+        );
+        assert!(
+            !workflow.contains("PUBLISHER_WORKFLOW: \"publish-sandbox.yml\""),
             "{workflow}"
         );
     }
@@ -403,11 +637,12 @@ mod tests {
             cli_version: "9.8.7",
             pixi_version: "0.81.0",
             cargo: false,
+            relock_workflow: "relock.yml",
             ci_workflow: "build-and-test.yml",
             publisher_workflow: "publish-sandbox.yml",
         });
         assert!(
-            workflow.contains(r#"gh workflow run build-and-test.yml --ref "$HEAD_REF""#),
+            workflow.contains("CI_WORKFLOW: \"build-and-test.yml\""),
             "{workflow}"
         );
     }
@@ -513,6 +748,7 @@ mod tests {
             cli_version: "4.5.6",
             pixi_version: "0.81.0",
             cargo: false,
+            relock_workflow: "relock.yml",
             ci_workflow: "ci.yml",
             publisher_workflow: "publish-sandbox.yml",
         });

@@ -179,6 +179,7 @@ fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
         pixi_version: &embedded_pixi_pin()
             .context("the embedded tools lock declares no pixi pin")?,
         cargo: plan_vendors_cargo(&config),
+        relock_workflow: &relock_reference.to_string_lossy(),
         ci_workflow: &args.relock_ci_workflow,
         // The relock bot's third dispatch has to name the publisher this run is generating,
         // so it is the file name of the path `init` was handed — never a literal, or a renamed
