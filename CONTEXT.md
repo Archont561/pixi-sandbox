@@ -1052,3 +1052,32 @@ an actionable summary for missing or refused `Workflows: write`, and uploads an 
 artifact without pushing main. Local fmt, lint, and test gates are green at 631 passing / 1
 skipped. Its connected delivery proof remains open. TASK-72 records the transport-budget spike;
 TASK-73 records the owner-operated GitHub App proof cycle.
+
+### 2026-10-05 — TASK-68 AC#7 closed; two findings worth their own tasks
+
+**Landed** (so: not proposals): TASK-68 is Done. Connected proof run 37362418218 — the `publish`
+job red at `Pack, verify, and publish` with the annotation `publish pipeline failed during pack
+(exit 1)`, the `always()` upload step green, artifact `publish-diagnostics-linux-64` (1390 B, 7-day
+retention) carrying a log that proves `doctor` and `publish` were never reached, and
+`sandbox/developer-linux-64` byte-identical at `01db0c51` across the run. Issue #93 has the record.
+
+**Proposals, not agreed:**
+
+- **The generated install phase cannot catch manifest/lockfile drift.** It runs
+  `pixi install --frozen`, which per pixi's own help "installs the environment as defined in the
+  lock file, doesn't update lock file if it isn't up-to-date with the manifest file"; `--locked` is
+  the flag that aborts. Measured here: adding a direct dependency with no `pixi.lock` entry left
+  the connected publish run **green**, publishing a transport silently built from the stale lock.
+  A consumer editing `pixi.toml` without re-locking gets a green publisher and a transport that
+  does not match their manifest. Whether the publisher should install `--locked`, or verify the
+  manifest against the lock some other way, is a design call with a real cost either way
+  (it would fail publishes that today succeed), so it is not a change to make quietly.
+- **A step summary cannot be read back by an agent.** GitHub exposes no REST endpoint for it and
+  the anonymous job page does not carry it, so `always()`-uploaded artifacts are the only
+  machine-readable half of the secondary-evidence surface. Worth knowing before another criterion
+  asks an agent to *record* summary content as proof.
+- **The App token's reach, measured:** push to `Archont561/pixi-sandbox` works; push to
+  `Archont561/castellan` is `Permission denied`; `gh repo create` is `403` on `user/repos`;
+  `gh workflow run` is `403` on `actions:write`; `gh issue comment` on this repo works. So the
+  only connected trigger available to an agent here is a **push to a branch of this repository**,
+  which is how AC#7 was proved at all.
