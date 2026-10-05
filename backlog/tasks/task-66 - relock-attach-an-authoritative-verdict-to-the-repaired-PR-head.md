@@ -63,4 +63,19 @@ generated-workflow check), and `pixi run --frozen test` passed at 634 passing / 
 AC#1, #2, and #6 remain open pending a connected consumer pull request: GitHub must demonstrate
 that the final Check Run appears in the repaired head's PR rollup after the dispatched guard, CI,
 and publisher all complete.
+
+2026-10-05 — the pinned Checks-API client has moved, so the SHA named above is history rather than
+the current pin. Dependabot opened a bump to `actions/github-script` v9.0.0 straight into the
+committed `.github/workflows/relock.yml`, which `check-repository` check 10 correctly rejected —
+that file is a render, not a source. PR #107 moved the bump into the template's four `uses:` sites
+(`crates/pixi-sandbox/src/generated/relock_workflow.rs`) and re-rendered, so the committed
+workflow is now the generator's current output at
+`3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0`. The same PR fixed the reason a bump could
+never pass CI from this task's side:
+`a_repaired_commit_starts_an_authoritative_pr_visible_check_run` asserted the literal v8.0.0 SHA,
+so every Dependabot bump turned its pull request red for a reason no renderer edit could fix. It
+now asserts the pin's *shape* — 40 lowercase hex characters plus a release label — which is the
+property `check-repository` check 4 already enforces over the committed render, so a reviewed bump
+needs no test edit and a mutable tag still cannot slip through. The immutability guarantee this
+criterion was making is unchanged; only the SHA it named is stale.
 <!-- SECTION:NOTES:END -->

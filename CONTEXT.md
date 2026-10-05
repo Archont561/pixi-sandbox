@@ -56,35 +56,53 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 > package registries are unreachable (only `github.com` git and npm are). An airlock agent can
 > build/test/lint, edit docs, run `convco`, and record decisions — but it **cannot** reach
 > crates.io / conda channels / `static.rust-lang.org`, cross-compile the release targets, cut a
-> GitHub Release, or run a native macOS/Windows runner. The following work is therefore explicitly
-> **assigned to an online agent running in GitHub Codespaces (or CI)** and is tracked here so it is
-> not silently attempted offline:
+> GitHub Release, or run a native macOS/Windows runner. Work that needs a connected host is
+> therefore **assigned to an online agent running in GitHub Codespaces (or CI)** and tracked here so
+> it is not silently attempted offline:
 
-1. **Prove `osx-arm64` and publish a macOS bundle** (backlog **task-1**, gated by **D11**). AC#1
-   requires a **native macOS runner** doing an offline restore end-to-end; it cannot be validated
-   from a Linux airlock. It does *not* require an online agent to drive it by hand: declaring the
-   platform in `.pixi-sandbox.toml` puts it in `plan --json`, and the `pull_request` trigger on
-   `.github/workflows/airlock.yml` fans that matrix onto `macos-14` on its own. An airlock agent
-   can therefore open the PR and read the verdict; only the *execution* needs the runner.
-   (`gh workflow run` is not an alternative from a sandbox: the token there has no `actions:
-   write`, and a dispatch returns HTTP 403.)
-2. **Verify `pixi-sandbox tools update` live** (backlog **task-4**, code Done). The command is
-   implemented and unit-tested offline in `commands/tools/update.rs`; what still needs network is
-   the live run — resolving/downloading/sha256-verifying the latest `pixi`, `pixi-pack`,
-   `pixi-unpack`, `rattler-index` pins against real GitHub releases. Release *assets* are
-   unreachable from the airlock (`objects.githubusercontent.com` and
-   `release-assets.githubusercontent.com` both fail to connect, even though `api.github.com`
-   answers), so `tools update --check` cannot be exercised here; it belongs in Codespaces/CI.
-3. **Repin the published `init.sh` to v0.3.0 binaries** (backlog **task-11**). The v0.3.0 asset was
-   cut before the repin landed, so the one-liner installs v0.2.0 binaries; re-uploading an asset
-   needs `uploads.github.com`, which the airlock cannot reach. Superseded for future releases:
-   `templates/install.sh` is now rendered at the tag by `xtask render-install` rather than
-   stamped from a committed copy, so a published one-liner cannot default to a version other
-   than its own.
+All three entries below are closed, so this list was retired on 2026-10-05; it is kept only to
+record the airlock boundary each one sat on.
+
+1. **Prove `osx-arm64` and publish a macOS bundle** (backlog **task-1**, gated by **D11**) — the
+   native `macos-14` leg went green end to end (released binary installed and checksum-verified,
+   packed, published to the throwaway remote, fetched, restored, gate passed). AC#1 was held back
+   until a run showed Tier A **actually executed**: `BLOCK_NETWORK` had been opt-*in*, so `null ==
+   false is true` left the authoritative egress-denied tier skipped on exactly the two triggers
+   that fire. It is opt-out now. The shape still holds for any future platform: declaring it in
+   `.pixi-sandbox.toml` puts it in `plan --json` and the `pull_request` trigger fans the matrix out
+   by itself, so an agent opens the PR and reads the verdict — only the *execution* needs the
+   runner. (`gh workflow run` is not an alternative from a sandbox: the token there has no
+   `actions: write`, and a dispatch returns HTTP 403.)
+2. **Verify `pixi-sandbox tools update` live** (backlog **task-4**) — closed on offline evidence:
+   14 unit tests in `commands/tools/update.rs` plus `tests/manifest.rs`'s embedded-pin catalogue
+   test. The *capability* boundary still stands and is the reason a live check lives in CI rather
+   than here: release **assets** are unreachable from an airlock (`objects.githubusercontent.com`
+   and `release-assets.githubusercontent.com` both fail to connect, even though `api.github.com`
+   answers).
+3. **Repin the published `init.sh` to v0.3.0 binaries** (backlog **task-11**) — verified against
+   the published asset rather than the local file (re-downloaded by asset id, sha256 matched the
+   rendered bytes, `sh -n` parsed, `VERSION` defaulted to v0.3.0 where the stale asset said v0.2.0).
+   Superseded for every later release: `templates/install.sh` is rendered at the tag by `xtask
+   render-install` rather than stamped from a committed copy, so a published one-liner cannot
+   default to a version other than its own.
+
+**What still needs a connected host today:**
+
+- **task-66 AC#6, task-68 AC#7, task-71 AC#5** — each needs a real consumer pull request or a real
+  failed publish run in **Castellan** (`github.com/Archont561/castellan`, public) to prove a
+  behavior the fixtures can only assert structurally: a PR-visible Check Run on a repaired head,
+  the secondary summary/artifact when a publish phase fails, and the upgrade lane's delivery.
+- **task-72 AC#1** — the measurement half needs the ~1.86 GiB Castellan transport (largest blob,
+  repository/push size, fetch/clone cost, restore disk). AC#2–#5 are offline.
+- **task-73 AC#3/#4 and task-74** — need an owner-operated **GitHub App** installation and, for
+  task-74, a new public template repository. The repo-scoped sandbox token gets
+  `403 Resource not accessible by integration` on `gh secret list -R Archont561/castellan`, so the
+  `PIXI_SANDBOX_UPGRADE_TOKEN` secret cannot be set from a sandbox at all.
 
 The dev container that provides this online environment is `.devcontainer/devcontainer.json`
 (`ghcr.io/prefix-dev/pixi`, with `pixi install --locked --all` + `docs-install` + a global `bun add` of opencode
-on create).
+on create). Its setup step reaches bun through the implicit `default` environment, not `-e web`:
+`web` is a feature that task-70 folded into `default`, and pixi rejects `-e web` as unknown.
 
 ---
 

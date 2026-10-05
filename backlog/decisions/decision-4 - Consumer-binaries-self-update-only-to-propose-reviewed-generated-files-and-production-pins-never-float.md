@@ -2,7 +2,7 @@
 id: decision-4
 title: Consumer binaries self-update only to propose reviewed regenerated files, and production pins never float
 date: '2026-10-03'
-status: proposed
+status: accepted
 ---
 ## Context
 
@@ -67,5 +67,12 @@ self-consistent binary/manifest pair instead of "whatever was latest at pack tim
   repack cheap when nothing but the embedded tools changed.
 - An airlock that never upgrades keeps restoring its old, self-consistent transport; one
   that wants the new version gets it through an ordinary git fetch of the repacked branch.
-- Stays `proposed` until task-47 lands; then `accepted` with the implementation as
-  evidence.
+- Accepted 2026-10-05, on task-47's evidence: the implementation is in, and the one proof that
+  needed a connected host exists. Castellan PR #13 carried the regenerated owned files at a new
+  exact `PIXI_SANDBOX_VERSION` (0.5.2 → 0.5.3) with every template emitted by that same binary; a
+  human merge triggered the ordinary publisher, which installed and self-booted the exact 0.5.3
+  release for plan, pack, doctor, publish and `--self-bin` and published a manifest naming 0.5.3.
+  The credential that delivered that pull request is a separate question the decision does not
+  settle — the token-less lane regenerates and then cannot push workflow files, which task-71
+  AC#5 and task-73 own — but option (c) does not depend on it: the PR is the review gate, whoever
+  opens it.

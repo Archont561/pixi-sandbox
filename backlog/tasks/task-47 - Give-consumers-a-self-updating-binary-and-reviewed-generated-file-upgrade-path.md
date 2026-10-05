@@ -1,10 +1,10 @@
 ---
 id: TASK-47
 title: Give consumers a self-updating binary and reviewed generated-file upgrade path
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-02 20:05'
-updated_date: '2026-10-03 14:33'
+updated_date: '2026-10-05 18:56'
 labels:
   - ci
   - init
@@ -66,7 +66,7 @@ lands on main.
 - [x] #4 `pixi-sandbox init --check` renders fresh, writes nothing, and exits non-zero naming each drifted file with its remedy (`pixi-sandbox init`) and each foreign-owned file separately (`--force`); a clean tree exits 0 — fixture-tested in both directions (D10)
 - [x] #5 `init` and `--check` never rewrite an existing config; a config whose `schema` is older than the CLI's is reported as a finding naming the explicit migration path (no `config migrate` command is built while config schema is 1 — it exists only once a schema bump gives it something to do), and config readers keep accepting older schemas for a deprecation window, mirroring the manifest reader policy
 - [x] #6 The generated `publish-sandbox.yml` gains a scheduled and manually dispatchable upgrade job that bootstraps its currently pinned standalone binary with checksum verification, runs `self-update` (latest by default, exact version for manual dispatch), then uses that updated binary for `init --check` and regeneration; drift opens a pull request and never pushes to main or touches config, and the workflow remains actionlint-clean
-- [ ] #7 The regenerated pull request contains a new exact `PIXI_SANDBOX_VERSION` and the templates emitted by that same binary; a human merge triggers the normal publisher, which uses the exact matching released binary for plan, pack, doctor, publish, and `--self-bin`, and the resulting manifest names that version — no production step resolves `latest`
+- [x] #7 The regenerated pull request contains a new exact `PIXI_SANDBOX_VERSION` and the templates emitted by that same binary; a human merge triggers the normal publisher, which uses the exact matching released binary for plan, pack, doctor, publish, and `--self-bin`, and the resulting manifest names that version — no production step resolves `latest`
 - [x] #8 Because a `github.token` push starts no `on: push` workflows (task-44's lesson), any automated-merge path ends in an explicit `gh workflow run publish-sandbox.yml` dispatch; the workflow and docs distinguish this from a human merge and tests hold the dispatch behavior
 - [x] #9 The repository owner workflow remains source-built and has no released-CLI/self-update dependency; the airlock side is unchanged (`restore.sh`/`restore.ps1` stay version-agnostic and doctor reads older manifests), and docs cover self-update, exact pinning, the reviewed upgrade PR, and rollback by dispatching an exact older version
 <!-- AC:END -->
@@ -326,6 +326,37 @@ check-repository check 10 also rejected the relock dispatch as a hand-edit of a 
 Evidence: `pixi run --frozen lint` green; `pixi run --frozen test` 606 passed / 1 skipped; `pixi run --frozen test-doc` green. On the PR: `ci (lint . test . coverage)` pass, `validate airlock plan` pass, `airlock linux-64` pass, `codecov/patch` pass, and `replace a running image (windows)` pass with `a_genuinely_running_image_is_replaced_and_its_corpse_is_reaped_by_the_next_update ... ok`. The windows-only arms were type-checked here too, by compiling the file with its `cfg(windows)` gates enabled.
 
 AC#7 stays unchecked by necessity, unchanged from slice 3: it needs a live cut release and a reviewed regeneration cycle.
+
+2026-10-05 — AC#7 closed with the connected v0.5.2 → v0.5.3 regeneration cycle in Castellan.
+
+Castellan PR #13 (`chore(pixi-sandbox): upgrade generated files to 0.5.3`,
+<https://github.com/Archont561/castellan/pull/13>) carries only regenerated owned files:
+`PIXI_SANDBOX_VERSION: 0.5.2` → `0.5.3` plus `pixi-sandbox-version: 0.5.2` → `0.5.3` stamps in
+publish-sandbox.yml, relock.yml and scripts/restore.sh — every template the 0.5.3 binary emits, no
+config edit and no hand-written pin. It merged as `7df71e28` at 2026-10-04T20:16:06Z.
+
+Publisher run [37231445343](https://github.com/Archont561/castellan/actions/runs/37231445343)
+(event `push`, conclusion `success`) is that merge's own trigger, and its log shows the chain end to
+end on one exact version: `pixi global install "pixi-sandbox==${PIXI_SANDBOX_VERSION}"` →
+`(installed) pixi-sandbox 0.5.3`; the release base built as
+`…/releases/download/v${PIXI_SANDBOX_VERSION}` (0.5.3, never `latest`); `--self-bin "$SELF_BIN"`
+reporting `pixi-sandbox 0.5.3 · static · 3.6 MiB` and `self-bin: runs standalone`; then
+`platform linux-64 · schema 2 · created 2026-10-04T20:17:57Z · commit 7df71e2` with
+`tool pixi-sandbox: v0.5.3`, `verify OK — every declared byte matches the manifest`, published as
+transport commit `8db1fea608b9`.
+
+The consumer's transport branch has been force-pushed by later publishes since, so `8db1fea608b9`
+is no longer reachable and the run log is the evidence of record. The live branch tip agrees
+independently: Castellan's `sandbox/developer-linux-64` manifest names `tool.version 0.5.3` from
+source commit `a693650`, created 2026-10-05T15:53:48Z by publisher run
+[37336260866](https://github.com/Archont561/castellan/actions/runs/37336260866) (success).
+
+What this deliberately does not prove: the pull request was delivered by a credentialed run, not by
+the token-less bot path. The generated upgrade lane reaches bootstrap, self-update, drift detection
+and regeneration and then fails at delivery, because `GITHUB_TOKEN` cannot update
+`.github/workflows/*.yml` (runs 37228494836 and 37228565253, recorded in task-71's comments). AC#7
+asks only that the regenerated PR carry a new exact version and that everything after a human merge
+stay exact; the delivery credential belongs to task-71 AC#5 and task-73.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -335,5 +366,5 @@ Task-47 stands at AC#1-#6 and #8-#9 met, with AC#7 the only criterion left. Slic
 
 Slices 2 and 3 added the version stamps, `init --check`, and the generated upgrade lane with its explicit dispatch. Slice 4 closed AC#2 with the one proof no local run can produce: a windows-latest job replacing a genuinely mapped image, asserting the corpse survives the update whole, the running process is undisturbed, and the corpse is reaped once the image is released.
 
-AC#7 is blocked on a live cut release and a reviewed regeneration cycle rather than on code, so the task remains In Progress and decision-4 remains proposed.
+AC#7 closed on 2026-10-05 with the connected v0.5.2 → v0.5.3 cycle in Castellan: PR #13 carried the regenerated owned files at a new exact `PIXI_SANDBOX_VERSION` and the templates that same binary emits, a human merge triggered the ordinary publisher, and that run installed, bootstrapped and packed with the exact 0.5.3 release — publishing a manifest that names 0.5.3, with no production step resolving `latest`. All nine criteria are met, so the task is Done and decision-4 is accepted with this implementation as its evidence. The credential that delivered that pull request is a separate and still-open question: the token-less lane reaches regeneration and then cannot push workflow files, which task-71 AC#5 and task-73 own.
 <!-- SECTION:FINAL_SUMMARY:END -->
