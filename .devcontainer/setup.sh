@@ -28,7 +28,9 @@ pixi run docs-install
 # opencode: the agent CLI. A developer tool, so it is installed here rather than
 # as a pixi task — `pixi.toml` describes what the repository is built, tested and
 # released with, and a 185 MB agent binary is none of those. `bun` comes from the
-# `web` environment, which `pixi install --locked --all` above already materialised.
+# `web` *feature*, which task-70 folded into the single `default` environment that
+# `pixi install --locked --all` above already materialised — hence `pixi run bun`
+# and not `pixi run -e web …`, which pixi rejects as an unknown environment.
 #
 # bun's global bin dir (`bun pm bin -g`, which follows $BUN_INSTALL rather than a
 # hardcoded $HOME/.bun/bin) is on nobody's PATH, so link the binary into a directory
@@ -36,9 +38,9 @@ pixi run docs-install
 # The install itself still succeeded if neither is writable, so report where it
 # landed instead of failing the container over a $PATH detail.
 # ---------------------------------------------------------------------------
-pixi run -e web bun add -g opencode-ai@latest
+pixi run bun add -g opencode-ai@latest
 
-BUN_BIN="$(pixi run -e web bun pm bin -g | tail -n1)"
+BUN_BIN="$(pixi run bun pm bin -g | tail -n1)"
 OPENCODE="$BUN_BIN/opencode"
 if ln -sfn "$OPENCODE" /usr/local/bin/opencode 2> /dev/null; then
   OPENCODE=opencode
