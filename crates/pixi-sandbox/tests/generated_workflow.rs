@@ -339,6 +339,55 @@ mod upgrade_job {
             "{workflow}"
         );
     }
+
+    /// The handoff prose lives inside a double-quoted Bash argument. One escape is needed for
+    /// literal Markdown quotes and backticks; two close the argument and make ShellCheck reject
+    /// the generated workflow. Parse the exact rendered block rather than a copy of it.
+    #[test]
+    fn delivery_handoff_script_is_valid_bash() {
+        use std::fs;
+        use std::process::Command;
+        use tempfile::tempdir;
+
+        let workflow = workflow();
+        let delivery = workflow
+            .split("      - name: Prepare the upgrade patch\n")
+            .nth(1)
+            .expect("the delivery step exists");
+        let run = delivery
+            .split("        run: |\n")
+            .nth(1)
+            .and_then(|script| {
+                script
+                    .split("\n\n      - name: Upload upgrade patch")
+                    .next()
+            })
+            .expect("the delivery step has an isolated Bash block");
+        let script = run
+            .lines()
+            .map(|line| line.strip_prefix("          ").unwrap_or(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(script.contains(r#"\"$VERSION\""#), "{script}");
+        assert!(script.contains(r#"\`github.token\`"#), "{script}");
+        assert!(!script.contains(r#"\\\"$VERSION"#), "{script}");
+        assert!(!script.contains(r#"\\`github.token"#), "{script}");
+
+        let temp = tempdir().expect("temporary Bash script directory");
+        let path = temp.path().join("delivery.sh");
+        fs::write(&path, script).expect("write rendered delivery script");
+        let output = Command::new("bash")
+            .arg("-n")
+            .arg(&path)
+            .output()
+            .expect("bash is available on supported generated-workflow hosts");
+        assert!(
+            output.status.success(),
+            "Bash rejected the rendered delivery script:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 #[rstest]
