@@ -280,6 +280,42 @@ mod tests {
         assert!(message.contains(WORKFLOW_PATH), "{message}");
     }
 
+    /// task-66 follow-up: actionlint only checks the Bash inside `run:` blocks when a
+    /// `shellcheck` executable is on PATH, and says nothing when it is absent. That silence is
+    /// what let malformed generated quoting pass `pixi run lint` locally and fail on GitHub.
+    /// This test fails if the development environment ever loses ShellCheck again.
+    #[test]
+    fn actionlint_runs_shellcheck_on_workflow_bash() {
+        let project = tempfile::tempdir().expect("temp project");
+        let workflow = project.path().join(WORKFLOW_PATH);
+        fs::create_dir_all(workflow.parent().expect("workflow parent"))
+            .expect("workflow directory");
+        fs::write(
+            &workflow,
+            concat!(
+                "name: shellcheck-probe\n",
+                "on: push\n",
+                "jobs:\n",
+                "  probe:\n",
+                "    runs-on: ubuntu-latest\n",
+                "    steps:\n",
+                "      - run: |\n",
+                "          if [ \"unterminated ]; then\n",
+                "            echo broken\n",
+                "          fi\n",
+            ),
+        )
+        .expect("probe workflow");
+
+        let error = run_actionlint(Path::new("actionlint"), project.path(), Path::new(WORKFLOW_PATH))
+            .expect_err("actionlint with shellcheck must reject malformed run: Bash");
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("shellcheck"),
+            "actionlint accepted broken Bash, so shellcheck is missing from the environment: {message}"
+        );
+    }
+
     #[test]
     fn missing_actionlint_names_the_required_tool_and_environment() {
         let project = tempfile::tempdir().expect("temp project");

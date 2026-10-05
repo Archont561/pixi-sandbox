@@ -34,6 +34,11 @@ bun = "=1.3.11"
 
 [feature.utils.dependencies]
 actionlint = "=1.7.12"
+# actionlint shells out to ShellCheck for the Bash inside `run:` blocks, and silently skips
+# those checks when the executable is absent. GitHub's runners ship one, this environment did
+# not, so generated-workflow quoting bugs reached CI that `pixi run lint` could not see
+# locally (task-66). Pinning it here makes the local gate the same gate.
+shellcheck = "=0.11.0"
 lefthook = "=2.1.14"
 taplo = "=0.10.0"
 convco = "=0.7.2"
