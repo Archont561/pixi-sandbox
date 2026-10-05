@@ -8,6 +8,7 @@ fn render(cargo: bool) -> String {
         cli_version: "9.8.7",
         pixi_version: "0.81.0",
         cargo,
+        relock_workflow: "relock.yml",
         ci_workflow: "ci.yml",
         publisher_workflow: "publish-sandbox.yml",
     })
@@ -35,8 +36,8 @@ fn vendoring_projects_guard_both_lockfiles_before_the_repair_job() {
         directives(&workflow)
             .matches("cargo fetch --locked")
             .count(),
-        1,
-        "only the guard is locked; the repair still refreshes Cargo.lock\n{workflow}"
+        2,
+        "the stale-head guard and repaired-head validation are both locked; the repair itself still refreshes Cargo.lock\n{workflow}"
     );
     assert!(
         workflow.contains("- run: cargo fetch\n"),
@@ -49,6 +50,115 @@ fn conda_only_projects_have_no_cargo_guard_or_repair_step() {
     let workflow = directives(&render(false));
     assert!(!workflow.contains("cargo fetch"), "{workflow}");
     assert!(!workflow.contains("Cargo.lock"), "{workflow}");
+}
+
+/// A repaired lock commit is a new PR head. The original guard belongs to the stale head and
+/// must not be the last verdict a reviewer sees: start one named Check Run directly on the bot
+/// commit before launching its downstream validation work.
+#[test]
+fn a_repaired_commit_starts_an_authoritative_pr_visible_check_run() {
+    let workflow = render(true);
+
+    assert!(
+        workflow.contains("checks: write"),
+        "the repair job needs only the Checks API scope to attach its verdict: {workflow}"
+    );
+    assert!(
+        workflow.contains("name: Start repaired-head validation"),
+        "{workflow}"
+    );
+    assert!(
+        workflow
+            .contains("actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0"),
+        "the static API client must remain immutable: {workflow}"
+    );
+    assert!(
+        workflow.contains("head_sha: process.env.REPAIRED_SHA"),
+        "the Check Run must target the bot-created commit, not the stale event SHA: {workflow}"
+    );
+    assert!(
+        workflow.contains("REPAIRED_SHA: ${{ steps.commit.outputs.commit_hash }}"),
+        "git-auto-commit's actual pushed SHA is the only safe check target: {workflow}"
+    );
+    assert!(
+        workflow.contains("name: 'pixi-sandbox relock validation'"),
+        "reviewers need one stable, recognisable verdict: {workflow}"
+    );
+}
+
+/// The check must stay in progress until both detached validation workflows have completed,
+/// then record the combined result on the repaired SHA. The bot dispatches one input-marked
+/// relock validation run; it validates its own guard first, then observes CI and publishing
+/// without checking out or executing any contributor-controlled code.
+#[test]
+fn validation_observer_aggregates_only_the_repaired_head_ci_and_publish_verdicts() {
+    let workflow = render(true);
+
+    assert!(
+        workflow.contains("inputs:\n      repaired_sha:"),
+        "the normal manual dispatch remains available, while only an explicit repaired SHA starts the verdict: {workflow}"
+    );
+    assert!(
+        workflow.contains("  verdict:\n    name: relock verdict"),
+        "{workflow}"
+    );
+    assert!(
+        workflow.contains("inputs.repaired_sha != ''"),
+        "only the bot's repaired-head validation dispatch may affect the check: {workflow}"
+    );
+    assert!(
+        workflow.contains("    permissions:\n      actions: read\n      checks: write"),
+        "the observer needs no contents write or checkout: {workflow}"
+    );
+    assert!(
+        workflow.contains("github.rest.actions.listWorkflowRuns"),
+        "the final verdict must inspect both dispatched workflow results: {workflow}"
+    );
+    assert!(
+        workflow.contains("run.status !== 'completed'"),
+        "a pending CI or publisher run must keep the check in progress: {workflow}"
+    );
+    assert!(
+        workflow.contains("run.conclusion !== 'success'"),
+        "a completed non-successful validation must fail the authoritative check: {workflow}"
+    );
+    assert!(
+        workflow.contains("'Repaired-head validation passed'"),
+        "the check turns green only after both required validations succeed: {workflow}"
+    );
+    assert!(
+        !directives(&workflow).contains("gh workflow run relock.yml"),
+        "the observer must not recreate the relock-dispatch loop: {workflow}"
+    );
+}
+
+/// A fork cannot receive a write-capable token, and every failed local, dispatch, guard, or
+/// downstream validation must complete the same repaired-head Check Run as a failure instead of
+/// leaving an ambiguous green or permanently pending result.
+#[test]
+fn fork_and_failed_validation_paths_are_explicit_and_fail_closed() {
+    let workflow = render(true);
+
+    assert!(
+        workflow.contains("if: ${{ github.event.pull_request.head.repo.fork }}"),
+        "{workflow}"
+    );
+    assert!(
+        workflow.contains("::error::relock cannot push to a fork's branch"),
+        "{workflow}"
+    );
+    assert!(
+        workflow.matches("'failure'").count() >= 5,
+        "local guard, dispatch, and observer failures must all conclude the Check Run: {workflow}"
+    );
+    assert!(
+        workflow.contains("Repaired lock guard failed"),
+        "the observer must fail the Check Run when its own repaired-head guard fails: {workflow}"
+    );
+    assert!(
+        workflow.contains("Repaired-head validation timed out"),
+        "a missing downstream result must fail closed instead of leaving an in-progress check forever: {workflow}"
+    );
 }
 
 #[test]

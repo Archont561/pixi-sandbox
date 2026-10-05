@@ -1,7 +1,8 @@
 ---
 id: TASK-66
 title: 'relock: attach an authoritative verdict to the repaired PR head'
-status: To Do
+status: In Progress
+updated_date: '2026-10-05'
 assignee: []
 created_date: '2026-10-04 13:19'
 labels:
@@ -29,8 +30,37 @@ The issue #92 consumer evidence shows that a successful generated relock leaves 
 <!-- AC:BEGIN -->
 - [ ] #1 A detected drift that is successfully repaired does not leave the relock workflow permanently red solely because its initial guard found repairable drift
 - [ ] #2 The bot-authored repaired SHA receives one authoritative PR-visible verdict after lock guard, configured CI, and sandbox publish validation complete
-- [ ] #3 A failed repair, failed validation, fork pull request, or missing permission fails closed and reports an actionable reason
-- [ ] #4 The design avoids duplicate publish/relock loops and preserves the existing rule that dispatch occurs only after a real lock commit
-- [ ] #5 Renderer tests cover clean, repaired, failed, and fork paths; the generated workflow remains actionlint-clean and init regeneration remains byte-identical
+- [x] #3 A failed repair, failed validation, fork pull request, or missing permission fails closed and reports an actionable reason
+- [x] #4 The design avoids duplicate publish/relock loops and preserves the existing rule that dispatch occurs only after a real lock commit
+- [x] #5 Renderer tests cover clean, repaired, failed, and fork paths; the generated workflow remains actionlint-clean and init regeneration remains byte-identical
 - [ ] #6 A consumer pull request proves the repaired head has a usable check rollup; record the PR and run links in this task and issue #92
 <!-- AC:END -->
+
+## Implementation Notes
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-05 — implemented the local generated-workflow slice test-first. After a real
+`pixi-sandbox[bot]` lock commit, the relock job creates an in-progress
+`pixi-sandbox relock validation` Check Run directly on `git-auto-commit-action`'s immutable
+`commit_hash`; it never treats the stale pull-request SHA as the verdict target. It then verifies
+the repaired Pixi/Cargo locks locally, dispatches the configured CI and publisher plus one
+input-marked relock validation run, and grants `checks: write` only to the jobs that call the
+Checks API.
+
+The input-marked relock run reruns the lock guard on the repaired branch, then uses the pinned
+`actions/github-script` v8.0.0 commit (`ed597411d8f924073f98dfc5c65a23a2325f34cd`, resolved
+from the upstream tag) to poll the exact CI and publisher `workflow_dispatch` runs for that SHA.
+It completes the named Check Run only when both succeed; lock-guard, API/dispatch, downstream,
+and one-hour timeout failures complete it as failure with a remediation. The observer checks out
+no contributor code, has no contents-write permission, and cannot dispatch another repair, so a
+fork remains loudly refused and the validation path cannot loop.
+
+The renderer now carries its own configured relock-workflow path instead of assuming
+`relock.yml`, preserving custom `init --relock-workflow-path` output. External renderer tests
+cover clean, repaired, failed, and fork contracts; existing fixture coverage holds the locked
+Cargo behavior. `pixi run --frozen fmt`, `pixi run --frozen lint` (including actionlint and the
+generated-workflow check), and `pixi run --frozen test` passed at 634 passing / 1 skipped.
+
+AC#1, #2, and #6 remain open pending a connected consumer pull request: GitHub must demonstrate
+that the final Check Run appears in the repaired head's PR rollup after the dispatched guard, CI,
+and publisher all complete.
+<!-- SECTION:NOTES:END -->
