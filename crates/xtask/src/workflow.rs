@@ -200,7 +200,10 @@ fn run_actionlint(actionlint: &Path, project: &Path, workflow: &Path) -> Result<
         );
     }
 
+    // Verbose mode makes a failing CI trace name the exact generated artifact and error count.
+    // The normal success path deliberately stays quiet because this output is captured below.
     let output = Command::new(actionlint)
+        .arg("--verbose")
         .arg(workflow)
         .current_dir(project)
         .output()
