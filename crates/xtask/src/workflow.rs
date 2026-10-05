@@ -307,8 +307,12 @@ mod tests {
         )
         .expect("probe workflow");
 
-        let error = run_actionlint(Path::new("actionlint"), project.path(), Path::new(WORKFLOW_PATH))
-            .expect_err("actionlint with shellcheck must reject malformed run: Bash");
+        let error = run_actionlint(
+            Path::new("actionlint"),
+            project.path(),
+            Path::new(WORKFLOW_PATH),
+        )
+        .expect_err("actionlint with shellcheck must reject malformed run: Bash");
         let message = format!("{error:#}");
         assert!(
             message.contains("shellcheck"),
