@@ -37,7 +37,7 @@ ureq = "3.4"
 assert_cmd = "2"
 predicates = "3"
 proptest = "1"
-rstest = "0.26.1"
+rstest = "0.27.0"
 tempfile = "3"
 
 [profile.release]
