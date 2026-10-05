@@ -182,7 +182,7 @@ __CARGO_STEP__      - id: commit
       - name: Start repaired-head validation
         if: ${{ steps.commit.outputs.changes_detected == 'true' }}
         id: validation
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           REPAIRED_SHA: ${{ steps.commit.outputs.commit_hash }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -209,7 +209,7 @@ __CARGO_STEP__      - id: commit
         run: pixi lock --check
 __CARGO_REPAIRED_GUARD__      - name: Mark local validation failure on the repaired head
         if: ${{ failure() && steps.validation.outputs.check_run_id != '' }}
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           CHECK_RUN_ID: ${{ steps.validation.outputs.check_run_id }}
         with:
@@ -231,7 +231,7 @@ __CARGO_REPAIRED_GUARD__      - name: Mark local validation failure on the repai
       # Check Run reviewers see on the pull request.
       - name: Dispatch repaired-head CI and publisher validation
         if: ${{ success() && steps.commit.outputs.changes_detected == 'true' }}
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           CHECK_RUN_ID: ${{ steps.validation.outputs.check_run_id }}
           REPAIRED_SHA: ${{ steps.commit.outputs.commit_hash }}
@@ -287,7 +287,7 @@ __CARGO_REPAIRED_GUARD__      - name: Mark local validation failure on the repai
       actions: read
       checks: write
     steps:
-      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           HEAD_SHA: ${{ inputs.repaired_sha }}
           LOCK_GUARD_RESULT: ${{ needs.guard.result }}
