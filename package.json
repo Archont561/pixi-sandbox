@@ -23,7 +23,7 @@
     "docs:preview": "turbo run preview --filter=pixi-sandbox-docs"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
+    "@biomejs/biome": "2.5.15",
     "backlog.md": "^1.53.0",
     "skills": "^1.7.0",
     "turbo": "^2.11.5"
