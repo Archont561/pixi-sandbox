@@ -52,6 +52,27 @@ fn conda_only_projects_have_no_cargo_guard_or_repair_step() {
     assert!(!workflow.contains("Cargo.lock"), "{workflow}");
 }
 
+/// The rendered `actions/github-script` pin, split into its reference and its trailing label.
+///
+/// The pin must stay immutable, but the SHA itself legitimately moves: a Dependabot bump is
+/// reviewed in `generated/relock_workflow.rs` and re-rendered, and asserting one literal SHA here
+/// made every such PR red for a reason no test could fix. Assert the *shape* instead — the
+/// property `check-repository` check 4 already enforces over the committed render — so a reviewed
+/// bump needs no edit to this file and a mutable tag still cannot slip through.
+fn github_script_pin(workflow: &str) -> (&str, &str) {
+    let line = workflow
+        .lines()
+        .find(|line| {
+            line.trim_start()
+                .starts_with("uses: actions/github-script@")
+        })
+        .unwrap_or_else(|| panic!("the Checks-API client is gone from the render:\n{workflow}"));
+    line.trim_start()
+        .trim_start_matches("uses: actions/github-script@")
+        .split_once(char::is_whitespace)
+        .unwrap_or_else(|| panic!("the pin carries no trailing release label: {line}"))
+}
+
 /// A repaired lock commit is a new PR head. The original guard belongs to the stale head and
 /// must not be the last verdict a reviewer sees: start one named Check Run directly on the bot
 /// commit before launching its downstream validation work.
@@ -67,10 +88,21 @@ fn a_repaired_commit_starts_an_authoritative_pr_visible_check_run() {
         workflow.contains("name: Start repaired-head validation"),
         "{workflow}"
     );
+    let (reference, label) = github_script_pin(&workflow);
+    assert_eq!(
+        reference.len(),
+        40,
+        "the static API client must be pinned to a commit, not a tag: {reference}"
+    );
     assert!(
-        workflow
-            .contains("actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0"),
-        "the static API client must remain immutable: {workflow}"
+        reference
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+        "a pin that is not 40 lowercase hex characters is not a commit SHA: {reference}"
+    );
+    assert!(
+        label.starts_with("# v"),
+        "an unlabelled SHA leaves the next reader unable to tell what it is: {label}"
     );
     assert!(
         workflow.contains("head_sha: process.env.REPAIRED_SHA"),
