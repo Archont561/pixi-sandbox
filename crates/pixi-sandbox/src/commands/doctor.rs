@@ -13,6 +13,8 @@ use crate::cli::DoctorArgs;
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::manifest::{MANIFEST_DIR, Manifest};
+use pixi_sandbox_core::sandbox_config::SandboxConfig;
+use pixi_sandbox_core::transport_budget::{self, BudgetReport};
 use pixi_sandbox_core::verify::{self, Report, RestoredReport};
 use serde_json::{Value, json};
 use std::fs;
@@ -65,6 +67,27 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     );
     let standalone = standalone_probe(&args.branch_location, &manifest, report.as_ref());
 
+    let budget = match &args.budget_config {
+        Some(config) => {
+            crate::diagnostics::phase(
+                "check-budgets",
+                "checking transport size budgets before publish",
+            );
+            let config_path = support::absolute(config)?;
+            let config = SandboxConfig::load(&config_path).with_context(|| {
+                format!("loading sandbox budget config {}", config_path.display())
+            })?;
+            let branch_root = transport_root_from_manifest(&path);
+            let snapshot_bytes = repository_snapshot_bytes(&branch_root)?;
+            Some(transport_budget::check(
+                &manifest,
+                Some(snapshot_bytes),
+                config.budgets.to_transport_budgets()?,
+            ))
+        }
+        None => None,
+    };
+
     crate::diagnostics::phase(
         "render-report",
         "writing the requested human or JSON report",
@@ -80,7 +103,8 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                 &manifest,
                 report.as_ref(),
                 restored_section,
-                standalone.as_ref()
+                standalone.as_ref(),
+                budget.as_ref()
             ))?
         );
     } else {
@@ -90,6 +114,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
             report.as_ref(),
             restored_section,
             standalone.as_ref(),
+            budget.as_ref(),
         );
     }
 
@@ -109,6 +134,14 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     }
     if let Some(StandaloneProbe::Refused { detail }) = &standalone {
         bail!("standalone probe failed:\n{detail}");
+    }
+    if let Some(budget) = &budget {
+        if !budget.ok() {
+            bail!(
+                "transport budget exceeded: {} threshold(s)",
+                budget.violations.len()
+            );
+        }
     }
     Ok(())
 }
@@ -194,12 +227,48 @@ fn locate(branch_location: &Path) -> PathBuf {
     }
 }
 
+fn transport_root_from_manifest(manifest_path: &Path) -> PathBuf {
+    manifest_path
+        .parent()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| manifest_path.to_path_buf())
+}
+
+fn repository_snapshot_bytes(root: &Path) -> Result<u64> {
+    fn walk(root: &Path, dir: &Path, total: &mut u64) -> Result<()> {
+        for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+            let entry = entry.with_context(|| format!("reading {}", dir.display()))?;
+            let path = entry.path();
+            let name = entry.file_name();
+            if path == root.join(".git") || name == ".git" {
+                continue;
+            }
+            let metadata = fs::symlink_metadata(&path)
+                .with_context(|| format!("reading metadata for {}", path.display()))?;
+            if metadata.is_dir() {
+                walk(root, &path, total)?;
+            } else if metadata.is_file() {
+                *total = total
+                    .checked_add(metadata.len())
+                    .ok_or_else(|| anyhow::anyhow!("snapshot size overflow"))?;
+            }
+        }
+        Ok(())
+    }
+
+    let mut total = 0u64;
+    walk(root, root, &mut total)?;
+    Ok(total)
+}
+
 fn print_human(
     path: &Path,
     manifest: &Manifest,
     report: Option<&Report>,
     restored: Option<(&Path, &RestoredReport)>,
     standalone: Option<&StandaloneProbe>,
+    budget: Option<&BudgetReport>,
 ) {
     labelled("manifest", &path.display().to_string());
 
@@ -319,6 +388,39 @@ fn print_human(
         }
     }
 
+    if let Some(budget) = budget {
+        if budget.ok() {
+            labelled(
+                "budget",
+                &format!(
+                    "OK — blob {} MiB, transport {} MiB, push {} MiB, restore preflight {} MiB",
+                    mib(budget.measurements.largest_blob_bytes),
+                    mib(budget.measurements.transport_bytes),
+                    budget
+                        .measurements
+                        .repository_push_bytes
+                        .map(mib)
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    mib(budget.measurements.restore_required_bytes),
+                ),
+            );
+        } else {
+            labelled(
+                "budget",
+                &format!("FAILED — {} threshold(s) exceeded", budget.violations.len()),
+            );
+            for violation in &budget.violations {
+                println!(
+                    "  {}: {} MiB > {} MiB — {}",
+                    violation.field,
+                    mib(violation.measured_bytes),
+                    mib(violation.limit_bytes),
+                    violation.remedy
+                );
+            }
+        }
+    }
+
     if let Some((project, restored)) = restored {
         labelled("restored", &project.display().to_string());
         for name in &restored.verified {
@@ -364,6 +466,7 @@ fn as_json(
     report: Option<&Report>,
     restored: Option<(&Path, &RestoredReport)>,
     standalone: Option<&StandaloneProbe>,
+    budget: Option<&BudgetReport>,
 ) -> Value {
     let envs: Vec<Value> = manifest
         .envs
@@ -444,6 +547,10 @@ fn as_json(
             "ok": restored.ok(),
             "failures": failures,
         });
+    }
+
+    if let Some(budget) = budget {
+        out["budget"] = serde_json::to_value(budget).expect("budget report serialises");
     }
 
     if let Some(standalone) = standalone {

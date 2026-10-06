@@ -14,6 +14,15 @@ schema = 1
 branch_prefix = "sandbox"
 cargo_vendor = true
 
+# Hard publish budgets enforced by `doctor --budget-config` in the publisher before a branch is
+# force-pushed. Split a growing transport by adding another [[bundle]] environment set; do not
+# split one environment or move payloads outside the self-contained branch.
+[budgets]
+max_blob_mib = 95
+max_transport_mib = 2048
+max_repository_push_mib = 2048
+max_restore_required_mib = 8192
+
 [[bundle]]
 name = "developer"
 # One prefix now carries Rust, Bun and repository utilities so the restored developer runs the

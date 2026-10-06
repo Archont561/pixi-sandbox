@@ -2,6 +2,9 @@ use pixi_sandbox_core::sandbox_config::{
     CONFIG_SCHEMA, SandboxConfig, is_safe_git_ref, peek_schema, plan_override, schema_supported,
 };
 use pixi_sandbox_core::tools_lock::ToolsLock;
+use pixi_sandbox_core::transport_budget::{
+    DEFAULT_MAX_BLOB_MIB, DEFAULT_MAX_RESTORE_REQUIRED_MIB, DEFAULT_MAX_TRANSPORT_MIB,
+};
 use proptest::prelude::*;
 use rstest::rstest;
 use std::collections::BTreeSet;
@@ -63,6 +66,115 @@ cargo_vendor = false
         .find(|target| target.bundle == "minimal")
         .unwrap();
     assert!(!minimal.cargo_vendor);
+}
+
+#[test]
+fn partitioned_environment_sets_plan_as_separate_self_contained_branches() {
+    let config = config(
+        r#"
+schema = 1
+branch_prefix = "sandbox"
+
+[budgets]
+max_transport_mib = 2048
+max_repository_push_mib = 2048
+max_restore_required_mib = 8192
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+
+[[bundle]]
+name = "shells"
+environments = ["shells"]
+platforms = ["linux-64"]
+"#,
+    );
+
+    let plan = config.plan().unwrap();
+    assert_eq!(
+        plan.include
+            .iter()
+            .map(|target| (target.environments.as_str(), target.branch.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("default", "sandbox/developer-linux-64"),
+            ("shells", "sandbox/shells-linux-64"),
+        ]
+    );
+}
+
+#[test]
+fn budget_defaults_are_reviewed_and_can_be_overridden() {
+    let defaulted = config(
+        r#"
+schema = 1
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+"#,
+    );
+    assert_eq!(defaulted.budgets.max_blob_mib, DEFAULT_MAX_BLOB_MIB);
+    assert_eq!(
+        defaulted.budgets.max_transport_mib,
+        DEFAULT_MAX_TRANSPORT_MIB
+    );
+    assert_eq!(
+        defaulted.budgets.max_restore_required_mib,
+        DEFAULT_MAX_RESTORE_REQUIRED_MIB
+    );
+
+    let overridden = config(
+        r#"
+schema = 1
+[budgets]
+max_blob_mib = 64
+max_transport_mib = 1024
+max_repository_push_mib = 1536
+max_restore_required_mib = 4096
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+"#,
+    );
+    let budgets = overridden.budgets.to_transport_budgets().unwrap();
+    assert_eq!(budgets.max_blob_bytes, 64 * 1024 * 1024);
+    assert_eq!(budgets.max_transport_bytes, 1024 * 1024 * 1024);
+}
+
+#[test]
+fn malformed_budgets_are_rejected_with_the_field_name() {
+    let err = config_error(
+        r#"
+schema = 1
+[budgets]
+max_blob_mib = 128
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+"#,
+    );
+    assert!(err.contains("budgets.max_blob_mib"), "{err}");
+
+    let err = config_error(
+        r#"
+schema = 1
+[budgets]
+max_transport_mib = 0
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+"#,
+    );
+    assert!(err.contains("budgets.max_transport_mib"), "{err}");
 }
 
 #[test]

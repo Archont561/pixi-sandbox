@@ -623,6 +623,96 @@ fn doctor_verify_catches_a_tampered_split_part() {
         .stdout(predicate::str::contains(".part001"));
 }
 
+#[test]
+fn doctor_enforces_reviewed_transport_budgets_before_publish() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("pixi-sandbox.toml");
+    fs::write(
+        &config,
+        r#"
+schema = 1
+[budgets]
+max_blob_mib = 95
+max_transport_mib = 0.001
+max_repository_push_mib = 0.001
+max_restore_required_mib = 0.001
+
+[[bundle]]
+name = "developer"
+environments = ["demo"]
+platforms = ["linux-64"]
+"#,
+    )
+    .unwrap();
+
+    bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            fixture_transport().to_str().unwrap(),
+            "--budget-config",
+            config.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("budget    FAILED"))
+        .stdout(predicate::str::contains("budgets.max_transport_mib"))
+        .stdout(predicate::str::contains("[[bundle]]"))
+        .stderr(predicate::str::contains("transport budget exceeded"));
+}
+
+#[test]
+fn doctor_reports_budget_measurements_in_json() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("pixi-sandbox.toml");
+    fs::write(
+        &config,
+        r#"
+schema = 1
+[budgets]
+max_blob_mib = 95
+max_transport_mib = 2048
+max_repository_push_mib = 2048
+max_restore_required_mib = 8192
+
+[[bundle]]
+name = "developer"
+environments = ["demo"]
+platforms = ["linux-64"]
+"#,
+    )
+    .unwrap();
+
+    let output = bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            fixture_transport().to_str().unwrap(),
+            "--budget-config",
+            config.to_str().unwrap(),
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["budget"]["violations"].as_array().unwrap().len(), 0);
+    assert!(
+        report["budget"]["measurements"]["transport_bytes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert!(
+        report["budget"]["measurements"]["repository_push_bytes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+}
+
 // ------------------------------------------------------------- publish, end to end
 
 /// The payload the first publish places on the branch, published once and shared read-only by
@@ -1518,6 +1608,7 @@ fn init_is_provider_neutral_and_generates_only_this_platforms_launcher() {
         env!("CARGO_PKG_VERSION")
     )));
     assert!(workflow.contains("--config pixi-sandbox.toml"));
+    assert!(workflow.contains("--budget-config pixi-sandbox.toml"));
     assert!(workflow.contains("\"$SELF_BIN\" doctor --branch-location \"$TRANSPORT\" --verify"));
     assert!(project.join("pixi-sandbox.toml").is_file());
     assert!(!project.join(".pixi-sandbox.toml").exists());

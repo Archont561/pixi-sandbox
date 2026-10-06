@@ -92,6 +92,7 @@ Verify transport without writing.
 ```bash
 pixi-sandbox doctor --branch-location .sandbox-out --verify
 pixi-sandbox doctor --branch-location .sandbox-out --verify --envs dev
+pixi-sandbox doctor --branch-location .sandbox-out --verify --budget-config pixi-sandbox.toml
 pixi-sandbox doctor --branch-location .sandbox-out --verify --json
 ```
 
@@ -116,6 +117,7 @@ pixi-sandbox doctor --branch-location .sandbox-out --verify-restored /path/to/pr
 | `--verify-restored <PROJECT>` | Also compare the restored tree to the manifest's per-file digests (implies `--verify`) |
 | `--work-dir` | Work dir the restore used, if not the default `<project>/.pixi/.restore-work` |
 | `--envs` | Filter envs |
+| `--budget-config <PATH>` | Load `[budgets]` from `pixi-sandbox.toml` / `.pixi-sandbox.toml` and fail read-only if blob, transport, push, or restore-disk ceilings are exceeded |
 | `--json` | Machine-readable output |
 
 Reports all failures, not first. Checks size + sha256 + tool linkage (rejects dynamic).

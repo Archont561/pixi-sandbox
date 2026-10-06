@@ -255,7 +255,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
             --self-bin "$SELF_BIN" \
             --log-file "$LOG_DIR/pack.log" \
             $CARGO_VENDOR_ARG
-          record doctor "$SELF_BIN" doctor --branch-location "$TRANSPORT" --verify --log-file "$LOG_DIR/doctor.log"
+          record doctor "$SELF_BIN" doctor --branch-location "$TRANSPORT" --verify --budget-config __CONFIG_PATH__ --log-file "$LOG_DIR/doctor.log"
           BASIC_AUTH=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 | tr -d '\r\n')
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=http.extraheader
@@ -316,7 +316,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
           if ($env:CARGO_VENDOR -eq 'true') { $packArgs += '--cargo-vendor' }
           Invoke-Phase "pack" { & $env:SELF_BIN @packArgs }
           $doctorLog = Join-Path $logDir 'doctor.log'
-          Invoke-Phase "doctor" { & $env:SELF_BIN doctor --branch-location $transport --verify --log-file $doctorLog }
+          Invoke-Phase "doctor" { & $env:SELF_BIN doctor --branch-location $transport --verify --budget-config __CONFIG_PATH__ --log-file $doctorLog }
           $bytes = [System.Text.Encoding]::UTF8.GetBytes("x-access-token:$env:PUSH_TOKEN")
           $basic = [System.Convert]::ToBase64String($bytes)
           $env:GIT_CONFIG_COUNT = '1'

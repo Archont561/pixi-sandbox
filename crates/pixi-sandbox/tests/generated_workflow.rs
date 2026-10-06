@@ -139,6 +139,23 @@ fn generated_workflow_carries_a_parseable_version_stamp() {
     assert_eq!(parse_version_stamp(&workflow()), Some(VERSION));
 }
 
+#[test]
+fn publish_lane_checks_size_budgets_from_the_reviewed_config_before_publishing() {
+    let workflow = workflow();
+    assert!(
+        workflow.contains(
+            "record doctor \"$SELF_BIN\" doctor --branch-location \"$TRANSPORT\" --verify --budget-config config/pixi-sandbox.toml"
+        ),
+        "bash publisher must enforce budgets before publish: {workflow}"
+    );
+    assert!(
+        workflow.contains(
+            "Invoke-Phase \"doctor\" { & $env:SELF_BIN doctor --branch-location $transport --verify --budget-config config/pixi-sandbox.toml"
+        ),
+        "Windows publisher must enforce budgets before publish: {workflow}"
+    );
+}
+
 /// task-47 AC#6-#8: the generated upgrade job, scheduled and manually dispatchable, never
 /// floats a production pin and never pushes to main directly.
 mod upgrade_job {
