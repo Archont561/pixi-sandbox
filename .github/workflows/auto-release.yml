@@ -21,10 +21,25 @@ name: auto-release
 # …or the Actions tab "Run workflow" button, or the REST dispatch API. `workflow_call` lets
 # another pipeline cut a release as a step.
 #
-# Why a separate dispatch to release.yml instead of an automatic tag trigger: a tag pushed with
-# GITHUB_TOKEN does not start another workflow (GitHub suppresses that recursion), so we call
-# release.yml explicitly on the new tag. To fully automate on every merge to main instead, add a
-# `push: branches: [main]` trigger here and gate the release step on convco reporting a bump.
+# How the build half starts: the two pushes below do it themselves. `release.yml` triggers on
+# `push: tags: v*.*.*` and `publish-sandbox.yml` on `push: branches: [main]`, so the release
+# commit and its tag start both without a hand-off.
+#
+# This workflow used to dispatch them explicitly, because GitHub suppresses workflow triggering
+# for events made with GITHUB_TOKEN. That suppression is a property of GITHUB_TOKEN alone, and
+# this job cannot run on GITHUB_TOKEN at all: the release commit restamps the committed relock
+# render, and GITHUB_TOKEN may not push `.github/workflows/**`. RELEASE_PUSH_TOKEN is therefore
+# required for a real cut, and a PAT or GitHub App token triggers pushes normally — which made
+# the explicit dispatches a *second* trigger rather than the only one. Keeping both would have
+# run the release build twice on one tag and repacked the transport twice, concurrently, and
+# the repack force-pushes the transport branch.
+#
+# So: do not re-add a dispatch step here without first removing the matching `on: push` trigger.
+# For a manual re-run after a failure, `pixi run dispatch-release <tag>` and
+# `pixi run dispatch-sandbox-repack` still exist.
+#
+# To fully automate on every merge to main instead, add a `push: branches: [main]` trigger here
+# and gate the release step on convco reporting a bump.
 
 on:
   workflow_dispatch:
@@ -66,19 +81,25 @@ on:
     secrets:
       RELEASE_PUSH_TOKEN:
         description: >-
-          Token used to push the release commit/tag and dispatch release.yml. Defaults to
-          GITHUB_TOKEN; supply a PAT or GitHub App token when branch protection or required
-          reviews block the built-in token from pushing to main.
+          Token used to push the release commit and tag. Required for a real cut: the release
+          commit restamps the committed relock render, so it touches .github/workflows/**,
+          which GITHUB_TOKEN may never push. Supply a PAT with the `workflow` scope, a
+          fine-grained token with `Contents: write` + `Workflows: write`, or a GitHub App
+          token with the Workflows permission. Its pushes also start release.yml and
+          publish-sandbox.yml, which this workflow relies on instead of dispatching them.
+          Falls back to GITHUB_TOKEN, which is enough for dry-run only.
         required: false
 
-# Push the release commit + tag (contents) and dispatch release.yml (actions).
+# Push the release commit and its tag. That is the whole job now, so `contents` is the whole
+# block: the two `gh workflow run` steps that needed `actions: write` are gone, because both
+# pushes trigger their consumers themselves. Re-adding a dispatch step means re-adding that
+# scope — and reading the header first, because a second trigger is the bug this removed.
 #
-# There is deliberately no `workflows` scope here. `permissions:` only tunes GITHUB_TOKEN, and
+# There is deliberately no `workflows` scope. `permissions:` only tunes GITHUB_TOKEN, and
 # GITHUB_TOKEN is barred by GitHub from writing anything under `.github/workflows/` whatever
 # this block says; `workflows` is not even a scope GitHub accepts, so adding it does not fail
 # the push — it makes the whole file unparseable and every run dies in 0s with no jobs (run
-# 37501052919). `actions: write` is a different right: it covers workflow *runs*, which is what
-# the two dispatch steps below need, not workflow *files*.
+# 37501052919). Check 11 in `xtask check-repository` now fails that edit before it lands.
 #
 # This bites because `prepare-release` restamps the committed relock render, so the release
 # commit always touches `.github/workflows/relock.yml`. Pushing it needs a token that itself
@@ -87,9 +108,9 @@ on:
 # permission. The checkout step below already hands that secret to git (`persist-credentials`),
 # so the secret is the only missing piece — without it the push is rejected with
 # "refusing to allow a GitHub App to create or update workflow ... without `workflows` permission".
+# A dry run needs none of this: it never pushes, so it works on the github.token fallback.
 permissions:
   contents: write
-  actions: write
 
 # One release at a time; never cancel a release midway.
 concurrency:
@@ -125,9 +146,10 @@ jobs:
         id: prep
         run: pixi run xtask prepare-release ${{ inputs.version != '' && inputs.version || inputs.bump }}
 
-      # Compile against the prepared version and run every consistency oracle before anything
-      # can be committed. This is the release-commit counterpart to CI, whose push trigger is
-      # suppressed when commit-release uses GITHUB_TOKEN.
+      # Compile against the prepared version and run every consistency oracle *before* anything
+      # is committed. ci.yml does run on the release commit now (the push carries a PAT or App
+      # token, so `on: push` fires), but only afterwards — this is what keeps a release that
+      # fails its own oracles from reaching main and being tagged in the first place.
       - name: Validate prepared repository
         run: pixi run xtask check-repository
 
@@ -141,23 +163,13 @@ jobs:
       # commits as pixi-sandbox[bot], tags, and pushes main + the tag. The release commit's
       # author is the bot identity ShellGit carries, so it never depends on the runner's git
       # config.
+      #
+      # This is the last step. Both pushes trigger their own consumers: the tag starts
+      # release.yml, and main starts publish-sandbox.yml, which repacks the transport so the
+      # published branch names the release commit rather than the last pre-release push
+      # (what v0.4.2 exposed: the transport stood at dbe57a8/0.4.1 while main and the release
+      # were at 7745e9c/0.4.2). That only holds while RELEASE_PUSH_TOKEN is a PAT or App
+      # token; see the header before adding any dispatch step back.
       - name: Commit, tag, and push
         if: ${{ ! inputs.dry-run }}
         run: pixi run xtask commit-release ${{ steps.prep.outputs.version }}
-
-      - name: Dispatch release build for the new tag
-        if: ${{ ! inputs.dry-run }}
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
-        run: pixi run dispatch-release ${{ steps.prep.outputs.version }}
-
-      # The release commit's push was the last GITHUB_TOKEN event of this run, so nothing
-      # `on: push` fires for it — including publish-sandbox.yml, which repacks the transport
-      # on every push to main. Without this hand-off the published branch keeps naming the
-      # pre-release commit until the next human push (exactly what v0.4.2 exposed: the
-      # transport stood at dbe57a8/0.4.1 while main and the release were at 7745e9c/0.4.2).
-      - name: Dispatch sandbox transport repack
-        if: ${{ ! inputs.dry-run }}
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
-        run: pixi run dispatch-sandbox-repack

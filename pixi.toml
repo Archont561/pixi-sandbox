@@ -185,17 +185,18 @@ dispatch-consumer-proof = { args = [
 ], cmd = "gh workflow run consumer-proof.yml --ref main -f release-tag={{ tag }}" }
 dispatch-docs = "gh workflow run docs.yml --ref main"
 
-# auto-release's hand-off to the build half: the release tag is pushed with GITHUB_TOKEN,
-# which starts no workflow, so the release build is dispatched explicitly on the new tag.
+# Manual recovery, not part of a release: auto-release no longer dispatches either of these.
+# Its RELEASE_PUSH_TOKEN is a PAT or App token (GITHUB_TOKEN cannot push the relock restamp),
+# and such a push triggers `on: push` normally — so release.yml starts from the tag and
+# publish-sandbox.yml from main on their own. Dispatching as well ran each twice, concurrently,
+# and the repack force-pushes the transport branch. Reach for these when a trigger genuinely
+# did not fire; do not wire them back into auto-release.yml.
 # One argument fills both the ref and the version input.
 dispatch-release = { args = [
   { arg = "tag" },
 ], cmd = "gh workflow run release.yml --ref {{ tag }} -f version={{ tag }}" }
 
-# The same GITHUB_TOKEN hole, the same hand-off, for the transport: publish-sandbox.yml
-# (the sandbox branch repack) runs on push to main, and a GITHUB_TOKEN release-commit push
-# starts no workflows — auto-release dispatches the repack explicitly so the published
-# branch names the release commit, not the last pre-release push.
+# The transport half of the same manual recovery: repack the sandbox branch off current main.
 dispatch-sandbox-repack = "gh workflow run publish-sandbox.yml --ref main"
 
 # ---------------------------------------------------------------------------
