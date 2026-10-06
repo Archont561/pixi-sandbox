@@ -75,6 +75,7 @@ on:
 permissions:
   contents: write
   actions: write
+  workflows: write
 
 # One release at a time; never cancel a release midway.
 concurrency:
