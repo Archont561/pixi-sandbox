@@ -95,6 +95,15 @@ jobs:
       - name: Make the released binary executable
         run: chmod +x "$RUNNER_TEMP/pixi-sandbox"
 
+      # The starter is a separately owned consumer repository. Bootstrap it before checkout so
+      # the first release can create it (or seed an existing empty repository); checkout cannot
+      # operate on a repository with zero commits. The PAT is deliberately used only here and
+      # for publication because GITHUB_TOKEN cannot create or write the cross-repository target.
+      - name: Bootstrap the starter repository
+        env:
+          GH_TOKEN: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN || github.token }}
+        run: 'if ! gh api "repos/$STARTER_REPO" >/dev/null 2>&1; then gh api --method POST "orgs/${STARTER_REPO%%/*}/repos" -f name="${STARTER_REPO##*/}" -F private=false -F auto_init=true; elif [ -z "$(gh api "repos/$STARTER_REPO" --jq ''.default_branch // empty'')" ]; then content=$(printf ''# pixi-sandbox-starter\n'' | base64 -w0); gh api --method PUT "repos/$STARTER_REPO/contents/README.md" -f message=''Initial commit'' -f content="$content" -f branch=main; fi'
+
       # Checked out with a credential that carries `workflows: write`: the starter's owned
       # files include `.github/workflows/*`, which GITHUB_TOKEN may never push — the same
       # restriction that produced issue #101 in the consumer upgrade lane.
