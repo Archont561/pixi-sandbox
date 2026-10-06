@@ -169,7 +169,7 @@ pixi run --frozen -e package xtask smoke-conda-package      # install it and run
 pixi run --frozen build-release-binary                      # cargo build -p pixi-sandbox --release (-- --target <triple> in CI)
 pixi run --frozen xtask stage-release-binary                # strip + stage pixi-sandbox-<target>[.exe], host triple by default
 pixi run --frozen xtask release-checksums                   # SHA256SUMS over the standalone binaries + completeness check
-pixi run --frozen dispatch-release v0.3.8                   # hand a fresh tag to release.yml (a GITHUB_TOKEN tag push starts nothing)
+pixi run --frozen dispatch-release v0.3.8                   # manual recovery only: re-run release.yml for a tag whose push trigger did not fire
 
 # the airlock proof (.github/workflows/airlock.yml): these drive the RELEASED binary, so the
 # proof is about published assets; airlock-install-released puts it on PATH first

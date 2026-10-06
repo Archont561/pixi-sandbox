@@ -1115,3 +1115,36 @@ wording in the rejection suggests it is unset and falling back to `github.token`
 - **PR #111 merged with `ci` already red** (merged 17:07:09Z; the PR's own ci run 37501045602
   was FAILURE). Check 11 would not have stopped that merge — only a required-status-check rule
   on `main` would. Worth deciding whether `ci` becomes required.
+
+### 2026-10-06 — auto-release stops dispatching; the token is now the only missing piece
+
+**Landed:** the two dispatch steps are gone from `auto-release.yml`, and `actions: write` with
+them (nothing in the job calls the Actions API any more). The job is six steps, ending at
+`Commit, tag, and push`.
+
+Why, in one line: the GITHUB_TOKEN trigger suppression the dispatches worked around does not
+apply to the token this workflow now requires. `prepare-release` restamps the committed relock
+render, so the release commit touches `.github/workflows/**`, which GITHUB_TOKEN may never
+push — RELEASE_PUSH_TOKEN must be a PAT or App token, and those trigger `on: push` normally.
+`release.yml` already listens on `push: tags: v*.*.*` and `publish-sandbox.yml` on
+`push: branches: [main]`, so keeping the dispatches would have started the release build twice
+on one tag and the transport repack twice, concurrently — and the repack force-pushes the
+transport branch. Neither workflow carries a `concurrency:` guard, so nothing would have
+serialised that race.
+
+The `dispatch-release` / `dispatch-sandbox-repack` pixi tasks stay, re-labelled as manual
+recovery (the `dispatch-docs` precedent: a task nothing in CI calls). AGENTS.md's command list
+says so too.
+
+**Still open, unchanged and still maintainer-only:** `RELEASE_PUSH_TOKEN` is not set. Nothing
+here grants the push; this only removes the double-fire that would have followed it. The token
+needs `Contents: write` + `Workflows: write` — no longer `Actions: write`, since the dispatches
+that needed it are gone. A dry run (`-f dry-run=true`) works without the secret because it never
+pushes, so it exercises prepare + `check-repository` but **not** the Workflows permission; the
+first real cut is the only test of that.
+
+**Proposal, not agreed:** `release.yml` and `publish-sandbox.yml` still have no `concurrency:`
+guard. That was survivable while every start was a serialised explicit dispatch; now that both
+start from push events, two pushes close together can overlap. `publish-sandbox.yml` is a
+generated artifact, so a guard there means editing the template and re-rendering — worth doing,
+but it is a consumer-visible change rather than a local one.
