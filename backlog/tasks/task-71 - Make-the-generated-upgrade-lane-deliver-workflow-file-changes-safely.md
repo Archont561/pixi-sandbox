@@ -4,7 +4,7 @@ title: Make the generated upgrade lane deliver workflow-file changes safely
 status: In Progress
 assignee: []
 created_date: '2026-10-04 19:49'
-updated_date: '2026-10-04 20:23'
+updated_date: '2026-10-06 19:55'
 labels:
   - ci
   - github-actions
@@ -64,5 +64,9 @@ Evidence: `pixi run --frozen fmt` green; `pixi run --frozen lint` green includin
 created: 2026-10-04 20:05
 ---
 2026-10-04 connected evidence from Castellan PR #13: the real generated upgrade lane runs bootstrap, self-update, drift detection, and regeneration, then fails at delivery because GITHUB_TOKEN cannot update .github/workflows/*.yml (runs 37228494836 and 37228565253). The same PR documents five consecutive publish failures after shells joined the bundle, with empty logs caused by set +e followed by a grouped command that re-armed errexit before diagnostics could print. Its reproduced 0.5.3 upgrade was dispatched as run 37230019375 and packed/published green at transport commit 1252ae53, proving the preceding 0.5.2 colon-path failure is fixed; PR #13 remains the reviewable exact-version upgrade artifact.
+---
+created: 2026-10-06 19:55
+---
+2026-10-06 the chicken-and-egg is broken, but AC#5 is still open and cannot be closed yet. Castellan was bootstrapped onto the 0.6.0 templates by hand (commit 8193c58, "chore: update pixi-sandbox to version 0.6.0"), carrying exactly the three owned files and no config edit: publish-sandbox.yml gains the `secrets.PIXI_SANDBOX_UPGRADE_TOKEN || github.token` wiring, the fail-soft `write_handoff`/`delivery_refused` path and the `pixi-sandbox-upgrade-artifacts` upload; relock.yml gains `checks: write` and the observer; scripts/restore.sh gains the stamp. A hand bootstrap was the only way in, because the 0.5.3 lane that had to deliver the fix is the very lane the fix repairs — it reads no upgrade secret, so adding the secret to Castellan before this commit would have changed nothing. The push proved the regenerated files work: `publish sandbox` run 37521245074 was green in 3m37s (plan 7s, upgrade **skipped**, publish green), it repacked the transport to af92e4c1, and that manifest reads `"tool": {"version": "0.6.0"}` with `"source": {"commit": "8193c58"}`. Castellan's own CI job "generated files" also passed, so the regeneration is byte-correct. None of that is AC#5: the `upgrade` job never ran (its `if:` is schedule-or-dispatch, and this was a push), so the delivery path this task rewrote has still never executed connected. It also cannot be forced right now — Castellan is pinned at 0.6.0 and 0.6.0 is latest, so a dispatch resolves `drift=false` and there is nothing to deliver. **The proof window is the next pixi-sandbox release.** Set `PIXI_SANDBOX_UPGRADE_TOKEN` in Castellan *before* cutting 0.6.1/0.7.0: with it, the weekly cron opens the reviewable PR and closes AC#5 on the happy path (and TASK-73 AC#3/#4); without it, the same run closes AC#5 on the documented-patch-artifact branch instead and leaves TASK-73 AC#3 open.
 ---
 <!-- COMMENTS:END -->

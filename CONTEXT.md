@@ -1309,3 +1309,52 @@ re-close; this note is the evidence for `RELEASE_PUSH_TOKEN` only.
   the graph. A ~4-minute redundant repack is the cheaper error than a stale transport, so: leave
   it, and if anyone does narrow it, pair the change with a check that derives the path list from
   the `pixi-sandbox` bin's workspace dependencies rather than hand-maintaining it.
+
+### 2026-10-06 — Castellan bootstrapped onto 0.6.0; closure audit says close nothing yet
+
+**Landed, in the consumer rather than here:** Castellan commit `8193c58` ("chore: update
+pixi-sandbox to version 0.6.0") regenerates exactly the three owned files — `publish-sandbox.yml`,
+`relock.yml`, `scripts/restore.sh` — with no config edit. It had to be a hand bootstrap. The
+0.5.3 lane that would normally deliver an upgrade is the very lane the 0.6.0 templates repair: it
+reads no `PIXI_SANDBOX_UPGRADE_TOKEN`, so installing that secret before this commit would have
+changed nothing, and `GITHUB_TOKEN` may not push `.github/workflows/**`. That is the deadlock
+issue #101 describes, and a human push is the only way out of it.
+
+The push proves the regenerated templates work connected: `publish sandbox` run 37521245074 green
+in 3m37s (`plan` 7s, `upgrade` **skipped**, `publish` green), transport repacked to `af92e4c1`,
+and that manifest reads `"tool": {"version": "0.6.0"}` with `"source": {"commit": "8193c58"}` —
+fresh against the pushed commit. Castellan's own `generated files` CI job passed, so the
+regeneration is byte-correct. Publish also got *faster*, 3m37s against 6m07s on 2026-10-05.
+
+**One new datapoint for task-72 worth keeping.** Castellan's `pixi-sandbox.toml` has no
+`[budgets]` table, so the 0.6.0 template's new `doctor --budget-config pixi-sandbox.toml` ran on
+defaults against a two-environment bundle whose `default` env alone is 500,179,397 bytes packed /
+2,223,746,588 unpacked. It passed. The defaults are therefore not accidentally tight for a real
+GUI-stack consumer — the one plausible regression in this upgrade, and it did not fire.
+
+**Closure audit — nothing qualifies.** A scan of all 68 task files found no inconsistency: every
+`Done` task has all criteria checked and every open task has genuinely open ones, so there is
+nothing silently closeable. Taking each open item against today's evidence:
+
+- **task-71 AC#5 — still open.** The `upgrade` job never ran; its `if:` is schedule-or-dispatch
+  and this was a push. It also cannot be forced now: Castellan is pinned at 0.6.0 and 0.6.0 is
+  latest, so a dispatch resolves `drift=false` and there is nothing to deliver. The proof window
+  is the *next* release.
+- **task-66 AC#1/#2/#6 — still open**, but no longer unreachable. The observer now exists in
+  Castellan's `relock.yml`; what is missing is a pull request carrying repairable lockfile drift,
+  since `relock.yml` is `pull_request`-only and `8193c58` was a push.
+- **task-73 — not started.** AC#1 is only partly met: the ci-publishing guide names
+  `PIXI_SANDBOX_UPGRADE_TOKEN` and the fallback, but not the owner-operated App installation,
+  repository access or rotation expectations.
+- **issue #101 — leave open.** This repository closes a consumer issue when its task closes, not
+  when the fix merges (task-52 and task-53 both demanded "ships in a minor release, with the
+  connected proof"). #101 closes with task-71 AC#5, not before.
+- **issues #109 / #115 — unchanged.** #109 is task-75, not started. #115 still has no task and
+  still wants a scope decision before it gets one.
+
+**Proposal, not agreed:** set `PIXI_SANDBOX_UPGRADE_TOKEN` in Castellan *before* cutting the next
+release rather than after. The next cut is the single event that closes task-71 AC#5, and the
+secret decides which branch of that criterion it closes — present, the cron opens the reviewable
+PR and also settles task-73 AC#3/#4; absent, the same run only proves the patch-artifact fallback
+and task-73 AC#3 stays open for another release cycle. The cost of setting it early is nothing;
+the cost of setting it late is a whole release.

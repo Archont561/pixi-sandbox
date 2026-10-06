@@ -2,7 +2,7 @@
 id: TASK-66
 title: 'relock: attach an authoritative verdict to the repaired PR head'
 status: In Progress
-updated_date: '2026-10-05'
+updated_date: '2026-10-06'
 assignee: []
 created_date: '2026-10-04 13:19'
 labels:
@@ -78,4 +78,21 @@ now asserts the pin's *shape* — 40 lowercase hex characters plus a release lab
 property `check-repository` check 4 already enforces over the committed render, so a reviewed bump
 needs no test edit and a mutable tag still cannot slip through. The immutability guarantee this
 criterion was making is unchanged; only the SHA it named is stale.
+
+2026-10-06 — the observer is now deployed in a real consumer, which removes the last obstacle to
+AC#1, #2 and #6 without satisfying any of them. Castellan was bootstrapped onto the 0.6.0
+templates by hand (commit 8193c58); its `.github/workflows/relock.yml` went from the 0.5.3 render
+to the current one, picking up `checks: write`, the `repaired_sha` dispatch input and the
+long-running observer job — 252 added lines, verified in the pushed diff. Until that commit the
+proof was not merely unperformed but unreachable: the 0.5.3 render Castellan was running carries
+no Check Run code at all, so no pull request against it could ever have produced the rollup this
+task is about.
+
+What is still missing is the trigger, not the machinery. `relock.yml` is `pull_request` /
+`workflow_dispatch` only, and 8193c58 was a push to main, so no relock run exists for it. These
+three criteria need one consumer pull request that carries *repairable lockfile drift* — a
+manifest edit without a matching lock refresh — so the guard fires, the bot repairs, and the
+observer can attach the verdict to the repaired head. That is cheap to arrange deliberately and
+should be done as its own PR rather than waited for, since ordinary Castellan PRs are usually
+already locked. Record the PR and run links here and on issue #92 (already closed) when it runs.
 <!-- SECTION:NOTES:END -->
