@@ -184,6 +184,13 @@ dispatch-consumer-proof = { args = [
   { arg = "tag" },
 ], cmd = "gh workflow run consumer-proof.yml --ref main -f release-tag={{ tag }}" }
 dispatch-docs = "gh workflow run docs.yml --ref main"
+# The starter lane needs both halves of the hand-off: the tag names the release, and the
+# commit is what the receiver independently re-resolves that tag against before it touches
+# the starter repository (doc-10's "explicit tag/immutable commit hand-off").
+dispatch-starter = { args = [
+  { arg = "tag" },
+  { arg = "commit" },
+], cmd = "gh workflow run starter.yml --ref main -f release-tag={{ tag }} -f source-commit={{ commit }}" }
 
 # Manual recovery, not part of a release: auto-release no longer dispatches either of these.
 # Its RELEASE_PUSH_TOKEN is a PAT or App token (GITHUB_TOKEN cannot push the relock restamp),

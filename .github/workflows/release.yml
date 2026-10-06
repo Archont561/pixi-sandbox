@@ -226,6 +226,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: pixi run -e package dispatch-consumer-proof ${{ inputs.version || github.ref_name }}
 
+      # Regenerate the release-pinned starter template from the release that just published.
+      # Dispatched for the same reason as the consumer proof above: a release created with
+      # GITHUB_TOKEN emits no `release: published` event. The hand-off carries the tag *and*
+      # the immutable commit, which starter.yml re-resolves against the published release
+      # before it touches the starter repository (doc-10).
+      - name: Regenerate the release-pinned starter template
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pixi run -e package dispatch-starter ${{ inputs.version || github.ref_name }} ${{ github.sha }}
+
       # The release commit repins every version reference across docs/** and README, but that
       # commit is pushed with GITHUB_TOKEN, and GitHub suppresses workflow triggers on
       # GITHUB_TOKEN pushes — so docs.yml's `push: [main]` trigger never fires for it and GitHub

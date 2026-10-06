@@ -217,6 +217,42 @@ enum Command {
         #[arg(long)]
         asset: String,
     },
+    /// Fail unless a tag is a published release at the handed-off commit with its assets.
+    StarterVerifyRelease {
+        /// Repository the release must belong to.
+        #[arg(long, default_value = "Archont561/pixi-sandbox")]
+        repo: String,
+        /// Release tag handed off by the release workflow.
+        #[arg(long)]
+        tag: String,
+        /// Immutable commit the release workflow handed off with the tag.
+        #[arg(long)]
+        commit: String,
+    },
+    /// Commit, tag, and push one validated starter revision. Never force-pushes.
+    StarterPublish {
+        /// Assembled and validated starter tree (a git worktree with its remote configured).
+        #[arg(long)]
+        dir: PathBuf,
+        /// Remote to push to; must name the canonical starter repository.
+        #[arg(long)]
+        remote: String,
+        /// Canonical starter repository the remote is checked against.
+        #[arg(long, default_value = "Archont561/pixi-sandbox-starter")]
+        starter_repo: String,
+        /// Release tag this revision was generated from.
+        #[arg(long)]
+        tag: String,
+        /// Branch refspec to push.
+        #[arg(long, default_value = "HEAD:refs/heads/main")]
+        branch: String,
+        /// Immutable source commit recorded in the starter commit message.
+        #[arg(long)]
+        source_commit: String,
+        /// Validate and report what would be published without committing or pushing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Turn a prepared tree into the release commit, tag, and pushes (auto-release's half).
     CommitRelease {
         /// Release tag to cut, `vX.Y.Z`. Positional, so the workflow's one-liner carries no
@@ -298,6 +334,26 @@ fn run_args(args: Args) -> Result<()> {
             sums,
             asset,
         } => starter::verify_asset(&binary, &sums, &asset),
+        Command::StarterVerifyRelease { repo, tag, commit } => {
+            starter::verify_release(&repo, &tag, &commit)
+        }
+        Command::StarterPublish {
+            dir,
+            remote,
+            starter_repo,
+            tag,
+            branch,
+            source_commit,
+            dry_run,
+        } => starter::publish(
+            &dir,
+            &remote,
+            &starter_repo,
+            &tag,
+            &branch,
+            &source_commit,
+            dry_run,
+        ),
         Command::CheckCondaPlatforms { dir } => conda_platforms::check(&root.join(dir)),
         Command::SmokeCondaPackage { out_dir } => {
             smoke::smoke_conda_package(&root, &root.join(out_dir))

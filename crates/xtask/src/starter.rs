@@ -187,13 +187,20 @@ pub fn scaffold(
         bail!("starter source commit must be a hex sha of at least 7 chars, got {source_commit:?}");
     }
     std::fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
-    crate::util::write_atomic(&out.join("pixi.toml"), &render_pixi_toml(name))?;
-    crate::util::write_atomic(&out.join(".gitignore"), &render_gitignore())?;
-    crate::util::write_atomic(
-        &out.join("README.md"),
-        &render_readme(tag, source_commit, source_repo, starter_repo),
-    )?;
-    println!("scaffolded starter for {tag} in {}", out.display());
+    // Keyed by SCAFFOLD_FILES so the published set and the written set cannot drift apart.
+    let contents = [
+        render_pixi_toml(name),
+        render_gitignore(),
+        render_readme(tag, source_commit, source_repo, starter_repo),
+    ];
+    for (file, body) in SCAFFOLD_FILES.iter().zip(&contents) {
+        crate::util::write_atomic(&out.join(file), body)?;
+    }
+    println!(
+        "scaffolded starter for {tag} in {} ({} files)",
+        out.display(),
+        SCAFFOLD_FILES.len()
+    );
     Ok(())
 }
 
@@ -297,6 +304,204 @@ pub fn verify_asset(binary: &Path, sums: &Path, asset_name: &str) -> Result<()> 
         );
     }
     println!("verified {asset_name} against SHA256SUMS ({actual})");
+    Ok(())
+}
+
+/// Namespaced immutable tag recording one starter revision (doc-10 "Validation and evidence").
+#[must_use]
+pub fn starter_tag(release_tag: &str) -> String {
+    format!("pixi-sandbox-{release_tag}")
+}
+
+/// Decide whether a release is a publishable source for a starter revision.
+///
+/// Pure so the fail-closed rules are testable without a network: a draft, a tag that names a
+/// different commit than the one handed off, or a missing asset each has to be a finding
+/// rather than a silent pass (TASK-74 AC#4).
+#[must_use]
+pub fn release_findings(
+    tag: &str,
+    expected_commit: &str,
+    is_draft: bool,
+    tag_commit: Option<&str>,
+    asset_names: &[String],
+) -> Vec<String> {
+    let mut findings = Vec::new();
+    if !is_strict_tag(tag) {
+        findings.push(format!("{tag:?} is not a strict semver tag like v1.2.3"));
+    }
+    if is_draft {
+        findings.push(format!("{tag} is still a draft release"));
+    }
+    match tag_commit {
+        None => findings.push(format!("{tag} does not resolve to a commit")),
+        Some(actual)
+            if !actual.starts_with(expected_commit) && !expected_commit.starts_with(actual) =>
+        {
+            findings.push(format!(
+                "{tag} resolves to {actual}, not the handed-off commit {expected_commit}"
+            ));
+        }
+        Some(_) => {}
+    }
+    if !asset_names.iter().any(|a| a == "SHA256SUMS") {
+        findings.push(format!("{tag} has no SHA256SUMS asset"));
+    }
+    if !asset_names.iter().any(|a| a.starts_with("pixi-sandbox-")) {
+        findings.push(format!("{tag} has no standalone pixi-sandbox asset"));
+    }
+    findings
+}
+
+/// Check, over the network, that `tag` is a published release of `repo` at `expected_commit`.
+///
+/// Two `gh` reads, each feeding the pure [`release_findings`] above: the release itself (for
+/// draft status and the asset list) and the tag's resolved commit. Resolving through the
+/// commits endpoint rather than `targetCommitish` is deliberate — `targetCommitish` can be a
+/// branch name, while `repos/{repo}/commits/{tag}` always dereferences to the commit.
+pub fn verify_release(repo: &str, tag: &str, expected_commit: &str) -> Result<()> {
+    use std::process::Command as StdCommand;
+    let release = StdCommand::new("gh")
+        .args([
+            "release",
+            "view",
+            tag,
+            "--repo",
+            repo,
+            "--json",
+            "isDraft,assets",
+        ])
+        .output()
+        .context("starting gh release view")?;
+    if !release.status.success() {
+        bail!(
+            "{tag} is not a published release of {repo}: {}",
+            String::from_utf8_lossy(&release.stderr).trim()
+        );
+    }
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&release.stdout).context("parsing gh release view output")?;
+    let is_draft = parsed["isDraft"].as_bool().unwrap_or(true);
+    let assets: Vec<String> = parsed["assets"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x["name"].as_str().map(ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let sha = StdCommand::new("gh")
+        .args([
+            "api",
+            &format!("repos/{repo}/commits/{tag}"),
+            "--jq",
+            ".sha",
+        ])
+        .output()
+        .context("starting gh api for the tag's commit")?;
+    let tag_commit = sha
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&sha.stdout).trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let findings = release_findings(
+        tag,
+        expected_commit,
+        is_draft,
+        tag_commit.as_deref(),
+        &assets,
+    );
+    if !findings.is_empty() {
+        for finding in &findings {
+            eprintln!("::error::{finding}");
+        }
+        bail!(
+            "{} release finding(s); refusing to touch the starter",
+            findings.len()
+        );
+    }
+    println!("{tag} is a published release of {repo} at {expected_commit}");
+    Ok(())
+}
+
+/// Is there anything to publish, and may we publish it here?
+///
+/// Separated from the git calls so the refusal rules can be tested directly. Returns the
+/// files to stage; an empty list means the verified tag reproduced the current revision
+/// exactly, which the publication contract requires to be a success, not a no-op failure.
+fn publish_refusals(remote: &str, starter_repo: &str, tag_exists: bool, tag: &str) -> Vec<String> {
+    let mut refusals = Vec::new();
+    if !remote.contains(starter_repo) {
+        refusals.push(format!(
+            "remote {remote:?} is not the canonical starter {starter_repo}; the starter lane must never push to a fork or a user's repository"
+        ));
+    }
+    if tag_exists {
+        refusals.push(format!(
+            "{} already exists on the remote; starter revisions are immutable",
+            starter_tag(tag)
+        ));
+    }
+    refusals
+}
+
+/// Commit and push one validated starter revision.
+///
+/// Never force-pushes and never rewrites history (doc-10 "Credentials and safety"). A tree
+/// identical to the published revision is an idempotent success.
+pub fn publish(
+    root: &Path,
+    remote: &str,
+    starter_repo: &str,
+    tag: &str,
+    branch: &str,
+    source_commit: &str,
+    dry_run: bool,
+) -> Result<()> {
+    use pixi_sandbox_git::ShellGit;
+    let git = ShellGit::new();
+    let immutable = starter_tag(tag);
+    let refusals = publish_refusals(
+        remote,
+        starter_repo,
+        git.remote_tag_exists(remote, &immutable)?,
+        tag,
+    );
+    if !refusals.is_empty() {
+        for refusal in &refusals {
+            eprintln!("::error::{refusal}");
+        }
+        bail!("refusing to publish the starter; the previous revision is unchanged");
+    }
+
+    let changed = git.worktree_status_files(root)?;
+    if changed.is_empty() {
+        println!("starter is already at {tag}; nothing to publish (idempotent re-run)");
+        return Ok(());
+    }
+    println!("publishing {} file(s) for {tag}", changed.len());
+    if dry_run {
+        println!("dry run: not committing or pushing");
+        for file in &changed {
+            println!("  would publish {file}");
+        }
+        return Ok(());
+    }
+    git.add_files(root, &changed)?;
+    git.commit(
+        root,
+        &format!(
+            "chore: regenerate starter for pixi-sandbox {tag}\n\nSource commit: {source_commit}"
+        ),
+    )?;
+    git.tag_annotated(root, &immutable)?;
+    git.push_refspec(root, remote, branch)?;
+    git.push_refspec(root, remote, &format!("refs/tags/{immutable}"))?;
+    crate::util::github_summary(&format!(
+        "## Starter published\n\n- release `{tag}`\n- source commit `{source_commit}`\n- starter tag `{immutable}`\n"
+    ));
     Ok(())
 }
 
@@ -472,6 +677,107 @@ mod tests {
         let sums = dir.path().join("SHA256SUMS");
         std::fs::write(&sums, "deadbeef  some-other-asset\n").unwrap();
         assert!(verify_asset(&binary, &sums, "pixi-sandbox-x86_64-unknown-linux-musl").is_err());
+    }
+
+    #[test]
+    fn the_starter_tag_is_namespaced_so_it_cannot_collide_with_a_release_tag() {
+        assert_eq!(starter_tag("v1.2.3"), "pixi-sandbox-v1.2.3");
+    }
+
+    #[test]
+    fn a_published_release_at_the_handed_off_commit_has_no_findings() {
+        let assets = vec![
+            "SHA256SUMS".to_string(),
+            "pixi-sandbox-x86_64-unknown-linux-musl".to_string(),
+        ];
+        assert_eq!(
+            release_findings(TAG, COMMIT, false, Some(COMMIT), &assets),
+            Vec::<String>::new()
+        );
+    }
+
+    /// A short sha handed off against a full sha (or the reverse) is the same commit; a
+    /// genuinely different commit is not. Both directions must behave.
+    #[test]
+    fn an_abbreviated_commit_still_matches_but_a_different_one_does_not() {
+        let assets = vec![
+            "SHA256SUMS".to_string(),
+            "pixi-sandbox-x86_64-unknown-linux-musl".to_string(),
+        ];
+        assert!(release_findings(TAG, &COMMIT[..7], false, Some(COMMIT), &assets).is_empty());
+        assert!(release_findings(TAG, COMMIT, false, Some(&COMMIT[..7]), &assets).is_empty());
+        let other = "0000000000000000000000000000000000000000";
+        assert!(!release_findings(TAG, COMMIT, false, Some(other), &assets).is_empty());
+    }
+
+    /// Every fail-closed rule in TASK-74 AC#4, each reported on its own.
+    #[test]
+    fn a_draft_an_unresolvable_tag_and_missing_assets_each_fail_closed() {
+        let full = vec![
+            "SHA256SUMS".to_string(),
+            "pixi-sandbox-x86_64-unknown-linux-musl".to_string(),
+        ];
+        assert!(
+            release_findings(TAG, COMMIT, true, Some(COMMIT), &full)
+                .iter()
+                .any(|f| f.contains("draft"))
+        );
+        assert!(
+            release_findings(TAG, COMMIT, false, None, &full)
+                .iter()
+                .any(|f| f.contains("does not resolve"))
+        );
+        assert!(
+            release_findings(
+                TAG,
+                COMMIT,
+                false,
+                Some(COMMIT),
+                &["SHA256SUMS".to_string()]
+            )
+            .iter()
+            .any(|f| f.contains("standalone"))
+        );
+        assert!(
+            release_findings(TAG, COMMIT, false, Some(COMMIT), &[])
+                .iter()
+                .any(|f| f.contains("SHA256SUMS"))
+        );
+    }
+
+    /// doc-10 forbids the automation from touching anything but the canonical starter, and
+    /// makes each revision immutable. Both refusals are checked before any git write.
+    #[test]
+    fn publishing_to_a_fork_or_over_an_existing_revision_is_refused() {
+        assert!(
+            publish_refusals(
+                "https://github.com/someone-else/pixi-sandbox-starter",
+                "Archont561/pixi-sandbox-starter",
+                false,
+                TAG,
+            )
+            .iter()
+            .any(|r| r.contains("canonical"))
+        );
+        assert!(
+            publish_refusals(
+                "https://github.com/Archont561/pixi-sandbox-starter",
+                "Archont561/pixi-sandbox-starter",
+                true,
+                TAG,
+            )
+            .iter()
+            .any(|r| r.contains("immutable"))
+        );
+        assert!(
+            publish_refusals(
+                "https://github.com/Archont561/pixi-sandbox-starter",
+                "Archont561/pixi-sandbox-starter",
+                false,
+                TAG,
+            )
+            .is_empty()
+        );
     }
 
     fn write_valid_starter(dir: &Path, workflow_version: &str) {
