@@ -1188,3 +1188,124 @@ regenerating — regenerating would have silently reverted the source-build adap
 check 10's byte-equality twin for the publisher is therefore **not** a small companion change:
 it first needs a decision on whether this repository keeps the source-build fork at all, or
 teaches the template a source-build knob (the `PIXI_SANDBOX_BIN` idea from 2026-10-01).
+
+### 2026-10-06 — v0.6.0: the push-trigger chain runs end to end; RELEASE_PUSH_TOKEN proved out
+
+**Landed** (observed on a live cut, not proposed): the first release with no `gh workflow run`
+anywhere in the chain. `auto-release` (run 37514536620, dispatched by Archont561) reached
+`Commit, tag, and push` and **succeeded** — the step that killed every previous attempt. The
+release commit `8298edc` modifies `.github/workflows/relock.yml`, so **`RELEASE_PUSH_TOKEN` is set
+and does carry the Workflows permission.** The two notes above both list that as the open,
+maintainer-only item; it is closed by observation, not by inference. It is also a PAT or App token
+rather than `github.token`: the push started `ci`, `publish sandbox` and `docs` by itself, which a
+`github.token` push cannot do. That is the whole premise PR #113 bet on, and it holds.
+
+Seven runs, in order, all green, no eighth:
+
+| # | workflow | run | started by | duration |
+| --- | --- | --- | --- | --- |
+| 1 | auto-release | 37514536620 | `workflow_dispatch` (Archont561) | 1m03s |
+| 2 | ci | 37514666260 | push `main` @ `8298edc` | 2m31s |
+| 3 | publish sandbox | 37514666171 | push `main` @ `8298edc` | 4m06s |
+| 4 | docs | 37514666148 | push `main` @ `8298edc` | 1m15s |
+| 5 | release | 37514668874 | push tag `v0.6.0` | 13m44s |
+| 6 | consumer proof | 37516425291 | `workflow_dispatch` from `release.yml` | 0m28s |
+| 7 | docs | 37516428499 | `workflow_dispatch` from `release.yml` | 0m49s |
+
+`airlock` did not appear, as its `workflow_call`/pull-request triggers require. Run 5 is the first
+ever `push`-event run of `release.yml`; v0.4.1 through v0.5.3 were all `workflow_dispatch`. Its
+five build jobs passed on all five runners — no `--` separator regression, no Windows `E0282`, the
+`check-conda-platforms` gate, the OIDC guard and the `environment: release` approval all cleared
+without a wait. `x86_64-apple-darwin` took 12m16s against 2m25s–5m20s elsewhere and is the only
+reason the run is 13m44s.
+
+**Transport freshness — the v0.4.2 oracle, answered.** `sandbox/developer-linux-64` is at
+`c24d298` ("sandbox snapshot 2026-10-06T18:55:31Z"), and its `.pixi-sandbox/manifest.json` reads
+`"source": {"commit": "8298edc"}` with `"tool": {"version": "0.6.0"}`. Tag `v0.6.0` is
+`8298edce13049ab01a7bc9d3e09c9daf8d14fc08`. Same commit: the transport ships the release, not the
+push before it. (v0.4.2 shipped `dbe57a8`/0.4.1 while main and the release were at `7745e9c`/0.4.2
+— the failure this entire trigger design exists to prevent.) The repack also *finished* at
+18:56:45, nine minutes before `release.yml` published the GitHub Release at 19:06:13, so there
+was no window in which a published release pointed at a stale transport.
+
+**The four PR-114 claims, scored honestly.**
+
+- **`release.yml` group `release-${{ inputs.version || github.ref_name }}` — not exercised.**
+  Exactly one run for `v0.6.0`; nothing queued, nothing cancelled, nothing contended. Guard
+  present and correct by reading, unproven by running.
+- **`publish-sandbox.yml` group `publish-sandbox-${{ github.repository }}` — not exercised.** The
+  previous repack (37513641598, PR #114's own merge) ended 18:48:16; this one started 18:52:39.
+  Four minutes apart, never concurrent. Same verdict.
+- **`on.push.paths` (D18) — proven, positive direction only.** The release commit touches
+  `Cargo.toml`, `Cargo.lock`, `pixi.toml`, `crates/pixi-sandbox/Cargo.toml`,
+  `crates/pixi-sandbox/pixi.toml` and `crates/xtask/Cargo.toml` — six matches against the eight
+  entries — and the publisher fired on the main push. The D18 trap did not spring and
+  `dispatch-sandbox-repack` was not needed. No push to main since `ea0f77d` has *missed* the
+  filter, so the negative half (a docs-only push correctly skipping a repack) is still untested.
+- **`setup_pixi_cache = false` — proven, and it costs nothing.** The `setup-pixi` step takes 1s
+  with the cache off (18:52:45→18:52:46 in `plan`, 18:53:44→18:53:46 in `publish`) and took the
+  same 1s with it on (37509389815, 18:11:39→18:11:40). Whole-run wall clock: 4m06s and 3m38s with
+  cache off against 4m08s, 4m01s, 4m19s, 5m02s with it on. There was never anything to cache —
+  `run-install: false` means `setup-pixi` only fetches the pixi binary.
+
+**Finding confirmed: `release.yml`'s docs dispatch is now redundant.** `docs` ran twice for one
+release — 37514666148 from its own `push: [main]` trigger at 18:52:39, and 37516428499 from
+`release.yml`'s `dispatch-docs` at 19:06:17 — both on `8298edc`, both green, 13 minutes apart. The
+dispatch step's comment still claims the release commit "is pushed with GITHUB_TOKEN, and GitHub
+suppresses workflow triggers on GITHUB_TOKEN pushes", which stopped being true the moment the push
+moved to `RELEASE_PUSH_TOKEN`. It is harmless only because `pages-${{ github.ref }}` serialises
+the pair; the second run republishes identical bytes.
+
+**Exactly one `consumer-proof` run** (37516425291, artifact `consumer-proof-v0.6.0`, 28s against
+the v0.5.3 baseline of 27s). So the `release: published` suppression still applies to a release
+created with `github.token` — `author: github-actions[bot]` — and the explicit dispatch remains
+the only trigger, not a second one. The bug class PR #113 removed did not come back.
+
+**Correction to the brief this session worked from:** task-47 AC#7, task-52 and task-53 AC#7 are
+*already* `[x]` and all three tasks are `status: Done`, closed 2026-10-04/05 on the Castellan
+v0.5.2→v0.5.3 regeneration cycle. They were not waiting on this release. Nothing to reopen or
+re-close; this note is the evidence for `RELEASE_PUSH_TOKEN` only.
+
+**Proposals, not agreed:**
+
+- **Delete the docs dispatch and `actions: write` from `release.yml`. Recommended.** The last step
+  of the release job and the `actions: write` scope that exists solely for it are now dead weight:
+  the push already rebuilds the site 13 minutes earlier, from the same SHA. Removing them drops
+  the release job's only Actions-API write and is the same cleanup PR #113 did to `auto-release`,
+  for the same reason. Leave `docs.yml`'s `pages-${{ github.ref }}` group alone — it is what makes
+  the double trigger harmless while it survives. One caveat worth writing into the change: if
+  `RELEASE_PUSH_TOKEN` ever reverts to `github.token`, both the docs push trigger *and* this
+  dispatch disappear together, so the removal should cite this run as its evidence.
+- **Make `ci` a required status check on `main`. Recommended, and still unaddressed.** PR #111
+  merged at 17:07:09Z with its own `ci` run 37501045602 already FAILURE, which is what bricked
+  `auto-release` for an hour. No in-repo check can stop that — check 11 only catches the specific
+  scope typo. A branch protection rule requiring `ci` is the only mechanism, and it is a two-click
+  maintainer change, not a code change.
+- **The publisher byte-equality check: keep the fork, write the check against a documented
+  exception. Recommended over the alternatives.** `pixi-sandbox init --check` reports drift
+  because the committed publisher deliberately builds the planner and the packed bootstrap from
+  the checked-out tree, while a fresh render installs the released CLI from prefix.dev and brings
+  the weekly `schedule:`, the `upgrade` job and the diagnostics logging. Teaching the template a
+  `PIXI_SANDBOX_BIN` knob (the 2026-10-01 idea) exports an owner-only concern into every
+  consumer's generated workflow to buy one repository a lint; dropping the dogfooding claim throws
+  away the only thing that proves `[workflow]` renders correctly against a real repository — which
+  is exactly what this release just demonstrated. The tractable version is a check that asserts
+  the *policy blocks* (`paths:`, `concurrency:`, the two `cache:` lines) are byte-identical to
+  `render_github_workflow`'s output for `[workflow]` in `.pixi-sandbox.toml`, with the
+  source-build steps listed as a named, tested exception. That is check 10's twin scoped to the
+  part that actually regresses silently, and it is what was done by hand for PR #114.
+- **`crates/**` in `push_paths`: leave it. One measured caveat worth recording.** The release did
+  not refute source-sensitivity — it could not, since `8298edc` changed no `.rs` file. But the
+  repack *is* source-sensitive by construction: the publish job's `Build source pixi-sandbox` step
+  runs `cargo build -p pixi-sandbox --release` and packs that binary as the transport bootstrap
+  (`tools.pixi-sandbox`, 3,778,928 bytes, v0.6.0 in the current manifest), so any change under
+  `crates/pixi-sandbox`, `crates/pixi-sandbox-core` or `crates/pixi-sandbox-git` changes the
+  shipped transport. Narrowing to the plain derived seven would reintroduce the stale-transport
+  class. The caveat: `crates/xtask` is **not** in that dependency graph, and commit `11ec40b`
+  (merged as `fe06c3a`) is a real example — it touched only `crates/xtask/**`, `.github/**` and
+  markdown, matched no derived-seven path, and under the current filter would fire a full repack
+  whose packed bootstrap is byte-identical. Narrowing `crates/**` to the three bootstrap crates
+  would remove that false positive but makes the list silently wrong the day a fourth crate joins
+  the graph. A ~4-minute redundant repack is the cheaper error than a stale transport, so: leave
+  it, and if anyone does narrow it, pair the change with a check that derives the path list from
+  the `pixi-sandbox` bin's workspace dependencies rather than hand-maintaining it.
