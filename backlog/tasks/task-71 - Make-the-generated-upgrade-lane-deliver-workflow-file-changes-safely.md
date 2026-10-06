@@ -1,10 +1,10 @@
 ---
 id: TASK-71
 title: Make the generated upgrade lane deliver workflow-file changes safely
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-04 19:49'
-updated_date: '2026-10-06 19:55'
+updated_date: '2026-10-06 21:01'
 labels:
   - ci
   - github-actions
@@ -40,7 +40,7 @@ Make the upgrade path honest and reviewable without leaving scheduled consumers 
 - [x] #2 When no suitable upgrade credential is configured, the scheduled/manual lane does not emit an unexplained red failure: it writes the GitHub error and step summary with the exact missing permission/secret and a remediation, and preserves a git-apply-able patch or equivalent artifact containing all regenerated owned files.
 - [x] #3 The fallback never pushes main, never weakens exact-version pinning, never edits consumer configuration, and keeps the human review gate and explicit post-merge publish behavior.
 - [x] #4 Renderer and fixture tests cover configured-token, absent-token, push-refusal, and fallback paths; generated workflow remains actionlint-clean and init regeneration remains byte-identical.
-- [ ] #5 A connected Castellan run proves the repaired lane produces a reviewable PR or documented patch artifact, and the resulting generated files use the exact self-updated version.
+- [x] #5 A connected Castellan run proves the repaired lane produces a reviewable PR or documented patch artifact, and the resulting generated files use the exact self-updated version.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -56,6 +56,14 @@ Make the upgrade path honest and reviewable without leaving scheduled consumers 
 2026-10-04 — implemented the workflow-file delivery fix test-first. The generated upgrade lane now accepts optional `PIXI_SANDBOX_UPGRADE_TOKEN` and uses it consistently for checkout, git push, and gh PR creation. The built-in GITHUB_TOKEN remains the checkout/artifact fallback but is never treated as workflow-capable. With no suitable token, or after a refused push/PR creation, the lane stays green, writes a GitHub error and step-summary remediation naming `Workflows: write`, and uploads `pixi-sandbox-upgrade-artifacts` containing a git-apply-able patch. The fallback never pushes main or stages config. Added renderer contracts for token wiring, patch preservation, artifact upload, and non-bare delivery refusal; regenerated the golden consumer workflow and documented the secret/fallback policy in the CI publishing guide.
 
 Evidence: `pixi run --frozen fmt` green; `pixi run --frozen lint` green including actionlint, generated-workflow, and repository checks; `pixi run --frozen test` green at 631 passing / 1 skipped (381 sandbox, 21 git, 142 core, 87 xtask). AC#5 remains open until a connected Castellan run proves the repaired generated lane produces either the reviewable PR with the workflow-capable token or the documented patch artifact without it.
+
+2026-10-06 20:47 — AC#5 PROVEN. Castellan run 37529029130 (workflow_dispatch, upgrade=0.5.3) closed this on the documented-patch-artifact branch.
+
+What ran: plan and publish skipped, upgrade succeeded in 10s (20:47:14 to 20:47:24Z). Steps 6, 7 and 8 are all gated on drift == true and all executed, so the drift guard fired for real — self-update accepted the downgrade from 0.6.0 to 0.5.3, which the earlier audit had assumed was unforceable. Branch pixi-sandbox-upgrade/0.5.3 at c645409 carries exactly the three owned files regenerated to the self-updated version: publish-sandbox.yml +12/-59, relock.yml +19/-233, scripts/restore.sh +1/-1. Artifact pixi-sandbox-upgrade-artifacts, 7561 bytes. The job stayed green and surfaced a failure annotation, which is AC#2 behaving as designed rather than an unexplained red run.
+
+Diagnostic the run settles: the handoff emitted "the branch was pushed but gh could not open the pull request". That is the third branch of write_handoff, reached only after the empty-token check and the push both passed, so PIXI_SANDBOX_UPGRADE_TOKEN IS configured in Castellan and does carry Workflows: write — GITHUB_TOKEN cannot push .github/workflows/* and the push of two workflow files succeeded. What the credential lacks is pull-request creation. The remaining fix is Pull requests: Read and write on that token or App installation, not the Workflows permission the remediation string suggests; that string is now slightly misleading for this case and is worth narrowing.
+
+Cleanup owed: pixi-sandbox-upgrade/0.5.3 is a downgrade proposal left on Castellan by this proof and should be deleted so nobody merges it.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
