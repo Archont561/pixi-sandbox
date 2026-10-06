@@ -23,9 +23,25 @@ on:
         type: string
         default: ""
 
+# One release build per tag, whatever started it. Since PR #113 removed auto-release's explicit
+# `gh workflow run` dispatches, this workflow starts from the tag push itself, so a push and a
+# manual `pixi run dispatch-release <tag>` recovery can now overlap: `inputs.version ||
+# github.ref_name` collapses both spellings of one tag onto the same group (a tag push gives
+# `v1.2.3`; `dispatch-release` passes `--ref v1.2.3 -f version=v1.2.3`), and a dispatch with no
+# version — the artifacts-only build — groups per branch instead.
+#
+# `cancel-in-progress: false` for the same reason auto-release.yml sets it: this builds and
+# uploads assets across five runners and then publishes a GitHub Release and the prefix.dev
+# packages. Cancelling midway leaves a partial release, which is worse than a redundant one.
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   # Needed to dispatch docs.yml after publishing the release (see "Trigger docs rebuild").
+  # docs.yml carries its own `concurrency: pages-${{ github.ref }}` group, so that dispatch
+  # cannot race the `push: [main]` trigger it shares a workflow with — it stays as it is.
   actions: write
 
 jobs:

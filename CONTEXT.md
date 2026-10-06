@@ -1143,8 +1143,48 @@ that needed it are gone. A dry run (`-f dry-run=true`) works without the secret 
 pushes, so it exercises prepare + `check-repository` but **not** the Workflows permission; the
 first real cut is the only test of that.
 
-**Proposal, not agreed:** `release.yml` and `publish-sandbox.yml` still have no `concurrency:`
-guard. That was survivable while every start was a serialised explicit dispatch; now that both
-start from push events, two pushes close together can overlap. `publish-sandbox.yml` is a
-generated artifact, so a guard there means editing the template and re-rendering — worth doing,
-but it is a consumer-visible change rather than a local one.
+**Done, and the earlier note was wrong about the cost.** Both workflows now carry a
+`concurrency:` guard, closing the last two of eight. The note above said a guard on
+`publish-sandbox.yml` "means editing the template" and is "a consumer-visible change" — it is
+neither. task-53 already shipped `[workflow.concurrency]` (`ConcurrencyPolicy` in
+`sandbox_config.rs`, validated, rendered, golden-fixtured as `publish-sandbox.concurrency.yml`
+and asserted in `tests/cli.rs`). No template change and no new code was needed: this repository
+simply had no `[workflow]` table.
+
+- `release.yml`: `release-${{ inputs.version || github.ref_name }}`, `cancel-in-progress:
+  false`. The two spellings of one tag collapse onto one group — a tag push gives `v1.2.3`, and
+  `dispatch-release` passes `--ref v1.2.3 -f version=v1.2.3`. Cancelling is not an option: five
+  runners' assets plus a prefix.dev upload plus a GitHub Release, so a cancelled run is a
+  partial release (auto-release.yml's reasoning, verbatim).
+- `publish-sandbox.yml`: `publish-sandbox-${{ github.repository }}`, `cancel_in_progress =
+  false`, set in `.pixi-sandbox.toml`. Repository-wide, not per-ref, because the contended
+  resource is the force-pushed transport branch every run writes regardless of its ref. Worth
+  knowing when reading `false`: GitHub gives at most one running plus one pending run, and a
+  newly queued run cancels the older *pending* one — so `false` prevents an aborted force-push,
+  it does not promise that every push publishes. Here that is correct, since a superseded
+  pending repack would pack older main.
+
+**D18 is real and was taken deliberately, not inherited.** Adding `[workflow]` at all flips
+`push_paths` to a derivation and `setup_pixi_cache` to `false`, so both are now written out
+explicitly. `push_paths` is the derived seven (`.pixi-sandbox.toml`, `pixi.toml`, `pixi.lock`,
+`package.json`, `bun.lock`, `Cargo.toml`, `Cargo.lock`) **plus `crates/**`**: the derivation
+excludes source, which is right for a transport keyed on lockfiles but wrong for *this*
+repository, whose publisher builds the packed bootstrap from the checked-out tree. Verified
+rather than assumed that a release commit still fires the publisher: `prepare-release`'s own
+`.release-touched` report lists `Cargo.toml`, `pixi.toml` and `Cargo.lock` — which is what the
+deleted auto-release dispatch used to guarantee by hand after the v0.4.2 stale-transport
+incident. `setup_pixi_cache = false` because `setup-pixi` runs with `run-install: false` here.
+
+**Finding, unresolved: the committed `publish-sandbox.yml` is not a pristine render.** The
+2026-10-01 note "no byte-equality check for `publish-sandbox.yml`" has since become a real
+divergence, and the file's own "Regenerate this file instead of editing it" header is now
+misleading. `init --check` against this tree reports drift: the committed copy builds the
+planner and the bootstrap from source (deliberate, and commented in the file), while a fresh
+render installs the released CLI from prefix.dev and carries the weekly `schedule:`, the
+`upgrade` job and the diagnostics logging that landed in the template afterwards. So the three
+policy blocks above were applied to the committed file as the exact bytes the generator emits
+for them (diffed against a render of the same config in a scratch tree, line for line), not by
+regenerating — regenerating would have silently reverted the source-build adaptation. Adding
+check 10's byte-equality twin for the publisher is therefore **not** a small companion change:
+it first needs a decision on whether this repository keeps the source-build fork at all, or
+teaches the template a source-build knob (the `PIXI_SANDBOX_BIN` idea from 2026-10-01).
