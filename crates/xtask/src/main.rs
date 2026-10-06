@@ -18,6 +18,7 @@ mod release_assets;
 mod release_refs;
 mod repo_checks;
 mod smoke;
+mod starter;
 mod util;
 mod version;
 mod workflow;
@@ -174,6 +175,48 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
+    /// Write the starter's own files (Pixi project, ignore file, README) for one release.
+    StarterScaffold {
+        /// Directory the starter tree is assembled in.
+        #[arg(long)]
+        out: PathBuf,
+        /// Release tag the starter is pinned to, for example v1.2.3.
+        #[arg(long)]
+        tag: String,
+        /// Immutable source commit the release was built from.
+        #[arg(long)]
+        source_commit: String,
+        /// Pixi workspace name written into the scaffolded pixi.toml.
+        #[arg(long, default_value = "pixi-sandbox-starter")]
+        name: String,
+        /// Repository the release came from.
+        #[arg(long, default_value = "Archont561/pixi-sandbox")]
+        source_repo: String,
+        /// Repository the starter is published to.
+        #[arg(long, default_value = "Archont561/pixi-sandbox-starter")]
+        starter_repo: String,
+    },
+    /// Report every reason an assembled starter tree is not publishable for its tag.
+    StarterVerify {
+        /// Assembled starter tree.
+        #[arg(long)]
+        dir: PathBuf,
+        /// Release tag the tree must be pinned to.
+        #[arg(long)]
+        tag: String,
+    },
+    /// Verify a downloaded release asset against the release's own SHA256SUMS.
+    StarterVerifyAsset {
+        /// Downloaded asset.
+        #[arg(long)]
+        binary: PathBuf,
+        /// Downloaded SHA256SUMS for the same release.
+        #[arg(long)]
+        sums: PathBuf,
+        /// Asset name as it appears in SHA256SUMS.
+        #[arg(long)]
+        asset: String,
+    },
     /// Turn a prepared tree into the release commit, tag, and pushes (auto-release's half).
     CommitRelease {
         /// Release tag to cut, `vX.Y.Z`. Positional, so the workflow's one-liner carries no
@@ -221,6 +264,40 @@ fn run_args(args: Args) -> Result<()> {
             eprintln!("release references agree with the declared version");
             Ok(())
         }
+        Command::StarterScaffold {
+            out,
+            tag,
+            source_commit,
+            name,
+            source_repo,
+            starter_repo,
+        } => starter::scaffold(
+            &out,
+            &name,
+            &tag,
+            &source_commit,
+            &source_repo,
+            &starter_repo,
+        ),
+        Command::StarterVerify { dir, tag } => {
+            let findings = starter::verify(&dir, &tag)?;
+            if !findings.is_empty() {
+                for finding in &findings {
+                    eprintln!("::error::{finding}");
+                }
+                anyhow::bail!(
+                    "{} starter finding(s); the previous starter revision is left unchanged",
+                    findings.len()
+                );
+            }
+            eprintln!("starter tree is pinned to {tag} and carries every required file");
+            Ok(())
+        }
+        Command::StarterVerifyAsset {
+            binary,
+            sums,
+            asset,
+        } => starter::verify_asset(&binary, &sums, &asset),
         Command::CheckCondaPlatforms { dir } => conda_platforms::check(&root.join(dir)),
         Command::SmokeCondaPackage { out_dir } => {
             smoke::smoke_conda_package(&root, &root.join(out_dir))
