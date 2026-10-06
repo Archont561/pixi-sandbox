@@ -18,6 +18,7 @@ mod release_assets;
 mod release_refs;
 mod repo_checks;
 mod smoke;
+mod starter;
 mod util;
 mod version;
 mod workflow;
@@ -174,6 +175,84 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
+    /// Write the starter's own files (Pixi project, ignore file, README) for one release.
+    StarterScaffold {
+        /// Directory the starter tree is assembled in.
+        #[arg(long)]
+        out: PathBuf,
+        /// Release tag the starter is pinned to, for example v1.2.3.
+        #[arg(long)]
+        tag: String,
+        /// Immutable source commit the release was built from.
+        #[arg(long)]
+        source_commit: String,
+        /// Pixi workspace name written into the scaffolded pixi.toml.
+        #[arg(long, default_value = "pixi-sandbox-starter")]
+        name: String,
+        /// Repository the release came from.
+        #[arg(long, default_value = "Archont561/pixi-sandbox")]
+        source_repo: String,
+        /// Repository the starter is published to.
+        #[arg(long, default_value = "Archont561/pixi-sandbox-starter")]
+        starter_repo: String,
+    },
+    /// Report every reason an assembled starter tree is not publishable for its tag.
+    StarterVerify {
+        /// Assembled starter tree.
+        #[arg(long)]
+        dir: PathBuf,
+        /// Release tag the tree must be pinned to.
+        #[arg(long)]
+        tag: String,
+    },
+    /// Verify a downloaded release asset against the release's own SHA256SUMS.
+    StarterVerifyAsset {
+        /// Downloaded asset.
+        #[arg(long)]
+        binary: PathBuf,
+        /// Downloaded SHA256SUMS for the same release.
+        #[arg(long)]
+        sums: PathBuf,
+        /// Asset name as it appears in SHA256SUMS.
+        #[arg(long)]
+        asset: String,
+    },
+    /// Fail unless a tag is a published release at the handed-off commit with its assets.
+    StarterVerifyRelease {
+        /// Repository the release must belong to.
+        #[arg(long, default_value = "Archont561/pixi-sandbox")]
+        repo: String,
+        /// Release tag handed off by the release workflow.
+        #[arg(long)]
+        tag: String,
+        /// Immutable commit the release workflow handed off with the tag.
+        #[arg(long)]
+        commit: String,
+    },
+    /// Commit, tag, and push one validated starter revision. Never force-pushes.
+    StarterPublish {
+        /// Assembled and validated starter tree (a git worktree with its remote configured).
+        #[arg(long)]
+        dir: PathBuf,
+        /// Remote to push to; must name the canonical starter repository.
+        #[arg(long)]
+        remote: String,
+        /// Canonical starter repository the remote is checked against.
+        #[arg(long, default_value = "Archont561/pixi-sandbox-starter")]
+        starter_repo: String,
+        /// Release tag this revision was generated from.
+        #[arg(long)]
+        tag: String,
+        /// Branch refspec to push.
+        #[arg(long, default_value = "HEAD:refs/heads/main")]
+        branch: String,
+        /// Immutable source commit recorded in the starter commit message.
+        #[arg(long)]
+        source_commit: String,
+        /// Validate and report what would be published without committing or pushing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Turn a prepared tree into the release commit, tag, and pushes (auto-release's half).
     CommitRelease {
         /// Release tag to cut, `vX.Y.Z`. Positional, so the workflow's one-liner carries no
@@ -221,6 +300,60 @@ fn run_args(args: Args) -> Result<()> {
             eprintln!("release references agree with the declared version");
             Ok(())
         }
+        Command::StarterScaffold {
+            out,
+            tag,
+            source_commit,
+            name,
+            source_repo,
+            starter_repo,
+        } => starter::scaffold(
+            &out,
+            &name,
+            &tag,
+            &source_commit,
+            &source_repo,
+            &starter_repo,
+        ),
+        Command::StarterVerify { dir, tag } => {
+            let findings = starter::verify(&dir, &tag)?;
+            if !findings.is_empty() {
+                for finding in &findings {
+                    eprintln!("::error::{finding}");
+                }
+                anyhow::bail!(
+                    "{} starter finding(s); the previous starter revision is left unchanged",
+                    findings.len()
+                );
+            }
+            eprintln!("starter tree is pinned to {tag} and carries every required file");
+            Ok(())
+        }
+        Command::StarterVerifyAsset {
+            binary,
+            sums,
+            asset,
+        } => starter::verify_asset(&binary, &sums, &asset),
+        Command::StarterVerifyRelease { repo, tag, commit } => {
+            starter::verify_release(&repo, &tag, &commit)
+        }
+        Command::StarterPublish {
+            dir,
+            remote,
+            starter_repo,
+            tag,
+            branch,
+            source_commit,
+            dry_run,
+        } => starter::publish(
+            &dir,
+            &remote,
+            &starter_repo,
+            &tag,
+            &branch,
+            &source_commit,
+            dry_run,
+        ),
         Command::CheckCondaPlatforms { dir } => conda_platforms::check(&root.join(dir)),
         Command::SmokeCondaPackage { out_dir } => {
             smoke::smoke_conda_package(&root, &root.join(out_dir))

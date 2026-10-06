@@ -25,6 +25,13 @@ Final test count: `pixi run --frozen test` → 556 passed, 1 skipped (up from th
 this plan started from), with `clippy -D warnings`, `fmt`, and `lint` all clean as of the task-64
 commit.
 
+**Follow-up, 2026-10-06:** the `clippy::pedantic` pass this plan defers to "Workstream 4" below was
+never written as a section and never run — the string appears exactly once in this file, in the
+sentence promising it. It has now been run and recorded in
+`backlog/docs/plans/source-pedantic-lint-audit/doc-12`, which also finds that **A3's remainder is
+still open**: task-57 executed only `pack::run`, and `clippy::too_many_lines` independently flags
+the other five functions A3 listed. doc-12's successor is task-77.
+
 ## Source context and method
 
 Scanned: all four crates (`pixi-sandbox-core`, `pixi-sandbox-git`, `pixi-sandbox`, `xtask`) — 16,734 src lines + 9,169 test lines across 29 test files. Method: `wc -l` per file, a brace-depth heuristic to rank function length (two outliers from char-literal braces discarded — `asset_name_of` and `bash32_surface` are not actually 700-line functions, see the real sizes below), targeted `grep`/`rg` for duplicated literals and patterns, and manual reading of the highest-signal hits. No `cargo clippy --all-targets -- -D warnings` pedantic pass was run as part of this scan (the default lint set is already clean per `AGENTS.md`); running `clippy::pedantic` once is listed as a cheap follow-up in Workstream 4.
