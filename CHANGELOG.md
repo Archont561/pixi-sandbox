@@ -6,7 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.5.3](https://github.com/Archont561/pixi-sandbox/compare/v0.5.2...fe130fa482a80756f8815e4374ea7e2f8afce684) (2026-10-04)
+## [v0.6.0](https://github.com/Archont561/pixi-sandbox/compare/v0.5.3...ea0f77d892111a7c33ed5d21d423864917cc5b38) (2026-10-06)
+
+### Features
+
+* **relock:** publish repaired-head validation verdict
+([b9b03ee](https://github.com/Archont561/pixi-sandbox/commit/b9b03ee3798ac9373adfaa86ea0b6ec44b463b8f))
+
+### Fixes
+
+* **ci:** stop auto-release dispatching workflows its own pushes trigger
+([766e7f5](https://github.com/Archont561/pixi-sandbox/commit/766e7f53b5b697d2f2e46952152b02122ea8a0cb))
+* **ci:** drop the invalid workflows permission scope and guard it
+([11ec40b](https://github.com/Archont561/pixi-sandbox/commit/11ec40b3544d9fc198d5ad09980d0ad517c94214))
+* **devcontainer:** install opencode from the default environment
+([ebe7ed4](https://github.com/Archont561/pixi-sandbox/commit/ebe7ed446ce225abbc2f6443db54fb67c9de529b))
+* **workflow:** deliver generated upgrades with a safe fallback (#102)
+([8b7e23c](https://github.com/Archont561/pixi-sandbox/commit/8b7e23cc0eb5650f032f025f66e443adb045a871)),
+closes [#102](https://github.com/Archont561/pixi-sandbox/issues/102)
+* **release:** refresh relock after version bump (#100)
+([bcb4df8](https://github.com/Archont561/pixi-sandbox/commit/bcb4df8459a99d4c0ad7eda855be032182dcacab)),
+closes [#100](https://github.com/Archont561/pixi-sandbox/issues/100)
+
+### Documentation
+
+* **backlog:** close task 68 on a connected failing publish run
+([6b5a514](https://github.com/Archont561/pixi-sandbox/commit/6b5a5145790ec2648dd2d1aec8b3db23868f0ad4)),
+closes [#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+* **backlog:** close task 47 on the connected upgrade cycle
+([145bbfb](https://github.com/Archont561/pixi-sandbox/commit/145bbfb8b1e17b261707daf2df67ddf579512aa0)),
+closes [#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#13](https://github.com/Archont561/pixi-sandbox/issues/13)
+[#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+[#107](https://github.com/Archont561/pixi-sandbox/issues/107)
+
+### Build System
+
+* **pixi:** add shellcheck so actionlint lints generated Bash locally
+([5dfa84e](https://github.com/Archont561/pixi-sandbox/commit/5dfa84eed6f1f2529c28c89d5bb59601510b09b5)),
+closes [#103](https://github.com/Archont561/pixi-sandbox/issues/103)
+
+### CI
+
+* serialise the sandbox publisher through a [workflow] policy
+([010578b](https://github.com/Archont561/pixi-sandbox/commit/010578b4d707592ae24615e100025d91944aa834)),
+closes [#113](https://github.com/Archont561/pixi-sandbox/issues/113)
+* serialise release.yml with a tag-scoped concurrency group
+([c83f463](https://github.com/Archont561/pixi-sandbox/commit/c83f463d7019330fdaa6ae1fdaaad6044f2b1385)),
+closes [#113](https://github.com/Archont561/pixi-sandbox/issues/113)
+* grant release workflow permission
+([c810785](https://github.com/Archont561/pixi-sandbox/commit/c810785726fb09ef6c0f92af660b65fb603d7820))
+* **deps:** bump actions/github-script from 8.0.0 to 9.0.0 (#107)
+([7f98261](https://github.com/Archont561/pixi-sandbox/commit/7f98261221843660c7e6a2eb58b5edaebd7c4010)),
+closes [#107](https://github.com/Archont561/pixi-sandbox/issues/107)
+* **deps:** bump actions/cache from 4.3.0 to 6.1.0 (#106)
+([ee21ec4](https://github.com/Archont561/pixi-sandbox/commit/ee21ec43253ecee40c9d7171fff4d0bd7e5ad6c4)),
+closes [#106](https://github.com/Archont561/pixi-sandbox/issues/106)
+
+### [v0.5.3](https://github.com/Archont561/pixi-sandbox/compare/v0.5.2...v0.5.3) (2026-10-04)
 
 #### Features
 
