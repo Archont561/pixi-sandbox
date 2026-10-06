@@ -1081,3 +1081,37 @@ retention) carrying a log that proves `doctor` and `publish` were never reached,
   `gh workflow run` is `403` on `actions:write`; `gh issue comment` on this repo works. So the
   only connected trigger available to an agent here is a **push to a branch of this repository**,
   which is how AC#7 was proved at all.
+
+### 2026-10-06 — auto-release bricked by an invalid permission scope; guard landed, secret still missing
+
+**Landed** (so: not proposals): `.github/workflows/auto-release.yml` dropped the
+`workflows: write` scope merged in PR #111, and `check-repository` grew check 11
+(`repo_checks/workflow_permissions.rs`) so the same edit cannot reach main again. Verified
+against the real tree: reintroducing the line fails `xtask check-repository` with
+`auto-release.yml:93: unknown permission scope \`workflows\``, and reverting it goes green.
+actionlint 1.7.12 reports the same line, which is what CI run 37501054714 was failing on.
+
+**Open, and only a maintainer can close it:** the *original* failure is still there. Run
+37498336562 died at `Commit, tag, and push` because `prepare-release` restamps the committed
+relock render, so every release commit touches `.github/workflows/relock.yml`, and GITHUB_TOKEN
+is barred from pushing workflow files. Removing the bogus scope un-bricks the workflow but does
+not grant that push. **`RELEASE_PUSH_TOKEN` must be set** to a PAT with the `workflow` scope
+(or a fine-grained token with `Workflows: read and write`, or a GitHub App token with the
+Workflows permission); `auto-release.yml` already feeds that secret to checkout with
+`persist-credentials: true`, so nothing else needs changing. Until it is set, `auto-release`
+will start, prepare a release, and fail at the push — the next cut will look like a new
+regression if this note is lost. (`gh secret list` is 403 for an App token, so whether the
+secret exists at all could not be confirmed from here; the `refusing to allow a GitHub App`
+wording in the rejection suggests it is unset and falling back to `github.token`.)
+
+**Proposals, not agreed:**
+
+- **Decouple the relock stamp from the release commit.** The push above only needs a
+  workflow-scoped token because `prepare_release.rs` renders `relock.yml` with the new version
+  (the stamp skew v0.5.3 exposed is why it does). If the stamp were derived at run time instead
+  of committed, release commits would stop touching `.github/workflows/**` and GITHUB_TOKEN
+  would suffice — no long-lived PAT in the repository at all. That trades one consistency
+  oracle for one fewer credential, which is a real design call, not a cleanup.
+- **PR #111 merged with `ci` already red** (merged 17:07:09Z; the PR's own ci run 37501045602
+  was FAILURE). Check 11 would not have stopped that merge — only a required-status-check rule
+  on `main` would. Worth deciding whether `ci` becomes required.

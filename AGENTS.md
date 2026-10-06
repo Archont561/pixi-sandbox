@@ -113,6 +113,18 @@ e2e suite's `ci` feature, replayed in both tiers by one-line pixi tasks; `script
 is the only sanctioned shell bootstrap. A reviewed exception (a generated consumer artifact,
 say) carries `multiline-run-allowed` on the step.
 
+**Workflow permission rule.** Every `permissions:` scope must be one GitHub accepts; check 11
+fails the rest. An invented scope is not a weaker permission, it is a parse error that takes
+the whole file down — GitHub records a 0s run with no jobs and no diagnostic outside the
+Actions tab, which is how a one-line `workflows: write` left `auto-release.yml` unrunnable.
+In particular there is no `workflows` scope: pushing a commit that touches
+`.github/workflows/**` is a property of the *token* (a PAT's `workflow` scope, a fine-grained
+token's `Workflows: read and write`, or a GitHub App permission), and `permissions:` only
+tunes GITHUB_TOKEN, which GitHub bars from workflow files outright. `actions:` is a different
+right — workflow *runs*, not workflow *files*. The scope list tracks the pinned actionlint, so
+the two gates in `pixi run lint` cannot contradict each other; a scope newer than both carries
+the house `stale-ref-allowed` marker until the pin catches up.
+
 ```bash
 # One development environment. Pixi supplies it; Turbo owns the cross-language task graph.
 pixi run --frozen lint           # per-crate clippy + fmt/deny + workflow/TOML/Biome/repo checks
