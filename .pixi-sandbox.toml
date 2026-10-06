@@ -23,6 +23,48 @@ max_transport_mib = 2048
 max_repository_push_mib = 2048
 max_restore_required_mib = 8192
 
+# CI policy for the generated publisher (task-53). Every field below is decided on purpose,
+# because the *presence* of this table alone moves `push_paths` and `setup_pixi_cache` to new
+# defaults (decision D18) — both are therefore written out explicitly rather than inherited.
+[workflow]
+# Explicit, not derived. The derivation (`derive_push_paths`) would yield the seven manifest and
+# lock files below and nothing else; this repository's publisher additionally builds the
+# pixi-sandbox binary it packs as the transport bootstrap *from the checked-out source*, so a
+# `crates/**` change really does change the transport and must repack. A release commit still
+# fires the publisher: `prepare-release` rewrites Cargo.toml, pixi.toml and Cargo.lock (verified
+# against its own `.release-touched` report), which is what the deleted auto-release dispatch
+# used to guarantee by hand after the v0.4.2 stale-transport incident.
+push_paths = [
+  ".pixi-sandbox.toml",
+  "Cargo.lock",
+  "Cargo.toml",
+  "bun.lock",
+  "crates/**",
+  "package.json",
+  "pixi.lock",
+  "pixi.toml",
+]
+# D18's default, taken deliberately: `setup-pixi` runs with `run-install: false` here, so its
+# cache would be keyed on this manifest without holding the environments the publish job then
+# installs itself with `pixi install --frozen`.
+setup_pixi_cache = false
+
+# One repack at a time. The publish job force-pushes the orphan transport branch
+# (`crates/pixi-sandbox-git/src/shell.rs`, `git push --force`), so two overlapping runs are two
+# concurrent force-pushes to one ref — the transport-inconsistency class task-44 fixed. The group
+# is repository-wide rather than per-ref (auto-release.yml's shape, not ci.yml's) because the
+# contended resource is the transport branch, which every run of this workflow writes regardless
+# of the ref it started from.
+#
+# `cancel_in_progress = false`: never abort a pack/verify/push mid-flight. Note what GitHub
+# actually guarantees — not a FIFO queue but at most one running plus one pending run, where a
+# newly queued run cancels the older *pending* one. That is the wanted behaviour here (a
+# superseded pending repack is redundant: the newer run packs from newer main), but it does mean
+# `false` is not a promise that every push publishes.
+[workflow.concurrency]
+group = "publish-sandbox-${{ github.repository }}"
+cancel_in_progress = false
+
 [[bundle]]
 name = "developer"
 # One prefix now carries Rust, Bun and repository utilities so the restored developer runs the
