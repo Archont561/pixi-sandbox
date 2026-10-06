@@ -37,6 +37,10 @@
 //! 10. task-39 — `.github/workflows/relock.yml` is the committed render of the generator
 //!     `pixi-sandbox init` hands consumers, so the lane this repository runs is provably the
 //!     lane it ships; `xtask render-relock` is the only way to change it.
+//! 11. every `permissions:` scope is one GitHub accepts. An invented scope is not a weaker
+//!     permission, it is a parse error that takes the whole workflow file down: a one-line
+//!     `workflows: write` left `auto-release.yml` unrunnable, every run ending in 0s with no
+//!     jobs and no diagnostic outside the Actions tab (run 37501052919).
 
 mod badges;
 mod bash32;
@@ -47,6 +51,7 @@ mod release_tags;
 mod relock;
 mod stale_refs;
 mod support;
+mod workflow_permissions;
 mod workflow_shape;
 
 #[cfg(test)]
@@ -94,6 +99,7 @@ const CHECKS: &[Check] = &[
     bash32::bash32_surface,                      // 8
     workflow_shape::workflow_shape,              // 9
     relock::generated_relock_is_current,         // 10
+    workflow_permissions::workflow_permissions,  // 11
 ];
 
 /// Run every check, returning all failures in one pass so a red run names every problem.
@@ -121,7 +127,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render; every permissions: scope is one GitHub accepts" // stale-ref-allowed
     );
     Ok(())
 }

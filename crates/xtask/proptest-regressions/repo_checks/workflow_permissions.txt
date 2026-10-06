@@ -1,0 +1,4 @@
+# Seeds for property tests in `repo_checks/workflow_permissions.rs`.
+#
+# Keep in version control so a minimized scope name that the documented-scope set and the
+# block parser disagree about stays reproducible on every host.

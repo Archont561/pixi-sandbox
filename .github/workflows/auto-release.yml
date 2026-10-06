@@ -72,10 +72,24 @@ on:
         required: false
 
 # Push the release commit + tag (contents) and dispatch release.yml (actions).
+#
+# There is deliberately no `workflows` scope here. `permissions:` only tunes GITHUB_TOKEN, and
+# GITHUB_TOKEN is barred by GitHub from writing anything under `.github/workflows/` whatever
+# this block says; `workflows` is not even a scope GitHub accepts, so adding it does not fail
+# the push — it makes the whole file unparseable and every run dies in 0s with no jobs (run
+# 37501052919). `actions: write` is a different right: it covers workflow *runs*, which is what
+# the two dispatch steps below need, not workflow *files*.
+#
+# This bites because `prepare-release` restamps the committed relock render, so the release
+# commit always touches `.github/workflows/relock.yml`. Pushing it needs a token that itself
+# carries the right: set RELEASE_PUSH_TOKEN to a PAT with the `workflow` scope (classic) or
+# `Workflows: read and write` (fine-grained), or a GitHub App token with the Workflows
+# permission. The checkout step below already hands that secret to git (`persist-credentials`),
+# so the secret is the only missing piece — without it the push is rejected with
+# "refusing to allow a GitHub App to create or update workflow ... without `workflows` permission".
 permissions:
   contents: write
   actions: write
-  workflows: write
 
 # One release at a time; never cancel a release midway.
 concurrency:
