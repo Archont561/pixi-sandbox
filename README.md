@@ -228,6 +228,7 @@ The generated workflow installs the native package from the canonical prefix.dev
 | `schema` | int | **required** `1` | Config schema version |
 | `branch_prefix` | string | `"sandbox"` | Branch prefix: `<prefix>/<bundle>-<platform>` |
 | `cargo_vendor` | bool | `true` | Default vendor for bundles |
+| `budgets` | table | reviewed defaults | Pre-publish size ceilings for blob, transport, push, and restore-disk budgets |
 | `runners` | table | `{}` | Platform → runner label override |
 
 **Bundle:**
@@ -255,7 +256,7 @@ Full reference: https://archont561.github.io/pixi-sandbox/reference/configuratio
 
 ```bash
 pixi-sandbox pack --repo-root . --envs dev,docs --output-dir DIR --platform linux-64 --cargo-vendor --fetch-tools --self-bin <static>
-pixi-sandbox doctor --branch-location DIR --verify [--json] [--envs a,b]
+pixi-sandbox doctor --branch-location DIR --verify [--budget-config pixi-sandbox.toml] [--json] [--envs a,b]
 pixi-sandbox publish --input-dir DIR --branch-name NAME --remote origin [--keep N] [--dry-run]
 pixi-sandbox restore --branch-location DIR --output-path DIR [--envs a,b] [--verify-only] [--force] [--no-vendor] [--work-dir DIR] [--cargo-config auto|write|print|none]
 pixi-sandbox unpack --input-dir X --output-dir PREFIX [--env NAME] [--force] [--work-dir DIR]

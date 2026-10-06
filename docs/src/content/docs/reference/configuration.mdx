@@ -18,6 +18,13 @@ schema = 1
 branch_prefix = "sandbox"   # optional, default "sandbox"
 cargo_vendor = true         # optional, default true, top-level default for bundles
 
+# Optional publish size ceilings checked before the generated workflow pushes.
+[budgets]
+max_blob_mib = 95
+max_transport_mib = 2048
+max_repository_push_mib = 2048
+max_restore_required_mib = 8192
+
 # Optional runner overrides — required for platforms without hosted default (e.g., linux-aarch64)
 [runners]
 linux-aarch64 = "self-hosted-arm64"
@@ -44,7 +51,26 @@ cargo_vendor = false
 | `schema` | int | **required** `1` | Config schema version. Readers refuse newer. |
 | `branch_prefix` | string | `"sandbox"` | Prefix for orphan branches: `<prefix>/<bundle>-<platform>` |
 | `cargo_vendor` | bool | `true` | Default for bundles if not set per-bundle |
+| `budgets` | table | reviewed defaults | Hard pre-publish size ceilings enforced by `doctor --budget-config` in the generated workflow |
 | `runners` | table | `{}` | Map platform → runner label override |
+
+## `[budgets]` — pre-publish size ceilings
+
+Optional, within schema 1. Missing fields use the defaults below; `pixi-sandbox init` writes the
+same values explicitly for new projects. The generated publisher runs `doctor --verify
+--budget-config <config>` after `pack` and before `publish`, so an over-budget transport fails
+without replacing the last healthy orphan branch.
+
+| Field | Type | Default | Measures | Remedy |
+|-------|------|---------|----------|--------|
+| `max_blob_mib` | float | `95` | Largest stored Git object: an unsplit blob, split part, embedded tool, or oracle file | Lower `--shard-limit-mib` or remove the single oversized payload. This value cannot exceed `95`. |
+| `max_transport_mib` | float | `2048` | Declared bytes verified by `doctor`: env pack blobs, file-oracle blobs, tools, and vendored Cargo blobs | Split the reviewed environment set into separate `[[bundle]]` entries. |
+| `max_repository_push_mib` | float | `2048` | File bytes staged into the orphan snapshot before Git compression | Split the reviewed environment set into separate `[[bundle]]` entries. |
+| `max_restore_required_mib` | float | `8192` | Restore preflight estimate: packed + unpacked env bytes plus two vendor copies | Split the reviewed environment set into separate `[[bundle]]` entries. |
+
+Budgets do not change the transport format. If a bundle grows past a ceiling, keep each branch
+self-contained by publishing fewer environments per `[[bundle]]`; do not split a single
+environment or move payloads outside the transport.
 
 ## Runners
 

@@ -102,7 +102,7 @@ jobs:
             --fetch-tools \
             --self-bin "$SELF_BIN" \
             $CARGO_VENDOR_ARG
-          "$SELF_BIN" doctor --branch-location "$TRANSPORT" --verify
+          "$SELF_BIN" doctor --branch-location "$TRANSPORT" --verify --budget-config .pixi-sandbox.toml
           BASIC_AUTH=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 | tr -d '\r\n')
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=http.extraheader
@@ -131,7 +131,7 @@ jobs:
           $packArgs = @('pack', '--repo-root', '.', '--envs', $env:ENVIRONMENTS, '--output-dir', $transport, '--platform', $env:PLATFORM, '--fetch-tools', '--self-bin', $env:SELF_BIN)
           if ($env:CARGO_VENDOR -eq 'true') { $packArgs += '--cargo-vendor' }
           & $env:SELF_BIN @packArgs
-          & $env:SELF_BIN doctor --branch-location $transport --verify
+          & $env:SELF_BIN doctor --branch-location $transport --verify --budget-config .pixi-sandbox.toml
           $bytes = [System.Text.Encoding]::UTF8.GetBytes("x-access-token:$env:PUSH_TOKEN")
           $basic = [System.Convert]::ToBase64String($bytes)
           $env:GIT_CONFIG_COUNT = '1'

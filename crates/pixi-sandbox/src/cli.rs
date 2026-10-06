@@ -309,6 +309,10 @@ pub struct DoctorArgs {
     #[arg(long, value_delimiter = ',')]
     pub envs: Vec<String>,
 
+    /// Enforce reviewed transport size budgets from a sandbox config before reporting success.
+    #[arg(long)]
+    pub budget_config: Option<PathBuf>,
+
     /// Machine-readable output.
     #[arg(long)]
     pub json: bool,
@@ -452,6 +456,7 @@ pub fn run() -> Result<()> {
                 verify_restored: None,
                 work_dir: None,
                 envs: Vec::new(),
+                budget_config: None,
                 json: false,
             })?;
             let manifest = pixi_sandbox_core::manifest::Manifest::load(

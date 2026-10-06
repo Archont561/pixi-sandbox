@@ -436,7 +436,7 @@ fn current_platform() -> Result<&'static str> {
 
 fn default_config(platform: &str) -> String {
     format!(
-        "schema = 1\nbranch_prefix = \"sandbox\"\ncargo_vendor = true\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"{platform}\"]\n"
+        "schema = 1\nbranch_prefix = \"sandbox\"\ncargo_vendor = true\n\n[budgets]\nmax_blob_mib = 95\nmax_transport_mib = 2048\nmax_repository_push_mib = 2048\nmax_restore_required_mib = 8192\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"{platform}\"]\n"
     )
 }
 

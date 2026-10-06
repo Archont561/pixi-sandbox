@@ -8,6 +8,10 @@
 use crate::error::{Error, Result};
 use crate::platform::Platform;
 use crate::tools_lock::ToolsLock;
+use crate::transport_budget::{
+    DEFAULT_MAX_BLOB_MIB, DEFAULT_MAX_REPOSITORY_PUSH_MIB, DEFAULT_MAX_RESTORE_REQUIRED_MIB,
+    DEFAULT_MAX_TRANSPORT_MIB, TransportBudgets, mib_to_bytes,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -72,6 +76,9 @@ pub struct SandboxConfig {
     pub runners: BTreeMap<String, String>,
     #[serde(default, rename = "bundle")]
     pub bundles: Vec<Bundle>,
+    /// Reviewed size thresholds for the generated publisher's pre-publish doctor gate.
+    #[serde(default)]
+    pub budgets: BudgetPolicy,
     /// Optional generated-publisher CI policy (issue #79, task-53). See [`WorkflowPolicy`].
     #[serde(default)]
     pub workflow: Option<WorkflowPolicy>,
@@ -91,6 +98,62 @@ pub struct Bundle {
     /// Override the top-level cargo-vendor policy for this bundle.
     #[serde(default)]
     pub cargo_vendor: Option<bool>,
+}
+
+/// `[budgets]`: hard size thresholds enforced by the generated publisher before it pushes a
+/// transport. Missing fields keep the reviewed defaults; consumers may lower them for tighter
+/// repositories, but `max_blob_mib` cannot be raised above the packer's GitHub-safe shard limit.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetPolicy {
+    #[serde(default = "default_max_blob_mib")]
+    pub max_blob_mib: f64,
+    #[serde(default = "default_max_transport_mib")]
+    pub max_transport_mib: f64,
+    #[serde(default = "default_max_repository_push_mib")]
+    pub max_repository_push_mib: f64,
+    #[serde(default = "default_max_restore_required_mib")]
+    pub max_restore_required_mib: f64,
+}
+
+impl Default for BudgetPolicy {
+    fn default() -> Self {
+        Self {
+            max_blob_mib: DEFAULT_MAX_BLOB_MIB,
+            max_transport_mib: DEFAULT_MAX_TRANSPORT_MIB,
+            max_repository_push_mib: DEFAULT_MAX_REPOSITORY_PUSH_MIB,
+            max_restore_required_mib: DEFAULT_MAX_RESTORE_REQUIRED_MIB,
+        }
+    }
+}
+
+impl BudgetPolicy {
+    /// Convert reviewed MiB thresholds to byte ceilings used by `doctor`.
+    pub fn to_transport_budgets(&self) -> Result<TransportBudgets> {
+        validate_positive_mib("budgets.max_blob_mib", self.max_blob_mib)?;
+        if self.max_blob_mib > DEFAULT_MAX_BLOB_MIB {
+            return Err(Error::Invalid(format!(
+                "budgets.max_blob_mib must be at most {DEFAULT_MAX_BLOB_MIB} MiB, got {}; \
+                 larger Git blobs are rejected upstream, so split before publish instead",
+                self.max_blob_mib
+            )));
+        }
+        validate_positive_mib("budgets.max_transport_mib", self.max_transport_mib)?;
+        validate_positive_mib(
+            "budgets.max_repository_push_mib",
+            self.max_repository_push_mib,
+        )?;
+        validate_positive_mib(
+            "budgets.max_restore_required_mib",
+            self.max_restore_required_mib,
+        )?;
+        Ok(TransportBudgets {
+            max_blob_bytes: mib_to_bytes(self.max_blob_mib),
+            max_transport_bytes: mib_to_bytes(self.max_transport_mib),
+            max_repository_push_bytes: mib_to_bytes(self.max_repository_push_mib),
+            max_restore_required_bytes: mib_to_bytes(self.max_restore_required_mib),
+        })
+    }
 }
 
 /// Optional consumer-owned CI policy for the generated publisher (issue #79, task-53).
@@ -214,6 +277,7 @@ pub fn plan_override(
             platforms: vec![platform.to_string()],
             cargo_vendor: None,
         }],
+        budgets: BudgetPolicy::default(),
         workflow: None,
     }
     .plan()
@@ -321,6 +385,7 @@ impl SandboxConfig {
             validate_platform(platform)?;
             validate_runner_label(platform, runner)?;
         }
+        self.budgets.to_transport_budgets()?;
         if let Some(workflow) = &self.workflow {
             validate_workflow_policy(workflow)?;
         }
@@ -441,6 +506,32 @@ fn default_branch_prefix() -> String {
 
 const fn default_cargo_vendor() -> bool {
     true
+}
+
+const fn default_max_blob_mib() -> f64 {
+    DEFAULT_MAX_BLOB_MIB
+}
+
+const fn default_max_transport_mib() -> f64 {
+    DEFAULT_MAX_TRANSPORT_MIB
+}
+
+const fn default_max_repository_push_mib() -> f64 {
+    DEFAULT_MAX_REPOSITORY_PUSH_MIB
+}
+
+const fn default_max_restore_required_mib() -> f64 {
+    DEFAULT_MAX_RESTORE_REQUIRED_MIB
+}
+
+fn validate_positive_mib(field: &str, value: f64) -> Result<()> {
+    if value.is_finite() && value > 0.0 {
+        Ok(())
+    } else {
+        Err(Error::Invalid(format!(
+            "{field} must be a positive finite MiB value, got {value}"
+        )))
+    }
 }
 
 fn validate_slug(kind: &str, value: &str) -> Result<()> {

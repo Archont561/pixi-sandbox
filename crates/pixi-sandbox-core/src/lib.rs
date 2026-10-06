@@ -11,6 +11,7 @@
 //! * [`files_manifest`] — the per-file oracle for a restored prefix (`envs/<name>/files.json`);
 //! * [`tools_lock`] — embedded helper-tool pins plus explicit external overrides (decision D4);
 //! * [`sandbox_config`] — a reviewed `.pixi-sandbox.toml` publish matrix;
+//! * [`transport_budget`] — size measurements and hard refusal thresholds for publishable bundles;
 //! * [`verify`] — walk a transport and check every declared byte, and walk a *restored
 //!   project* against the per-file oracle; also the ELF linkage check that stops a
 //!   dynamically linked tool from being shipped to an airlock.
@@ -22,6 +23,7 @@ pub mod platform;
 pub mod sandbox_config;
 pub mod shard;
 pub mod tools_lock;
+pub mod transport_budget;
 pub mod verify;
 
 pub use error::{Error, Result};
