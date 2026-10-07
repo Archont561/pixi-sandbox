@@ -75,7 +75,7 @@ jobs:
       - name: Verify the handed-off release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: pixi run -e package xtask starter-verify-release --repo "$SOURCE_REPO" --tag "$TAG" --commit "$SOURCE_COMMIT"
+        run: pixi run -e package xtask starter-verify-release -- --repo "$SOURCE_REPO" --tag "$TAG" --commit "$SOURCE_COMMIT"
 
       - name: Download the released binary
         env:
@@ -90,7 +90,7 @@ jobs:
       # `gh release download` is HTTPS and authenticated, but the starter's whole claim is that
       # a specific verified binary generated it, so the checksum is checked rather than assumed.
       - name: Verify the binary against SHA256SUMS
-        run: pixi run -e package xtask starter-verify-asset --binary "$RUNNER_TEMP/pixi-sandbox" --sums "$RUNNER_TEMP/SHA256SUMS" --asset "$ASSET"
+        run: pixi run -e package xtask starter-verify-asset -- --binary "$RUNNER_TEMP/pixi-sandbox" --sums "$RUNNER_TEMP/SHA256SUMS" --asset "$ASSET"
 
       - name: Make the released binary executable
         run: chmod +x "$RUNNER_TEMP/pixi-sandbox"
@@ -116,7 +116,7 @@ jobs:
           fetch-depth: 0
 
       - name: Scaffold the starter's own files
-        run: pixi run -e package xtask starter-scaffold --out starter --tag "$TAG" --source-commit "$SOURCE_COMMIT" --source-repo "$SOURCE_REPO" --starter-repo "$STARTER_REPO"
+        run: pixi run -e package xtask starter-scaffold -- --out starter --tag "$TAG" --source-commit "$SOURCE_COMMIT" --source-repo "$SOURCE_REPO" --starter-repo "$STARTER_REPO"
 
       - name: Generate the owned files with the released binary
         run: '"$RUNNER_TEMP/pixi-sandbox" init --project-root starter --force'
@@ -138,12 +138,12 @@ jobs:
         run: pixi run --manifest-path starter/pixi.toml dev
 
       - name: Verify the assembled starter
-        run: pixi run -e package xtask starter-verify --dir starter --tag "$TAG"
+        run: pixi run -e package xtask starter-verify -- --dir starter --tag "$TAG"
 
       - name: Publish the starter revision
         env:
           GH_TOKEN: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN || github.token }}
-        run: pixi run -e package xtask starter-publish --dir starter --remote "$GITHUB_SERVER_URL/$STARTER_REPO" --starter-repo "$STARTER_REPO" --tag "$TAG" --source-commit "$SOURCE_COMMIT" ${{ inputs.dry-run && '--dry-run' || '' }}
+        run: pixi run -e package xtask starter-publish -- --dir starter --remote "$GITHUB_SERVER_URL/$STARTER_REPO" --starter-repo "$STARTER_REPO" --tag "$TAG" --source-commit "$SOURCE_COMMIT" ${{ inputs.dry-run && '--dry-run' || '' }}
 
       # Evidence for a failed run matters more than for a successful one: the summary names the
       # phase that failed and the tag it failed for, without exposing a token.
