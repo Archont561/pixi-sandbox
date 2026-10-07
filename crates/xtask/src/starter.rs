@@ -598,6 +598,55 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_github_error_still_gives_the_owner_a_remedy() {
+        let error = parse_main_ref(STARTER, false, b"", b"").unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("GitHub did not provide an error detail"),
+            "{message}"
+        );
+        assert!(message.contains("owner must seed main"), "{message}");
+    }
+
+    #[test]
+    fn a_response_for_a_different_ref_is_rejected() {
+        let response = serde_json::json!({
+            "ref": "refs/heads/trunk",
+            "object": { "sha": COMMIT },
+        });
+        let error =
+            parse_main_ref(STARTER, true, response.to_string().as_bytes(), b"").unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("did not return refs/heads/main"),
+            "{message}"
+        );
+        assert!(message.contains("owner must seed main"), "{message}");
+    }
+
+    #[test]
+    fn a_main_ref_without_a_commit_sha_is_rejected() {
+        let response = serde_json::json!({
+            "ref": "refs/heads/main",
+            "object": { "sha": "  " },
+        });
+        let error =
+            parse_main_ref(STARTER, true, response.to_string().as_bytes(), b"").unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("returned no commit"), "{message}");
+        assert!(message.contains("owner must seed main"), "{message}");
+    }
+
+    #[test]
+    fn malformed_main_ref_json_is_reported() {
+        let error = parse_main_ref(STARTER, true, b"not json", b"").unwrap_err();
+        assert!(
+            format!("{error:#}").contains("parsing the starter main-ref response"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
     fn starter_workflow_checks_the_real_main_ref_without_creating_or_seeding_the_repo() {
         const WORKFLOW: &str = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
