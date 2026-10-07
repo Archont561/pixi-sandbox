@@ -175,6 +175,12 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
+    /// Verify the starter repository has an actual commit on its main branch.
+    StarterCheckMain {
+        /// Canonical starter repository to check.
+        #[arg(long)]
+        repo: String,
+    },
     /// Write the starter's own files (Pixi project, ignore file, README) for one release.
     StarterScaffold {
         /// Directory the starter tree is assembled in.
@@ -300,6 +306,7 @@ fn run_args(args: Args) -> Result<()> {
             eprintln!("release references agree with the declared version");
             Ok(())
         }
+        Command::StarterCheckMain { repo } => starter::check_main_ref(&repo),
         Command::StarterScaffold {
             out,
             tag,
