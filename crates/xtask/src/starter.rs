@@ -426,6 +426,61 @@ pub fn verify_release(repo: &str, tag: &str, expected_commit: &str) -> Result<()
     Ok(())
 }
 
+/// Check that the canonical starter already has a real `main` commit before attempting checkout.
+///
+/// `default_branch` is repository metadata, not proof that a branch ref exists: GitHub can
+/// report `main` for a repository with no commits. The initial seed is an owner action, never
+/// an automation permission. This check is deliberately against the ref endpoint so an empty
+/// repository fails before the workflow attempts checkout.
+pub fn check_main_ref(repo: &str) -> Result<()> {
+    use std::process::Command;
+
+    let endpoint = format!("repos/{repo}/git/ref/heads/main");
+    let output = Command::new("gh")
+        .args(["api", &endpoint])
+        .output()
+        .context("starting gh api to check the starter main ref")?;
+    let sha = parse_main_ref(
+        repo,
+        output.status.success(),
+        &output.stdout,
+        &output.stderr,
+    )?;
+    println!("starter {repo} has refs/heads/main at {sha}");
+    Ok(())
+}
+
+fn parse_main_ref(repo: &str, succeeded: bool, stdout: &[u8], stderr: &[u8]) -> Result<String> {
+    if !succeeded {
+        let detail = String::from_utf8_lossy(stderr).trim().to_string();
+        let detail = if detail.is_empty() {
+            "GitHub did not provide an error detail".to_string()
+        } else {
+            detail
+        };
+        bail!(
+            "starter repository {repo} has no readable commit at refs/heads/main; an owner must seed main with an initial commit before this workflow can continue (a configured default branch does not prove that the ref exists): {detail}"
+        );
+    }
+
+    let response: serde_json::Value =
+        serde_json::from_slice(stdout).context("parsing the starter main-ref response")?;
+    if response["ref"].as_str() != Some("refs/heads/main") {
+        bail!(
+            "GitHub did not return refs/heads/main for starter repository {repo}; an owner must seed main with an initial commit before this workflow can continue"
+        );
+    }
+    let Some(sha) = response["object"]["sha"]
+        .as_str()
+        .filter(|sha| !sha.trim().is_empty())
+    else {
+        bail!(
+            "starter repository {repo} returned no commit for refs/heads/main; an owner must seed main with an initial commit before this workflow can continue"
+        );
+    };
+    Ok(sha.to_string())
+}
+
 /// Is there anything to publish, and may we publish it here?
 ///
 /// Separated from the git calls so the refusal rules can be tested directly. Returns the
@@ -513,6 +568,95 @@ mod tests {
     const COMMIT: &str = "8193c58068c3245e5267c4c604f989237e4d6e49";
     const SOURCE: &str = "Archont561/pixi-sandbox";
     const STARTER: &str = "Archont561/pixi-sandbox-starter";
+
+    #[test]
+    fn an_empty_starter_with_default_main_is_refused_until_an_owner_seeds_the_ref() {
+        let error = parse_main_ref(
+            STARTER,
+            false,
+            b"",
+            b"gh: Git Repository is empty. (HTTP 409)",
+        )
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("refs/heads/main"), "{message}");
+        assert!(message.contains("owner must seed main"), "{message}");
+        assert!(
+            message.contains("default branch does not prove"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn an_existing_main_ref_returns_its_commit_sha() {
+        let response = serde_json::json!({
+            "ref": "refs/heads/main",
+            "object": { "sha": COMMIT },
+        });
+        let sha = parse_main_ref(STARTER, true, response.to_string().as_bytes(), b"").unwrap();
+        assert_eq!(sha, COMMIT);
+    }
+
+    #[test]
+    fn an_empty_github_error_still_gives_the_owner_a_remedy() {
+        let error = parse_main_ref(STARTER, false, b"", b"").unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("GitHub did not provide an error detail"),
+            "{message}"
+        );
+        assert!(message.contains("owner must seed main"), "{message}");
+    }
+
+    #[test]
+    fn a_response_for_a_different_ref_is_rejected() {
+        let response = serde_json::json!({
+            "ref": "refs/heads/trunk",
+            "object": { "sha": COMMIT },
+        });
+        let error =
+            parse_main_ref(STARTER, true, response.to_string().as_bytes(), b"").unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("did not return refs/heads/main"),
+            "{message}"
+        );
+        assert!(message.contains("owner must seed main"), "{message}");
+    }
+
+    #[test]
+    fn a_main_ref_without_a_commit_sha_is_rejected() {
+        let response = serde_json::json!({
+            "ref": "refs/heads/main",
+            "object": { "sha": "  " },
+        });
+        let error =
+            parse_main_ref(STARTER, true, response.to_string().as_bytes(), b"").unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("returned no commit"), "{message}");
+        assert!(message.contains("owner must seed main"), "{message}");
+    }
+
+    #[test]
+    fn malformed_main_ref_json_is_reported() {
+        let error = parse_main_ref(STARTER, true, b"not json", b"").unwrap_err();
+        assert!(
+            format!("{error:#}").contains("parsing the starter main-ref response"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn starter_workflow_checks_the_real_main_ref_without_creating_or_seeding_the_repo() {
+        const WORKFLOW: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../.github/workflows/starter.yml"
+        ));
+        assert!(WORKFLOW.contains("xtask starter-check-main"), "{WORKFLOW}");
+        assert!(!WORKFLOW.contains(".default_branch // empty"), "{WORKFLOW}");
+        assert!(!WORKFLOW.contains("--method POST"), "{WORKFLOW}");
+        assert!(!WORKFLOW.contains("--method PUT"), "{WORKFLOW}");
+    }
 
     /// A starter whose publisher came from a different release is the one failure the whole
     /// publication contract exists to prevent, so the marker check is exact, not a substring.
