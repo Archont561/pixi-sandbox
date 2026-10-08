@@ -10,18 +10,10 @@
 //! root under `pixi run`); the policy logic lives in per-module pure functions that tests
 //! drive against tempdir fixtures, never against this checkout (D10).
 
-mod airlock;
-mod commit_release;
-mod conda_platforms;
-mod prepare_release;
-mod release_assets;
-mod release_refs;
-mod repo_checks;
-mod smoke;
-mod starter;
-mod util;
-mod version;
-mod workflow;
+use xtask::{
+    airlock, commit_release, conda_platforms, prepare_release, release_assets, release_refs,
+    repo_checks, smoke, starter, util, version, workflow,
+};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
