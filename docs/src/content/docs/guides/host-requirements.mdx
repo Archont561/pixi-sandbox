@@ -1,0 +1,136 @@
+---
+title: GUI and host requirements
+description: Declare what a GUI workload needs from the machine, read doctor's verdicts, and know exactly what pixi-sandbox never installs or grants.
+---
+
+import { Icon } from 'astro-icon/components';
+
+This guide is for projects that ship more than a command-line tool: a Tauri desktop application, a
+Qt or GTK window, anything that needs fonts, a display, a session bus, or a GPU. It covers the line
+between what travels inside the transport and what has to exist on the machine, and it is explicit
+about the parts pixi-sandbox reports but cannot fix.
+
+## A restored transport is a complete Pixi environment — not a complete machine
+
+A verified restore proves the environment on disk matches `pixi.lock`. It does not prove the
+machine can run a GUI workload. The C runtime the conda packages were built against, fonts, an X
+server or Wayland compositor, the D-Bus session bus, and GPU drivers all live on the host, outside
+the project, and are never packed. A window that fails to open *after* a perfect restore is the
+failure mode [issue #109](https://github.com/Archont561/pixi-sandbox/issues/109) describes, and
+the reason `[host_requirements]` exists.
+
+The test is simple: **anything your `pixi.toml` provides is not a host requirement.** GTK, WebKit,
+Qt, and font packages declared as conda dependencies travel inside the transport like any other
+library. The table is for what the Pixi environment deliberately does not own — the system C
+library, distro fonts, the display server, the session bus, device access.
+
+:::caution[Nothing is installed or granted]
+`doctor` classifies host requirements **read-only**: it asks the package manager what is installed,
+checks environment variables and device files, and looks for programs on `PATH`. It has no
+privileges and takes no action — it never installs a package, never starts a service, never
+launches a headless provider it finds, and cannot grant GPU or display access. Following a remedy
+(say, `sudo apt install fontconfig`) is a deliberate administrator action on the host, not a
+pixi-sandbox command. On the airlocked side there may be no way to install anything at all, which
+is exactly why the declaration is worth making *before* the air gap.
+:::
+
+## Declaring the boundary: a Tauri example
+
+Assume `pixi.toml` already carries the GUI toolchain you chose (for example Tauri's `gtk3` and
+`webkit2gtk` packages from conda-forge). What remains is the host's half of the contract:
+
+```toml
+[host_requirements]
+libc = ">=2.34"                            # the WebKit/GTK build links against a recent glibc
+packages = ["fontconfig", "fonts-dejavu"]  # text rendering inside the webview
+services = ["dbus"]                        # the session bus: tray icons, notifications, portals
+capabilities = ["display"]                 # somewhere to show a window
+headless = ["xvfb-run"]                    # any one of these satisfies `display` on a runner
+
+[host_requirements.linux]
+packages = ["xvfb"]                        # the X server `xvfb-run` starts
+```
+
+Package names here are **distro-level** names, not conda names, because that is what a host
+administrator installs. `doctor` knows the common GUI names (`fontconfig`, `fonts-dejavu`, `xvfb`,
+`dbus`, `libgtk-3`, `webkit2gtk`, …) on apt, dnf, and pacman distributions and prints the right
+name for the machine it is on; anything else keeps the declared name with a "names differ between
+distributions" caveat. The declaration rules — per-family tables, how `headless` interacts with
+`display`, the closed capability set — are in the
+[configuration reference](/pixi-sandbox/reference/configuration/#host_requirements--host-level-declarations).
+
+## Pack it, then ask the airlock
+
+`pack --config` records the set resolved for the packed platform in the transport's manifest, and
+`doctor` classifies it against the machine it runs on. An abridged real output on a Debian
+container looks like this:
+
+```console
+host      declared requirements: libc >=2.34 · packages fontconfig, fonts-dejavu, xvfb · services dbus · capabilities display
+conda     conda-provided libraries travel with the transport and are not probed here
+  libc >=2.34: satisfied (host reports 2.36; `ldd (Debian GLIBC 2.36-9+deb12u14) 2.36`)
+  package fontconfig: missing (dpkg-query: not installed) — install it: sudo apt install fontconfig
+  service dbus: missing (no DBUS_SESSION_BUS_ADDRESS and no /run/dbus/system_bus_socket on this host) — start it: `sudo systemctl enable --now dbus`; desktop applications need a session bus — start one with `dbus-run-session <command>` when the host has no systemd user session
+  capability display: missing (no DISPLAY or WAYLAND_DISPLAY, and none of the declared headless providers is on PATH (xvfb-run)) — run the workload against a display (DISPLAY or WAYLAND_DISPLAY), or use a headless provider: sudo apt install xvfb, then run it under `xvfb-run`
+host      1 of 8 satisfied · 7 missing · 0 unknown
+```
+
+Every requirement gets one of four verdicts:
+
+| Verdict | Meaning | What to do |
+|---------|---------|------------|
+| `satisfied` | The host answers the requirement. | Nothing. |
+| `missing` | The probe says it is absent — the common case on a minimal machine. | Follow the remedy, if your site allows it. |
+| `unknown` | The host cannot answer: no package manager it recognises, no systemd to ask, nothing parsable. | Verify by hand if it matters; this never fails an exit code. |
+| `not applicable` | The transport targets another OS family (a `linux-64` transport on a macOS machine). Nothing was probed — a Linux libc floor says nothing about macOS. | Nothing; the verdicts belong on a matching host. |
+
+## Running the check
+
+```bash
+# Connected side: record the declaration in the transport.
+pixi-sandbox pack --config .pixi-sandbox.toml …
+
+# Airlock side: read the verdicts out of the branch that was transferred.
+pixi-sandbox doctor --branch-location /path/to/checkout
+
+# Or as JSON for a script: `host_requirements.ok` is exactly "nothing is missing",
+# and the counts and per-finding remedies are in the same object.
+pixi-sandbox doctor --branch-location /path/to/checkout --json
+```
+
+CI jobs that *run* the GUI workload on a known machine — a self-hosted runner with a real display,
+or a container you provision yourself — can make the check fail the job:
+
+```bash
+pixi-sandbox doctor --branch-location ./sandbox --require-host-requirements
+```
+
+Prefer not to pass it on the publish runner: that machine packages the transport, it is not where
+the workload runs, and a missing host font there says nothing about the airlock. The flag fails on
+`missing` alone; `unknown` verdicts are reported and never fail, because a machine that cannot be
+inspected is not a machine that is broken. The
+[CLI reference](/pixi-sandbox/reference/cli/#doctor) documents the probes and the exit-code
+contract per flag.
+
+## What pixi-sandbox will not do for you
+
+<div style="display: grid; gap: 0.5rem; margin: 1rem 0;">
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:monitor" size={18} />
+    <span><strong>Grant GPU access</strong> — reportable, never grantable. Device passthrough is a host decision: for containers, pass through <code>/dev/dri</code> and the driver mounts, and run as a user in the <code>video</code>/<code>render</code> groups. A sandbox cannot widen its own device access, and <code>doctor</code> says so in the remedy instead of pretending.</span>
+  </div>
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:terminal" size={18} />
+    <span><strong>Start Xvfb for you</strong> — the <code>headless</code> entries are checked for existence on <code>PATH</code> and never launched. Starting a display server to test whether one works would be a sandbox escaping its own boundary; you run the workload under <code>xvfb-run</code>, not <code>doctor</code>.</span>
+  </div>
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:package" size={18} />
+    <span><strong>Install or enable anything</strong> — no host packages, no services, no config changes. Remedies are printed for a person to read; every pixi-sandbox command stays a read-only observer of the host.</span>
+  </div>
+</div>
+
+## See also
+
+- [Configuration: `[host_requirements]`](/pixi-sandbox/reference/configuration/#host_requirements--host-level-declarations) — the full field table, validation rules, and per-family resolution.
+- [CLI: `doctor`](/pixi-sandbox/reference/cli/#doctor) — the probes behind each verdict, the JSON shape, and `--require-host-requirements`.
+- [Airlock Restore](/pixi-sandbox/restore/) — getting the transport onto the disconnected machine in the first place.

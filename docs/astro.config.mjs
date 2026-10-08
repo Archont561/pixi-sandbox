@@ -149,6 +149,7 @@ export default defineConfig({
             { label: "Using in your project", slug: "guides/using-in-your-project" },
             { label: "CI Publishing", slug: "guides/ci-publishing" },
             { label: "Airlock Restore", slug: "restore" },
+            { label: "GUI and host requirements", slug: "guides/host-requirements" },
             { label: "GitHub Actions", slug: "guides/actions" },
           ],
         },
