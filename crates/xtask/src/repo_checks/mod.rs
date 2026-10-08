@@ -3,12 +3,11 @@
 //!
 //! Why an xtask and not a `#[test]`: D10 — tests target fixtures, never this repository, and
 //! `tests/fixtures.rs::no_test_targets_the_repository_root` enforces it. Every checker here
-//! therefore takes an explicit root; only `main.rs` ever passes the real checkout, and the
-//! unit tests below drive each policy against synthetic repositories in tempdirs.
+//! therefore takes an explicit root; only `main.rs` ever passes the real checkout, and
+//! `tests/repo_checks*.rs` drive each policy against synthetic repositories in tempdirs.
 //!
-//! One file per numbered check (task-56), so each policy, its helpers, and its tests sit
-//! together instead of sharing one 1,000+ line module. [`CHECKS`] is the only thing that
-//! wires them into [`check_repository`]; `support` holds the handful of helpers more than one
+//! One file per numbered check (task-56), so each policy and its helpers sit together instead
+//! of sharing one 1,000+ line module. [`CHECKS`] is the only thing that wires them into [`check_repository`]; `support` holds the handful of helpers more than one
 //! check needs (`crate::util::lines_without_opt_out` is the other shared primitive, and it
 //! already lived outside this subsystem before the split).
 //!

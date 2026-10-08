@@ -439,28 +439,3 @@ fn run_args(args: Args) -> Result<()> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{Args, Command, run_args};
-
-    #[test]
-    fn airlock_self_bin_subcommand_reaches_the_downloader_validation() {
-        let root = tempfile::tempdir().expect("tempdir");
-        let error = run_args(Args {
-            root: root.path().to_path_buf(),
-            command: Command::AirlockSelfBin {
-                repo: "owner/repo".to_string(),
-                tag: "v0.4.0".to_string(),
-                platform: "freebsd-64".to_string(),
-                out: "pixi-sandbox".into(),
-            },
-        })
-        .expect_err("unknown platform");
-
-        assert!(
-            format!("{error:#}").contains("no static pixi-sandbox release asset"),
-            "{error:#}"
-        );
-    }
-}

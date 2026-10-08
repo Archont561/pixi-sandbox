@@ -8,6 +8,8 @@ use std::path::Path;
 use xtask::repo_checks::check_repository;
 use xtask::workflow::{RELOCK_PATH, relock_render};
 
+// Compiled into every check module's test binary; not every one uses both helpers.
+#[allow(dead_code)]
 pub fn valid_fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
@@ -59,6 +61,8 @@ pub fn valid_fixture() -> tempfile::TempDir {
     dir
 }
 
+// Compiled into every check module's test binary; not every one uses both helpers.
+#[allow(dead_code)]
 pub fn headlines(root: &Path) -> Vec<String> {
     check_repository(root)
         .expect("checks run")

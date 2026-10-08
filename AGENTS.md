@@ -212,9 +212,10 @@ reaching privates hides what the module's real callable surface is. So:
   surface a user meets. (This is how the clap command tree is audited.)
 
 `production_sources_carry_no_inline_test_modules` enforces this in every crate's
-`tests/fixtures.rs` — `crates/pixi-sandbox`, `pixi-sandbox-core` and `xtask`. Each `LEGACY`
-list is the remaining pre-rule debt — it **may shrink, never grow**, and the guard also fails
-on a stale entry so the list cannot rot. New modules follow the `tests/` route from day one.
+`tests/fixtures.rs` — `crates/pixi-sandbox`, `pixi-sandbox-core` and `xtask`. The core and
+xtask lists are empty; `pixi-sandbox`'s `LEGACY` is the remaining pre-rule debt — it **may
+shrink, never grow**, and the guard also fails on a stale entry so the list cannot rot. New
+modules follow the `tests/` route from day one.
 
 Integration setup belongs in `crates/pixi-sandbox/tests/support/mod.rs`: request its zero-argument
 `#[fixture]` values from `#[rstest]` tests, and use the paired `*_fixture` function pointer for a
