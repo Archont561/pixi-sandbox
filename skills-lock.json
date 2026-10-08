@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "bdd": {
+      "source": "xz-dev/bdd-skill",
+      "sourceType": "github",
+      "skillPath": "skills/bdd/SKILL.md",
+      "computedHash": "b10bbde2c051338396375cd1a8b54865f0d3340a605e9b409bfbc0454bae2c0a"
+    },
     "caveman": {
       "source": "juliusbrussee/caveman",
       "sourceType": "github",

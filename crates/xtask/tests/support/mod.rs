@@ -1,12 +1,16 @@
 //! A minimal repository that passes every check, shared by every check module's own tests.
 //! Each test then breaks exactly one policy and asserts that policy alone fires. Built in a
-//! tempdir: D10 forbids these tests from ever looking at the real checkout.
+//! tempdir: D10 forbids these tests from ever looking at the real checkout. (Moved from
+//! `repo_checks/test_support.rs`, TASK-83.)
 
-use super::check_repository;
 use std::fs;
 use std::path::Path;
+use xtask::repo_checks::check_repository;
+use xtask::workflow::{RELOCK_PATH, relock_render};
 
-pub(super) fn valid_fixture() -> tempfile::TempDir {
+// Compiled into every check module's test binary; not every one uses both helpers.
+#[allow(dead_code)]
+pub fn valid_fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     let write = |rel: &str, text: &str| {
@@ -50,14 +54,16 @@ pub(super) fn valid_fixture() -> tempfile::TempDir {
         "#!/usr/bin/env bash\nset -euo pipefail\necho restore\n",
     );
     write(
-        crate::workflow::RELOCK_PATH,
-        &crate::workflow::relock_render(root).expect("render the relock workflow"),
+        RELOCK_PATH,
+        &relock_render(root).expect("render the relock workflow"),
     );
 
     dir
 }
 
-pub(super) fn headlines(root: &Path) -> Vec<String> {
+// Compiled into every check module's test binary; not every one uses both helpers.
+#[allow(dead_code)]
+pub fn headlines(root: &Path) -> Vec<String> {
     check_repository(root)
         .expect("checks run")
         .into_iter()

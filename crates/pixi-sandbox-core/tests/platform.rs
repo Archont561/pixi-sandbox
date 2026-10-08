@@ -175,3 +175,19 @@ proptest! {
         prop_assert_eq!(platform.asset_name().ends_with(".exe"), platform == Platform::Win64);
     }
 }
+
+// Moved from the module's inline `#[cfg(test)]` (TASK-83): names kept, bodies verbatim.
+
+#[test]
+fn as_str_is_injective_over_all() {
+    let mut seen: Vec<&str> = Platform::ALL.iter().map(|p| p.as_str()).collect();
+    seen.sort_unstable();
+    seen.dedup();
+    assert_eq!(seen.len(), Platform::ALL.len());
+}
+
+#[test]
+fn from_str_error_names_the_bad_value() {
+    let err = "bogus".parse::<Platform>().unwrap_err();
+    assert!(err.to_string().contains("bogus"), "got {err}");
+}

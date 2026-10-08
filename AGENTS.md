@@ -44,8 +44,8 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
 | `crates/pixi-sandbox-core/src/verify.rs` | collects *all* failures instead of stopping at the first — an airlock operator wants the full list; `verify_restored` is the restored-tree half (D13) |
 | `crates/pixi-sandbox-core/src/files_manifest.rs` | the per-file oracle (D13): `scan_prefix` records the unpacked prefix at pack time, canonicalising either side's path spellings to a sentinel so relocation cannot defeat the digests |
 | `crates/pixi-sandbox/src/commands/*` | `init`, `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, `tools list`, and `self-update` — pure Rust, no Python. Thin wiring: these resolve the ambient inputs (HOME, host triple, the running executable) and call into the library, so the logic stays testable from `tests/` |
-| `crates/pixi-sandbox/src/lib.rs` | what `tests/` and `xtask` can reach: `generated`, `release`, `self_update`, `user_tools`. A module that needs tests is promoted here — the binary target's own modules (`cli.rs`, `commands/`) are only coverable black-box |
-| `crates/pixi-sandbox/src/release.rs` | the `ReleaseSource` trait every network-touching command injects (D9's shape, applied to HTTP): `GitHubReleaseSource` in production, an in-memory fake in tests. Shared by `tools update` and `self-update` so one fake serves both |
+| `crates/pixi-sandbox/src/lib.rs` | what `tests/` and `xtask` can reach: `generated`, `host_probe`, `release`, `self_update`, `standalone`, `user_tools`. A module that needs tests is promoted here — the binary target's own modules (`cli.rs`, `commands/`) are only coverable black-box |
+| `crates/pixi-sandbox/src/release/` | the `ReleaseSource` trait every network-touching command injects (D9's shape, applied to HTTP), shared by `tools update` and `self-update` so one fake serves both. Two files: `mod.rs` — the trait, `Asset`, `parse_sha256_manifest`, everything a test can reach — and `github.rs`, the real HTTP `GitHubReleaseSource`, deliberately alone because it is the one piece no offline test can exercise (`pixi run coverage` excludes it by name; keep it thin, anything with a decision in it belongs in `mod.rs`) |
 | `crates/pixi-sandbox/src/self_update/*` | the updater's trust boundary (decision-4), in enforcement order: `resolver` (latest vs exact), `assets` (the canonical host→asset map, mirroring `xtask/src/release_assets.rs`), `checksums` (`SHA256SUMS`), `ownership` (the refusal ladder — a Pixi-managed binary is never overwritten), `replace` (stage beside the destination, then swap; see task-37 AC#3 for why Unix renames over a running binary) |
 | `crates/pixi-sandbox-git` | **all** git access: `GitProtocol` + `ShellGit` (real git, with a swappable `Runner`) + `FakeGit` (in-memory mock). Never run `git` from anywhere else |
 | `.github/workflows/relock.yml` | **generated, not written**: the committed render of `generated/relock_workflow.rs`, the lockfile bot `pixi-sandbox init` also hands consumers. `check-repository` (check 10) fails when it drifts from a fresh render, so it is edited through the template and `pixi run --frozen xtask render-relock`, never by hand. Unlike the publisher template it is house-shaped — one-line steps throughout — which is what makes committing it possible |
@@ -200,8 +200,9 @@ invariant 8 applies to git), because one refactor then adjusts both at once, and
 reaching privates hides what the module's real callable surface is. So:
 
 - A module worth testing is **promoted to `lib.rs` as `pub mod`** and tested through its public
-  API from `tests/` — the shape `generated`, `release`, `self_update` and `user_tools` already
-  have. One test file per module, named after it (`tests/self_update_replace.rs`).
+  API from `tests/` — the shape `generated`, `host_probe`, `release`, `self_update`,
+  `standalone` and `user_tools` already have. One test file per module, named after it
+  (`tests/self_update_replace.rs`).
 - A handful of internals a test legitimately needs (a private helper whose failure branch has no
   public route, a marker constant) are exported `#[doc(hidden)] pub` — visible to `tests/`,
   marked as a test boundary rather than API.
@@ -210,11 +211,11 @@ reaching privates hides what the module's real callable surface is. So:
   the binary from `tests/cli.rs` with `assert_cmd`. That is the stronger test anyway: it is the
   surface a user meets. (This is how the clap command tree is audited.)
 
-`production_sources_carry_no_inline_test_modules` in `tests/fixtures.rs` enforces this for
-`crates/pixi-sandbox`. Its `LEGACY` list is the remaining pre-rule debt — it **may shrink, never
-grow**, and the test also fails on a stale entry so the list cannot rot. `pixi-sandbox-core` and
-`xtask` still carry inline tests and are not yet enforced; splitting them is backlog work, and
-new modules there should follow this rule regardless.
+`production_sources_carry_no_inline_test_modules` enforces this in every crate's
+`tests/fixtures.rs` — `crates/pixi-sandbox`, `pixi-sandbox-core` and `xtask`. The core and
+xtask lists are empty; `pixi-sandbox`'s `LEGACY` is the remaining pre-rule debt — it **may
+shrink, never grow**, and the guard also fails on a stale entry so the list cannot rot. New
+modules follow the `tests/` route from day one.
 
 Integration setup belongs in `crates/pixi-sandbox/tests/support/mod.rs`: request its zero-argument
 `#[fixture]` values from `#[rstest]` tests, and use the paired `*_fixture` function pointer for a

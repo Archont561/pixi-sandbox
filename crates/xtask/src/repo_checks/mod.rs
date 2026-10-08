@@ -3,12 +3,11 @@
 //!
 //! Why an xtask and not a `#[test]`: D10 — tests target fixtures, never this repository, and
 //! `tests/fixtures.rs::no_test_targets_the_repository_root` enforces it. Every checker here
-//! therefore takes an explicit root; only `main.rs` ever passes the real checkout, and the
-//! unit tests below drive each policy against synthetic repositories in tempdirs.
+//! therefore takes an explicit root; only `main.rs` ever passes the real checkout, and
+//! `tests/repo_checks*.rs` drive each policy against synthetic repositories in tempdirs.
 //!
-//! One file per numbered check (task-56), so each policy, its helpers, and its tests sit
-//! together instead of sharing one 1,000+ line module. [`CHECKS`] is the only thing that
-//! wires them into [`check_repository`]; `support` holds the handful of helpers more than one
+//! One file per numbered check (task-56), so each policy and its helpers sit together instead
+//! of sharing one 1,000+ line module. [`CHECKS`] is the only thing that wires them into [`check_repository`]; `support` holds the handful of helpers more than one
 //! check needs (`crate::util::lines_without_opt_out` is the other shared primitive, and it
 //! already lived outside this subsystem before the split).
 //!
@@ -41,7 +40,13 @@
 //!     permission, it is a parse error that takes the whole workflow file down: a one-line
 //!     `workflows: write` left `auto-release.yml` unrunnable, every run ending in 0s with no
 //!     jobs and no diagnostic outside the Actions tab (run 37501052919).
+//! 12. task-84 — `AGENTS.md` describes a tree that exists: no repo-map row names a path that
+//!     has moved, and the promoted-module list is exactly the `pub mod` set of
+//!     `crates/pixi-sandbox/src/lib.rs`. The document is what an agent reads as instruction,
+//!     and D10 forbids the one thing that would otherwise catch the drift — a test that
+//!     reads this repository.
 
+pub mod agents_md;
 mod badges;
 mod bash32;
 mod channel_drift;
@@ -51,11 +56,8 @@ mod release_tags;
 mod relock;
 mod stale_refs;
 mod support;
-mod workflow_permissions;
-mod workflow_shape;
-
-#[cfg(test)]
-mod test_support;
+pub mod workflow_permissions;
+pub mod workflow_shape;
 
 use anyhow::{Result, bail};
 use std::path::Path;
@@ -100,6 +102,7 @@ const CHECKS: &[Check] = &[
     workflow_shape::workflow_shape,              // 9
     relock::generated_relock_is_current,         // 10
     workflow_permissions::workflow_permissions,  // 11
+    agents_md::agents_md_matches_tree,           // 12
 ];
 
 /// Run every check, returning all failures in one pass so a red run names every problem.
@@ -127,31 +130,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render; every permissions: scope is one GitHub accepts" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render; every permissions: scope is one GitHub accepts; AGENTS.md's repo map resolves and its promoted-module list matches lib.rs" // stale-ref-allowed
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::test_support::{headlines, valid_fixture};
-    use super::workflow_shape::MULTI_RUN_ALLOWED;
-
-    #[test]
-    fn the_valid_fixture_passes_every_check() {
-        let dir = valid_fixture();
-        assert_eq!(headlines(dir.path()), Vec::<String>::new());
-    }
-
-    /// The render must satisfy check 9 unaided: that is the property that lets this repository
-    /// commit a generated workflow at all, and it is the reason the relock template is written
-    /// as one-line steps instead of the publisher's blocks.
-    #[test]
-    fn the_committed_render_needs_no_multiline_exemption() {
-        let dir = valid_fixture();
-        let render =
-            std::fs::read_to_string(dir.path().join(crate::workflow::RELOCK_PATH)).expect("render");
-        assert!(!render.contains(MULTI_RUN_ALLOWED), "{render}");
-        assert_eq!(headlines(dir.path()), Vec::<String>::new());
-    }
 }

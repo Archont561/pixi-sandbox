@@ -198,7 +198,28 @@ pub fn transport_repo(root: &Path, branch: &str, bundled: Bundled) -> PathBuf {
     let real = assert_cmd::cargo::cargo_bin("pixi-sandbox");
     let tool = root.join(".pixi-sandbox/tools/linux-64/pixi-sandbox");
     let shim = match bundled {
-        Bundled::Current => format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", real.display()),
+        // The packed 0.3.7+ bootstrap, with optional hostile behaviours the restore.sh tests
+        // switch on through `RESTORE_SHIM_MODE` (no mode set: straight delegation, so every
+        // existing test drives the real binary). `RESTORE_SHIM_LOG` records each invocation,
+        // which is how the retry-discipline tests count restore attempts. Both variables are
+        // test-only controls the script under test neither knows nor strips.
+        Bundled::Current => format!(
+            r#"#!/bin/sh
+if [ -n "${{RESTORE_SHIM_LOG:-}}" ]; then printf '%s\n' "$*" >> "$RESTORE_SHIM_LOG"; fi
+case "${{RESTORE_SHIM_MODE:-}}" in
+  fail-restore)
+    case " $* " in *" restore "*) echo "shim: restore exploded" >&2; exit 3 ;; esac ;;
+  fail-verify-restored)
+    case " $* " in *" --verify-restored "*) echo "shim: restored tree does not verify" >&2; exit 1 ;; esac ;;
+  fail-doctor-verify)
+    case " $* " in *" --verify "*) echo "shim: doctor verify failed (fixture)" >&2; exit 1 ;; esac ;;
+  old-flags)
+    case " $* " in *" --output-path "*) echo "error: unexpected argument '--output-path' found" >&2; exit 2 ;; esac ;;
+esac
+exec "{real}" "$@"
+"#,
+            real = real.display()
+        ),
         Bundled::PreUserTools => format!(
             r#"#!/bin/sh
 # Plays a bootstrap packed before 0.3.7: it reports that version, and because it has no

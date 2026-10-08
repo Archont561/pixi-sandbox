@@ -38,26 +38,3 @@ pub(super) fn workflow_literal_tags(root: &Path, failures: &mut Vec<Failure>) ->
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::super::test_support::{headlines, valid_fixture};
-    use std::fs;
-
-    #[test]
-    fn a_literal_release_tag_in_a_workflow_fires_check_6() {
-        let dir = valid_fixture();
-        fs::write(
-            dir.path().join(".github/workflows/proof.yml"),
-            "jobs:\n  x:\n    steps:\n      - with:\n          version: ${{ vars.RELEASE || 'v0.3.0' }}\n",
-        )
-        .expect("workflow");
-        let found = headlines(dir.path());
-        assert!(
-            found
-                .iter()
-                .any(|h| h.contains("pins a literal release tag")),
-            "{found:?}"
-        );
-    }
-}

@@ -384,7 +384,11 @@ struct Restored {
     project: PathBuf,
 }
 
-fn restore(bundled: Bundled, policy: Option<&str>) -> (tempfile::TempDir, Restored) {
+fn restore(
+    bundled: Bundled,
+    policy: Option<&str>,
+    envs: &[(&str, &str)],
+) -> (tempfile::TempDir, Restored) {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");
     let project = temp.path().join("project");
@@ -396,6 +400,12 @@ fn restore(bundled: Bundled, policy: Option<&str>) -> (tempfile::TempDir, Restor
     command.arg("sandbox/demo-linux-64").arg(&project);
     if let Some(policy) = policy {
         command.env("PIXI_SANDBOX_USER_TOOLS", policy);
+    }
+    // Every shim invocation is recorded outside HOME, TMPDIR and the output tree, so attempt
+    // counting can never look like the script under test wrote somewhere forbidden.
+    command.env("RESTORE_SHIM_LOG", temp.path().join("shim-invocations.log"));
+    for (key, value) in envs {
+        command.env(key, value);
     }
     let output = command.output().unwrap();
     let log = combined(&output);
@@ -410,6 +420,16 @@ fn restore(bundled: Bundled, policy: Option<&str>) -> (tempfile::TempDir, Restor
     )
 }
 
+/// Restore invocations the bundled shim saw, in order (the shim logs `"$@"` per call).
+fn restore_attempts(temp: &tempfile::TempDir) -> Vec<String> {
+    let path = temp.path().join("shim-invocations.log");
+    let text = fs::read_to_string(path).unwrap_or_default();
+    text.lines()
+        .filter(|line| line.starts_with("restore "))
+        .map(str::to_owned)
+        .collect()
+}
+
 /// The whole sequence, end to end: derive nothing (the branch is explicit), find the branch
 /// *locally* and do not reach for the network, add a worktree, verify the payload, restore it,
 /// verify the tree that came out, remove the worktree, and report the pixi entrypoint the
@@ -417,7 +437,7 @@ fn restore(bundled: Bundled, policy: Option<&str>) -> (tempfile::TempDir, Restor
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn a_local_branch_restores_without_touching_the_network() {
-    let (temp, restored) = restore(Bundled::Current, Some("register"));
+    let (temp, restored) = restore(Bundled::Current, Some("register"), &[]);
     let log = &restored.log;
     assert!(restored.output.status.success(), "{log}");
 
@@ -517,7 +537,7 @@ fn a_local_branch_restores_without_touching_the_network() {
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn a_bootstrap_that_ignores_the_policy_is_reported_not_announced() {
-    let (_temp, restored) = restore(Bundled::PreUserTools, Some("register"));
+    let (_temp, restored) = restore(Bundled::PreUserTools, Some("register"), &[]);
     let log = &restored.log;
     assert!(restored.output.status.success(), "{log}");
 
@@ -554,7 +574,7 @@ fn a_bootstrap_that_ignores_the_policy_is_reported_not_announced() {
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn the_skip_policy_leaves_home_alone_and_says_so() {
-    let (_temp, restored) = restore(Bundled::Current, Some("skip"));
+    let (_temp, restored) = restore(Bundled::Current, Some("skip"), &[]);
     let log = &restored.log;
     assert!(restored.output.status.success(), "{log}");
 
@@ -670,5 +690,185 @@ fn a_missing_branch_fails_and_lists_what_origin_has() {
     assert!(
         fs::read_dir(home.join("tmp")).unwrap().next().is_none(),
         "a failed restore must not leave a worktree behind"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// Work directory and retry discipline (TASK-81): the branch worktree belongs under the
+// restore's own work directory inside the output tree — never under TMPDIR — a failed
+// restore is reported once, and only the flag-compatibility case earns a second run.
+// ---------------------------------------------------------------------------------------
+
+/// Invariant 3 on the airlock path: the branch worktree carries every packed blob, so it must
+/// not land on a small tmpfs. With TMPDIR pointed at an empty directory, nothing may appear
+/// under it; the worktree is created under the restore's work directory inside the output
+/// tree, and a successful restore leaves none of it behind.
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn the_branch_worktree_lives_in_the_restore_work_dir_not_tmpdir() {
+    let (_temp, restored) = restore(Bundled::Current, Some("skip"), &[]);
+    let log = &restored.log;
+    assert!(restored.output.status.success(), "{log}");
+
+    assert!(
+        fs::read_dir(restored.home.join("tmp"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "the script wrote under TMPDIR: {log}"
+    );
+
+    let work = restored.project.join(".pixi/.restore-work");
+    let worktree_line = log
+        .lines()
+        .find(|line| line.starts_with("→ worktree "))
+        .unwrap_or_else(|| panic!("no worktree line in the log: {log}"));
+    let worktree = Path::new(worktree_line.trim_start_matches("→ worktree "));
+    assert!(
+        worktree.starts_with(&work),
+        "worktree {} is not under {}: {log}",
+        worktree.display(),
+        work.display()
+    );
+
+    assert!(log.contains("→ cleanup worktree"), "{log}");
+    assert!(
+        !work.exists(),
+        "the work directory survived a successful restore: {log}"
+    );
+    assert!(restored.project.join(".pixi/envs/demo").is_dir());
+}
+
+/// The worktree is evidence when the post-restore verification fails: kept on disk, its path
+/// printed — and still nowhere near TMPDIR.
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn a_post_restore_verification_failure_keeps_the_worktree_and_prints_its_path() {
+    let (_temp, restored) = restore(
+        Bundled::Current,
+        Some("skip"),
+        &[("RESTORE_SHIM_MODE", "fail-verify-restored")],
+    );
+    let log = &restored.log;
+    assert_eq!(restored.output.status.code(), Some(1), "{log}");
+    assert!(
+        log.contains("the restored project does not match the manifest"),
+        "{log}"
+    );
+    assert!(
+        fs::read_dir(restored.home.join("tmp"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "even the kept worktree must stay out of TMPDIR: {log}"
+    );
+
+    let work = restored.project.join(".pixi/.restore-work");
+    let worktree = log
+        .lines()
+        .find(|line| line.starts_with("→ worktree "))
+        .map(|line| PathBuf::from(line.trim_start_matches("→ worktree ")))
+        .expect("no worktree line in the log");
+    assert!(
+        log.contains(&format!("{} is kept for inspection", worktree.display())),
+        "the failure must print the kept path: {log}"
+    );
+    assert!(
+        worktree.starts_with(&work) && worktree.is_dir(),
+        "the worktree must be kept under {} as evidence: {log}",
+        work.display()
+    );
+}
+
+/// A restore that fails is reported once and never rerun. The old fallback retried every
+/// failure with `--path-to-main-repo-code`, an alias of `--output-path` on the same binary
+/// (`cli.rs`), so the second run could only re-fail — after replaying the whole restore.
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn a_failed_restore_is_reported_once_and_never_retried() {
+    let (temp, restored) = restore(
+        Bundled::Current,
+        Some("skip"),
+        &[("RESTORE_SHIM_MODE", "fail-restore")],
+    );
+    let log = &restored.log;
+    assert_eq!(restored.output.status.code(), Some(3), "{log}");
+    assert_eq!(
+        log.matches("shim: restore exploded").count(),
+        1,
+        "the failure was reported more than once: {log}"
+    );
+    let attempts = restore_attempts(&temp);
+    assert_eq!(
+        attempts.len(),
+        1,
+        "a failed restore must not be retried, still less through an alias of the same flag: \
+         {attempts:?}"
+    );
+    assert!(
+        !attempts[0].contains("--path-to-main-repo-code"),
+        "the alias fallback ran for a non-usage failure: {attempts:?}"
+    );
+}
+
+/// The one second run that is allowed: the flag-compatibility case. A bootstrap that predates
+/// `--output-path` rejects it as clap's "unexpected argument" (exit 2), and only that failure
+/// earns a retry with the old spelling the same binary still accepts as an alias.
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn a_bootstrap_that_rejects_output_path_gets_one_alias_retry() {
+    let (temp, restored) = restore(
+        Bundled::Current,
+        Some("skip"),
+        &[("RESTORE_SHIM_MODE", "old-flags")],
+    );
+    let log = &restored.log;
+    assert!(restored.output.status.success(), "{log}");
+    assert!(
+        log.contains("OK — the restored tree matches the manifest"),
+        "{log}"
+    );
+    assert!(
+        log.contains("predates --output-path"),
+        "the fallback must be announced, not silent: {log}"
+    );
+    let attempts = restore_attempts(&temp);
+    assert_eq!(
+        attempts.len(),
+        2,
+        "expected the original attempt and exactly one fallback run: {attempts:?}"
+    );
+    assert!(attempts[0].contains("--output-path"), "{attempts:?}");
+    assert!(
+        attempts[1].contains("--path-to-main-repo-code"),
+        "{attempts:?}"
+    );
+}
+
+/// The pre-restore doctor status is a logged pre-check, not a gate: `restore` re-verifies the
+/// branch before it writes anything (invariant 1 is enforced inside the binary), so a doctor
+/// failure here is reported informationally and the restore still runs — its own verdict is
+/// the enforcement.
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn a_failing_pre_restore_doctor_is_an_informational_pre_check() {
+    let (_temp, restored) = restore(
+        Bundled::Current,
+        Some("skip"),
+        &[("RESTORE_SHIM_MODE", "fail-doctor-verify")],
+    );
+    let log = &restored.log;
+    assert!(restored.output.status.success(), "{log}");
+    assert!(
+        log.contains("shim: doctor verify failed (fixture)"),
+        "the pre-check's failure must be visible to the operator: {log}"
+    );
+    assert!(
+        log.contains("informational"),
+        "the pre-check must be labelled informational: {log}"
+    );
+    assert!(
+        log.contains("OK — the restored tree matches the manifest"),
+        "the restore itself must still run and verify: {log}"
     );
 }

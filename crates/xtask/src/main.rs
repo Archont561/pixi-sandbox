@@ -10,18 +10,10 @@
 //! root under `pixi run`); the policy logic lives in per-module pure functions that tests
 //! drive against tempdir fixtures, never against this checkout (D10).
 
-mod airlock;
-mod commit_release;
-mod conda_platforms;
-mod prepare_release;
-mod release_assets;
-mod release_refs;
-mod repo_checks;
-mod smoke;
-mod starter;
-mod util;
-mod version;
-mod workflow;
+use xtask::{
+    airlock, commit_release, conda_platforms, prepare_release, release_assets, release_refs,
+    repo_checks, smoke, starter, util, version, workflow,
+};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -445,30 +437,5 @@ fn run_args(args: Args) -> Result<()> {
         Command::ReleaseChecksums { dir } => {
             release_assets::release_checksums(&root.join(dir)).map(|_| ())
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Args, Command, run_args};
-
-    #[test]
-    fn airlock_self_bin_subcommand_reaches_the_downloader_validation() {
-        let root = tempfile::tempdir().expect("tempdir");
-        let error = run_args(Args {
-            root: root.path().to_path_buf(),
-            command: Command::AirlockSelfBin {
-                repo: "owner/repo".to_string(),
-                tag: "v0.4.0".to_string(),
-                platform: "freebsd-64".to_string(),
-                out: "pixi-sandbox".into(),
-            },
-        })
-        .expect_err("unknown platform");
-
-        assert!(
-            format!("{error:#}").contains("no static pixi-sandbox release asset"),
-            "{error:#}"
-        );
     }
 }
