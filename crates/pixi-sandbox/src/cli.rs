@@ -132,6 +132,15 @@ pub struct PackArgs {
     /// environment and refuses a binary that breaks without its prefix (issue #81).
     #[arg(long)]
     pub self_bin: Option<PathBuf>,
+
+    /// Optional sandbox config (`.pixi-sandbox.toml` / `pixi-sandbox.toml`, relative to the
+    /// current directory like `plan --config`). When given, the `[host_requirements]` table
+    /// resolved for `--platform` is recorded in the transport manifest, so a restored branch
+    /// still says what its workloads need from the machine (issue #109, TASK-75). Without the
+    /// flag, no host-requirement section is written and the manifest is byte-identical to what
+    /// earlier releases packed.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

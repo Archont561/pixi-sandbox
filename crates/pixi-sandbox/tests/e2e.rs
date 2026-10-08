@@ -312,6 +312,92 @@ fn a_real_packed_environment_restores_with_nothing_pointing_into_restore_scratch
     assert!(!airlock.join(".pixi/.restore-work").exists());
 }
 
+/// Issue #109 / TASK-75 AC#2, the read half: a transport that declares host requirements says so
+/// from the branch itself — `doctor` reads the section out of the manifest, not out of any
+/// source checkout — and a transport without the section stays exactly as it was: it still
+/// verifies, and its report carries no host section at all. Exercised against the committed
+/// fixture transport, copied into a tempdir, with the section injected into `manifest.json` the
+/// same way the packer now writes it.
+#[test]
+fn doctor_reports_the_host_requirements_the_transport_declares() {
+    let temp = tempfile::tempdir().unwrap();
+    let transport = temp.path().join("transport");
+    copy_tree(&fixture_transport(), &transport);
+
+    // The fixture carries no section, so the report has none — the backward-compatible half.
+    let plain = bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--json",
+        ])
+        .assert()
+        .success();
+    let plain_json = String::from_utf8_lossy(&plain.get_output().stdout).to_string();
+    assert!(
+        !plain_json.contains("host_requirements"),
+        "a transport that declares nothing must not report a host section:\n{plain_json}"
+    );
+
+    // Inject the section the packer writes, then read it back.
+    let manifest_path = transport.join(".pixi-sandbox/manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    manifest["host_requirements"] = serde_json::json!({
+        "libc": ">=2.34",
+        "packages": ["fontconfig", "fonts-dejavu", "xvfb"],
+        "services": ["dbus"],
+        "capabilities": ["display"],
+        "headless": ["xvfb-run"],
+    });
+    fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+
+    let declared = bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--verify",
+            "--json",
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&declared.get_output().stdout).to_string();
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("doctor emits one JSON value");
+    assert_eq!(json["host_requirements"]["libc"], ">=2.34");
+    assert_eq!(
+        json["host_requirements"]["packages"],
+        serde_json::json!(["fontconfig", "fonts-dejavu", "xvfb"])
+    );
+    assert_eq!(
+        json["host_requirements"]["capabilities"],
+        serde_json::json!(["display"])
+    );
+    // Adding the section changed no blob, so a section-carrying transport still verifies green.
+    assert_eq!(json["verify"]["ok"], true, "stdout: {stdout}");
+
+    // The human report names the entries and does not claim a verdict about this host.
+    let human = bin()
+        .args(["doctor", "--branch-location", transport.to_str().unwrap()])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&human.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("declared requirements: libc >=2.34 · packages fontconfig, fonts-dejavu, xvfb · services dbus · capabilities display · headless xvfb-run"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("not probed by this build"),
+        "the human report must not imply a host verdict: {stdout}"
+    );
+}
+
 const NOOP_DRIFT_KIB: u64 = 64;
 
 #[cfg(feature = "ci")]

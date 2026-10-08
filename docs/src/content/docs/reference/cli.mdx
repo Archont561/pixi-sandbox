@@ -52,7 +52,8 @@ pixi-sandbox pack \
   --fetch-tools \
   --tools-lock /path/to/reviewed-tools.lock.json \
   --tools-cache ~/.cache/pixi-sandbox/tools \
-  --self-bin target/release/pixi-sandbox
+  --self-bin target/release/pixi-sandbox \
+  --config pixi-sandbox.toml
 ```
 
 | Flag | Description |
@@ -68,8 +69,16 @@ pixi-sandbox pack \
 | `--tools-lock` | Override tools.lock.json path |
 | `--tools-cache` | Tools cache dir |
 | `--self-bin` | **Standalone** binary to embed only under `.pixi-sandbox/tools/<platform>/pixi-sandbox` (`.exe` on Windows) — see below |
+| `--config` | Optional sandbox config; its `[host_requirements]` resolved for `--platform` are recorded in the manifest (relative to the current directory, like `plan --config`) |
 
 No override means embedded pins from `tools.lock.json` compiled into binary.
+
+`--config` is optional and additive: with it, a project's `[host_requirements]` table — resolved
+for `--platform`'s host family — travels in `manifest.json`, so the restored branch still says
+what its workloads need from the machine (see
+[Configuration](/pixi-sandbox/reference/configuration/#host_requirements--host-level-declarations)).
+Without it, no host-requirement section is written and the manifest is byte-identical to what
+earlier releases packed.
 
 **The self-bin must run standalone.** A transport is executed on machines that never saw
 your prefix — no `pixi global` installation, no conda activation, no shell profile — so pack

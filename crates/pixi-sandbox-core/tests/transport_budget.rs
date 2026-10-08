@@ -85,6 +85,7 @@ fn manifest() -> Manifest {
                 blob("vendor/demo/src/lib.rs", 7),
             ],
         }),
+        host_requirements: None,
     }
 }
 

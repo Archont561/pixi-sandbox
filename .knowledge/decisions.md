@@ -597,12 +597,22 @@ meets `[host_requirements]` as an unknown field and refuses the file there, neve
 schema check. The bump stays reserved for a change that makes an *older* config mean something
 different, per the constant's own doctrine.
 
-**Honest limits.** The declaration is not yet consumed: probes and the carried manifest section
-are TASK-75's remaining slices, so today the table is validated and resolvable (through
-`SandboxConfig::host_requirements_for`) but unread by `pack` or `doctor`. `display` and `gpu`
-are reportable, never grantable — a sandbox cannot hand a process a GPU or a user's session.
-`headless` providers are checked for existence on `PATH`, never launched. And the family list is
-closed at three: a project needing a fourth family needs a decision, not a config key.
+**How it travels.** `pack --config <path>` resolves the table for `--platform`'s host family
+before anything is created — an unreadable or invalid config refuses the run while no output
+directory exists, with the other pre-flight guards — and records the result as
+`manifest.host_requirements`, additive within schema 2 and omitted entirely when the project
+declares nothing, so a transport without the section is byte-identical to what earlier releases
+packed. The generated publisher passes the same config path to `pack` that it already passed to
+`plan` and `doctor`, so a consumer's branch carries what its reviewed config declares with no
+extra step. `doctor` reports the declared set (human line plus a `host_requirements` JSON
+object) from the branch alone, and the branch's own README/AGENTS.md name it for a human reader.
+
+**Honest limits.** The probes are TASK-75's remaining slice: the requirements are declared,
+carried and reported, but nothing yet inspects the machine, so `doctor` says so in a hint rather
+than implying a verdict. `display` and `gpu` will be reportable, never grantable — a sandbox
+cannot hand a process a GPU or a user's session. `headless` providers will be checked for
+existence on `PATH`, never launched. And the family list is closed at three: a project needing a
+fourth family needs a decision, not a config key.
 
 **What would change it.** Evidence that real projects need per-bundle declarations (a GUI bundle
 and a docs bundle in one repository is the plausible case) would add an optional per-bundle

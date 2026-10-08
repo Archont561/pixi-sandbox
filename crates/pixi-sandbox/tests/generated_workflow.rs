@@ -542,6 +542,32 @@ fn generated_workflow_downloads_a_verified_release_binary_for_publishing() {
     assert!(workflow.contains("--self-bin \"$SELF_BIN\""));
 }
 
+/// TASK-75 AC#2 through the template: the config that carries `[host_requirements]` reaches
+/// `pack`, not only `plan` and `doctor` — a consumer's transport would otherwise silently drop
+/// what the reviewed config declares. Both runner dialects are checked, because the pwsh leg
+/// builds its argument array separately and a one-legged fix would look green on Linux.
+#[test]
+fn generated_workflow_passes_the_config_to_pack_so_host_requirements_travel() {
+    let workflow = workflow();
+    for expected in [
+        &format!("--config {CONFIG_PATH} \\\n"),
+        &format!("'--config', '{CONFIG_PATH}'"),
+    ] {
+        assert!(
+            workflow.contains(expected),
+            "the pack step must receive the sandbox config ({expected}):\n{workflow}"
+        );
+    }
+    // One reviewed config path, named by every step that reads it: plan (1), pack and doctor in
+    // each runner dialect (4), and the upgrade lane's two invocations (2). The count is the
+    // intentional-change detector — a new step that reads config must be added here too.
+    assert_eq!(
+        workflow.matches(CONFIG_PATH).count(),
+        7,
+        "expected plan, both pack legs, both doctor legs and the upgrade lane to name the config"
+    );
+}
+
 /// Issue #80: the release-download step named the *consumer's* repository, so any consumer
 /// publishing no GitHub releases of its own got a 404 before anything was packed. The
 /// download base must name this project's own repository — the one that actually publishes

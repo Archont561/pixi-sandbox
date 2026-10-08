@@ -325,6 +325,24 @@ fn print_human(
         );
     }
 
+    // What the transport expects from the *host*, straight from the manifest (issue #109,
+    // TASK-75). Printed as declared data: this build reports it without probing the machine, so
+    // the line must not read as a verdict about the host it is running on.
+    if let Some(host) = manifest
+        .host_requirements
+        .as_ref()
+        .filter(|host| !host.is_empty())
+    {
+        labelled(
+            "host",
+            &format!("declared requirements: {}", host.summary()),
+        );
+        labelled(
+            "hint",
+            "host requirements are not probed by this build; see the transport README",
+        );
+    }
+
     let (envs, tools, vendor) = manifest.payload_split();
     let total = manifest.payload_bytes();
     let mut split = format!("envs {} MiB · tools {} MiB", mib(envs), mib(tools));
@@ -547,6 +565,14 @@ fn as_json(
             "ok": restored.ok(),
             "failures": failures,
         });
+    }
+
+    if let Some(host) = manifest
+        .host_requirements
+        .as_ref()
+        .filter(|host| !host.is_empty())
+    {
+        out["host_requirements"] = serde_json::to_value(host).expect("host requirements serialise");
     }
 
     if let Some(budget) = budget {

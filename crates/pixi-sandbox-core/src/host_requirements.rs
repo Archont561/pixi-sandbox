@@ -130,6 +130,37 @@ impl HostRequirementSet {
         self.libc.as_deref().map(LibcFloor::parse).transpose()
     }
 
+    /// One line naming every declared entry, in a fixed kind order — the spelling `pack` writes
+    /// into a transport's branch README and `doctor` prints for a restored branch, so both
+    /// surfaces describe the same set the same way. An empty set renders an empty string
+    /// rather than a line of headings with nothing under them.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(spec) = &self.libc {
+            parts.push(format!("libc {spec}"));
+        }
+        if !self.packages.is_empty() {
+            parts.push(format!("packages {}", self.packages.join(", ")));
+        }
+        if !self.services.is_empty() {
+            parts.push(format!("services {}", self.services.join(", ")));
+        }
+        if !self.capabilities.is_empty() {
+            let names = self
+                .capabilities
+                .iter()
+                .map(|capability| capability.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            parts.push(format!("capabilities {names}"));
+        }
+        if !self.headless.is_empty() {
+            parts.push(format!("headless {}", self.headless.join(", ")));
+        }
+        parts.join(" · ")
+    }
+
     /// Validate one requirement set, naming `field` (the TOML path) in every error.
     ///
     /// # Errors

@@ -10,6 +10,7 @@
 //! and refuse only newer ones.
 
 use crate::error::{Error, Result};
+use crate::host_requirements::HostRequirementSet;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -45,6 +46,15 @@ pub struct Manifest {
     /// Present only when the transport carries `cargo vendor` output (decision D6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vendor: Option<Vendor>,
+    /// What this transport's workloads need from the *host*, resolved for [`Manifest::platform`]
+    /// (issue #109, TASK-75): a libc floor, host packages, services, capabilities and headless
+    /// display providers. Additive within schema 2 and written only when the project declared a
+    /// `[host_requirements]` table, so a transport without the section stays byte-identical to
+    /// what earlier releases packed, and a reader that predates the field ignores it rather than
+    /// refusing the manifest. Nothing here is installed by a restore; the section exists so a
+    /// restored branch can still say what it expects from the machine that runs it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_requirements: Option<HostRequirementSet>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

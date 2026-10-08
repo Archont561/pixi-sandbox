@@ -217,10 +217,12 @@ Validated at load, each with a named error: an unknown capability or family sect
 `libc` floor, a duplicated entry, an entry containing whitespace, and an empty table or empty
 family section (a table that declares nothing is a typo, not a declaration).
 
-**Status.** This page documents the declaration schema: the table is validated whenever a config
-is loaded. The `doctor` report that probes a host and classifies each requirement as satisfied,
-missing, unknown or not applicable, and the transport manifest section that carries the resolved
-set, are the remaining halves of TASK-75 (issue #109) and are not part of this release yet.
+**Status.** The declaration is validated whenever a config is loaded, and `pack --config` records
+the set resolved for the packed platform in the transport's `manifest.json` (additive, so a
+transport without the section is byte-identical to what earlier releases packed and restores
+exactly as before). `doctor` prints what a transport declares; the read-only probes that classify
+each requirement as satisfied, missing, unknown or not applicable — with per-distro install
+guidance — are TASK-75's remaining slice (issue #109).
 
 ## Validation
 
