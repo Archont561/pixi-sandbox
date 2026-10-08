@@ -1,9 +1,10 @@
 ---
 id: TASK-80
 title: Reject manifest paths without a file name instead of panicking in shard.rs
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-08 18:31'
+updated_date: '2026-10-08 19:26'
 labels:
   - core
   - transport
@@ -28,10 +29,26 @@ Non-goals: no schema change, and no change to paths that are already valid.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 check_rel_path (or a sibling check) rejects paths whose last component is not a normal name, including `.` and `./`, with Error::Invalid naming the path.
-- [ ] #2 A proptest in crates/pixi-sandbox-core/tests/manifest.rs asserts that every path the validator accepts has a file_name().
-- [ ] #3 shard.rs no longer calls file_name().expect on manifest-derived paths; any remaining call site on a self-built path carries a comment that justifies it.
-- [ ] #4 A transport fixture whose blob part path is "." makes doctor --verify and restore exit non-zero with a diagnostic, and never panic (test in crates/pixi-sandbox/tests/ or crates/pixi-sandbox-core/tests/verify.rs).
-- [ ] #5 The regression tests are written first and observed failing on the current tree.
-- [ ] #6 The manifest schema is unchanged, and the existing test count does not drop.
+- [x] #1 check_rel_path (or a sibling check) rejects paths whose last component is not a normal name, including `.` and `./`, with Error::Invalid naming the path.
+- [x] #2 A proptest in crates/pixi-sandbox-core/tests/manifest.rs asserts that every path the validator accepts has a file_name().
+- [x] #3 shard.rs no longer calls file_name().expect on manifest-derived paths; any remaining call site on a self-built path carries a comment that justifies it.
+- [x] #4 A transport fixture whose blob part path is "." makes doctor --verify and restore exit non-zero with a diagnostic, and never panic (test in crates/pixi-sandbox/tests/ or crates/pixi-sandbox-core/tests/verify.rs).
+- [x] #5 The regression tests are written first and observed failing on the current tree.
+- [x] #6 The manifest schema is unchanged, and the existing test count does not drop.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Landed on the 2026-10-08 session branch in three commits: the tests red, then the rule, then the surface tests.
+
+Evidence, all local:
+
+- check_rel_path now rejects any path whose file_name is None with Error::Invalid reading "<what> has no file name: <path>". The rule sits with the other shape rules, so every position it guards is covered by one branch. "a/." stays legal: its components normalise to "a", which has a name.
+- shard.rs takes the final component through the new manifest::rel_path_file_name, so assemble, read_blob and split_file return Err instead of panicking. No expect remains in the file.
+- Before the fix, join_parts on a part path of "." panicked at shard.rs:234 with "file name"; tests/shard.rs pins that case.
+- A real transport whose demo-big part path is "." — every byte still hashing correctly — made doctor --verify report only "verify failed: 1 failure(s)" and no reason, because verify.rs:484 already tolerated a missing file name and the directory read surfaced as an io error. Verify-before-write is why the panic stayed latent rather than unreachable.
+- Suite 746 -> 760 passed / 1 skipped; lint 11 gates green; schema unchanged; no push, no PR.
+
+Baselines for the next session: 760 passed / 1 skipped.
+<!-- SECTION:NOTES:END -->

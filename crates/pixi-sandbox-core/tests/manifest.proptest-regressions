@@ -1,3 +1,4 @@
 # Seeds for property tests in `manifest.rs`.
 #
 # Keep minimized wire-format regressions under version control for deterministic replay.
+cc e66795f9a6bff888ebd5a573456aa6e59563ff7be5a88609b633d773fceaca16 # shrinks to path = "."
