@@ -19,13 +19,17 @@ const PREFERRED_CONFIG: &str = "pixi-sandbox.toml";
 const LEGACY_CONFIG: &str = ".pixi-sandbox.toml";
 const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Which launcher *script* flavour to generate: Posix writes `restore.sh`, PowerShell writes
+/// `restore.ps1`. Distinct from `user_tools::LauncherKind`, which answers the neighbouring
+/// question — which flavour the *restoring host* runs (its `Posix`/`Windows`) — so each name
+/// means one concept (TASK-79).
 #[derive(Debug, Clone, Copy)]
-enum LauncherKind {
+enum LauncherShell {
     Posix,
     PowerShell,
 }
 
-impl LauncherKind {
+impl LauncherShell {
     fn current() -> Self {
         if cfg!(windows) {
             Self::PowerShell
@@ -128,7 +132,7 @@ fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
     let relock = resolve(root, &args.relock_workflow_path);
     let config = select_config(root, args.config.as_deref());
     let config_reference = project_reference(root, &config);
-    let launcher_kind = LauncherKind::current();
+    let launcher_kind = LauncherShell::current();
     let script_argument = args
         .script_path
         .as_deref()
@@ -210,14 +214,14 @@ pub fn run(args: InitArgs) -> Result<()> {
         ensure_replaceable(path, args.force)?;
     }
 
-    let launcher_kind = LauncherKind::current();
+    let launcher_kind = LauncherShell::current();
     write(&targets.workflow.0, &targets.workflow.1)?;
     if !targets.config.exists() {
         write(&targets.config, &default_config(current_platform()?))?;
     }
     write(&targets.relock.0, &targets.relock.1)?;
     write(&targets.script.0, &targets.script.1)?;
-    if matches!(launcher_kind, LauncherKind::Posix) {
+    if matches!(launcher_kind, LauncherShell::Posix) {
         support::make_executable(&targets.script.0)?;
     }
 
