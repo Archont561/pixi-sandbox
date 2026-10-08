@@ -61,7 +61,7 @@ pub fn run(args: PublishArgs) -> Result<()> {
         println!(
             "  {} file(s), {} MiB — nothing was written (--dry-run)",
             published.files,
-            mib(published.bytes)
+            support::mib(published.bytes)
         );
         return Ok(());
     }
@@ -69,7 +69,7 @@ pub fn run(args: PublishArgs) -> Result<()> {
     println!(
         "published {} file(s), {} MiB to {remote}:{}",
         published.files,
-        mib(published.bytes),
+        support::mib(published.bytes),
         args.branch_name
     );
     println!(
@@ -91,7 +91,7 @@ pub fn run(args: PublishArgs) -> Result<()> {
     );
     match git.remote_size(&remote, &args.branch_name) {
         // A local remote (or one mounted as a path) can answer this; a URL cannot.
-        Ok(Some(bytes)) => println!("  branch stores {} MiB", mib(bytes)),
+        Ok(Some(bytes)) => println!("  branch stores {} MiB", support::mib(bytes)),
         Ok(None) => println!("  branch size: not knowable without a local object store"),
         Err(err) => println!("  branch size: {err}"),
     }
@@ -119,10 +119,6 @@ fn commit_message(manifest: &Manifest) -> String {
         manifest.platform,
         manifest.schema
     )
-}
-
-fn mib(bytes: u64) -> String {
-    format!("{:.1}", bytes as f64 / (1024.0 * 1024.0))
 }
 
 /// Kept next to the command because it is part of the published contract: the branch name is

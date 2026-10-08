@@ -329,8 +329,8 @@ fn print_human(
         println!(
             "  env {name}: {} files packed / {} MiB packed → {} MiB unpacked{fingerprint}{files}",
             env.blobs.len(),
-            mib(env.packed_size_bytes),
-            mib(env.unpacked_size_bytes),
+            support::mib(env.packed_size_bytes),
+            support::mib(env.unpacked_size_bytes),
         );
     }
 
@@ -344,7 +344,7 @@ fn print_human(
             "  tool {name}: v{} {} {} MiB{pinned}",
             tool.version,
             tool.linkage,
-            mib(tool.size_bytes),
+            support::mib(tool.size_bytes),
         );
     }
 
@@ -357,7 +357,7 @@ fn print_human(
         println!(
             "  vendor: {} crates, {} MiB, {} mode{lock}",
             vendor.crates,
-            mib(vendor.size_bytes),
+            support::mib(vendor.size_bytes),
             capitalise(&vendor.mode),
         );
     }
@@ -408,12 +408,19 @@ fn print_human(
 
     let (envs, tools, vendor) = manifest.payload_split();
     let total = manifest.payload_bytes();
-    let mut split = format!("envs {} MiB · tools {} MiB", mib(envs), mib(tools));
+    let mut split = format!(
+        "envs {} MiB · tools {} MiB",
+        support::mib(envs),
+        support::mib(tools)
+    );
     if manifest.vendor.is_some() {
         let share = vendor.saturating_mul(100).checked_div(total).unwrap_or(0);
-        split.push_str(&format!(" · vendor {} MiB, {share}% vendor", mib(vendor)));
+        split.push_str(&format!(
+            " · vendor {} MiB, {share}% vendor",
+            support::mib(vendor)
+        ));
     }
-    println!("  payload {} MiB total ({split})", mib(total),);
+    println!("  payload {} MiB total ({split})", support::mib(total),);
 
     match report {
         None => labelled(
@@ -434,7 +441,7 @@ fn print_human(
                 &format!(
                     "{} blob(s), {} MiB checked, {} failure(s)",
                     report.files,
-                    mib(report.bytes),
+                    support::mib(report.bytes),
                     report.failures.len()
                 ),
             );
@@ -475,14 +482,14 @@ fn print_human(
                 "budget",
                 &format!(
                     "OK — blob {} MiB, transport {} MiB, push {} MiB, restore preflight {} MiB",
-                    mib(budget.measurements.largest_blob_bytes),
-                    mib(budget.measurements.transport_bytes),
+                    support::mib(budget.measurements.largest_blob_bytes),
+                    support::mib(budget.measurements.transport_bytes),
                     budget
                         .measurements
                         .repository_push_bytes
-                        .map(mib)
+                        .map(support::mib)
                         .unwrap_or_else(|| "unknown".to_string()),
-                    mib(budget.measurements.restore_required_bytes),
+                    support::mib(budget.measurements.restore_required_bytes),
                 ),
             );
         } else {
@@ -494,8 +501,8 @@ fn print_human(
                 println!(
                     "  {}: {} MiB > {} MiB — {}",
                     violation.field,
-                    mib(violation.measured_bytes),
-                    mib(violation.limit_bytes),
+                    support::mib(violation.measured_bytes),
+                    support::mib(violation.limit_bytes),
                     violation.remedy
                 );
             }
@@ -685,10 +692,6 @@ fn as_json(
 
 fn labelled(label: &str, text: &str) {
     println!("{label:<10}{text}");
-}
-
-fn mib(bytes: u64) -> String {
-    format!("{:.1}", bytes as f64 / (1024.0 * 1024.0))
 }
 
 fn capitalise(s: &str) -> String {
