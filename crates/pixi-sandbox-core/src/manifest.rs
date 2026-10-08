@@ -322,7 +322,29 @@ pub(crate) fn check_rel_path(path: &str, what: &str) -> Result<()> {
             "{what} escapes the transport directory: {path}"
         )));
     }
+    // Every reader of a declared path ends up taking its final component: the shard code
+    // joins `file_name()` onto a directory rather than replaying the path as written, so a
+    // relative path with no *normal* final component (`.`, `./`) is not a curiosity but a
+    // panic on data the branch supplies. Refuse it here, where the rest of the shape rules
+    // live, instead of at each of those readers (TASK-80). `a/.` is deliberately still
+    // accepted: its components normalise to `a`, which has a name.
+    if Path::new(path).file_name().is_none() {
+        return Err(Error::Invalid(format!("{what} has no file name: {path}")));
+    }
     Ok(())
+}
+
+/// The final component of a manifest-declared path, or [`Error::Invalid`] naming the path.
+///
+/// The fallible twin of [`Path::file_name`] for branch data: [`check_rel_path`] has already
+/// refused every path without a final component, so a manifest that loaded through
+/// [`Manifest::load`] cannot reach the error branch. Call sites inside the crate still route
+/// through here rather than `expect`, because a path is untrusted input and the cost of
+/// being wrong is a panic mid-restore (TASK-80 AC#3).
+pub(crate) fn rel_path_file_name<'a>(path: &'a str, what: &str) -> Result<&'a std::ffi::OsStr> {
+    Path::new(path)
+        .file_name()
+        .ok_or_else(|| Error::Invalid(format!("{what} has no file name: {path}")))
 }
 
 fn check_digest(digest: &str, what: &str) -> Result<()> {

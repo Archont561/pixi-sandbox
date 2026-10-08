@@ -7,7 +7,7 @@
 //!   pieces, because GitHub hard-blocks any git blob above 100 MiB.
 
 use crate::error::{Error, Result};
-use crate::manifest::{Blob, Part};
+use crate::manifest::{Blob, Part, rel_path_file_name};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -114,7 +114,9 @@ pub fn split_file(abs: &Path, rel_path: &str, limit: u64) -> Result<Vec<Part>> {
         // read up to `limit` bytes for this part
         let mut written = 0u64;
         let rel_part = part_path(rel_path, index);
-        let abs_part = dir.join(Path::new(&rel_part).file_name().expect("file name"));
+        // Built here from `rel_path`, so it always carries a name; the fallible helper keeps
+        // this file free of `expect` and costs nothing on the happy path (TASK-80 AC#3).
+        let abs_part = dir.join(rel_path_file_name(&rel_part, "part path")?);
         let mut out = BufWriter::new(File::create(&abs_part).map_err(|e| Error::io(&abs_part, e))?);
         let mut hasher = Sha256::new();
 
@@ -231,7 +233,7 @@ fn assemble(
     let mut total = 0u64;
 
     for part in parts {
-        let src = parts_root.join(Path::new(&part.path).file_name().expect("file name"));
+        let src = parts_root.join(rel_path_file_name(&part.path, "part path")?);
         if !src.exists() {
             return Err(Error::MissingPart(part.path.clone()));
         }
@@ -361,7 +363,7 @@ pub fn read_blob(root: &Path, blob: &Blob) -> Result<Vec<u8>> {
     };
     let mut out = Vec::with_capacity(blob.size.min(INLINE_CAP) as usize);
     for part in &blob.parts {
-        let src = parts_root.join(Path::new(&part.path).file_name().expect("file name"));
+        let src = parts_root.join(rel_path_file_name(&part.path, "part path")?);
         let bytes = fs::read(&src).map_err(|e| Error::io(&src, e))?;
         if bytes.len() as u64 != part.size {
             return Err(Error::SizeMismatch {
