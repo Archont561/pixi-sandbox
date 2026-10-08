@@ -1,6 +1,7 @@
 //! The manifest is a wire format: these tests freeze its shape and its validation rules,
 //! and they check the repository's *own* pin file for completeness.
 
+use pixi_sandbox_core::host_requirements::{HostCapability, HostRequirementSet};
 use pixi_sandbox_core::manifest::{Manifest, SCHEMA_VERSION};
 use pixi_sandbox_core::tools_lock::ToolsLock;
 use proptest::prelude::*;
@@ -113,6 +114,70 @@ proptest! {
         prop_assert!(decoded.validate().is_ok());
         prop_assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
     }
+}
+
+/// Issue #109 / TASK-75 AC#2: the host requirements a bundle declared travel in the transport,
+/// additively — a manifest without the section stays valid and byte-identical, and a reader
+/// that predates the field ignores it rather than refusing the branch.
+#[test]
+fn host_requirements_are_carried_additively_and_absent_by_default() {
+    let plain = parse(&valid_manifest());
+    assert_eq!(plain.host_requirements, None);
+    let encoded = serde_json::to_value(&plain).unwrap();
+    assert!(
+        encoded.get("host_requirements").is_none(),
+        "a project that declares nothing must not gain a key: {encoded}"
+    );
+
+    // A manifest that carries the section parses, validates and round-trips unchanged.
+    let text = valid_manifest().replace(
+        "\"envs\": {",
+        "\"host_requirements\": {\n    \"libc\": \">=2.34\",\n    \"packages\": [\"fontconfig\", \"xvfb\"],\n    \"services\": [\"dbus\"],\n    \"capabilities\": [\"display\"],\n    \"headless\": [\"xvfb-run\"]\n  },\n  \"envs\": {",
+    );
+    let manifest = parse(&text);
+    manifest
+        .validate()
+        .expect("the section must not break validation");
+    let host = manifest.host_requirements.as_ref().unwrap();
+    assert_eq!(host.libc.as_deref(), Some(">=2.34"));
+    assert_eq!(host.packages, ["fontconfig", "xvfb"].map(String::from));
+    assert_eq!(host.services, ["dbus"].map(String::from));
+    assert_eq!(host.capabilities, [HostCapability::Display]);
+    assert_eq!(host.headless, ["xvfb-run"].map(String::from));
+
+    let round_trip: Manifest =
+        serde_json::from_str(&serde_json::to_string(&manifest).unwrap()).unwrap();
+    assert_eq!(round_trip.host_requirements, manifest.host_requirements);
+
+    // The summary both human surfaces render.
+    assert_eq!(
+        host.summary(),
+        "libc >=2.34 · packages fontconfig, xvfb · services dbus · capabilities display · \
+         headless xvfb-run"
+    );
+}
+
+/// The backward-compatibility half stated the other way round: an *older* reader meets the key
+/// as unknown data and ignores it, because the manifest is deliberately not
+/// `deny_unknown_fields` — a published branch outlives the binary that wrote it.
+#[test]
+fn an_unknown_manifest_key_is_ignored_rather_than_refused() {
+    let text = valid_manifest().replace(
+        "\"envs\": {",
+        "\"host_requirements_from_the_future\": { \"whatever\": true },\n  \"envs\": {",
+    );
+    let manifest = parse(&text);
+    manifest
+        .validate()
+        .expect("an unknown key must not break a restore");
+}
+
+#[test]
+fn the_host_summary_omits_kinds_that_are_not_declared() {
+    let set: HostRequirementSet =
+        serde_json::from_str(r#"{ "packages": ["fontconfig"] }"#).unwrap();
+    assert_eq!(set.summary(), "packages fontconfig");
+    assert_eq!(HostRequirementSet::default().summary(), "");
 }
 
 #[test]

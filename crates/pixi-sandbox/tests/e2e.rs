@@ -312,6 +312,154 @@ fn a_real_packed_environment_restores_with_nothing_pointing_into_restore_scratch
     assert!(!airlock.join(".pixi/.restore-work").exists());
 }
 
+/// Issue #109 / TASK-75 AC#2/#3, the read half: a transport that declares host requirements is
+/// classified against this host from the branch alone — `doctor` reads the section out of the
+/// manifest, not out of any source checkout — and a transport without the section stays exactly
+/// as it was. The verdicts themselves depend on the machine running this test, so the assertions
+/// are the host-independent ones: the report's *shape*, one finding per declared requirement,
+/// and the exit-code contract that makes report-only the default and enforcement opt-in.
+#[test]
+fn doctor_classifies_the_host_requirements_the_transport_declares() {
+    let temp = tempfile::tempdir().unwrap();
+    let transport = temp.path().join("transport");
+    copy_tree(&fixture_transport(), &transport);
+
+    // The fixture carries no section, so the report has none, and the flag is a no-op.
+    let plain = bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--json",
+            "--require-host-requirements",
+        ])
+        .assert()
+        .success();
+    let plain_json = String::from_utf8_lossy(&plain.get_output().stdout).to_string();
+    assert!(
+        !plain_json.contains("host_requirements"),
+        "a transport that declares nothing must not report a host section:\n{plain_json}"
+    );
+
+    // Inject the section the packer writes, then read it back classifed.
+    let manifest_path = transport.join(".pixi-sandbox/manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    manifest["host_requirements"] = serde_json::json!({
+        "libc": ">=2.34",
+        "packages": ["fontconfig", "fonts-dejavu", "xvfb"],
+        "services": ["dbus"],
+        "capabilities": ["display"],
+        "headless": ["xvfb-run"],
+    });
+    fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+
+    // Report-only by default: the exit code is zero whatever this host turns out to be — the
+    // generated publisher runs doctor on a runner that is not where the workload runs.
+    let reported = bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--verify",
+            "--json",
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&reported.get_output().stdout).to_string();
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("doctor emits one JSON value");
+    let host = &json["host_requirements"];
+    assert_eq!(host["declared"]["libc"], ">=2.34");
+    assert_eq!(host["platform_family"], "linux");
+    assert!(
+        host["verify"].is_null(),
+        "the host report must not swallow the verify section"
+    );
+    assert_eq!(json["verify"]["ok"], true, "stdout: {stdout}");
+
+    let findings = host["findings"].as_array().expect("findings array");
+    assert_eq!(
+        findings.len(),
+        7,
+        "one finding per declared requirement, in declaration order: {findings:#?}"
+    );
+    let expected = [
+        ("libc", ">=2.34"),
+        ("package", "fontconfig"),
+        ("package", "fonts-dejavu"),
+        ("package", "xvfb"),
+        ("service", "dbus"),
+        ("capability", "display"),
+        ("headless", "xvfb-run"),
+    ];
+    for (finding, (kind, name)) in findings.iter().zip(expected) {
+        assert_eq!(finding["kind"], kind, "{finding}");
+        assert_eq!(finding["name"], name, "{finding}");
+        let status = finding["status"].as_str().expect("status string");
+        assert!(
+            ["satisfied", "missing", "unknown", "not_applicable"].contains(&status),
+            "unexpected status {status} in {finding}"
+        );
+        // A remedy is written exactly when something can be done about the result.
+        assert_eq!(
+            finding.get("remedy").is_none(),
+            status == "satisfied",
+            "remedy/status mismatch in {finding}"
+        );
+    }
+    assert_eq!(
+        host["ok"].as_bool(),
+        Some(!findings.iter().any(|f| f["status"] == "missing")),
+        "`ok` must mean exactly: nothing missing ({host})"
+    );
+
+    // Enforcement is opt-in and agrees with the report: non-zero exactly when something is
+    // missing. `unknown` never fails — a host without the queries to answer is not broken.
+    let enforced = bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--json",
+            "--require-host-requirements",
+        ])
+        .assert();
+    let expect_success = host["ok"].as_bool().unwrap();
+    if expect_success {
+        enforced.success();
+    } else {
+        enforced
+            .failure()
+            .stderr(predicate::str::contains("host requirements not met"));
+    }
+
+    // The human report names every finding and the conda-versus-host boundary.
+    let human = bin()
+        .args(["doctor", "--branch-location", transport.to_str().unwrap()])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&human.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("declared requirements: libc >=2.34"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("conda-provided libraries travel with the transport"),
+        "the boundary between conda-provided and host-provided must be printed: {stdout}"
+    );
+    for (kind, name) in expected {
+        assert!(
+            stdout.contains(&format!("{kind} {name}: ")),
+            "missing {kind} {name} from:\n{stdout}"
+        );
+    }
+}
+
 const NOOP_DRIFT_KIB: u64 = 64;
 
 #[cfg(feature = "ci")]

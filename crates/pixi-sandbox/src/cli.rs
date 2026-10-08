@@ -132,6 +132,15 @@ pub struct PackArgs {
     /// environment and refuses a binary that breaks without its prefix (issue #81).
     #[arg(long)]
     pub self_bin: Option<PathBuf>,
+
+    /// Optional sandbox config (`.pixi-sandbox.toml` / `pixi-sandbox.toml`, relative to the
+    /// current directory like `plan --config`). When given, the `[host_requirements]` table
+    /// resolved for `--platform` is recorded in the transport manifest, so a restored branch
+    /// still says what its workloads need from the machine (issue #109, TASK-75). Without the
+    /// flag, no host-requirement section is written and the manifest is byte-identical to what
+    /// earlier releases packed.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -313,6 +322,14 @@ pub struct DoctorArgs {
     #[arg(long)]
     pub budget_config: Option<PathBuf>,
 
+    /// Exit non-zero when a host requirement the transport declares is *missing* on this host.
+    /// Without it, host findings are reported and never change the exit code: the generated
+    /// publisher runs `doctor` on a CI runner that is not where the workload runs. `unknown`
+    /// results — a host without the queries to answer, or a transport for another OS family —
+    /// never fail either way; enforcement must not punish a machine it cannot inspect.
+    #[arg(long)]
+    pub require_host_requirements: bool,
+
     /// Machine-readable output.
     #[arg(long)]
     pub json: bool,
@@ -457,6 +474,7 @@ pub fn run() -> Result<()> {
                 work_dir: None,
                 envs: Vec::new(),
                 budget_config: None,
+                require_host_requirements: false,
                 json: false,
             })?;
             let manifest = pixi_sandbox_core::manifest::Manifest::load(

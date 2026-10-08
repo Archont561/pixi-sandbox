@@ -178,6 +178,10 @@ default restore leaves it byte-for-byte intact; Cargo's vendor replacement lives
     <Icon name="lucide:key" size={18} />
     <span><strong>Credentials</strong> — nothing authenticates to anything.</span>
   </div>
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon name="lucide:monitor" size={18} />
+    <span><strong>Host system dependencies</strong> — fonts, a display server, D-Bus, GPU drivers stay on the machine; declare what a GUI workload needs in <a href="/pixi-sandbox/guides/host-requirements/"><code>[host_requirements]</code></a> and let <code>doctor</code> name what is missing.</span>
+  </div>
 </div>
 
 ## Post-link scripts

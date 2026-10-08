@@ -6,6 +6,7 @@
 //! Actions matrix without coupling the transport format to a CI provider.
 
 use crate::error::{Error, Result};
+use crate::host_requirements::{HostRequirementSet, HostRequirements};
 use crate::platform::Platform;
 use crate::tools_lock::ToolsLock;
 use crate::transport_budget::{
@@ -82,6 +83,10 @@ pub struct SandboxConfig {
     /// Optional generated-publisher CI policy (issue #79, task-53). See [`WorkflowPolicy`].
     #[serde(default)]
     pub workflow: Option<WorkflowPolicy>,
+    /// Optional host-level declarations for GUI/native workloads (issue #109, TASK-75). See
+    /// [`HostRequirements`]: the sandbox never installs these, `doctor` reports them.
+    #[serde(default)]
+    pub host_requirements: Option<HostRequirements>,
 }
 
 /// One environment set to publish for one or more native platforms.
@@ -279,6 +284,7 @@ pub fn plan_override(
         }],
         budgets: BudgetPolicy::default(),
         workflow: None,
+        host_requirements: None,
     }
     .plan()
 }
@@ -354,6 +360,23 @@ impl SandboxConfig {
         })
     }
 
+    /// The host requirements a transport for `platform` carries (issue #109, TASK-75).
+    ///
+    /// `None` when the config declares no `[host_requirements]` table at all; otherwise the
+    /// shared declarations resolved with that platform's host family — the exact set `pack`
+    /// will record in the transport's manifest, so a restored branch stays self-describing.
+    ///
+    /// # Errors
+    /// Returns an error for a platform string this build does not know (the same refusal
+    /// [`SandboxConfig::plan`] applies to `[[bundle]] platforms`).
+    pub fn host_requirements_for(&self, platform: &str) -> Result<Option<HostRequirementSet>> {
+        let Some(declared) = &self.host_requirements else {
+            return Ok(None);
+        };
+        let family = platform.parse::<Platform>()?.host_family();
+        Ok(Some(declared.resolved_for(family)))
+    }
+
     /// Resolve the `on.push.paths:` allowlist: an explicit `[workflow] push_paths` always wins;
     /// otherwise, once `[workflow]` is present at all, derive one from the transport inputs
     /// `plan` already depends on (task-53 AC#3); absent no `[workflow]` table, no filter at all
@@ -388,6 +411,9 @@ impl SandboxConfig {
         self.budgets.to_transport_budgets()?;
         if let Some(workflow) = &self.workflow {
             validate_workflow_policy(workflow)?;
+        }
+        if let Some(host) = &self.host_requirements {
+            host.validate()?;
         }
         if self.bundles.is_empty() {
             return Err(Error::Invalid(

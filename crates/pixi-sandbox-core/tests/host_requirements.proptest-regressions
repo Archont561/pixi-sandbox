@@ -1,0 +1,4 @@
+# Seeds for property tests in `host_requirements.rs`.
+#
+# Keep minimized counterexamples under version control so a `libc` grammar or resolution-union
+# regression replays deterministically on every host.

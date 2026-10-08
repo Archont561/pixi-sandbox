@@ -42,6 +42,16 @@ name = "minimal"
 environments = ["default"]
 platforms = ["linux-64"]
 cargo_vendor = false
+
+# Optional host-level declarations for GUI/native workloads (see below).
+[host_requirements]
+libc = ">=2.34"
+packages = ["fontconfig"]
+capabilities = ["display"]
+headless = ["xvfb-run"]
+
+[host_requirements.linux]
+packages = ["fontconfig", "fonts-dejavu", "xvfb"]
 ```
 
 ## Top-level fields
@@ -159,6 +169,64 @@ project. `pixi-sandbox plan --config pixi-sandbox.toml --json` surfaces the same
 under its `push_paths` key, so a consumer can diff what the next `init` would write before
 running it. An explicit `push_paths` always overrides the derivation.
 
+## `[host_requirements]` — host-level declarations
+
+Optional, within schema 1. A restored transport is a complete Pixi environment; it is not a
+complete machine. Fonts, an X server, D-Bus, GPU access and the C runtime come from the host, so
+a GUI workload can fail *after* a restore that verified perfectly — the failure mode
+[issue #109](https://github.com/Archont561/pixi-sandbox/issues/109) describes. This table is
+where a project declares those expectations.
+
+It is deliberately named `host_requirements` rather than pixi's `system-requirements`: pixi's
+table constrains the *conda solver* (it declares virtual packages such as `__glibc` that builds
+are selected against), while everything here is host state. Nothing in the table is ever
+installed into the environment — pixi-sandbox does not bundle display servers, GPU drivers or OS
+services, and the boundary is the point: the declaration exists so a missing host dependency is
+named before the application is launched instead of after.
+
+Declarations are shared by default and refined per host family — `linux`, `osx` and `windows`,
+the families the five Pixi platforms map to (`linux-64` and `linux-aarch64` → `linux`,
+`osx-64`/`osx-arm64` → `osx`, `win-64` → `windows`).
+
+```toml
+[host_requirements]
+libc = ">=2.34"                    # optional floor: "2.34" is the same statement
+packages = ["fontconfig"]          # host packages required on every family
+services = ["dbus"]                # host services that must be available
+capabilities = ["display"]         # closed set: display, gpu
+headless = ["xvfb-run"]            # any one of these satisfies a display requirement
+
+[host_requirements.linux]          # optional: adds to the shared entries, wins on libc
+packages = ["fontconfig", "fonts-dejavu", "xvfb"]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `libc` | string | Minimum C runtime, `major.minor` or `major.minor.patch`, with an optional `>=` prefix; only a minimum is accepted. Linux-only: the `osx` and `windows` sections refuse it. |
+| `packages` | string[] | Host packages (distro-level) the workload needs. Single names without whitespace. |
+| `services` | string[] | Host services that must be available, for example a D-Bus session bus. |
+| `capabilities` | string[] | Closed set: `display`, `gpu`. A value outside it is a config error, not a silently skipped check. |
+| `headless` | string[] | Programs on `PATH`, any *one* of which satisfies a display requirement when there is no physical display (`xvfb-run` is the canonical entry). |
+| `linux`, `osx`, `windows` | tables | Per-family additions and overrides. A family's `libc` replaces the shared floor; the lists accumulate. |
+
+Resolution is the one rule to remember: shared entries always apply, a family's section adds to
+them (duplicates are dropped, declaration order kept), and a section cannot remove a shared
+entry. To require something on a single family, declare it in that family's section alone.
+
+Validated at load, each with a named error: an unknown capability or family section, a malformed
+`libc` floor, a duplicated entry, an entry containing whitespace, and an empty table or empty
+family section (a table that declares nothing is a typo, not a declaration).
+
+**Status.** The declaration is validated whenever a config is loaded, `pack --config` records the
+set resolved for the packed platform in the transport's `manifest.json` (additive, so a transport
+without the section is byte-identical to what earlier releases packed and restores exactly as
+before), and `doctor` classifies it against the host it runs on — satisfied, missing, unknown or
+not applicable — with per-distribution install guidance and a JSON report a CI job can branch on.
+Enforcement stays opt-in (`doctor --require-host-requirements`). See the
+[CLI reference](/pixi-sandbox/reference/cli/#doctor) for the probes and the exit-code contract and
+[GUI and host requirements](/pixi-sandbox/guides/host-requirements/) for a worked Tauri-style
+example and the boundary that nothing is installed or granted.
+
 ## Validation
 
 ```bash
@@ -175,6 +243,8 @@ Errors:
 - Runner override unused
 - Platform without embedded tool pins
 - Invalid runner label
+- `[host_requirements]`: unknown capability or family, malformed `libc` floor, duplicate or
+  whitespace-bearing entry, empty table or empty family section
 
 ## Examples
 

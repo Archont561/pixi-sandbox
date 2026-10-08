@@ -5,6 +5,7 @@
 //! `crates/xtask`.
 
 pub mod generated;
+pub mod host_probe;
 pub mod release;
 pub mod self_update;
 pub mod standalone;

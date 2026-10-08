@@ -253,6 +253,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
             --platform "$PLATFORM" \
             --fetch-tools \
             --self-bin "$SELF_BIN" \
+            --config __CONFIG_PATH__ \
             --log-file "$LOG_DIR/pack.log" \
             $CARGO_VENDOR_ARG
           record doctor "$SELF_BIN" doctor --branch-location "$TRANSPORT" --verify --budget-config __CONFIG_PATH__ --log-file "$LOG_DIR/doctor.log"
@@ -312,7 +313,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
           $transport = Join-Path $env:RUNNER_TEMP 'pixi-sandbox-transport'
           Remove-Item -Recurse -Force $transport -ErrorAction SilentlyContinue
           $packLog = Join-Path $logDir 'pack.log'
-          $packArgs = @('pack', '--repo-root', '.', '--envs', $env:ENVIRONMENTS, '--output-dir', $transport, '--platform', $env:PLATFORM, '--fetch-tools', '--self-bin', $env:SELF_BIN, '--log-file', $packLog)
+          $packArgs = @('pack', '--repo-root', '.', '--envs', $env:ENVIRONMENTS, '--output-dir', $transport, '--platform', $env:PLATFORM, '--fetch-tools', '--self-bin', $env:SELF_BIN, '--config', '__CONFIG_PATH__', '--log-file', $packLog)
           if ($env:CARGO_VENDOR -eq 'true') { $packArgs += '--cargo-vendor' }
           Invoke-Phase "pack" { & $env:SELF_BIN @packArgs }
           $doctorLog = Join-Path $logDir 'doctor.log'

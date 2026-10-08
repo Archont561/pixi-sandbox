@@ -7,10 +7,12 @@
 use crate::cli::{PackArgs, VendorModeArg};
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
+use pixi_sandbox_core::host_requirements::HostRequirementSet;
 use pixi_sandbox_core::manifest::{
     Env, EnvFiles, MANIFEST_DIR, MANIFEST_FILE, Manifest, SCHEMA_VERSION, Source, ToolEntry,
     ToolInfo, Vendor,
 };
+use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::shard;
 use pixi_sandbox_core::tools_lock::{ToolsLock, executable_filename};
 use pixi_sandbox_core::verify::{self, Linkage};
@@ -63,6 +65,10 @@ struct PackPlan {
     out: PathBuf,
     payload: PathBuf,
     shard_limit: u64,
+    /// Resolved `[host_requirements]` for `--platform`, exactly as the manifest will carry it
+    /// (issue #109, TASK-75). `None` when no config was given, when it declares no table, or
+    /// when nothing resolves for this platform's host family.
+    host_requirements: Option<HostRequirementSet>,
 }
 
 /// The tools one `pack` run executes: the packer/unpacker invoked for every environment, plus
@@ -120,12 +126,17 @@ impl PackPlan {
             validate_vendorable_lockfile(&root)?;
         }
 
+        // Resolved here, with the other pre-flight guards: a config that cannot be read or
+        // does not validate is a refusal that must leave no output directory behind.
+        let host_requirements = resolve_host_requirements(args.config.as_deref(), &args.platform)?;
+
         Ok(Self {
             args,
             root,
             out,
             payload,
             shard_limit,
+            host_requirements,
         })
     }
 
@@ -447,6 +458,7 @@ impl PackPlan {
             tools,
             envs,
             vendor,
+            host_requirements: self.host_requirements.clone(),
         };
         manifest.validate()?;
 
@@ -1040,6 +1052,27 @@ fn fingerprint_of(root: &Path, env: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+/// Resolve the `[host_requirements]` a manifest for `platform` carries.
+///
+/// `None` — meaning no section in the manifest at all — when no config was named, when the
+/// config declares no table, or when nothing resolves for that platform's host family. That is
+/// the backward-compatible half of the contract: a project that declares nothing keeps packing
+/// the same bytes earlier releases packed.
+fn resolve_host_requirements(
+    config: Option<&Path>,
+    platform: &str,
+) -> Result<Option<HostRequirementSet>> {
+    let Some(config) = config else {
+        return Ok(None);
+    };
+    let path = support::absolute(config)?;
+    let config = SandboxConfig::load(&path)
+        .with_context(|| format!("loading sandbox config {}", path.display()))?;
+    Ok(config
+        .host_requirements_for(platform)?
+        .filter(|set| !set.is_empty()))
+}
+
 fn write_branch_docs(
     out: &Path,
     manifest: &Manifest,
@@ -1125,6 +1158,29 @@ fn write_branch_docs(
         )
     };
 
+    // The manifest is the machine-readable carrier; these two renderings are the human ones — a
+    // reader of the branch learns what the machine must provide before launching anything.
+    let declared_host = manifest
+        .host_requirements
+        .as_ref()
+        .filter(|host| !host.is_empty());
+    let host_section = declared_host
+        .map(|host| {
+            format!(
+                "\nHost requirements (provided by the host, never installed by this transport): {}.\n",
+                host.summary()
+            )
+        })
+        .unwrap_or_default();
+    let host_bullet = declared_host
+        .map(|host| {
+            format!(
+                "- host requirements (provided by the host, never installed by this transport): {};\n",
+                host.summary()
+            )
+        })
+        .unwrap_or_default();
+
     let readme = format!(
         "# Offline sandbox (orphan branch)\n\n\
          Built {} from commit `{}` for platform `{}`.\n\
@@ -1132,6 +1188,7 @@ fn write_branch_docs(
          {}\
          | env | platform | packed | unpacked | files |\n\
          | --- | --- | ---: | ---: | ---: |\n\
+         {}\n\
          {}\n\
          {}\n\
          ## Restore on the disconnected machine\n\n\
@@ -1149,6 +1206,7 @@ fn write_branch_docs(
         bootstrap,
         rows,
         vendor,
+        host_section,
         shell_language,
         restore_commands,
     );
@@ -1169,6 +1227,7 @@ fn write_branch_docs(
          - authoritative manifest: `.pixi-sandbox/manifest.json` (schema {});\n\
          - environments: {} (platform {});\n\
          {}\
+         {}\
          - never download tools at restore time; bundled tools are: {};\n\
          - after restore, use pixi as the only entrypoint: `pixi install --frozen --offline` \
            (or `<project>/.pixi/tools/{}/{}` when user launchers were skipped) must be a no-op;\n\
@@ -1176,6 +1235,7 @@ fn write_branch_docs(
         manifest.schema,
         manifest.envs.keys().cloned().collect::<Vec<_>>().join(", "),
         manifest.platform,
+        host_bullet,
         agents_bootstrap,
         manifest
             .tools
@@ -1234,6 +1294,7 @@ mod tests {
             shard_limit_mib: 95.0,
             cargo_vendor: false,
             cargo_vendor_mode: crate::cli::VendorModeArg::Loose,
+            config: None,
             fetch_tools: false,
             tools_lock: None,
             tools_cache: None,
@@ -1318,5 +1379,97 @@ mod tests {
             format!("{error:#}").contains("reading tool-pin override"),
             "{error:#}"
         );
+    }
+
+    /// TASK-75 AC#2: the manifest section is resolved from a real config file, for the platform
+    /// being packed, and is `None` whenever there is nothing to carry.
+    mod host_requirements {
+        use super::super::resolve_host_requirements;
+
+        fn write_config(project: &std::path::Path, body: &str) -> std::path::PathBuf {
+            let path = project.join("pixi-sandbox.toml");
+            std::fs::write(&path, body).expect("config written");
+            path
+        }
+
+        const BASE: &str = "schema = 1\n\n[[bundle]]\nname = \"app\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n";
+
+        #[test]
+        fn no_config_means_no_section() {
+            assert_eq!(resolve_host_requirements(None, "linux-64").unwrap(), None);
+        }
+
+        #[test]
+        fn a_config_without_the_table_means_no_section() {
+            let project = tempfile::tempdir().unwrap();
+            let config = write_config(project.path(), BASE);
+            assert_eq!(
+                resolve_host_requirements(Some(&config), "linux-64").unwrap(),
+                None
+            );
+        }
+
+        #[test]
+        fn the_section_resolves_for_the_packed_platform() {
+            let project = tempfile::tempdir().unwrap();
+            let config = write_config(
+                project.path(),
+                &format!(
+                    "{BASE}\n[host_requirements]\nlibc = \"2.34\"\npackages = [\"fontconfig\"]\n\n\
+                     [host_requirements.windows]\npackages = [\"vcredist\"]\n"
+                ),
+            );
+            let linux = resolve_host_requirements(Some(&config), "linux-64")
+                .unwrap()
+                .expect("linux has a section");
+            assert_eq!(linux.packages, ["fontconfig"].map(String::from));
+            assert_eq!(linux.libc.as_deref(), Some("2.34"));
+
+            // Another platform resolves its own family, not the one just packed.
+            let windows = resolve_host_requirements(Some(&config), "win-64")
+                .unwrap()
+                .expect("windows resolves");
+            assert_eq!(
+                windows.packages,
+                ["fontconfig", "vcredist"].map(String::from)
+            );
+        }
+
+        #[test]
+        fn a_family_with_no_requirements_of_its_own_carries_nothing() {
+            let project = tempfile::tempdir().unwrap();
+            let config = write_config(
+                project.path(),
+                &format!("{BASE}\n[host_requirements.osx]\npackages = [\"fontconfig\"]\n"),
+            );
+            assert_eq!(
+                resolve_host_requirements(Some(&config), "linux-64").unwrap(),
+                None,
+                "a Linux transport must not carry a macOS-only declaration"
+            );
+        }
+
+        #[test]
+        fn an_invalid_config_is_refused_before_anything_is_written() {
+            let project = tempfile::tempdir().unwrap();
+            let config = write_config(
+                project.path(),
+                &format!("{BASE}\n[host_requirements]\ncapabilities = [\"dipslay\"]\n"),
+            );
+            // `{error:#}` walks the context chain: the durable half of the message is the
+            // cause the config loader produced, not the path this call added.
+            let error = format!(
+                "{:#}",
+                resolve_host_requirements(Some(&config), "linux-64").unwrap_err()
+            );
+            assert!(error.contains("dipslay"), "got {error}");
+
+            let missing = project.path().join("absent.toml");
+            let error = format!(
+                "{:#}",
+                resolve_host_requirements(Some(&missing), "linux-64").unwrap_err()
+            );
+            assert!(error.contains("absent.toml"), "got {error}");
+        }
     }
 }
