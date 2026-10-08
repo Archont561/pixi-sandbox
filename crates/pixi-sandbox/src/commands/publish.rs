@@ -15,7 +15,6 @@ use crate::commands::support;
 use anyhow::{Context, Result};
 use pixi_sandbox_core::manifest::Manifest;
 use pixi_sandbox_git::{GitProtocol, ShellGit, Snapshot};
-use std::path::Path;
 
 pub fn run(args: PublishArgs) -> Result<()> {
     // ShellGit changes cwd to the work tree while creating its temporary index. Keep the
@@ -119,11 +118,4 @@ fn commit_message(manifest: &Manifest) -> String {
         manifest.platform,
         manifest.schema
     )
-}
-
-/// Kept next to the command because it is part of the published contract: the branch name is
-/// what the airlock types, and the path helpers keep `publish` and `restore` in agreement.
-#[allow(dead_code)]
-fn manifest_path(input: &Path) -> std::path::PathBuf {
-    Manifest::path_in(input)
 }
