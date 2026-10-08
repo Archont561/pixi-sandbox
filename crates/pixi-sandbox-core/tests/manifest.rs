@@ -2,7 +2,7 @@
 //! and they check the repository's *own* pin file for completeness.
 
 use pixi_sandbox_core::host_requirements::{HostCapability, HostRequirementSet};
-use pixi_sandbox_core::manifest::{Manifest, SCHEMA_VERSION};
+use pixi_sandbox_core::manifest::{Manifest, Part, SCHEMA_VERSION};
 use pixi_sandbox_core::tools_lock::ToolsLock;
 use proptest::prelude::*;
 use rstest::rstest;
@@ -343,59 +343,84 @@ fn a_tool_path_that_escapes_the_transport_is_refused() {
 /// both, while `..` and the empty string were already refused by other branches of the same
 /// guard. Refused in every position the guard protects (TASK-80 AC#1).
 #[rstest]
-#[case("blob path", "\"path\": \"envs/dev/pack/channel/noarch/a.conda\"", "\"path\": \".\"")]
-#[case("blob path", "\"path\": \"envs/dev/pack/channel/noarch/a.conda\"", "\"path\": \"./\"")]
-#[case("pack_path", ".pixi-sandbox/envs/dev/pack", ".")]
-#[case("pack_path", ".pixi-sandbox/envs/dev/pack", "./")]
-#[case("tool path", "\"path\": \"tools/linux-64/pixi-unpack\"", "\"path\": \".\"")]
-#[case("tool path", "\"path\": \"tools/linux-64/pixi-unpack\"", "\"path\": \"./\"")]
-#[case("files blob path", "envs/dev/files.json", ".")]
-#[case("files blob path", "envs/dev/files.json", "./")]
+// (label, needle in the fixture, replacement, the path the diagnostic must name)
+#[case(
+    "blob path",
+    "\"path\": \"envs/dev/pack/channel/noarch/a.conda\"",
+    "\"path\": \".\"",
+    "."
+)]
+#[case(
+    "blob path",
+    "\"path\": \"envs/dev/pack/channel/noarch/a.conda\"",
+    "\"path\": \"./\"",
+    "./"
+)]
+#[case("pack_path", ".pixi-sandbox/envs/dev/pack", ".", ".")]
+#[case("pack_path", ".pixi-sandbox/envs/dev/pack", "./", "./")]
+#[case(
+    "tool path",
+    "\"path\": \"tools/linux-64/pixi-unpack\"",
+    "\"path\": \".\"",
+    "."
+)]
+#[case(
+    "tool path",
+    "\"path\": \"tools/linux-64/pixi-unpack\"",
+    "\"path\": \"./\"",
+    "./"
+)]
+#[case("files blob path", "envs/dev/files.json", ".", ".")]
+#[case("files blob path", "envs/dev/files.json", "./", "./")]
 fn a_path_with_no_final_component_is_refused_wherever_a_path_appears(
     #[case] label: &str,
     #[case] needle: &str,
-    #[case] shape: &str,
+    #[case] replacement: &str,
+    #[case] named: &str,
 ) {
-    let text = valid_manifest().replace(needle, shape);
+    let text = valid_manifest().replace(needle, replacement);
     let err = match parse(&text).validate() {
-        Ok(()) => panic!("{label}: {shape:?} must be refused"),
+        Ok(()) => panic!("{label}: {named:?} must be refused"),
         Err(err) => err,
     };
     let message = err.to_string();
     assert!(
         message.contains("no file name"),
-        "{label} {shape:?}: got {message}"
+        "{label} {named:?}: got {message}"
     );
     // AC#1: the diagnostic names the path, so an operator can point at the bad entry.
     assert!(
-        message.contains(shape.trim_matches('"')),
-        "{label} {shape:?}: the diagnostic must name the path, got {message}"
+        message.contains(named),
+        "{label} {named:?}: the diagnostic must name the path, got {message}"
     );
 }
 
-/// The part path is the one the shard readers actually call `file_name()` on, and it is
+/// The part path is the one every shard reader actually calls `file_name()` on, and it is
 /// checked after the parts-sum rule, so a well-formed parts array must not smuggle one
-/// through (TASK-80 AC#1).
+/// through. The part is grafted onto the parsed fixture rather than spliced into its JSON:
+/// the slot is what is under test, not the serialisation (TASK-80 AC#1).
 #[rstest]
 #[case(".")]
 #[case("./")]
 fn a_part_path_with_no_final_component_is_refused(#[case] shape: &str) {
-    let text = valid_manifest().replace(
-        r#""size": 4,
-           "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b822cd15d6c15b0f00a08""#,
-        &format!(
-            r#""size": 4,
-           "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b822cd15d6c15b0f00a08",
-           "parts": [ {{ "path": "{shape}", "size": 4,
-                        "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }} ]"#
-        ),
-    );
-    let err = parse(&text)
+    let mut manifest = parse(&valid_manifest());
+    let env = manifest.envs.get_mut("dev").expect("fixture env");
+    let size = env.blobs[0].size;
+    env.blobs[0].parts = vec![Part {
+        path: shape.to_string(),
+        size,
+        sha256: env.blobs[0].sha256.clone(),
+    }];
+    let err = manifest
         .validate()
         .expect_err("a part path with no file name must be refused");
     assert!(
         err.to_string().contains("no file name"),
         "part path {shape:?}: got {err}"
+    );
+    assert!(
+        err.to_string().contains(shape),
+        "part path {shape:?}: the diagnostic must name the path, got {err}"
     );
 }
 

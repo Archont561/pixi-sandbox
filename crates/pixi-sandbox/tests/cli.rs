@@ -1529,6 +1529,95 @@ exit 1
         .stdout(predicate::str::contains("standalone release asset"));
 }
 
+/// TASK-80 AC#4: a branch whose sharded blob declares a part path of `.` is refused by the
+/// manifest validator, so both surfaces that read it exit non-zero with a diagnostic instead
+/// of panicking inside `shard.rs`. The fixture's `demo-big` blob really is split into three
+/// parts, so this is a shape an untrusted branch can actually carry, and the refusal has to
+/// happen before a single byte of the payload is touched.
+#[test]
+fn a_part_path_with_no_file_name_fails_doctor_and_restore_without_panicking() {
+    let transport = transport_copy();
+    let manifest_path = transport.path().join(".pixi-sandbox/manifest.json");
+    let mut manifest: Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    let blob = manifest["envs"]["demo"]["blobs"]
+        .as_array_mut()
+        .expect("fixture blobs")
+        .iter_mut()
+        .find(|blob| {
+            blob["parts"]
+                .as_array()
+                .is_some_and(|parts| !parts.is_empty())
+        })
+        .expect("the fixture carries a sharded blob");
+    blob["parts"][0]["path"] = Value::from(".");
+    fs::write(
+        &manifest_path,
+        format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
+    )
+    .unwrap();
+
+    // `doctor --verify` is the read-only surface: it must name the shape it refused, and it
+    // must refuse before the hash report — this is not a corrupted transport but an
+    // unreadable one, so no byte-level verdict may be printed at all.
+    let doctor = bin()
+        .args([
+            "doctor",
+            "--branch-location",
+            transport.path().to_str().unwrap(),
+            "--verify",
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&doctor.get_output().stderr);
+    assert!(
+        stderr.contains("part path has no file name"),
+        "doctor must name the refused path, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("panicked"),
+        "doctor must not panic on a hostile part path: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&doctor.get_output().stdout);
+    assert!(
+        !stdout.contains("declared byte"),
+        "the manifest must be refused before any hash verdict: {stdout}"
+    );
+
+    // `restore` writes, so the same refusal must arrive before anything lands on disk.
+    let project_root = tempfile::tempdir().unwrap();
+    let project = project_root.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+    let restore = bin()
+        .env("HOME", project_root.path())
+        .env("USERPROFILE", project_root.path())
+        .env("TMPDIR", project_root.path())
+        .args([
+            "restore",
+            "--branch-location",
+            transport.path().to_str().unwrap(),
+            "--output-path",
+            project.to_str().unwrap(),
+            "--user-tools",
+            "skip",
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&restore.get_output().stderr);
+    assert!(
+        stderr.contains("part path has no file name"),
+        "restore must name the refused path, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("panicked"),
+        "restore must not panic on a hostile part path: {stderr}"
+    );
+    assert!(
+        !project.join(".pixi/envs/demo").exists(),
+        "a refused manifest must not materialise an environment"
+    );
+}
+
 #[cfg(all(unix, target_os = "linux"))]
 #[test]
 fn doctor_never_executes_bytes_the_hash_report_rejected() {

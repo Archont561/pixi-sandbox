@@ -1,11 +1,13 @@
 //! Sharding is the one place where a bug silently corrupts a user's environment,
 //! so it gets property tests, not just examples.
 
-use pixi_sandbox_core::manifest::Blob;
+use pixi_sandbox_core::manifest::{Blob, Part};
 use pixi_sandbox_core::shard::{
-    join_parts, materialise, part_path, record_file, sha256_bytes, split_file, verify_file,
+    join_parts, materialise, part_path, read_blob, record_file, sha256_bytes, split_file,
+    verify_file,
 };
 use proptest::prelude::*;
+use rstest::rstest;
 use std::fs;
 use std::path::Path;
 
@@ -102,6 +104,54 @@ fn join_refuses_a_corrupted_part() {
     .expect_err("corrupted part must be rejected");
     assert!(err.to_string().contains("integrity"), "got: {err}");
     assert!(!root.join("out.bin").exists(), "no half-written output");
+}
+
+/// TASK-80 AC#3: `assemble` and `read_blob` take a part's *final component* off a path the
+/// branch supplies, so a part path of `.` used to panic here rather than fail. Both must now
+/// return `Error::Invalid` naming the path: a hostile transport gets a diagnostic and an
+/// aborted restore, not an aborted process. `materialise` reaches `assemble` through
+/// `join_parts`, which is the road `restore` takes.
+#[rstest]
+#[case(".")]
+#[case("./")]
+fn a_part_path_with_no_file_name_is_an_error_not_a_panic(#[case] shape: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let parts = vec![Part {
+        path: shape.to_string(),
+        size: 4,
+        sha256: sha256_bytes(b"test"),
+    }];
+
+    // assemble, via join_parts: staged in a sibling and renamed only once it verifies, so
+    // the refusal must leave no file behind.
+    let err = join_parts(
+        &root.join("out/big.conda"),
+        root,
+        &parts,
+        &sha256_bytes(b"test"),
+        4,
+    )
+    .expect_err("a part path with no file name must be refused");
+    assert!(err.to_string().contains("no file name"), "got: {err}");
+    assert!(
+        !root.join("out/big.conda").exists(),
+        "no half-written output"
+    );
+
+    // read_blob: the same loop, on the road `verify_env_restored` takes to the file oracle.
+    let blob = Blob {
+        path: "envs/dev/files.json".to_string(),
+        size: 4,
+        sha256: sha256_bytes(b"test"),
+        parts,
+    };
+    let err = read_blob(root, &blob).expect_err("a part path with no file name must be refused");
+    assert!(err.to_string().contains("no file name"), "got: {err}");
+    assert!(
+        err.to_string().contains(shape),
+        "the diagnostic must name the path: {err}"
+    );
 }
 
 #[test]
