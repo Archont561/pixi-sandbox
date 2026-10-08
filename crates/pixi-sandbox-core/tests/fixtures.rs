@@ -22,12 +22,7 @@ fn collect_rust(dir: &Path, out: &mut Vec<PathBuf>) {
 #[test]
 fn production_sources_carry_no_inline_test_modules() {
     // Pre-rule modules awaiting the same split. Shrink this list; do not extend it.
-    const LEGACY: [&str; 4] = [
-        "files_manifest.rs",
-        "platform.rs",
-        "tools_lock.rs",
-        "verify.rs",
-    ];
+    const LEGACY: [&str; 0] = [];
 
     let src = crate_dir().join("src");
     let mut sources = Vec::new();
