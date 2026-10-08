@@ -178,8 +178,14 @@ else
   echo "→ branch $BRANCH"
 fi
 
-TMPDIR="${TMPDIR:-/tmp}"
-WORKTREE="$TMPDIR/sb-$$"
+# Invariant 3: never use /tmp as a work dir — the branch checkout carries every packed blob
+# and a small tmpfs fails mid-restore. The worktree lives under the restore's own work
+# directory inside the output tree — the same `.pixi/.restore-work` the binary stages into,
+# which `.gitignore` conventions cover — and children inherit that work dir as TMPDIR. The
+# directory is created only once the branch is resolved, so a failed lookup leaves the output
+# path untouched.
+WORK="$OUTPUT/.pixi/.restore-work"
+WORKTREE="$WORK/sb-$$"
 
 # Prefer objects that are already local: a disconnected host is the whole point of the airlock,
 # so only reach for the network when the branch is genuinely missing.
@@ -209,6 +215,9 @@ else
   git rev-parse --verify --quiet "$REF^{commit}" >/dev/null || REF=FETCH_HEAD
 fi
 
+mkdir -p "$WORK/tmp"
+TMPDIR="$WORK/tmp"
+export TMPDIR
 echo "→ worktree $WORKTREE"
 rm -rf "$WORKTREE"
 git worktree add "$WORKTREE" "$REF" --force
@@ -235,7 +244,11 @@ if [ -z "$BIN" ]; then
   exit 1
 fi
 
-echo "→ doctor $BIN"
+# Informational, not enforced: `restore` verifies the branch again before it writes anything
+# (invariant 1 is enforced inside the binary), so this pre-check exists to show the operator
+# the verification table early. A failure here must not hide the restore's own verdict — on a
+# genuinely corrupt branch the restore refuses to write, and that refusal is the enforcement.
+echo "→ doctor $BIN (informational pre-check; restore re-verifies before writing)"
 "$BIN" doctor --branch-location "$WORKTREE" --verify || true
 
 echo "→ restore to $OUTPUT"
@@ -247,10 +260,29 @@ echo "→ restore to $OUTPUT"
 # arguments override the environment.
 PIXI_SANDBOX_USER_TOOLS="${PIXI_SANDBOX_USER_TOOLS:-register}"
 export PIXI_SANDBOX_USER_TOOLS
-if "$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force 2>&1; then
-  :
-else
+# --output-path is the modern flag; --path-to-main-repo-code is its old spelling, kept as an
+# alias (cli.rs) so a bootstrap packed before the rename still restores. Only clap's usage
+# error on that exact flag (exit 2, "unexpected argument") earns one retry with the alias. Any
+# other failure is a real restore failure: reported once and never rerun — the old fallback
+# retried every failure against the same binary, replaying a restore that had already failed.
+FIRST_LOG="$WORK/restore-first-attempt.log"
+set +e
+"$BIN" restore --branch-location "$WORKTREE" --output-path "$OUTPUT" --force >"$FIRST_LOG" 2>&1
+STATUS=$?
+set -e
+if [ "$STATUS" -eq 0 ]; then
+  cat "$FIRST_LOG"
+  rm -f "$FIRST_LOG"
+elif [ "$STATUS" -eq 2 ] &&
+  grep -q 'unexpected argument' "$FIRST_LOG" &&
+  grep -q -- '--output-path' "$FIRST_LOG"; then
+  echo "→ this bootstrap predates --output-path; retrying with --path-to-main-repo-code"
+  rm -f "$FIRST_LOG"
   "$BIN" restore --branch-location "$WORKTREE" --path-to-main-repo-code "$OUTPUT" --force
+else
+  cat "$FIRST_LOG"
+  echo "::error::restore failed (exit $STATUS); $WORKTREE is kept for inspection" >&2
+  exit "$STATUS"
 fi
 
 # The branch was verified before anything was written and every blob was verified as it was
@@ -265,7 +297,13 @@ if ! "$BIN" doctor --branch-location "$WORKTREE" --verify-restored "$OUTPUT"; th
 fi
 
 echo "→ cleanup worktree"
+mkdir -p "$WORK/tmp"
 git worktree remove "$WORKTREE" --force || rm -rf "$WORKTREE"
+# The work dir is this restore's scratch, removed the way the binary's clean_work_dir removes
+# its own: the named entries, then the directory itself only once it is empty — so a work dir
+# explicitly shared with something else survives the restore that borrowed it.
+rmdir "$WORK/tmp" 2> /dev/null || true
+rmdir "$WORK" 2> /dev/null || true
 
 # A running parent shell cannot inherit the profile edit restore just wrote. Report what
 # happened and name the pixi entrypoint to use next; do not source an activation hook. Newer
