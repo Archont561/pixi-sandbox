@@ -607,11 +607,30 @@ packed. The generated publisher passes the same config path to `pack` that it al
 extra step. `doctor` reports the declared set (human line plus a `host_requirements` JSON
 object) from the branch alone, and the branch's own README/AGENTS.md name it for a human reader.
 
-**Honest limits.** The probes are TASK-75's remaining slice: the requirements are declared,
-carried and reported, but nothing yet inspects the machine, so `doctor` says so in a hint rather
-than implying a verdict. `display` and `gpu` will be reportable, never grantable — a sandbox
-cannot hand a process a GPU or a user's session. `headless` providers will be checked for
-existence on `PATH`, never launched. And the family list is closed at three: a project needing a
+**The probes, and who owns them.** `doctor` classifies each declared requirement against the
+machine it runs on through a `HostProbe` seam (`host_requirements::HostProbe`): the CLI
+implements it with read-only queries (`ldd --version` with a `getconf` fallback, `dpkg-query` /
+`rpm` / `pacman`, `systemctl is-active`, `DISPLAY`/`WAYLAND_DISPLAY`, `/dev/dri`, a `PATH`
+lookup that never executes what it finds), and everything that turns observations into a verdict
+— the four-state classification, the per-distribution remedies, the conda-versus-host boundary —
+is pure data in core, driven in tests by a scripted probe. The seam is what makes AC#5 possible
+at all: a suite cannot assert "xvfb is missing" against a real host without lying about the
+machine it runs on. Verdicts are reported and never enforced unless the caller passes
+`--require-host-requirements`, which fails on `missing` alone — `unknown` must never punish a
+machine that cannot be inspected (a container with no `systemctl`, a distribution with no
+supported package manager), and a transport whose platform family differs from the host's is
+`not applicable` and probes nothing at all. A requirement for another family is answered without
+a single query, which is the one case where the honest answer is also the cheap one.
+
+**Honest limits.** `display` and `gpu` are reportable, never grantable — a sandbox cannot hand a
+process a GPU or a user's session, and `doctor` says so in the remedy rather than pretending to
+fix it. `headless` providers are checked for existence on `PATH`, never launched, because
+starting a display server to test whether one works would be a sandbox escaping its own
+boundary. The service probe special-cases `dbus` (session address, system socket) because a
+container usually has no systemd to ask; other services degrade to `unknown` there. Package
+guidance is curated for the names in the issue (fontconfig, fonts, Xvfb, D-Bus, GTK, WebKit) on
+apt/dnf/pacman and falls back to the declared name with an explicit "names differ between
+distributions" caveat elsewhere. And the family list is closed at three: a project needing a
 fourth family needs a decision, not a config key.
 
 **What would change it.** Evidence that real projects need per-bundle declarations (a GUI bundle

@@ -217,12 +217,13 @@ Validated at load, each with a named error: an unknown capability or family sect
 `libc` floor, a duplicated entry, an entry containing whitespace, and an empty table or empty
 family section (a table that declares nothing is a typo, not a declaration).
 
-**Status.** The declaration is validated whenever a config is loaded, and `pack --config` records
-the set resolved for the packed platform in the transport's `manifest.json` (additive, so a
-transport without the section is byte-identical to what earlier releases packed and restores
-exactly as before). `doctor` prints what a transport declares; the read-only probes that classify
-each requirement as satisfied, missing, unknown or not applicable — with per-distro install
-guidance — are TASK-75's remaining slice (issue #109).
+**Status.** The declaration is validated whenever a config is loaded, `pack --config` records the
+set resolved for the packed platform in the transport's `manifest.json` (additive, so a transport
+without the section is byte-identical to what earlier releases packed and restores exactly as
+before), and `doctor` classifies it against the host it runs on — satisfied, missing, unknown or
+not applicable — with per-distribution install guidance and a JSON report a CI job can branch on.
+Enforcement stays opt-in (`doctor --require-host-requirements`). See the
+[CLI reference](/pixi-sandbox/reference/cli/#doctor) for the probes and the exit-code contract.
 
 ## Validation
 

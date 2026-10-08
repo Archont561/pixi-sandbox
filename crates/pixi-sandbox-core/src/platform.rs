@@ -147,7 +147,8 @@ impl std::str::FromStr for Platform {
 /// platforms. The mapping lives here, next to [`Platform`], because it is one more fact derived
 /// from the platform list: adding a sixth platform means answering which family it belongs to,
 /// and the exhaustive match below makes that a compile error rather than a silent omission.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum HostFamily {
     Linux,
     Osx,

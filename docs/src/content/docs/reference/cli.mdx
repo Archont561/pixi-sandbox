@@ -127,6 +127,20 @@ pixi-sandbox doctor --branch-location .sandbox-out --verify-restored /path/to/pr
 | `--work-dir` | Work dir the restore used, if not the default `<project>/.pixi/.restore-work` |
 | `--envs` | Filter envs |
 | `--budget-config <PATH>` | Load `[budgets]` from `pixi-sandbox.toml` / `.pixi-sandbox.toml` and fail read-only if blob, transport, push, or restore-disk ceilings are exceeded |
+| `--require-host-requirements` | Exit non-zero when a declared host requirement is **missing** on this host. Without it host findings never change the exit code; `unknown` never fails either way |
+
+**Host requirements.** A transport may declare what its workloads need from the machine (see
+[Configuration](/pixi-sandbox/reference/configuration/#host_requirements--host-level-declarations)).
+`doctor` probes this host read-only — `ldd`, the distro package query, `systemctl`, the display
+variables, `/dev/dri` — and prints every requirement as `satisfied`, `missing`, `unknown` or
+`not applicable`, with a copy-pasteable remedy for the first two where one exists, plus the
+boundary that conda-provided libraries travel *with* the transport and are not probed. The
+verdicts are reported, never enforced: the generated publisher runs `doctor` on a runner that is
+not where the workload runs, so a missing host package must not red-line a publish. Add
+`--require-host-requirements` where the host *is* the point (a CI job that runs a GUI test, a
+workstation check). `unknown` — a host with no package query, a distribution with no supported
+manager — never fails, because a machine that cannot be inspected is not a machine that is
+broken.
 | `--json` | Machine-readable output |
 
 Reports all failures, not first. Checks size + sha256 + tool linkage (rejects dynamic).

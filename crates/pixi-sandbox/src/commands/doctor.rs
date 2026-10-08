@@ -12,13 +12,17 @@
 use crate::cli::DoctorArgs;
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
+use pixi_sandbox::host_probe::SystemHostProbe;
+use pixi_sandbox_core::host_requirements::{HostReport, evaluate};
 use pixi_sandbox_core::manifest::{MANIFEST_DIR, Manifest};
+use pixi_sandbox_core::platform::Platform;
 use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::transport_budget::{self, BudgetReport};
 use pixi_sandbox_core::verify::{self, Report, RestoredReport};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 pub fn run(args: DoctorArgs) -> Result<()> {
     crate::diagnostics::phase("load-manifest", "locating and parsing manifest.json");
@@ -67,6 +71,25 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     );
     let standalone = standalone_probe(&args.branch_location, &manifest, report.as_ref());
 
+    // Host requirements (issue #109, TASK-75). Probed only when the transport declares some,
+    // and only against a host of the transport's own family: a Linux libc floor says nothing
+    // about a macOS machine, and `evaluate` answers `not applicable` there without querying
+    // anything. The probes are read-only and never install, start or launch what they look for.
+    let host = manifest
+        .host_requirements
+        .as_ref()
+        .filter(|declared| !declared.is_empty())
+        .map(|declared| {
+            crate::diagnostics::phase(
+                "probe-host",
+                "classifying the transport's host requirements on this machine",
+            );
+            let platform_family = Platform::from_str(&manifest.platform)
+                .ok()
+                .map(Platform::host_family);
+            evaluate(declared, platform_family, &SystemHostProbe::new())
+        });
+
     let budget = match &args.budget_config {
         Some(config) => {
             crate::diagnostics::phase(
@@ -104,6 +127,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                 report.as_ref(),
                 restored_section,
                 standalone.as_ref(),
+                host.as_ref(),
                 budget.as_ref()
             ))?
         );
@@ -114,6 +138,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
             report.as_ref(),
             restored_section,
             standalone.as_ref(),
+            host.as_ref(),
             budget.as_ref(),
         );
     }
@@ -141,6 +166,17 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                 "transport budget exceeded: {} threshold(s)",
                 budget.violations.len()
             );
+        }
+    }
+    if args.require_host_requirements {
+        if let Some(host) = &host {
+            if !host.ok() {
+                bail!(
+                    "host requirements not met: {} missing ({} unknown, never a failure)",
+                    host.missing(),
+                    host.unknown()
+                );
+            }
         }
     }
     Ok(())
@@ -268,6 +304,7 @@ fn print_human(
     report: Option<&Report>,
     restored: Option<(&Path, &RestoredReport)>,
     standalone: Option<&StandaloneProbe>,
+    host: Option<&HostReport>,
     budget: Option<&BudgetReport>,
 ) {
     labelled("manifest", &path.display().to_string());
@@ -328,19 +365,45 @@ fn print_human(
     // What the transport expects from the *host*, straight from the manifest (issue #109,
     // TASK-75). Printed as declared data: this build reports it without probing the machine, so
     // the line must not read as a verdict about the host it is running on.
-    if let Some(host) = manifest
-        .host_requirements
-        .as_ref()
-        .filter(|host| !host.is_empty())
-    {
+    if let Some(host) = host {
         labelled(
             "host",
-            &format!("declared requirements: {}", host.summary()),
+            &format!("declared requirements: {}", host.declared.summary()),
         );
         labelled(
-            "hint",
-            "host requirements are not probed by this build; see the transport README",
+            "conda",
+            "conda-provided libraries travel with the transport and are not probed here",
         );
+        for finding in &host.findings {
+            let mut line = format!(
+                "{} {}: {} ({})",
+                finding.kind.as_str(),
+                finding.name,
+                finding.status,
+                finding.detail
+            );
+            if let Some(remedy) = &finding.remedy {
+                line.push_str(" — ");
+                line.push_str(remedy);
+            }
+            println!("  {line}");
+        }
+        labelled(
+            "host",
+            &format!(
+                "{} of {} satisfied · {} missing · {} unknown",
+                host.satisfied(),
+                host.findings.len(),
+                host.missing(),
+                host.unknown()
+            ),
+        );
+        if !host.applicable() {
+            labelled(
+                "host",
+                "not applicable on this host — nothing was probed (see the findings above)",
+            );
+        }
     }
 
     let (envs, tools, vendor) = manifest.payload_split();
@@ -484,6 +547,7 @@ fn as_json(
     report: Option<&Report>,
     restored: Option<(&Path, &RestoredReport)>,
     standalone: Option<&StandaloneProbe>,
+    host: Option<&HostReport>,
     budget: Option<&BudgetReport>,
 ) -> Value {
     let envs: Vec<Value> = manifest
@@ -567,12 +631,38 @@ fn as_json(
         });
     }
 
-    if let Some(host) = manifest
-        .host_requirements
-        .as_ref()
-        .filter(|host| !host.is_empty())
-    {
-        out["host_requirements"] = serde_json::to_value(host).expect("host requirements serialise");
+    if let Some(host) = host {
+        // One object under the key the manifest spells: the declaration that travelled in the
+        // transport, what this host turned out to be, and the counts a CI job should branch on
+        // (`ok` is exactly `missing == 0`).
+        let findings: Vec<Value> = host
+            .findings
+            .iter()
+            .map(|finding| {
+                let mut value = json!({
+                    "kind": finding.kind,
+                    "name": finding.name,
+                    "status": finding.status,
+                    "detail": finding.detail,
+                });
+                if let Some(remedy) = &finding.remedy {
+                    value["remedy"] = json!(remedy);
+                }
+                value
+            })
+            .collect();
+        out["host_requirements"] = json!({
+            "declared": host.declared,
+            "platform_family": host.platform_family,
+            "host_family": host.host_family,
+            "distro": host.distro,
+            "applicable": host.applicable(),
+            "ok": host.ok(),
+            "satisfied": host.satisfied(),
+            "missing": host.missing(),
+            "unknown": host.unknown(),
+            "findings": findings,
+        });
     }
 
     if let Some(budget) = budget {

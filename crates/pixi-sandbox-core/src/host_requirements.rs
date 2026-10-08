@@ -429,12 +429,21 @@ impl LibcFloor {
         })
     }
 
-    /// The canonical spelling, always with the `>=` and without a redundant `.0` patch.
+    /// The canonical spelling of a *floor*: always with the `>=` and without a redundant `.0`
+    /// patch.
     #[must_use]
     pub fn canonical(self) -> String {
+        format!(">={}", self.version())
+    }
+
+    /// The bare version, as a host reports it — `2.39`, not `>=2.39`. Compared with a floor, a
+    /// host's own version is an observation, and printing an operator in front of it reads as a
+    /// requirement the host never made.
+    #[must_use]
+    pub fn version(self) -> String {
         match self.patch {
-            Some(patch) => format!(">={}.{}.{}", self.major, self.minor, patch),
-            None => format!(">={}.{}", self.major, self.minor),
+            Some(patch) => format!("{}.{}.{}", self.major, self.minor, patch),
+            None => format!("{}.{}", self.major, self.minor),
         }
     }
 
@@ -476,4 +485,709 @@ impl PartialOrd for LibcFloor {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Probing: observations in, classification out
+// ---------------------------------------------------------------------------------------------
+//
+// The split here is the whole reason this feature is testable without a host: a [`HostProbe`]
+// reports what it can see — nothing else — and [`evaluate`] turns those observations into a
+// report against the declared set. The probes themselves live in the CLI crate (they spawn
+// `ldd`, `dpkg-query`, `systemctl`), while everything that decides what a *satisfied* or
+// *missing* requirement means is pure data in this module, exercised by fixtures in a tempdir.
+
+/// The package manager this host's distribution uses, for install guidance and for the
+/// `unknown` a host without one earns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PackageManager {
+    Apt,
+    Dnf,
+    Pacman,
+    Unknown,
+}
+
+impl PackageManager {
+    /// The spelling used in JSON output and in printed remedies.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            PackageManager::Apt => "apt",
+            PackageManager::Dnf => "dnf",
+            PackageManager::Pacman => "pacman",
+            PackageManager::Unknown => "unknown",
+        }
+    }
+
+    /// The one-line install command for a package name, or `None` when this host has no
+    /// supported manager — which is the case that must degrade to manual guidance rather than
+    /// to silence.
+    #[must_use]
+    pub fn install_command(self, package: &str) -> Option<String> {
+        match self {
+            PackageManager::Apt => Some(format!("sudo apt install {package}")),
+            PackageManager::Dnf => Some(format!("sudo dnf install {package}")),
+            PackageManager::Pacman => Some(format!("sudo pacman -S {package}")),
+            PackageManager::Unknown => None,
+        }
+    }
+}
+
+impl fmt::Display for PackageManager {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// What `doctor` observed about this host's distribution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Distro {
+    /// The `ID` from `/etc/os-release` — `ubuntu`, `fedora`, … — or `unknown`.
+    pub id: String,
+    pub manager: PackageManager,
+}
+
+impl Distro {
+    /// What a host looks like when nothing could be read.
+    #[must_use]
+    pub fn unknown() -> Self {
+        Distro {
+            id: "unknown".to_string(),
+            manager: PackageManager::Unknown,
+        }
+    }
+
+    /// Parse `/etc/os-release` (or any file with its shape).
+    ///
+    /// `ID` decides, and for the distributions that only advertise a family through `ID_LIKE`
+    /// (Linux Mint is `ID=linuxmint`, `ID_LIKE=ubuntu`) the second line is consulted rather
+    /// than guessed at. Anything unrecognised is [`PackageManager::Unknown`], which later
+    /// produces manual guidance instead of a wrong install command.
+    #[must_use]
+    pub fn parse_os_release(text: &str) -> Distro {
+        let mut id = String::new();
+        let mut id_like = String::new();
+        for line in text.lines() {
+            let line = line.trim();
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            // Values may be quoted; shell-escaped values (with backslashes) are out of scope
+            // for the three fields this reads.
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            match key.trim() {
+                "ID" => id = value.to_ascii_lowercase(),
+                "ID_LIKE" => id_like = value.to_ascii_lowercase(),
+                _ => {}
+            }
+        }
+        let manager = classify_distribution(&id, &id_like);
+        Distro {
+            id: if id.is_empty() {
+                "unknown".to_string()
+            } else {
+                id
+            },
+            manager,
+        }
+    }
+}
+
+/// The distribution families whose package names the remedies below are written for.
+fn classify_distribution(id: &str, id_like: &str) -> PackageManager {
+    let family = |candidates: &[&str]| {
+        [id, id_like].iter().any(|field| {
+            field
+                .split_whitespace()
+                .any(|word| candidates.contains(&word))
+        })
+    };
+    if family(&[
+        "debian",
+        "ubuntu",
+        "raspbian",
+        "linuxmint",
+        "pop",
+        "elementary",
+        "kali",
+        "devuan",
+    ]) {
+        PackageManager::Apt
+    } else if family(&[
+        "fedora",
+        "rhel",
+        "centos",
+        "rocky",
+        "almalinux",
+        "ol",
+        "amzn",
+        "oracle",
+    ]) {
+        PackageManager::Dnf
+    } else if family(&["arch", "manjaro", "endeavouros", "garuda"]) {
+        PackageManager::Pacman
+    } else {
+        PackageManager::Unknown
+    }
+}
+
+/// What a probe could see about one requirement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Observation {
+    pub outcome: Outcome,
+    /// What was observed, in the probe's words — printed verbatim in both reports.
+    pub detail: String,
+}
+
+/// A probe's three answers. `Unknown` is not a failure: it means this host cannot be asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    Satisfied,
+    Missing,
+    Unknown,
+}
+
+impl Observation {
+    #[must_use]
+    pub fn satisfied(detail: impl Into<String>) -> Self {
+        Observation {
+            outcome: Outcome::Satisfied,
+            detail: detail.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn missing(detail: impl Into<String>) -> Self {
+        Observation {
+            outcome: Outcome::Missing,
+            detail: detail.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn unknown(detail: impl Into<String>) -> Self {
+        Observation {
+            outcome: Outcome::Unknown,
+            detail: detail.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_satisfied(&self) -> bool {
+        self.outcome == Outcome::Satisfied
+    }
+}
+
+/// What a probe could see about the host's C runtime: the version when it could read one, and
+/// always a sentence saying where that came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibcObservation {
+    pub version: Option<LibcFloor>,
+    pub detail: String,
+}
+
+/// Everything `evaluate` is allowed to know about the machine it is classifying for.
+///
+/// Read-only by construction: the trait has no method that changes anything, and no method
+/// that reaches the network. A probe is expected to answer `Unknown`, never to guess — a wrong
+/// `Satisfied` is the only outcome that can lose a user's afternoon.
+pub trait HostProbe {
+    /// This host's OS family, or `None` when it cannot be determined.
+    fn host_family(&self) -> Option<HostFamily>;
+    fn distro(&self) -> Distro;
+    fn libc(&self) -> LibcObservation;
+    /// Is this distro package installed?
+    fn package(&self, name: &str) -> Observation;
+    /// Is this service available to the invoking user?
+    fn service(&self, name: &str) -> Observation;
+    /// Is there a display this process can use (`DISPLAY`/`WAYLAND_DISPLAY`)? Nothing else —
+    /// the headless fallback is [`evaluate`]'s to combine, because only it knows which
+    /// providers were declared.
+    fn display(&self) -> Observation;
+    fn gpu(&self) -> Observation;
+    /// Is this program on `PATH`? Never launched.
+    fn program(&self, name: &str) -> Observation;
+}
+
+/// The kind of requirement a finding is about; the label both reports group by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequirementKind {
+    Libc,
+    Package,
+    Service,
+    Capability,
+    Headless,
+}
+
+impl RequirementKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            RequirementKind::Libc => "libc",
+            RequirementKind::Package => "package",
+            RequirementKind::Service => "service",
+            RequirementKind::Capability => "capability",
+            RequirementKind::Headless => "headless",
+        }
+    }
+}
+
+/// How one declared requirement came out on this host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostStatus {
+    Satisfied,
+    Missing,
+    Unknown,
+    /// The transport declares requirements for a different OS family than this host's, so
+    /// judging them here would be a guess. Never a failure.
+    NotApplicable,
+}
+
+impl HostStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            HostStatus::Satisfied => "satisfied",
+            HostStatus::Missing => "missing",
+            HostStatus::Unknown => "unknown",
+            HostStatus::NotApplicable => "not applicable",
+        }
+    }
+}
+
+impl fmt::Display for HostStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One requirement, its outcome, and the remedy when there is one.
+///
+/// Not `Serialize` as a unit: the JSON report is built in `doctor` alongside its other
+/// sections, so the field set lives in one place rather than in a derive plus a patch-up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostFinding {
+    pub kind: RequirementKind,
+    /// The declared entry, as written: `>=2.34`, `fontconfig`, `dbus`, `display`, `xvfb-run`.
+    pub name: String,
+    pub status: HostStatus,
+    /// What was observed (or why nothing could be).
+    pub detail: String,
+    /// The one-line thing to do about it, when something can be done on this host.
+    pub remedy: Option<String>,
+}
+
+/// The full answer: what the transport declares, what this host is, and every finding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostReport {
+    pub declared: HostRequirementSet,
+    /// The family the transport was packed for, when this build recognises its platform.
+    pub platform_family: Option<HostFamily>,
+    pub host_family: Option<HostFamily>,
+    pub distro: Distro,
+    pub findings: Vec<HostFinding>,
+}
+
+impl HostReport {
+    /// Findings that were found absent. The only status that enforcement fails on.
+    #[must_use]
+    pub fn missing(&self) -> usize {
+        self.count(HostStatus::Missing)
+    }
+
+    #[must_use]
+    pub fn unknown(&self) -> usize {
+        self.count(HostStatus::Unknown)
+    }
+
+    #[must_use]
+    pub fn satisfied(&self) -> usize {
+        self.count(HostStatus::Satisfied)
+    }
+
+    fn count(&self, status: HostStatus) -> usize {
+        self.findings
+            .iter()
+            .filter(|finding| finding.status == status)
+            .count()
+    }
+
+    /// True when this host could be judged at all — the transport's family and the host's match.
+    #[must_use]
+    pub fn applicable(&self) -> bool {
+        self.platform_family.is_some() && self.platform_family == self.host_family
+    }
+
+    /// The gate `--require-host-requirements` enforces: nothing is *missing*. `Unknown` never
+    /// fails — a host without the queries to answer must not be treated as broken — and
+    /// `NotApplicable` is not this host's business.
+    #[must_use]
+    pub fn ok(&self) -> bool {
+        self.missing() == 0
+    }
+}
+
+/// Classify every declared requirement against what `probe` can see.
+///
+/// When the transport's family and the host's do not match, nothing is probed at all: every
+/// finding is `NotApplicable` with the reason, because a Linux libc floor says nothing about a
+/// macOS host and a guessed verdict is worse than an explicit one.
+#[must_use]
+pub fn evaluate(
+    declared: &HostRequirementSet,
+    platform_family: Option<HostFamily>,
+    probe: &impl HostProbe,
+) -> HostReport {
+    let host_family = probe.host_family();
+    let distro = probe.distro();
+    let mut findings = Vec::new();
+
+    if platform_family.is_none() || platform_family != host_family {
+        let detail = match (platform_family, host_family) {
+            (None, _) => "the transport names a platform this build does not recognise".to_string(),
+            (Some(declared), Some(host)) => {
+                format!("declared for {declared} hosts; this host is {host}")
+            }
+            (Some(declared), None) => {
+                format!("declared for {declared} hosts; this host's family is unknown")
+            }
+        };
+        for (kind, name) in declared_requirements(declared) {
+            findings.push(HostFinding {
+                kind,
+                name,
+                status: HostStatus::NotApplicable,
+                detail: detail.clone(),
+                remedy: None,
+            });
+        }
+        return HostReport {
+            declared: declared.clone(),
+            platform_family,
+            host_family,
+            distro,
+            findings,
+        };
+    }
+
+    let manager = distro.manager;
+    if let Some(spec) = &declared.libc {
+        // A spec that reached here was validated at load; a parse failure would be a bug.
+        let floor = LibcFloor::parse(spec).ok();
+        let observed = probe.libc();
+        let (status, detail) = match (floor, observed.version) {
+            (Some(floor), Some(host)) if floor.is_met_by(host) => (
+                HostStatus::Satisfied,
+                format!("host reports {}; {}", host.version(), observed.detail),
+            ),
+            (Some(_), Some(host)) => (
+                HostStatus::Missing,
+                format!("host reports {}; {}", host.version(), observed.detail),
+            ),
+            _ => (
+                HostStatus::Unknown,
+                format!("no C runtime version could be read; {}", observed.detail),
+            ),
+        };
+        findings.push(HostFinding {
+            kind: RequirementKind::Libc,
+            name: spec.clone(),
+            status,
+            remedy: match status {
+                HostStatus::Missing => Some(format!(
+                    "the host C runtime cannot be installed per project — run this workload on a \
+                     host with glibc {spec} (or newer), for example a newer base image"
+                )),
+                HostStatus::Unknown => {
+                    Some("check the host C runtime directly with `ldd --version`".to_string())
+                }
+                _ => None,
+            },
+            detail,
+        });
+    }
+
+    for name in &declared.packages {
+        let observation = probe.package(name);
+        let status = status_of(observation.outcome);
+        findings.push(HostFinding {
+            kind: RequirementKind::Package,
+            name: name.clone(),
+            status,
+            remedy: package_remedy(name, status, manager),
+            detail: observation.detail,
+        });
+    }
+
+    for name in &declared.services {
+        let observation = probe.service(name);
+        let status = status_of(observation.outcome);
+        findings.push(HostFinding {
+            kind: RequirementKind::Service,
+            name: name.clone(),
+            status,
+            remedy: service_remedy(name, status),
+            detail: observation.detail,
+        });
+    }
+
+    // Headless providers are observed once and reused by the display capability below.
+    let headless: Vec<(String, Observation)> = declared
+        .headless
+        .iter()
+        .map(|name| (name.clone(), probe.program(name)))
+        .collect();
+    let available: Vec<&str> = headless
+        .iter()
+        .filter(|(_, observation)| observation.is_satisfied())
+        .map(|(name, _)| name.as_str())
+        .collect();
+
+    for capability in &declared.capabilities {
+        let (status, detail) = match capability {
+            HostCapability::Display => {
+                let display = probe.display();
+                match display.outcome {
+                    Outcome::Satisfied => (HostStatus::Satisfied, display.detail),
+                    _ if !available.is_empty() => (
+                        HostStatus::Satisfied,
+                        format!(
+                            "{}; headless provider available: {}",
+                            display.detail,
+                            available.join(", ")
+                        ),
+                    ),
+                    Outcome::Unknown => (HostStatus::Unknown, display.detail),
+                    Outcome::Missing => (
+                        HostStatus::Missing,
+                        if declared.headless.is_empty() {
+                            "no DISPLAY or WAYLAND_DISPLAY, and no headless provider is \
+                             declared for this bundle"
+                                .to_string()
+                        } else {
+                            format!(
+                                "no DISPLAY or WAYLAND_DISPLAY, and none of the declared \
+                                 headless providers is on PATH ({})",
+                                declared.headless.join(", ")
+                            )
+                        },
+                    ),
+                }
+            }
+            HostCapability::Gpu => {
+                let gpu = probe.gpu();
+                (status_of(gpu.outcome), gpu.detail)
+            }
+        };
+        findings.push(HostFinding {
+            kind: RequirementKind::Capability,
+            name: capability.as_str().to_string(),
+            status,
+            remedy: capability_remedy(*capability, status, manager),
+            detail,
+        });
+    }
+
+    for (name, observation) in headless {
+        let status = status_of(observation.outcome);
+        findings.push(HostFinding {
+            kind: RequirementKind::Headless,
+            name: name.clone(),
+            status,
+            remedy: package_remedy(&name, status, manager),
+            detail: observation.detail,
+        });
+    }
+
+    HostReport {
+        declared: declared.clone(),
+        platform_family,
+        host_family,
+        distro,
+        findings,
+    }
+}
+
+/// Every declared requirement as `(kind, spelling)`, in the order [`HostRequirementSet`]
+/// documents — also the order [`evaluate`] reports in.
+fn declared_requirements(declared: &HostRequirementSet) -> Vec<(RequirementKind, String)> {
+    let mut out = Vec::new();
+    if let Some(spec) = &declared.libc {
+        out.push((RequirementKind::Libc, spec.clone()));
+    }
+    out.extend(
+        declared
+            .packages
+            .iter()
+            .map(|name| (RequirementKind::Package, name.clone())),
+    );
+    out.extend(
+        declared
+            .services
+            .iter()
+            .map(|name| (RequirementKind::Service, name.clone())),
+    );
+    out.extend(
+        declared
+            .capabilities
+            .iter()
+            .map(|capability| (RequirementKind::Capability, capability.as_str().to_string())),
+    );
+    out.extend(
+        declared
+            .headless
+            .iter()
+            .map(|name| (RequirementKind::Headless, name.clone())),
+    );
+    out
+}
+
+fn status_of(outcome: Outcome) -> HostStatus {
+    match outcome {
+        Outcome::Satisfied => HostStatus::Satisfied,
+        Outcome::Missing => HostStatus::Missing,
+        Outcome::Unknown => HostStatus::Unknown,
+    }
+}
+
+/// The per-distribution package name for the names worth spelling out. Everything else falls
+/// back to the declared name, with the caveat that names differ between distributions — a
+/// wrong-but-confident `apt install` line is worse than an honest one.
+fn curated_package(name: &str, manager: PackageManager) -> Option<&'static str> {
+    let lower = name.to_ascii_lowercase();
+    Some(match (lower.as_str(), manager) {
+        ("fontconfig", PackageManager::Apt | PackageManager::Dnf | PackageManager::Pacman) => {
+            "fontconfig"
+        }
+        (
+            "fonts" | "fonts-dejavu" | "fonts-dejavu-core" | "dejavu-sans-fonts" | "ttf-dejavu",
+            PackageManager::Apt,
+        ) => "fonts-dejavu-core",
+        (
+            "fonts" | "fonts-dejavu" | "fonts-dejavu-core" | "dejavu-sans-fonts" | "ttf-dejavu",
+            PackageManager::Dnf,
+        ) => "dejavu-sans-fonts",
+        (
+            "fonts" | "fonts-dejavu" | "fonts-dejavu-core" | "dejavu-sans-fonts" | "ttf-dejavu",
+            PackageManager::Pacman,
+        ) => "ttf-dejavu",
+        ("xvfb" | "xvfb-run" | "xorg-x11-server-xvfb", PackageManager::Apt) => "xvfb",
+        ("xvfb" | "xvfb-run" | "xorg-x11-server-xvfb", PackageManager::Dnf) => {
+            "xorg-x11-server-Xvfb"
+        }
+        ("xvfb" | "xvfb-run" | "xorg-x11-server-xvfb", PackageManager::Pacman) => {
+            "xorg-server-xvfb"
+        }
+        ("dbus" | "dbus-daemon" | "dbus-broker", PackageManager::Apt) => "dbus",
+        ("dbus" | "dbus-daemon" | "dbus-broker", PackageManager::Dnf) => "dbus-daemon",
+        ("dbus" | "dbus-daemon" | "dbus-broker", PackageManager::Pacman) => "dbus",
+        ("libgtk-3" | "gtk3" | "libgtk-3-0" | "gtk3-devel", PackageManager::Apt) => "libgtk-3-0",
+        ("libgtk-3" | "gtk3" | "libgtk-3-0" | "gtk3-devel", PackageManager::Dnf) => "gtk3",
+        ("libgtk-3" | "gtk3" | "libgtk-3-0" | "gtk3-devel", PackageManager::Pacman) => "gtk3",
+        (
+            "webkit2gtk" | "libwebkit2gtk" | "libwebkit2gtk-4.1-0" | "webkit2gtk4.1",
+            PackageManager::Apt,
+        ) => "libwebkit2gtk-4.1-0",
+        (
+            "webkit2gtk" | "libwebkit2gtk" | "libwebkit2gtk-4.1-0" | "webkit2gtk4.1",
+            PackageManager::Dnf,
+        ) => "webkit2gtk4.1",
+        (
+            "webkit2gtk" | "libwebkit2gtk" | "libwebkit2gtk-4.1-0" | "webkit2gtk4.1",
+            PackageManager::Pacman,
+        ) => "webkit2gtk-4.1",
+        _ => return None,
+    })
+}
+
+/// The remedy for an unmet (or unanswerable) host package: the command for *this* host's
+/// manager, or the manual guidance when there is no supported manager at all.
+fn package_remedy(name: &str, status: HostStatus, manager: PackageManager) -> Option<String> {
+    if status == HostStatus::Satisfied {
+        return None;
+    }
+    if status == HostStatus::Unknown {
+        return Some(format!(
+            "no supported package-manager query on this host; verify that {name} is installed \
+             and rerun"
+        ));
+    }
+    let curated = curated_package(name, manager);
+    let (package, caveat) = match curated {
+        Some(package) => (package.to_string(), ""),
+        None => (
+            name.to_string(),
+            " (package names differ between distributions — search your package manager if this \
+             name is not found)",
+        ),
+    };
+    match manager.install_command(&package) {
+        Some(command) => Some(format!("install it: {command}{caveat}")),
+        None => Some(format!(
+            "install {package} with this host's package manager, or add it to the container \
+             image{caveat}"
+        )),
+    }
+}
+
+fn service_remedy(name: &str, status: HostStatus) -> Option<String> {
+    if status == HostStatus::Satisfied {
+        return None;
+    }
+    let dbus_hint = if name.eq_ignore_ascii_case("dbus") {
+        "; desktop applications need a session bus — start one with `dbus-run-session <command>` \
+         when the host has no systemd user session"
+    } else {
+        ""
+    };
+    Some(match status {
+        HostStatus::Missing => format!(
+            "start it: `sudo systemctl enable --now {name}` (or the equivalent for this host){dbus_hint}"
+        ),
+        _ => format!(
+            "no service manager on this host to query; verify that {name} is running{dbus_hint}"
+        ),
+    })
+}
+
+fn capability_remedy(
+    capability: HostCapability,
+    status: HostStatus,
+    manager: PackageManager,
+) -> Option<String> {
+    if matches!(status, HostStatus::Satisfied | HostStatus::NotApplicable) {
+        return None;
+    }
+    Some(match capability {
+        HostCapability::Display => match status {
+            HostStatus::Missing => {
+                let install = curated_package("xvfb", manager)
+                    .and_then(|package| manager.install_command(package))
+                    .unwrap_or_else(|| {
+                        "install a virtual framebuffer (Xvfb) with this host's package manager"
+                            .to_string()
+                    });
+                format!(
+                    "run the workload against a display (DISPLAY or WAYLAND_DISPLAY), or use a \
+                     headless provider: {install}, then run it under `xvfb-run`"
+                )
+            }
+            _ => "display availability could not be determined; check DISPLAY/WAYLAND_DISPLAY \
+                  and any declared headless provider by hand"
+                .to_string(),
+        },
+        HostCapability::Gpu => match status {
+            HostStatus::Missing => "GPU access cannot be provided from inside the environment: \
+                                    grant the workload device access on the host (for containers, \
+                                    pass through /dev/dri and the driver mounts, and run as a user \
+                                    in the `video`/`render` groups)"
+                .to_string(),
+            _ => "GPU availability could not be determined on this host; check device nodes \
+                  (/dev/dri) and driver mounts by hand"
+                .to_string(),
+        },
+    })
 }
