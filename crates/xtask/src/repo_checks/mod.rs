@@ -41,7 +41,13 @@
 //!     permission, it is a parse error that takes the whole workflow file down: a one-line
 //!     `workflows: write` left `auto-release.yml` unrunnable, every run ending in 0s with no
 //!     jobs and no diagnostic outside the Actions tab (run 37501052919).
+//! 12. task-84 — `AGENTS.md` describes a tree that exists: no repo-map row names a path that
+//!     has moved, and the promoted-module list is exactly the `pub mod` set of
+//!     `crates/pixi-sandbox/src/lib.rs`. The document is what an agent reads as instruction,
+//!     and D10 forbids the one thing that would otherwise catch the drift — a test that
+//!     reads this repository.
 
+mod agents_md;
 mod badges;
 mod bash32;
 mod channel_drift;
@@ -100,6 +106,7 @@ const CHECKS: &[Check] = &[
     workflow_shape::workflow_shape,              // 9
     relock::generated_relock_is_current,         // 10
     workflow_permissions::workflow_permissions,  // 11
+    agents_md::agents_md_matches_tree,           // 12
 ];
 
 /// Run every check, returning all failures in one pass so a red run names every problem.
@@ -127,7 +134,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render; every permissions: scope is one GitHub accepts" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render; every permissions: scope is one GitHub accepts; AGENTS.md's repo map resolves and its promoted-module list matches lib.rs" // stale-ref-allowed
     );
     Ok(())
 }
