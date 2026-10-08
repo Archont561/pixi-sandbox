@@ -24,7 +24,7 @@ Intended behaviour: a BDD layer at `crates/pixi-sandbox/tests/features/` that st
 
 Seam to agree before tests are written: per feature, the scenario list and which fixture builder each step binds to, so a step body stays glue and the assertions stay where the house puts them. Scenarios state outcomes, never internals.
 
-One constraint comes first: a new crate cannot be fetched inside the airlock (egress allows github.com, not crates.io), so rstest-bdd lands the way task-38 landed rstest — added, locked and vendored on the connected side, with a repacked transport before a restored host can compile the suite — or pinned from its GitHub source. Confirm the crate's MSRV against the workspace toolchain before wiring the first scenario.
+One constraint came first and is now satisfied: a new crate cannot be fetched inside the airlock (egress allows github.com, not crates.io), so rstest-bdd landed the way task-38 landed rstest — declared at the workspace root (`rstest-bdd = "0.6.0"`) and as a dev-dependency of `pixi-sandbox`, with Cargo.lock refreshed by the connected relock workflow (2026-10-09). The crate's MSRV (1.88) sits below the workspace toolchain (1.98.1); the workspace's declared library MSRV 1.85 is unaffected because the crate is dev-only. A restored host compiles the suite only after the post-merge transport carries the new vendor crates (task-38's precedent: fresh restore, then `pixi run --frozen test`).
 
 Non-goals: no replacement or rewriting of existing tests; no product behaviour change; no runtime dependency; no network; no feature-coverage requirement for every module — behaviour slices only.
 <!-- SECTION:DESCRIPTION:END -->
