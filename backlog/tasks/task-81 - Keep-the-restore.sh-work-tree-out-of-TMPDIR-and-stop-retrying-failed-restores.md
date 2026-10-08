@@ -1,9 +1,10 @@
 ---
 id: TASK-81
 title: Keep the restore.sh work tree out of TMPDIR and stop retrying failed restores
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-08 18:31'
+updated_date: '2026-10-08 21:55'
 labels:
   - restore
   - shell
@@ -30,10 +31,56 @@ Non-goals: no manifest, branch-format, or verification change; no change to the 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With TMPDIR set to an empty directory, scripts/restore.sh creates nothing under it; the branch worktree is created under the restore's work directory inside the output tree.
-- [ ] #2 The worktree is removed after a successful restore, and kept with its path printed when post-restore verification fails (current behaviour preserved).
-- [ ] #3 A restore that fails on its first attempt is reported once; the script reruns a second full restore only when the first failure is the flag-compatibility case.
-- [ ] #4 The pre-restore doctor status is either enforced or logged as informational with a comment explaining why.
-- [ ] #5 A regression test in tests/restore_script.rs (fixture branch, no network) covers the three behaviours above, was written first, and was observed failing on the current tree.
-- [ ] #6 pixi run --frozen test does not drop below its last known count, and pixi run --frozen xtask check-repository stays green (Bash 3.2 surface).
+- [x] #1 With TMPDIR set to an empty directory, scripts/restore.sh creates nothing under it; the branch worktree is created under the restore's work directory inside the output tree.
+- [x] #2 The worktree is removed after a successful restore, and kept with its path printed when post-restore verification fails (current behaviour preserved).
+- [x] #3 A restore that fails on its first attempt is reported once; the script reruns a second full restore only when the first failure is the flag-compatibility case.
+- [x] #4 The pre-restore doctor status is either enforced or logged as informational with a comment explaining why.
+- [x] #5 A regression test in tests/restore_script.rs (fixture branch, no network) covers the three behaviours above, was written first, and was observed failing on the current tree.
+- [x] #6 pixi run --frozen test does not drop below its last known count, and pixi run --frozen xtask check-repository stays green (Bash 3.2 surface).
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+
+Landed on the session branch as two commits: the fix commit carrying the regression tests and
+the `scripts/restore.sh` change together (every commit stays green), and this close.
+
+Evidence, all local:
+
+- AC#5 the five new tests in `tests/restore_script.rs` were written first against the fixture
+  transport with TMPDIR at an empty directory, and observed failing on the pre-fix tree
+  (23 passed; 5 failed — every new test red, and the failing log showed the defect in plain
+  sight: `worktree …/home/tmp/sb-…`). After the fix: 28 passed.
+- AC#1 `the_branch_worktree_lives_in_the_restore_work_dir_not_tmpdir`: nothing appears under
+  TMPDIR; the `→ worktree` line names `<output>/.pixi/.restore-work/sb-<pid>` — the same work
+  directory `support::work_dir` gives the binary's own staging (invariant 3) — and a successful
+  restore leaves neither worktree nor work directory behind. The directory is created only
+  once the branch resolves, so a failed lookup still leaves the output path alone (existing
+  test held). A smoke check confirmed `git worktree add` accepts the nested layout the real
+  airlock uses (output = the repository root).
+- AC#2 `a_post_restore_verification_failure_keeps_the_worktree_and_prints_its_path`: the
+  worktree is kept under the work directory as evidence with its path printed in the error,
+  and stays out of TMPDIR even then. On success the cleanup mirrors the binary's
+  `clean_work_dir`: named entries first, the directory itself only once empty.
+- AC#3 `a_failed_restore_is_reported_once_and_never_retried` — the old fallback retried every
+  failure with `--path-to-main-repo-code`, an alias of `--output-path` on the same binary
+  (`cli.rs`), replaying a restore that had already failed — and
+  `a_bootstrap_that_rejects_output_path_gets_one_alias_retry`: clap's "unexpected argument" on
+  that exact flag (exit 2) earns exactly one retry with the alias, counted in the fixture
+  shim's invocation log. The description's alternative — probing `restore --help` — was weighed
+  and would also satisfy AC#3; the usage-error retry was chosen because AC#3 names that shape,
+  and a help-text parse can drift from clap's real output.
+- AC#4 `a_failing_pre_restore_doctor_is_an_informational_pre_check`: the status is logged as
+  informational with a comment explaining why it is not a gate — `restore` re-verifies before
+  writing (invariant 1, enforced inside the binary), so its refusal is the enforcement.
+- AC#6 suite 767 → 772 passed / 1 skipped (411 in pixi-sandbox, +5), lint 11 gates green,
+  `xtask check-repository` green — including check 8, the Bash 3.2 surface (the script's new
+  code uses only 3.2-safe constructs: `case`, `[`, `grep -q`; no mapfile/declare -A/&>>).
+
+The retry keeps the old spelling deliberately: `--path-to-main-repo-code` is an alias in
+`cli.rs`, so a bootstrap packed before the flag rename still restores.
+
+Baselines for the next session: 772 passed / 1 skipped.
+
+<!-- SECTION:NOTES:END -->
