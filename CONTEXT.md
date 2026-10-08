@@ -1358,3 +1358,94 @@ secret decides which branch of that criterion it closes — present, the cron op
 PR and also settles task-73 AC#3/#4; absent, the same run only proves the patch-artifact fallback
 and task-73 AC#3 stays open for another release cycle. The cost of setting it early is nothing;
 the cost of setting it late is a whole release.
+
+### 2026-10-08 — TASK-75 landed; host requirements end to end, starter-lane trail folded in
+
+**Landed** (so: not proposals) — four commits on `arena/44e28d89-pixi-sandbox`:
+`1b55eac` the `[host_requirements]` config table (snake_case, D19 — the issue sketched
+kebab-case, which this repo's loader refuses), `5573b26` the manifest carry (`pack --config`
+resolves the set for the packed platform; absent declaration leaves the manifest byte-identical),
+`3f60269` the read-only probes (`doctor` classifies satisfied / missing / unknown / not
+applicable with per-distribution remedies and JSON; `--require-host-requirements` fails on
+`missing` alone; a foreign-platform transport probes nothing), and `2fae6de` the guide with the
+Tauri/headless example and the "nothing is installed or granted" warning. Suite
+681 → 710 → 720 → **746 passing / 1 skipped**; lint 11 gates; docs 13 → 14 pages.
+
+**Folded in: the 2026-10-07 starter-lane trail had no entry of its own.** Three follow-up fixes
+merged that day on top of PR #116 — #117 `ci: bootstrap starter repository before checkout`,
+#118 `fix(ci): forward starter workflow task arguments`, #119 `fix(ci): verify starter main ref
+before checkout` (`a42bcac`, the tip this session branched from). task-74 remains **In
+Progress** with AC#7 open: the delivery credential cannot push `.github/workflows/*` (issue
+#101), and the plausible remaining proof is a fresh `workflow_dispatch` of the starter lane with
+`release-tag v0.6.0` / `source-commit 8298edc`, not attempted from here. The published transport
+was repacked after #119 and still reads schema 2, tool 0.6.0, static, source `a42bcac`; it
+carries **no** `host_requirements` section, which is the byte-identity default holding on a real
+repack (this repository declares none).
+
+**Not implemented — candidates for a task or a warm-up:**
+
+- **Pack → restore → doctor end to end for `host_requirements`.** The carry is pinned in core
+  manifest tests and the read-back in `tests/e2e.rs`, but the e2e injects the section into a
+  copied fixture instead of `pack --config`ing it and restoring a transport that carries it. One
+  fixture run would close the last seam; it was left out because AC#5 was already provable.
+- **A pack-time sanity warning on the `libc` floor.** Declaring `>=2.40` while packing on `2.36`
+  is silent until the airlock. Weighed and left out: the declaration describes the *target*
+  host, often not the pack host, and a verdict there would drag the probe machinery onto a path
+  whose job is byte fidelity.
+- **`restore` runs no host probes, by design.** The declaration reaches the operator through
+  the manifest, the branch README and `doctor`; making a write path inspect the host would make
+  restore host-dependent and its failures ambiguous. If restore ever grows a readiness summary,
+  it should shell out to `doctor`, not re-implement it.
+- **GPU detection beyond `/dev/dri`.** `nvidia-smi` / `/dev/nvidia*` were considered and left
+  out: a reportable-never-grantable verdict does not justify an external tool dependency, and
+  the issue named `/dev/dri`.
+- **macOS/Windows probes.** The seam and the family short-circuit exist (`Osx`/`Windows` report
+  `unknown`/`not applicable`); only Linux has a real probe, and the family list stays closed at
+  three — a fourth family needs a decision first (D19).
+
+**Proposals, not agreed:**
+
+- **A `[workflow]` switch for `doctor --require-host-requirements`** (default off, so today's
+  render is unchanged). Consumers with a self-hosted GUI runner could then enforce host
+  readiness without hand-editing the generated publisher; the publish runner stays report-only.
+- **A readiness summary line in the branch README's restore section** naming the declared
+  requirements and linking `doctor` — the README already lists them, but nothing tells the
+  operator to *run* the check. Cheap, but it changes a generated artifact, so it rides with the
+  next render change rather than alone.
+
+**Measurements worth keeping:** on a Debian-12 container, TASK-75's own example
+(`libc >=2.34`, fontconfig/fonts/xvfb, dbus, display, gpu, xvfb-run) classifies as
+**1 of 8 satisfied / 7 missing / 0 unknown**, every remedy an apt command — the guide carries
+the abridged real output.
+
+**Prompt to start the next session with:**
+
+> Restore the sandbox and baseline the suite — expect **746 passing / 1 skipped** if this
+> session's pull request merged, and **720 / 1** if it is still open (the difference is exactly
+> TASK-75's tests). The published `sandbox/developer-linux-64` transport is packed by 0.6.0 from
+> `a42bcac`, static, and carries no `host_requirements` section. Then read `CONTEXT.md`
+> § Session scratchpad — the 2026-10-08 heading lists the open items, first among them the
+> pack → restore → doctor end-to-end seam.
+>
+> First, one look at the repo state: `gh pr list --state open` and `gh pr checks <n>`. If the
+> TASK-75 pull request is open or red, that is the work — read the failing job before touching
+> code. If it merged, `git log --oneline origin/main -3` should show the squash commit and
+> `backlog/tasks/task-75` should read `status: Done` with all six criteria checked; do not
+> reopen it.
+>
+> I want to take **task-76** this session — make `pixi-sandbox` the single entrypoint of the
+> generated publisher: every logic-bearing step becomes one `pixi-sandbox <verb>` (or one
+> `actions/github-script` step, as `relock.yml` already does), the absorbed shell moves into
+> Rust subcommands the suite already reviews, the bash/pwsh twins collapse, and check 9 stops
+> exempting generated artifacts. Its dependencies, TASK-36 and TASK-71, are both Done. Slices:
+> the generator refactor plus its subcommands and tests, then the golden render, `init --check`,
+> actionlint and check-9 changes — all locally provable; **AC#8 (a real consumer run on a
+> released binary) last, and only on my sanction**, because it needs pushes and a consumer lane
+> a release can exercise. If you would rather keep the slice small, **task-77** (pedantic
+> clippy, 261 MachineApplicable fixes, no new dependencies) is the cheap alternative and fully
+> local. task-73 and task-74 stay parked until the owner-operated credential can push
+> `.github/workflows/*` (issue #101).
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
+> and its templates are in `.agents/skills/session/`.
