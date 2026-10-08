@@ -1449,3 +1449,81 @@ the abridged real output.
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
 > and its templates are in `.agents/skills/session/`.
+
+### 2026-10-08 (second session) — TASK-80 merged, TASK-84 written but not pushed
+
+**Landed** (so: not proposals) — **TASK-80** closed and squash-merged as **PR #122**: `check_rel_path`
+refuses any path whose `Path::file_name()` is `None` with `Error::Invalid` naming it, `shard.rs`
+takes the final component through the new `manifest::rel_path_file_name`, and no `expect` remains
+in that file. CI on #122 was green across all six checks, **including the airlock leg** — the one
+that would have caught a rule too strict to load a transport.
+
+**TASK-84 is written and committed locally but never pushed.** The session's GitHub access ended
+the moment #122 merged, so moving those three commits is the first job of the next session (see
+the prompt below).
+
+**The finding worth its own paragraph: the panic TASK-80 describes was *latent*, not live.** A part
+path of `.` does panic — at `shard.rs:234`, with `file name` — but no CLI surface reaches it. Two
+things hid it, both of them load-bearing: `verify.rs:484` already tolerates a missing file name
+(`unwrap_or_default()`), so the read surfaced as an io error (`Is a directory`), and invariant 1's
+verify-before-write stops `restore` before `materialise` can reach `assemble`. Unfixed,
+`doctor --verify` reported only `verify failed: 1 failure(s)` with no reason, and `restore` stopped
+at `transport verification failed`. The panic is reachable only through the readers *behind* the
+verify gate (`restore` → `materialise` → `assemble`, `verify_env_restored` → `read_blob`), which is
+why `tests/shard.rs` pins it directly rather than through a transport. **Any future audit of
+untrusted-manifest handling should look for readers behind the verify gate, not at the CLI
+surfaces** — the surfaces are the one place a malformed manifest cannot do damage.
+
+**Also landed, as the guard TASK-84 did not ask for:** `xtask check-repository` **check 12**
+(`crates/xtask/src/repo_checks/agents_md.rs`) — every root-anchored path in AGENTS.md's repo map
+resolves, and the promoted-module list is exactly `lib.rs`'s `pub mod` set, checked in both
+directions. It lives in xtask rather than in `tests/` because D10 forbids a test from reading this
+repository, which is precisely why the drift had gone uncaught. Reverting AGENTS.md to its pre-fix
+state makes it fail with `repo consistency: 2 check(s) failed`, naming `release.rs` and the two
+modules the paragraph omitted.
+
+**Measurements worth keeping:** baseline **746 passing / 1 skipped** at `13d3a86` → **760** after
+TASK-80 → **767** after TASK-84 (check 12's seven tests). The last recorded figure, **654/1 at
+`db2d446`**, is unreachable from this sandbox: the clone is shallow at `13d3a86` and
+`git fetch origin db2d446` is refused by the remote, so the +92 is **unmeasured rather than
+assumed**. The one skip is the network-gated `e2e` test.
+
+**Open, in the order a session should consider them:** the three unpushed TASK-84 commits (first,
+below); **task-79** (low, fully local — `mib` defined three times, `make_executable` twice, dead
+`publish.rs::manifest_path` under `#[allow(dead_code)]`, two `LauncherKind` types); **task-81**
+(high, local but it *is* the bootstrap path — a session that breaks `restore.sh` has no network with
+which to fetch a working one, so that slice ends by proving a real restore still runs); **task-83**
+(medium, 27 files / 3,077 lines of inline tests, but core is only 4 files / 326 lines, so a
+core-only slice is a sane first bite). task-85 and task-73 stay parked: both need
+`.github/workflows/*` pushed, which issue #101 bars from this credential.
+
+**Prompt to start the next session with:**
+
+> Restore the sandbox and baseline the suite — expect **767 passing / 1 skipped** if TASK-84's pull
+> request merged, and **760 / 1** if it is still open (the difference is exactly check 12's seven
+> tests). Then read `CONTEXT.md` § Session scratchpad — the 2026-10-08 second-session heading lists
+> the open items, first among them the latent-panic finding.
+>
+> First, the branch bookkeeping this session could not finish: `arena/1759ed91-pixi-sandbox` carries
+> three unpushed TASK-84 commits sitting on top of four TASK-80 commits that main already holds as a
+> squash. `git fetch origin main`, then `git rebase --onto origin/main 8c6329f` (`8c6329f` is the
+> last TASK-80 commit; everything after it is TASK-84 plus this scratchpad entry),
+> `git push --force-with-lease origin arena/1759ed91-pixi-sandbox`, and open the TASK-84 pull
+> request. Expect no conflicts: the two tasks touch no file in common.
+>
+> I want to take **task-79** this session — remove the duplicated helpers and the naming collisions
+> the audit found: `fn mib` defined three times with identical bodies (`commands/doctor.rs:690`,
+> `commands/publish.rs:124`, and the shared `commands/support.rs:312`), `make_executable` in both
+> `commands/support.rs:131` and `user_tools.rs:268` while `replace.rs` keeps its own exact-0755
+> policy, `publish.rs::manifest_path` dead behind `#[allow(dead_code)]`, and two `LauncherKind`
+> types for one concept. Four slices, one commit each, in that order — the generated launcher output
+> must stay byte-identical, so the LauncherKind rename lands last and alone. Every slice is local,
+> so commit locally on the session branch; **do not push, open a pull request, or merge without my
+> explicit go-ahead.** task-81 and task-83 are optional follow-up slices on the same branch, after
+> task-79 is green.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure and
+> its templates are in `.agents/skills/session/`. The backlog CLI is
+> `.pixi/envs/default/bin/bun node_modules/.bin/backlog …` — note that it breaks on task text
+> containing apostrophes or parentheses when it is called through `pixi run bunx backlog`.
