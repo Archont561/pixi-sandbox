@@ -139,6 +139,54 @@ impl std::str::FromStr for Platform {
     }
 }
 
+/// The host operating-system family a platform belongs to.
+///
+/// Host-level facts — a glibc floor, a package manager, the presence of a display server — are
+/// properties of the *OS*, not of the architecture, so `[host_requirements]` sections and their
+/// probes are scoped to a family (issue #109, TASK-75) rather than to each of the five Pixi
+/// platforms. The mapping lives here, next to [`Platform`], because it is one more fact derived
+/// from the platform list: adding a sixth platform means answering which family it belongs to,
+/// and the exhaustive match below makes that a compile error rather than a silent omission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HostFamily {
+    Linux,
+    Osx,
+    Windows,
+}
+
+impl HostFamily {
+    /// Every family, in the order `[host_requirements]` sections are documented.
+    pub const ALL: [HostFamily; 3] = [HostFamily::Linux, HostFamily::Osx, HostFamily::Windows];
+
+    /// The spelling used in `[host_requirements.<family>]` and in JSON output.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            HostFamily::Linux => "linux",
+            HostFamily::Osx => "osx",
+            HostFamily::Windows => "windows",
+        }
+    }
+}
+
+impl std::fmt::Display for HostFamily {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Platform {
+    /// The OS family this platform belongs to (`linux-64` and `linux-aarch64` → [`HostFamily::Linux`]).
+    #[must_use]
+    pub const fn host_family(self) -> HostFamily {
+        match self {
+            Platform::Linux64 | Platform::LinuxAarch64 => HostFamily::Linux,
+            Platform::Osx64 | Platform::OsxArm64 => HostFamily::Osx,
+            Platform::Win64 => HostFamily::Windows,
+        }
+    }
+}
+
 impl std::fmt::Display for Platform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())

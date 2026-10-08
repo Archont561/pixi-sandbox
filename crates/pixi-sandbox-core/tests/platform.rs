@@ -6,7 +6,7 @@
 //! `sandbox_config.rs::runner_for`) migrates to this type in follow-on tasks; this file only
 //! proves the type itself.
 
-use pixi_sandbox_core::platform::Platform;
+use pixi_sandbox_core::platform::{HostFamily, Platform};
 use proptest::prelude::*;
 use rstest::rstest;
 
@@ -96,6 +96,39 @@ fn gh_runner_matches_the_hosted_default_or_is_absent(
     #[case] expected: Option<&str>,
 ) {
     assert_eq!(platform.gh_runner(), expected);
+}
+
+#[test]
+fn host_family_groups_the_five_platforms_into_three_families() {
+    // Exhaustive over ALL: a sixth platform makes this test's expectation list wrong, and
+    // `host_family` itself already refuses to compile without an answer for it.
+    assert_eq!(Platform::Linux64.host_family(), HostFamily::Linux);
+    assert_eq!(Platform::LinuxAarch64.host_family(), HostFamily::Linux);
+    assert_eq!(Platform::Osx64.host_family(), HostFamily::Osx);
+    assert_eq!(Platform::OsxArm64.host_family(), HostFamily::Osx);
+    assert_eq!(Platform::Win64.host_family(), HostFamily::Windows);
+}
+
+#[test]
+fn host_family_spellings_are_the_documented_ones_and_injective() {
+    assert_eq!(
+        HostFamily::ALL.map(HostFamily::as_str),
+        ["linux", "osx", "windows"]
+    );
+    for family in HostFamily::ALL {
+        assert_eq!(family.to_string(), family.as_str());
+    }
+    let mut seen: Vec<&str> = HostFamily::ALL
+        .iter()
+        .map(|family| family.as_str())
+        .collect();
+    seen.sort_unstable();
+    seen.dedup();
+    assert_eq!(
+        seen.len(),
+        HostFamily::ALL.len(),
+        "duplicate family spelling"
+    );
 }
 
 #[test]

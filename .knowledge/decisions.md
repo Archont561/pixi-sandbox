@@ -549,3 +549,63 @@ precedent for this surfacing yet); or evidence the "safer once present" default 
 surprises consumers in practice, which would argue for splitting `[workflow]` into stricter
 sub-tables (`[workflow.safety]` always-on-if-present vs. `[workflow.preferences]` per-field)
 rather than one flat table with two specially-defaulted fields.
+
+---
+
+## D19 — Host-level requirements are declared in `[host_requirements]`, never installed
+
+**Decision.** A project declares what its workloads need from the *machine* in a new
+`[host_requirements]` table (issue #109, TASK-75). Five requirement kinds — `libc` (a
+`major.minor[.patch]` minimum, optionally written `>=`), `packages`, `services`, `capabilities`
+and `headless` providers — are shared by default and refined by optional
+`[host_requirements.linux]`, `[host_requirements.osx]` and `[host_requirements.windows]`
+sections. Resolution is total and one-way: shared entries always apply, a family section adds to
+them (declaration order kept, duplicates dropped) and replaces the shared `libc`, and no section
+can remove a shared entry — scoping to one family means declaring the requirement in that
+section alone. The resolved set for a *bundle's* platform is what a transport will carry (the
+manifest slice of TASK-75). Validation is fail-closed at load: capabilities are a closed set
+(`display`, `gpu`), families are exactly the three named sections, `libc` is refused outside
+Linux, entries must be single whitespace-free names listed once, and an empty table or empty
+family section is an error rather than a declaration of nothing. The probes that classify a
+host's state are `doctor`'s, they are read-only, and they report `satisfied` / `missing` /
+`unknown` / `not applicable` while leaving the exit code alone until a caller asks for
+enforcement with `--require-host-requirements` (which fails on `missing` only, never on
+`unknown`).
+
+**Why.** A transport restores a Pixi environment, not a machine: fonts, an X server, D-Bus, GPU
+access and the C runtime live on the host, so a GUI workload can die *after* a restore that
+verified perfectly, and the operator reads a stack trace inside a sandbox that reported success.
+The declaration makes that boundary explicit and testable. Two naming and scoping choices carry
+the weight. First, `host_requirements` rather than pixi's `system-requirements`: pixi's table
+constrains the *solver* (virtual packages such as `__glibc` are selected against), while every
+entry here is host state that pixi-sandbox never installs — sharing the name would blur exactly
+the boundary the feature exists to draw. The snake-case spelling is not a preference: every
+multi-word key in `.pixi-sandbox.toml` (`branch_prefix`, `max_blob_mib`, `push_paths`,
+`cancel_in_progress`) is snake-case, so the table, the Rust field, the manifest key and the JSON
+key are one token rather than three spellings. Second, family scoping rather than per-Pixi-
+platform or per-bundle scoping: the probe backends and the facts themselves (a glibc floor, a
+package manager) are OS-level, so `linux-64` and `linux-aarch64` must not be able to disagree
+about Xvfb; per-bundle refinement stays additive if a project ever needs it. The report-only
+default is the other load-bearing choice: the generated publisher runs `doctor` on a CI runner
+that has no fonts, no display and no D-Bus, so a missing *host* requirement must never be able to
+red-line a *publish*; enforcement stays a flag the operator of a given host can pass.
+
+**Config schema stays 1.** The table is additive and optional, so nothing a consumer already
+wrote changes and `init` keeps writing schema 1. A bump could not buy a better message for an
+older binary either: `SandboxConfig::load` deserializes before it validates, so a 0.6.0 binary
+meets `[host_requirements]` as an unknown field and refuses the file there, never reaching the
+schema check. The bump stays reserved for a change that makes an *older* config mean something
+different, per the constant's own doctrine.
+
+**Honest limits.** The declaration is not yet consumed: probes and the carried manifest section
+are TASK-75's remaining slices, so today the table is validated and resolvable (through
+`SandboxConfig::host_requirements_for`) but unread by `pack` or `doctor`. `display` and `gpu`
+are reportable, never grantable — a sandbox cannot hand a process a GPU or a user's session.
+`headless` providers are checked for existence on `PATH`, never launched. And the family list is
+closed at three: a project needing a fourth family needs a decision, not a config key.
+
+**What would change it.** Evidence that real projects need per-bundle declarations (a GUI bundle
+and a docs bundle in one repository is the plausible case) would add an optional per-bundle
+override; a non-glibc runtime floor worth enforcing (musl, a macOS deployment target) would
+extend `libc` into a per-family floor rather than adding a second key; and a consumer hit by the
+unknown-field refusal on an older binary would argue for the schema bump this decision declines.

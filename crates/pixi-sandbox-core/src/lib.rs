@@ -18,6 +18,7 @@
 
 pub mod error;
 pub mod files_manifest;
+pub mod host_requirements;
 pub mod manifest;
 pub mod platform;
 pub mod sandbox_config;
