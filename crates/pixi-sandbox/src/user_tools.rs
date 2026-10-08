@@ -265,7 +265,12 @@ fn recorded_target(launcher: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn make_executable(path: &Path) -> Result<()> {
+/// Make a copied tool executable on platforms with Unix permission bits. Windows executable
+/// assets retain their extension and need no chmod equivalent. This is the one
+/// chmod-or-keep helper in the crate — `commands/` reaches it through the promoted module —
+/// while `self_update::replace` deliberately keeps its own exact-0755 policy, because a
+/// staged self-update must land with the mode it was built with (task-37 AC#3).
+pub fn make_executable(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

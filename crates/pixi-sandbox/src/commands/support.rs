@@ -126,25 +126,10 @@ fn is_executable(path: &Path) -> bool {
     }
 }
 
-/// Make a copied tool executable on platforms with Unix permission bits. Windows executable
-/// assets retain their extension and need no chmod equivalent.
-pub(crate) fn make_executable(path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(path)
-            .with_context(|| format!("reading permissions for {}", path.display()))?
-            .permissions();
-        permissions.set_mode(permissions.mode() | 0o111);
-        fs::set_permissions(path, permissions)
-            .with_context(|| format!("making {} executable", path.display()))?;
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-    }
-    Ok(())
-}
+/// Make a copied tool executable — one function for the concept: the implementation lives in
+/// [`pixi_sandbox::user_tools`], promoted through `lib.rs` so `tests/` covers it, and is
+/// re-exported here where the commands' shared helpers are reached.
+pub(crate) use pixi_sandbox::user_tools::make_executable;
 
 /// Remove either a directory tree or a single file if it exists. This is used only for paths
 /// controlled by the current command (`work` stages or an explicit `--force` destination).
