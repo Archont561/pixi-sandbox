@@ -6,6 +6,7 @@ use pixi_sandbox_core::manifest::{Manifest, SCHEMA_VERSION};
 use pixi_sandbox_core::tools_lock::ToolsLock;
 use proptest::prelude::*;
 use rstest::rstest;
+use std::path::Path;
 
 /// A manifest that validates, written the way the packer writes it.
 fn valid_manifest() -> String {
@@ -334,6 +335,105 @@ fn a_tool_path_that_escapes_the_transport_is_refused() {
     );
     let err = parse(&text).validate().expect_err("must refuse");
     assert!(err.to_string().contains("escapes"), "got: {err}");
+}
+
+/// A shard reader joins the *final component* of a declared path onto a directory
+/// (`shard.rs`), so a path with no final component is not merely odd — it is a panic on
+/// untrusted branch data. `.` and `./` are exactly that: `Path::file_name()` is `None` for
+/// both, while `..` and the empty string were already refused by other branches of the same
+/// guard. Refused in every position the guard protects (TASK-80 AC#1).
+#[rstest]
+#[case("blob path", "\"path\": \"envs/dev/pack/channel/noarch/a.conda\"", "\"path\": \".\"")]
+#[case("blob path", "\"path\": \"envs/dev/pack/channel/noarch/a.conda\"", "\"path\": \"./\"")]
+#[case("pack_path", ".pixi-sandbox/envs/dev/pack", ".")]
+#[case("pack_path", ".pixi-sandbox/envs/dev/pack", "./")]
+#[case("tool path", "\"path\": \"tools/linux-64/pixi-unpack\"", "\"path\": \".\"")]
+#[case("tool path", "\"path\": \"tools/linux-64/pixi-unpack\"", "\"path\": \"./\"")]
+#[case("files blob path", "envs/dev/files.json", ".")]
+#[case("files blob path", "envs/dev/files.json", "./")]
+fn a_path_with_no_final_component_is_refused_wherever_a_path_appears(
+    #[case] label: &str,
+    #[case] needle: &str,
+    #[case] shape: &str,
+) {
+    let text = valid_manifest().replace(needle, shape);
+    let err = match parse(&text).validate() {
+        Ok(()) => panic!("{label}: {shape:?} must be refused"),
+        Err(err) => err,
+    };
+    let message = err.to_string();
+    assert!(
+        message.contains("no file name"),
+        "{label} {shape:?}: got {message}"
+    );
+    // AC#1: the diagnostic names the path, so an operator can point at the bad entry.
+    assert!(
+        message.contains(shape.trim_matches('"')),
+        "{label} {shape:?}: the diagnostic must name the path, got {message}"
+    );
+}
+
+/// The part path is the one the shard readers actually call `file_name()` on, and it is
+/// checked after the parts-sum rule, so a well-formed parts array must not smuggle one
+/// through (TASK-80 AC#1).
+#[rstest]
+#[case(".")]
+#[case("./")]
+fn a_part_path_with_no_final_component_is_refused(#[case] shape: &str) {
+    let text = valid_manifest().replace(
+        r#""size": 4,
+           "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b822cd15d6c15b0f00a08""#,
+        &format!(
+            r#""size": 4,
+           "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b822cd15d6c15b0f00a08",
+           "parts": [ {{ "path": "{shape}", "size": 4,
+                        "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }} ]"#
+        ),
+    );
+    let err = parse(&text)
+        .validate()
+        .expect_err("a part path with no file name must be refused");
+    assert!(
+        err.to_string().contains("no file name"),
+        "part path {shape:?}: got {err}"
+    );
+}
+
+/// One component of a manifest-declared path. The interesting shapes are the ones that are
+/// *not* normal names: `.`, `..` and the empty string turn a legal-looking relative path
+/// into one with no usable final component.
+fn path_atom() -> impl Strategy<Value = &'static str> {
+    prop_oneof![
+        Just("envs"),
+        Just("a.conda"),
+        Just("a.conda.part000"),
+        Just("."),
+        Just(".."),
+        Just(""),
+    ]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// TASK-80 AC#2: the contract the shard readers rely on, stated as a property — whatever
+    /// relative path the validator lets through, `Path::file_name()` on it is `Some`. The
+    /// implication is the assertion, because a path may be refused for any number of other
+    /// reasons (absolute, escaping, empty); the named cases above are what keep this from
+    /// being vacuous, since they pin the shapes that must be refused rather than accepted.
+    #[test]
+    fn an_accepted_manifest_path_always_has_a_file_name(
+        path in proptest::collection::vec(path_atom(), 1..5).prop_map(|atoms| atoms.join("/")),
+    ) {
+        let mut manifest = parse(&valid_manifest());
+        manifest.envs.get_mut("dev").expect("fixture env").blobs[0].path = path.clone();
+        let accepted = manifest.validate().is_ok();
+        prop_assert!(
+            !accepted || Path::new(&path).file_name().is_some(),
+            "accepted {:?}, which has no file name",
+            path
+        );
+    }
 }
 
 #[test]
