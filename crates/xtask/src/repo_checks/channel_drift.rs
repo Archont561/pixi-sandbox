@@ -33,26 +33,3 @@ pub(super) fn canonical_channel_install(root: &Path, failures: &mut Vec<Failure>
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::super::test_support::{headlines, valid_fixture};
-    use std::fs;
-
-    #[test]
-    fn canonical_channel_drift_fires_check_5() {
-        let dir = valid_fixture();
-        fs::write(
-            dir.path().join("docs/src/content/docs/installation.mdx"),
-            "pixi global install -c conda-forge pixi-sandbox\npixi-sandbox init\n",
-        )
-        .expect("installation docs");
-        let found = headlines(dir.path());
-        assert!(
-            found
-                .iter()
-                .any(|h| h.contains("canonical channel install")),
-            "{found:?}"
-        );
-    }
-}

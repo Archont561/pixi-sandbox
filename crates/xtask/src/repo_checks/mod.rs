@@ -47,7 +47,7 @@
 //!     and D10 forbids the one thing that would otherwise catch the drift — a test that
 //!     reads this repository.
 
-mod agents_md;
+pub mod agents_md;
 mod badges;
 mod bash32;
 mod channel_drift;
@@ -57,11 +57,8 @@ mod release_tags;
 mod relock;
 mod stale_refs;
 mod support;
-mod workflow_permissions;
-mod workflow_shape;
-
-#[cfg(test)]
-mod test_support;
+pub mod workflow_permissions;
+pub mod workflow_shape;
 
 use anyhow::{Result, bail};
 use std::path::Path;
@@ -137,28 +134,4 @@ pub fn run(root: &Path) -> Result<()> {
         "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render; every permissions: scope is one GitHub accepts; AGENTS.md's repo map resolves and its promoted-module list matches lib.rs" // stale-ref-allowed
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::test_support::{headlines, valid_fixture};
-    use super::workflow_shape::MULTI_RUN_ALLOWED;
-
-    #[test]
-    fn the_valid_fixture_passes_every_check() {
-        let dir = valid_fixture();
-        assert_eq!(headlines(dir.path()), Vec::<String>::new());
-    }
-
-    /// The render must satisfy check 9 unaided: that is the property that lets this repository
-    /// commit a generated workflow at all, and it is the reason the relock template is written
-    /// as one-line steps instead of the publisher's blocks.
-    #[test]
-    fn the_committed_render_needs_no_multiline_exemption() {
-        let dir = valid_fixture();
-        let render =
-            std::fs::read_to_string(dir.path().join(crate::workflow::RELOCK_PATH)).expect("render");
-        assert!(!render.contains(MULTI_RUN_ALLOWED), "{render}");
-        assert_eq!(headlines(dir.path()), Vec::<String>::new());
-    }
 }

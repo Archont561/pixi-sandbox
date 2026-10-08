@@ -22,25 +22,13 @@ fn collect_rust(dir: &Path, out: &mut Vec<PathBuf>) {
 #[test]
 fn production_sources_carry_no_inline_test_modules() {
     // Pre-rule modules awaiting the same split. Shrink this list; do not extend it.
-    const LEGACY: [&str; 19] = [
+    const LEGACY: [&str; 7] = [
         "airlock.rs",
         "commit_release.rs",
         "main.rs",
         "prepare_release.rs",
         "release_assets.rs",
         "release_refs.rs",
-        "repo_checks/agents_md.rs",
-        "repo_checks/badges.rs",
-        "repo_checks/bash32.rs",
-        "repo_checks/channel_drift.rs",
-        "repo_checks/conda_manifest.rs",
-        "repo_checks/mod.rs",
-        "repo_checks/mutable_refs.rs",
-        "repo_checks/release_tags.rs",
-        "repo_checks/relock.rs",
-        "repo_checks/stale_refs.rs",
-        "repo_checks/workflow_permissions.rs",
-        "repo_checks/workflow_shape.rs",
         "starter.rs",
     ];
 
