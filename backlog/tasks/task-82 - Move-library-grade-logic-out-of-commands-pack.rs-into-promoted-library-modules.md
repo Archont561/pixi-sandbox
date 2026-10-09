@@ -1,7 +1,7 @@
 ---
 id: TASK-82
 title: Move library-grade logic out of commands/pack.rs into promoted library modules
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-08 18:31'
 updated_date: '2026-10-09'
@@ -28,12 +28,12 @@ Non-goals: no change to the transport format, manifest schema or rendered output
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Vendor policy, tool fetch and verification, and branch-docs rendering move to library modules promoted in lib.rs, each with its own tests/ file; the inline tests in commands/pack.rs are removed.
-- [ ] #2 commands/pack.rs keeps argument handling and orchestration only; its production line count drops below 600 (currently 1,254).
-- [ ] #3 The LEGACY entry for commands/pack.rs is removed from crates/pixi-sandbox/tests/fixtures.rs in the same commit, and the guard test still passes.
-- [ ] #4 No behaviour change: pack's manifest, branch docs and vendor tree are byte-identical on the fixture project before and after, shown by a test or a recorded checksum.
-- [ ] #5 The promoted modules satisfy the coverage_guard route requirement under tests/.
-- [ ] #6 Work lands in slices, one module per commit, pack first; pixi run --frozen test does not drop below its last count.
+- [x] #1 Vendor policy, tool fetch and verification, and branch-docs rendering move to library modules promoted in lib.rs, each with its own tests/ file; the inline tests in commands/pack.rs are removed.
+- [x] #2 commands/pack.rs keeps argument handling and orchestration only; its production line count drops below 600 (currently 1,254).
+- [x] #3 The LEGACY entry for commands/pack.rs is removed from crates/pixi-sandbox/tests/fixtures.rs in the same commit, and the guard test still passes.
+- [x] #4 No behaviour change: pack's manifest, branch docs and vendor tree are byte-identical on the fixture project before and after, shown by a test or a recorded checksum.
+- [x] #5 The promoted modules satisfy the coverage_guard route requirement under tests/.
+- [x] #6 Work lands in slices, one module per commit, pack first; pixi run --frozen test does not drop below its last count.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -84,4 +84,61 @@ Reference projects have an unborn local Git repository so even a caller's checko
 cannot leak an ancestor commit into provenance. The expected reference's build-version inputs
 follow the package version; actual outputs are normalized only at the two approved timestamp
 sites. Full suite: **864 passing / 1 skipped**; fmt, lint (11/11), and test (4/4) green.
+
+Slice 4 (`branch_docs`): pure `render(Manifest, VendorInfo)` plus a separate writer preserves
+both guide files, their write order and their error context. Nine integration cases cover the
+three reference variants, unknown provenance, empty host sets, ordering, and both write failures.
+`commands/pack.rs` is now **495 production lines**, down from **1,254**; its only functions are
+`run` and the four planning/orchestration methods. The remaining manifest assembly, tool selection
+and self-bin probe calls are phase wiring, not copies of library policy.
+
+**Final AC evidence (all local; no push, PR or merge performed for TASK-82):**
+
+1. `lib.rs` promotes `pack`, `vendor`, `tool_fetch` and `branch_docs`, with corresponding test
+   roots: **20 + 14 + 25 + 9 = 68** cases. All eleven former inline pack tests have public
+   library routes; the combined unsafe/duplicate selection test became two named cases.
+2. `wc -l crates/pixi-sandbox/src/commands/pack.rs` is **495**, and no inline-test block remains.
+3. LEGACY shrank **6 → 5** in the tool-fetch slice that removed the last inline cases;
+   `production_sources_carry_no_inline_test_modules` passes, including its stale-entry check.
+4. The original binary and the final binary produced four identical complete transport
+   snapshots: Linux/no-vendor (**8 files**), Linux/loose + host requirements (**11**), Linux/tarballs
+   + host requirements (**10**), Windows/loose (**11**). Only the owner-approved `created_at` and
+   README Built timestamp were normalized; every other file byte and executable bit matched.
+   The raw per-crate tar archive matches too, sha256
+   `c8aebc22e0c9fafc0be24ecbaa40813bd9d90aec35dabb523c0257bbed42004f`.
+   The committed references and three end-to-end comparison cases keep this proof executable.
+5. `coverage_guard_requires_a_test_route_for_every_production_module` and the shared-helper
+   guard pass; each promoted concern is called through its public API in its own tests/ file.
+6. One extraction commit per module, pack first: `f0933ce9` (pack), `29962105` (vendor),
+   `087321d0` (tool_fetch), then `refactor(pack): promote branch documentation rendering`.
+   Every slice passed fmt/lint/test; suite counts rose **816 → 827 → 841 → 864 → 873**, with
+   **1 skipped** throughout. Final gates: fmt --check, lint **11/11**, test **4/4**; the full
+   suite is **873 passing / 1 skipped** (27 git + 209 core + 482 pixi-sandbox + 155 xtask).
+
+`git diff --exit-code d8f14cf8` over all three lockfiles, core/git source, generated workflow
+source, xtask source and the BDD feature files is empty: no dependency, schema, transport format,
+workflow-generator or BDD-sentence change. AGENTS.md names the implemented library surface and
+`xtask check-repository` passes. Status Done means all TASK-82 acceptance criteria are complete
+locally; the new commits remain unpushed on the session branch, not merged into main.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:SUMMARY:BEGIN -->
+Pack is now thin wiring: **495 production lines** instead of 1,254. Reusable preflight and the
+D13 file oracle live in `pack`; Cargo collision/storage policy in `vendor`; reviewed pin selection,
+verified helper caching and embedding in `tool_fetch`; and pure guide rendering plus ordered
+writes in `branch_docs`. All four are promoted through lib.rs and have public-API integration
+roots. Shared process/filesystem helpers were moved once and re-exported, not duplicated.
+
+All eleven inline tests left commands/pack.rs, and its LEGACY exception left in the same slice
+as the last test. The four new roots run 68 cases, raising the suite **816 → 873 passing / 1
+skipped**. Mutation proofs catch bypassing the unpack copy, weakening duplicate-source refusal,
+bypassing download checksums, and guide-rendering drift; every mutation was reverted.
+
+Four fixture transports match the pre-extraction binary byte-for-byte (raw tar included), apart
+from the explicitly approved generated timestamp normalization. No new dependency, lockfile,
+schema, rendered-output or generated-workflow change. Gates: fmt --check, lint 11/11, test 4/4,
+repository consistency and architectural guards. Implemented in four module-sized commits on
+`arena/49e36983-pixi-sandbox`; TASK-82 is locally complete and not pushed or merged.
+<!-- SECTION:SUMMARY:END -->
