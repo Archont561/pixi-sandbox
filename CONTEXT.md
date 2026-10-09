@@ -1894,3 +1894,51 @@ write was attempted for TASK-82.
 > Do not push, open a PR, merge or dispatch without my explicit go-ahead. Before new tests,
 > agree the public seams. House rules are in `AGENTS.md` (invariant 10: unimplemented work goes
 > in this scratchpad), with the session procedure and templates in `.agents/skills/session/`.
+
+### 2026-10-09 (integration follow-up) — owner authorized the combined TASK-87/TASK-82 PR and merge
+
+The owner's instruction is now **"create PR and merge"**. It sanctions pushing this session
+branch and merging its combined BDD migration and pack extraction; it is not a standing sanction
+for new tasks, releases, manual workflow dispatches or future PRs. The third/fourth-session
+no-PR/no-merge sentences are historical. Before integration, fetched origin and confirmed main
+is still `8dc5bba` with its existing ci/docs/publish-sandbox runs green; did not rerun settled work.
+
+TASK-87's **5/5** local criteria were already proven, so its Done status is included in the PR
+in house format; TASK-82 remains **6/6**. Both task notes now distinguish their earlier reserved
+sanction from today's authorization. No implementation or fixture changes are folded into the
+integration paperwork. The combined branch's local proof is **873 passing / 1 skipped**, fmt,
+lint **11/11**, test **4/4**, conventional messages and the repository consistency checks.
+
+**Integration checkpoints, not pre-claimed results:** push with the hooks active; open the PR
+from `arena/49e36983-pixi-sandbox` to main; wait for its checks; squash-merge the explicit PR
+number with no auto-merge; then read every merge-triggered main run and the published transport's
+source commit. Re-baseline the merged tree without changing the fixed session branch — equality
+of the branch/main tree IDs permits that proof without a checkout of main. The PR timeline and
+final report carry the resulting PR number, main SHA and actual workflow verdicts; the green
+runs for `8dc5bba` alone are not proof for the new commit. A restricted branch-protection REST
+endpoint returned 403 while ordinary PR/repository/Actions reads worked: this is an endpoint
+permission limit, not a reason to bypass checks or replace configured GitHub credentials.
+
+**Still not implemented:** backlog CLI quoting guidance, verify/publish reconciliation,
+TASK-76/77/78 and the external proof items from the previous entries. None is bundled into this
+PR. TASK-76 remains the next high-priority dependency-unblocked candidate; TASK-77 is the broad
+local lint candidate. TASK-85 still needs the owner's dispatch and TASK-66 a Castellan drift PR.
+
+**Next session's opening prompt:**
+
+> Restore only if needed; baseline through Pixi on `arena/49e36983-pixi-sandbox` — expect
+> **873 passing / 1 skipped** after TASK-87's BDD macro migration and TASK-82's four library
+> extractions. Read `CONTEXT.md` § Session scratchpad, **2026-10-09 integration follow-up**,
+> and the PR timeline for the merge SHA and actual post-merge verdicts. Both tasks have their
+> acceptance criteria proven and their Done closure included in the combined PR.
+>
+> Fetch origin without changing branches and confirm the combined PR's merge and the latest
+> main ci/docs/publish-sandbox verdicts. If already green, do not rerun or repack. Read the
+> published developer transport's manifest: it must name the current main commit, schema 2
+> and the static 0.6.0 self-bin; the full rstest-bdd macro dependency tree is vendored.
+>
+> First propose TASK-76's local slice or TASK-77; do not start either without my selection.
+> Before new tests, agree the public seams. The authorization covered only the combined
+> TASK-87/TASK-82 integration — do not push a new task, open another PR, merge, release or
+> dispatch without new go-ahead. House rules are in `AGENTS.md` (invariant 10: unimplemented
+> work goes in this scratchpad), with the session procedure in `.agents/skills/session/`.
