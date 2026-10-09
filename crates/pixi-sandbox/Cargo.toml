@@ -44,6 +44,7 @@ predicates = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 rstest-bdd = { workspace = true }
+rstest-bdd-macros = { workspace = true }
 tempfile = { workspace = true }
 # Parses the `.feature` files the BDD layer binds to the suite (task-86). Same version and
 # feature set rstest-bdd itself declares, so the edge adds no package to the locked graph.

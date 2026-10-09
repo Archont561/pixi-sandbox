@@ -40,6 +40,12 @@ proptest = "1"
 rstest = "0.27.0"
 # BDD glue for the .feature layer (tests/features); MSRV 1.88, below the workspace toolchain.
 rstest-bdd = "0.6.0"
+# Step/scenario attribute macros for the same layer. They ship in a separate crate, so the
+# airlocked vendor set gained the runtime half without them (CONTEXT.md, 2026-10-09 second
+# session); declaring them here lets the connected relock bot refresh Cargo.lock and the next
+# repack vendor them, after which the tests/support/bdd runner can become #[scenario].
+# compile-time-validation keeps a missing step a compile error, the house's fail-fast shape.
+rstest-bdd-macros = { version = "0.6.0", features = ["compile-time-validation"] }
 tempfile = "3"
 
 [profile.release]
