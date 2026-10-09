@@ -1794,3 +1794,103 @@ runner is gone, and the only guard left is the one the macros cannot replace.
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
 > and its templates are in `.agents/skills/session/`.
+
+### 2026-10-09 (fourth session) — task-82's pack library extraction is complete locally, not pushed
+
+**Environment and recovery.** The sandbox reset after the previous push: Pixi and the restored
+prefix were gone, and local HEAD was back at `8dc5bba` while the seven task-87 commits survived
+as workspace files. Fetched the existing session branch, verified **all 424 files** against
+`origin/arena/49e36983-pixi-sandbox` with no content mismatch, then recovered HEAD/index to
+`d8f14cf8` without discarding any workspace file or changing branches. The previous seven commits
+**were pushed**, on the owner's explicit instruction; the third-session entry's "unpushed"
+sentences are historical, not today's state. No PR exists. Main still names `8dc5bba`, with
+`ci`, `docs` and `publish sandbox` green; nothing was re-run or re-packed.
+
+Restore passed from the same 0.6.0/static/schema-2 transport (268 vendored crates, 14495 blobs,
+0 failures); user tools registered. Fresh baseline **816 passing / 1 skipped**, hooks installed.
+TASK-8 and TASK-54 are Done, so TASK-82's sequencing prerequisites were satisfied.
+
+**Decisions agreed before tests.** The owner chose four promoted boundaries, `pack` first:
+`pack` (preflight/file oracle), `vendor` (lock policy and storage), `tool_fetch` (pin selection,
+fetch/cache/embedding), `branch_docs` (render/write). No dependency, transport/schema or rendered
+output change; no generated-workflow rewrite. The byte-identity proof has one explicit exception:
+normalize only `manifest.created_at` and the corresponding README Built timestamp. The actual
+manifest's build-version fields are never normalized; the expected fixture supplies the current
+package version as an input, so future release bumps remain valid but wrong emitted stamps fail.
+
+**Implemented, not pushed — TASK-82 at 6/6 local ACs, status Done in house format.** Four commits,
+one module per slice on the existing session branch:
+
+- `f0933ce9 refactor(pack): promote preflight and the per-file oracle` — layout refusals,
+  host-requirement resolution, D13's verification unpack, and file recording. Shared command
+  primitives moved once and re-exported, not duplicated. Public tests: **20**.
+- `29962105 refactor(pack): promote cargo vendoring policy` — collision policy, loose/per-crate-
+  tar output and toolchain provenance; explicit external-program paths keep tests off ambient
+  PATH. Public tests: **14**.
+- `087321d0 refactor(pack): promote pinned tool fetch and verification` — the HTTP adapter
+  supplies a byte stream, never the verification verdict. The library retains pin/hash/version/
+  linkage/cache policy; HOME/USERPROFILE selection stays in the CLI. The last two inline pack
+  tests moved here and the LEGACY entry left in the same commit. Public tests: **25**.
+- `aaec92ae refactor(pack): promote branch documentation rendering` — pure manifest-to-guide
+  rendering plus a separate ordered writer with the original error context. Public tests: **9**.
+
+`commands/pack.rs`: **1,254 → 495 production lines**, now `run` and four planning/orchestration
+methods. All eleven original inline tests have integration routes; splitting the combined
+unsafe/duplicate selection test into two named cases accounts for one additional case, not a
+lost assertion. LEGACY **6 → 5**; both architecture guards and the shared-helper guard pass.
+Suite counts at the four green slices: **827 → 841 → 864 → 873 passing**, **1 skipped** throughout.
+Final gates: fmt --check, lint **11/11**, test **4/4**, fresh `xtask check-repository`; no lockfile,
+core/git source, generated-workflow, xtask source or BDD-feature change. The task's notes and
+summary carry the AC-by-AC proof. Done here means locally complete, not merged into main.
+
+**Independent before/after proof.** Preserved the original binary before extraction (sha256
+`a73cdd6a540e51f6755f9ef8d80b9a9c1a239650615685ff96d57e5bb9e68fa9`) and captured fixture transports
+from it. The final binary matches **all 40 files and executable bits** across four transports:
+Linux/no-vendor (8), Linux/loose with host requirements (11), Linux/tarballs (10), Windows/loose
+(11). Only the two approved timestamp sites were normalized. Raw tar archive sha256 matches:
+`c8aebc22e0c9fafc0be24ecbaa40813bd9d90aec35dabb523c0257bbed42004f`. Three portable references are
+committed under `tests/fixtures/pack-reference/`; tar headers carry native UID/GID, so the
+portable test compares extracted bytes while the raw archive comparison is local to this runner.
+External pack/vendor programs are synthetic, not a real network solve — the proof concerns the
+same input fixture and command contract, not a new live upstream-tools claim.
+
+**Reds seen, all reverted.** Each promoted seam first failed to compile before it existed.
+Four deliberate behavioral mutations then proved the oracles sensitive: unpacking the original
+pack changes its bytes (the fake unpacker writes its cache); weakening the duplicate-source
+filter accepts the colliding lock; bypassing download checksums replaces a cache with unverified
+bytes; changing the README headline fails all reference cases. No mutation was committed.
+
+**Two fixture findings worth keeping.** An inherited checkout-local TMPDIR can put a temporary
+project under this repository's Git ancestry; an unborn local fixture repository prevents that
+ambient commit from leaking into source provenance. And the original short MZ filename example
+is only 14 bytes: the linkage classifier needs 20 and reports it `unknown`, not `system`. Its
+old comment was inaccurate; the moved test states what it actually judges. No linkage or version
+policy tightening was smuggled into a behavior-preserving extraction.
+
+**Not implemented / open, newest state.** The four TASK-82 commits and this context close are
+local only; no renewed push sanction, PR sanction or merge sanction was given. TASK-87 remains
+5/5 and In Progress pending its merge, with its earlier seven commits already on origin. A future
+PR from this fixed session branch will include both tasks. The backlog skill's prose-quoting
+correction and the `verify`/`publish` reconciliation from the earlier entries remain untouched.
+TASK-76 is the next high-priority, dependency-unblocked candidate (AC#8 needs a consumer run);
+TASK-77 is the local but wide lint pass. TASK-78 still needs a reviewed decision before code.
+TASK-85 AC#6 remains the owner's dispatch click, TASK-66 needs a Castellan PR with deliberate
+lockfile drift, and TASK-73/74 stay parked on issue #101. No dispatch, release, repack or remote
+write was attempted for TASK-82.
+
+**Next session's opening prompt:**
+
+> Restore only if needed and baseline the current session branch — expect **873 passing /
+> 1 skipped**, not main's 816/1. The published developer transport is still 0.6.0 from `8dc5bba`
+> and carries the full vendored rstest-bdd macro tree. Read `CONTEXT.md` § Session scratchpad —
+> the **2026-10-09 fourth-session** heading records TASK-82's four library boundaries and proof.
+>
+> Fetch origin on `arena/49e36983-pixi-sandbox` without changing branches. TASK-87's seven commits
+> were pushed through `d8f14cf8`; TASK-82's four extraction commits and the context close are
+> local only. TASK-82 is Done at 6/6 local ACs; TASK-87 is 5/5 In Progress pending its merge.
+> Main still names `8dc5bba`; if its ci/docs/publish sandbox runs remain green, do not re-run
+> or re-pack. First decide whether to push/open the combined PR or start TASK-76's local slice.
+>
+> Do not push, open a PR, merge or dispatch without my explicit go-ahead. Before new tests,
+> agree the public seams. House rules are in `AGENTS.md` (invariant 10: unimplemented work goes
+> in this scratchpad), with the session procedure and templates in `.agents/skills/session/`.
