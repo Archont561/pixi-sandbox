@@ -71,4 +71,17 @@ red and reverted. All four pre/post transports match, including the raw tar arch
 sha256 `c8aebc22e0c9fafc0be24ecbaa40813bd9d90aec35dabb523c0257bbed42004f`; only the two
 approved timestamp locations were normalized. Full suite: **841 passing / 1 skipped**;
 fmt, lint (11/11), and test (4/4) green.
+
+Slice 3 (`tool_fetch`): reviewed pin selection, cache placement, streaming download verification,
+reported versions and embedding now live in the library. The HTTP adapter is a thin byte-stream
+boundary; no pin policy is delegated to the fake. HOME/USERPROFILE selection stays in the CLI.
+Twenty-five integration cases cover verified hits, corrupt-cache replacement, refused/failed/
+interrupted downloads, cleanup, absent pins, version mismatches, Windows names, override paths,
+cache selection, embedded metadata, oversize/dynamic/pin refusals and version diagnostics.
+Bypassing the checksum check was seen red and reverted. The last two inline pack tests moved
+here and `commands/pack.rs` left LEGACY in this same commit; both architectural guards pass.
+Reference projects have an unborn local Git repository so even a caller's checkout-local TMPDIR
+cannot leak an ancestor commit into provenance. The expected reference's build-version inputs
+follow the package version; actual outputs are normalized only at the two approved timestamp
+sites. Full suite: **864 passing / 1 skipped**; fmt, lint (11/11), and test (4/4) green.
 <!-- SECTION:NOTES:END -->

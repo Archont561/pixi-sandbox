@@ -406,6 +406,7 @@ pub fn synthetic_pack_fixture() -> SyntheticPackFixture {
     let home = isolated_home();
     let project = home.path().join("project");
     copy_tree(&demo_project(), &project);
+    git(&project, &["init", "-q", "-b", "fixture-unborn"]);
     let tools = home.path().join("tools");
     fake_tools(&tools);
     write_executable(

@@ -16,6 +16,11 @@ guides are retained, not just a selected subset of manifest fields.
 Only `manifest.created_at` and the corresponding README `Built … from commit`
 timestamp are replaced with `2000-01-01T00:00:00Z`. This exception was explicitly
 approved for TASK-82; every other byte remains the pre-extraction binary's output.
+The CLI comparison supplies the current package version as the reference manifest's
+build-version input, without rewriting that field in actual output. Thus a release
+bump remains valid but a wrong/hard-coded emitted build stamp fails. At extraction
+time the input is 0.6.0, identical to these captured bytes.
+
 Tarball mode is also compared before/after locally (raw archive bytes included),
 with fixed fixture mtimes; portable vendor tests compare extracted contents
 because tar headers carry the runner's native UID/GID.

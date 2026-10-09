@@ -10,5 +10,6 @@ pub mod pack;
 pub mod release;
 pub mod self_update;
 pub mod standalone;
+pub mod tool_fetch;
 pub mod user_tools;
 pub mod vendor;

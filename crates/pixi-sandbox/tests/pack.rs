@@ -252,7 +252,27 @@ fn pack_outputs_match_the_pre_extraction_reference(
         )
         .into_bytes();
 
-    let expected = support::file_tree(&pack_reference.join(reference));
+    let mut expected = support::file_tree(&pack_reference.join(reference));
+    // Build version is a fixture input, not a normalization of actual output. Keep release
+    // bumps valid while still refusing a wrong or hard-coded stamp in the CLI's manifest.
+    let manifest = &mut expected.get_mut(manifest_path).unwrap().0;
+    *manifest = String::from_utf8(manifest.clone())
+        .unwrap()
+        .replace(
+            "\"tool\": {\n    \"name\": \"pixi-sandbox\",\n    \"version\": \"0.6.0\"",
+            &format!(
+                "\"tool\": {{\n    \"name\": \"pixi-sandbox\",\n    \"version\": \"{}\"",
+                env!("CARGO_PKG_VERSION")
+            ),
+        )
+        .replace(
+            "\"pixi-sandbox\": {\n      \"version\": \"0.6.0\"",
+            &format!(
+                "\"pixi-sandbox\": {{\n      \"version\": \"{}\"",
+                env!("CARGO_PKG_VERSION")
+            ),
+        )
+        .into_bytes();
     assert_eq!(
         actual.keys().collect::<Vec<_>>(),
         expected.keys().collect::<Vec<_>>(),

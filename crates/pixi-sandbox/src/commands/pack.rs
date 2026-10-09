@@ -8,6 +8,7 @@ use crate::cli::{PackArgs, VendorModeArg};
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox::pack::{build_files_oracle, fingerprint_of, record_tree, sum_files};
+use pixi_sandbox::tool_fetch::{ToolSource, embed_tool, fetch_tool, reported_version, tools_cache};
 use pixi_sandbox::vendor::{VendorInfo, VendorMode, validate_vendorable_lockfile, vendor_tree};
 use pixi_sandbox_core::host_requirements::HostRequirementSet;
 use pixi_sandbox_core::manifest::{
@@ -15,11 +16,9 @@ use pixi_sandbox_core::manifest::{
 };
 use pixi_sandbox_core::shard;
 use pixi_sandbox_core::tools_lock::{ToolsLock, executable_filename};
-use pixi_sandbox_core::verify::{self, Linkage};
 use std::collections::BTreeMap;
 use std::env;
-use std::fs::{self, File};
-use std::io;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -140,25 +139,20 @@ impl PackPlan {
     /// pixi-pack/pixi/pixi-unpack on PATH.
     fn resolve_tools(&self) -> Result<ResolvedTools> {
         let lock = if self.args.fetch_tools {
-            let lock = match self.args.tools_lock.as_deref() {
-                Some(path) => {
-                    let path = if path.is_absolute() {
-                        path.to_path_buf()
-                    } else {
-                        self.root.join(path)
-                    };
-                    ToolsLock::load(&path)
-                        .with_context(|| format!("reading tool-pin override {}", path.display()))?
-                }
-                None => ToolsLock::embedded().context("loading embedded helper-tool pins")?,
-            };
+            let lock = pixi_sandbox::tool_fetch::resolve_lock(
+                &self.root,
+                self.args.tools_lock.as_deref(),
+            )?;
             Some(lock)
         } else {
             None
         };
         let cache = lock
             .is_some()
-            .then(|| tools_cache(self.args.tools_cache.as_deref()))
+            .then(|| {
+                let home = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE"));
+                tools_cache(self.args.tools_cache.as_deref(), home.as_deref())
+            })
             .transpose()?;
 
         let packer = match &lock {
@@ -499,184 +493,6 @@ impl PackPlan {
     }
 }
 
-#[derive(Debug)]
-struct ToolSource {
-    path: PathBuf,
-    version: String,
-    url: Option<String>,
-    pinned_sha256: Option<String>,
-}
-
-#[derive(Debug)]
-struct FetchedTool {
-    path: PathBuf,
-    version: String,
-    url: String,
-    sha256: String,
-}
-
-fn tools_cache(explicit: Option<&Path>) -> Result<PathBuf> {
-    match explicit {
-        Some(path) => support::absolute(path),
-        None => {
-            let home = env::var_os("HOME")
-                .or_else(|| env::var_os("USERPROFILE"))
-                .ok_or_else(|| anyhow::anyhow!("cannot choose a tools cache: HOME is not set"))?;
-            Ok(PathBuf::from(home)
-                .join(".cache")
-                .join("pixi-sandbox")
-                .join("tools"))
-        }
-    }
-}
-
-fn fetch_tool(lock: &ToolsLock, name: &str, platform: &str, cache: &Path) -> Result<FetchedTool> {
-    let tool = lock
-        .tools
-        .get(name)
-        .ok_or_else(|| anyhow::anyhow!("{name} is not pinned in the tools lock"))?;
-    let pin = lock
-        .pin(name, platform)
-        .ok_or_else(|| anyhow::anyhow!("{name} has no pin for platform {platform}"))?;
-    let url = lock
-        .url(name, platform)
-        .expect("pin and tool were checked above");
-
-    fs::create_dir_all(cache)
-        .with_context(|| format!("creating tools cache {}", cache.display()))?;
-    let cached_name = executable_filename(&format!("{name}-{}-{platform}", tool.version), platform);
-    let destination = cache.join(cached_name);
-    let cached = destination.is_file()
-        && shard::sha256_file(&destination)
-            .map(|actual| actual == pin.sha256)
-            .unwrap_or(false);
-
-    if !cached {
-        println!("  fetch {name} {} ({})", tool.version, pin.target);
-        let temporary = destination.with_file_name(format!(
-            ".{}.download-{}",
-            destination
-                .file_name()
-                .and_then(|file| file.to_str())
-                .unwrap_or(name),
-            std::process::id()
-        ));
-        support::remove_path(&temporary)?;
-        let result = (|| -> Result<()> {
-            let response = ureq::get(&url)
-                .call()
-                .map_err(|error| anyhow::anyhow!("downloading {name} from {url}: {error}"))?;
-            let mut source = response.into_body().into_reader();
-            let mut output = File::create(&temporary)
-                .with_context(|| format!("creating {}", temporary.display()))?;
-            io::copy(&mut source, &mut output)
-                .with_context(|| format!("writing download for {name}"))?;
-            drop(output);
-            let actual = shard::sha256_file(&temporary)?;
-            if actual != pin.sha256 {
-                bail!(
-                    "integrity: {name} from {url} does not match the selected tool pins (expected {}, got {actual})",
-                    pin.sha256
-                );
-            }
-            support::remove_path(&destination)?;
-            fs::rename(&temporary, &destination).with_context(|| {
-                format!(
-                    "moving verified {name} into the tools cache at {}",
-                    destination.display()
-                )
-            })?;
-            Ok(())
-        })();
-        if result.is_err() {
-            let _ = support::remove_path(&temporary);
-        }
-        result?;
-    }
-
-    support::make_executable(&destination)?;
-    let reported = reported_version(&destination)?;
-    if !reported.contains(&tool.version) {
-        bail!(
-            "{name}: selected tool pins require {} but {} reports {reported:?}",
-            tool.version,
-            destination.display()
-        );
-    }
-    Ok(FetchedTool {
-        path: destination,
-        version: tool.version.clone(),
-        url,
-        sha256: pin.sha256.clone(),
-    })
-}
-
-fn reported_version(path: &Path) -> Result<String> {
-    let mut command = Command::new(path);
-    command.arg("--version");
-    let output = support::run(&mut command)
-        .with_context(|| format!("asking {} for its version", path.display()))?;
-    Ok(output
-        .split_whitespace()
-        .last()
-        .unwrap_or("unknown")
-        .to_string())
-}
-
-fn embed_tool(
-    payload: &Path,
-    platform: &str,
-    name: &str,
-    source: &ToolSource,
-    shard_limit: u64,
-) -> Result<ToolEntry> {
-    let file_name = executable_filename(name, platform);
-    let relative = format!("tools/{platform}/{file_name}");
-    let destination = payload.join(&relative);
-    let parent = destination
-        .parent()
-        .expect("tool path always has a parent directory");
-    fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    fs::copy(&source.path, &destination).with_context(|| {
-        format!(
-            "copying {name} from {} to {}",
-            source.path.display(),
-            destination.display()
-        )
-    })?;
-    support::make_executable(&destination)?;
-
-    let metadata = fs::metadata(&destination)?;
-    if metadata.len() > shard_limit {
-        bail!(
-            "embedded tool {name} is {} bytes, above the {} byte shard limit; tools cannot be split",
-            metadata.len(),
-            shard_limit
-        );
-    }
-    let actual = shard::sha256_file(&destination)?;
-    if let Some(expected) = &source.pinned_sha256 {
-        if &actual != expected {
-            bail!(
-                "integrity: embedded {name} does not match its pin (expected {expected}, got {actual})"
-            );
-        }
-    }
-
-    let linkage = verify::linkage_of(&destination);
-    if linkage == Linkage::Dynamic {
-        bail!("{name} is dynamically linked — ship the static release asset instead (decision D4)");
-    }
-    Ok(ToolEntry {
-        version: source.version.clone(),
-        url: source.url.clone(),
-        pinned_sha256: source.pinned_sha256.clone(),
-        linkage: linkage.as_str().to_string(),
-        size_bytes: metadata.len(),
-        path: Some(relative),
-    })
-}
-
 fn write_branch_docs(
     out: &Path,
     manifest: &Manifest,
@@ -854,78 +670,4 @@ fn write_branch_docs(
         .with_context(|| format!("writing {}/AGENTS.md", out.display()))?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{PackPlan, ToolSource, embed_tool};
-    use std::fs;
-    use std::path::{Path, PathBuf};
-
-    #[test]
-    fn windows_transport_tools_keep_the_exe_suffix() {
-        let directory = tempfile::tempdir().expect("temporary payload");
-        let source = directory.path().join("source.exe");
-        // `MZ` is deliberately recognised as a native/system executable by the linkage probe.
-        fs::write(&source, b"MZ test binary").expect("write test executable");
-        let entry = embed_tool(
-            directory.path(),
-            "win-64",
-            "pixi",
-            &ToolSource {
-                path: source,
-                version: "test".to_string(),
-                url: None,
-                pinned_sha256: None,
-            },
-            u64::MAX,
-        )
-        .expect("embed Windows tool");
-
-        assert_eq!(entry.path.as_deref(), Some("tools/win-64/pixi.exe"));
-        assert!(directory.path().join("tools/win-64/pixi.exe").is_file());
-    }
-
-    /// A `PackArgs` with every optional field at its CLI default, so each test below only
-    /// states the field it means to exercise.
-    fn args(repo_root: &Path, output_dir: &Path, envs: &[&str]) -> crate::cli::PackArgs {
-        crate::cli::PackArgs {
-            diagnostics: crate::cli::DiagnosticsArgs::default(),
-            repo_root: repo_root.to_path_buf(),
-            envs: envs.iter().map(|&s| s.to_string()).collect(),
-            output_dir: output_dir.to_path_buf(),
-            platform: "linux-64".to_string(),
-            shard_limit_mib: 95.0,
-            cargo_vendor: false,
-            cargo_vendor_mode: crate::cli::VendorModeArg::Loose,
-            config: None,
-            fetch_tools: false,
-            tools_lock: None,
-            tools_cache: None,
-            self_bin: None,
-        }
-    }
-
-    /// `resolve_tools` is otherwise network-bound (it downloads from the pins it loads), so
-    /// this covers the one failure `--tools-lock` can hit entirely on the filesystem: an
-    /// override path that does not exist. The PATH-fallback and embedded-pin branches stay
-    /// covered by `tests/e2e.rs`'s full `pack` round trip.
-    #[test]
-    fn an_explicit_tools_lock_override_that_does_not_exist_is_refused() {
-        let repo = tempfile::tempdir().expect("repo");
-        fs::write(repo.path().join("pixi.lock"), "").expect("lockfile");
-        let output_dir = repo.path().join("out");
-        let mut pack_args = args(repo.path(), &output_dir, &["default"]);
-        pack_args.fetch_tools = true;
-        pack_args.tools_lock = Some(PathBuf::from("missing-tools-lock.toml"));
-
-        let plan = PackPlan::from_args(pack_args).expect("validation alone does not fetch");
-        let error = plan
-            .resolve_tools()
-            .expect_err("the override file does not exist");
-        assert!(
-            format!("{error:#}").contains("reading tool-pin override"),
-            "{error:#}"
-        );
-    }
 }
