@@ -167,6 +167,18 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
+    /// Fail unless a dispatched release tag resolves to the handed-off source commit.
+    StarterCheckDispatch {
+        /// Repository the release must belong to.
+        #[arg(long, default_value = "Archont561/pixi-sandbox")]
+        repo: String,
+        /// Release tag the starter is to be generated from.
+        #[arg(long)]
+        tag: String,
+        /// Commit the dispatch handed off with that tag.
+        #[arg(long)]
+        commit: String,
+    },
     /// Verify the starter repository has an actual commit on its main branch.
     StarterCheckMain {
         /// Canonical starter repository to check.
@@ -193,6 +205,15 @@ enum Command {
         /// Repository the starter is published to.
         #[arg(long, default_value = "Archont561/pixi-sandbox-starter")]
         starter_repo: String,
+    },
+    /// Assemble the tree a starter checkout would commit and clone it fresh into a scratch dir.
+    StarterClone {
+        /// Assembled starter tree (a git work tree).
+        #[arg(long)]
+        dir: PathBuf,
+        /// Scratch directory to write into; must be absent or empty.
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Report every reason an assembled starter tree is not publishable for its tag.
     StarterVerify {
@@ -298,6 +319,11 @@ fn run_args(args: Args) -> Result<()> {
             eprintln!("release references agree with the declared version");
             Ok(())
         }
+        Command::StarterCheckDispatch { repo, tag, commit } => {
+            starter::check_dispatch(&repo, &tag, &commit)
+        }
+        Command::StarterClone { dir, out } => starter::clone_publishable(&dir, &out)
+            .map(|clone| println!("starter clone ready at {}", clone.display())),
         Command::StarterCheckMain { repo } => starter::check_main_ref(&repo),
         Command::StarterScaffold {
             out,

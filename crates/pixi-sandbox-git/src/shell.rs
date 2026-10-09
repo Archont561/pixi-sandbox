@@ -589,6 +589,72 @@ impl ShellGit {
     pub fn worktree_diff_stat(&self, root: &Path) -> Result<String> {
         self.run_text(&self.git(["--no-pager", "diff", "--stat"]).cwd(root))
     }
+
+    /// Is `root` a checked-out work tree, i.e. is there an index and a set of ignore rules to ask?
+    ///
+    /// `false` is only ever the answer git itself gives ("not a git repository", exit 128); a
+    /// `git` that cannot run, or a work tree git refuses to answer for, is an error rather than
+    /// a silent `false`, because the caller's fallback is the conservative one and must not be
+    /// reached by accident.
+    pub fn is_work_tree(&self, root: &Path) -> Result<bool> {
+        let command = self.git(["rev-parse", "--is-inside-work-tree"]).cwd(root);
+        let output = self.run_raw(&command)?;
+        match output.status {
+            // A bare repository answers `false` with exit 0, so the answer is read, not assumed.
+            0 => Ok(String::from_utf8_lossy(&output.stdout).trim() == "true"),
+            128 => Ok(false),
+            _ => Err(Error::Command {
+                command: command.rendered(),
+                status: output.status,
+                stderr: output.stderr.trim().to_string(),
+            }),
+        }
+    }
+
+    /// Clone `from` into `to`, sharing no objects with it.
+    ///
+    /// `--no-hardlinks` is the point: a plain local `git clone` hardlinks the source's object
+    /// store, so the copy is still *of* that directory in a way a consumer's `git clone <url>`
+    /// never is. A proof that runs in the clone is otherwise partly a proof about the bytes the
+    /// tooling left lying next door.
+    pub fn clone_fresh(&self, from: &Path, to: &Path) -> Result<()> {
+        self.run(
+            &self
+                .git(["clone", "-q", "--no-hardlinks"])
+                .arg(path(from))
+                .arg(path(to)),
+        )
+        .map(|_| ())
+    }
+
+    /// Every path `git add -A` would put in the next commit: what the index already holds, plus
+    /// what is untracked and *not* ignored.
+    ///
+    /// This is the question "what would we publish?" answers to, where the near-equivalents do
+    /// not: `git status --porcelain` omits tracked-and-unmodified files, so a runtime directory
+    /// already committed by an earlier revision would go unreported, and `git ls-files` alone
+    /// omits the new file nobody has staged yet. `-z` keeps a path with a space intact, and
+    /// paths come back relative to the repository root — which `cwd` is.
+    pub fn ls_publishable(&self, root: &Path) -> Result<Vec<String>> {
+        let command = self
+            .git([
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ])
+            .cwd(root);
+        let output = self.run(&command)?;
+        let text = String::from_utf8(output.stdout).map_err(|_| Error::NonUtf8 {
+            command: command.rendered(),
+        })?;
+        Ok(text
+            .split('\0')
+            .filter(|line| !line.is_empty())
+            .map(ToString::to_string)
+            .collect())
+    }
 }
 
 /// Everything a transport needs from a checkout of a branch, and nothing else.
