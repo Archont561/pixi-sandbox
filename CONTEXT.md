@@ -1638,3 +1638,26 @@ gherkin dev-dep edge adds one line to `pixi-sandbox`'s lock entry (no new packag
 Deviates from the task's mechanism sentence, satisfies all five ACs. Swap-in path for later: once
 a connected session relocks `rstest-bdd-macros` and a repack vendors it, the runner can be
 replaced by `#[scenario]` without moving the feature files.
+
+**Relock round (same session, on the owner's instruction).** TASK-86 + the macros declaration
+landed as **PR #126** on `arena/b44e8d80-pixi-sandbox`: three `test(bdd)` commits (suite
+802 → 816 passing / 1 skipped, every local gate green), then `chore(deps): declare
+rstest-bdd-macros 0.6.0 for the BDD layer` with `compile-time-validation`, Cargo.lock left
+deliberately stale. The bot ran the textbook cycle: guard failed on the drift, `relock` pushed
+`chore(lock): refresh lockfiles for #126` (+220 lines — the macros crate plus its ~20-crate
+tree, `cap-std`/`camino`/`newt-hype`/…, genuine crates.io checksums, all inside deny.toml's
+allowlist), then dispatched CI + the publisher on the repaired head. One real failure and one
+procedural finding: the dispatched CI red was `lint:toml` — the root declaration had not been
+through taplo after an environment reset mid-session (fixed in `39def33`, CI green after; the
+PR head passes lock guard, ci, airlock, codecov patch); and runs for commits authored by
+`pixi-sandbox[bot]` sit at `action_required` — approving, cancelling and dispatching are all
+owner-token actions, so a bot-commit PR check that needs re-running needs the owner's click.
+**Consequence until the PR merges and the push-trigger repack runs:** airlocked hosts cannot
+build this branch offline (`no matching package named rstest-bdd-macros found` in the vendor
+directory) — connected CI is the proof tier for it, exactly the gap #124 had between
+declaration and repack. Once the repack carries the macros crate, the follow-up is to replace
+`tests/support/bdd.rs` with `#[scenario]`/`#[given]` bindings — feature files and step
+sentences do not move. Also recorded: a sandbox reset between turns re-cloned the workspace and
+dropped the first four local commits; the tree was reconstructed byte-identical, one
+conventional commit per slice, so nothing was lost, but the old local hashes appear nowhere
+remote. task-85's starter dispatch (AC#6) is still the owner's click.
