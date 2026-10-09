@@ -1,0 +1,80 @@
+{
+  "schema": 2,
+  "tool": {
+    "name": "pixi-sandbox",
+    "version": "0.6.0"
+  },
+  "created_at": "2000-01-01T00:00:00Z",
+  "platform": "win-64",
+  "shard_limit_bytes": 99614720,
+  "source": {
+    "lock_sha256": "1e38522bd51f873697d48718560433040b9c2371fc22cd6ea8d95b5fe1db9111"
+  },
+  "tools": {
+    "pixi": {
+      "version": "0.0.0",
+      "linkage": "script",
+      "size_bytes": 91,
+      "path": "tools/win-64/pixi.exe"
+    },
+    "pixi-sandbox": {
+      "version": "0.6.0",
+      "linkage": "script",
+      "size_bytes": 36,
+      "path": "tools/win-64/pixi-sandbox.exe"
+    },
+    "pixi-unpack": {
+      "version": "0.0.0",
+      "linkage": "script",
+      "size_bytes": 446,
+      "path": "tools/win-64/pixi-unpack.exe"
+    }
+  },
+  "envs": {
+    "default": {
+      "platform": "win-64",
+      "pack_path": ".pixi-sandbox/envs/default/pack",
+      "packed_size_bytes": 1070,
+      "unpacked_size_bytes": 17,
+      "blobs": [
+        {
+          "path": "envs/default/pack/channel/noarch/default-0.1.0-0.conda",
+          "size": 1051,
+          "sha256": "0993a3436e03aee0eaf71a854f218963328b65494158e3221eabb5b5d443c61a"
+        },
+        {
+          "path": "envs/default/pack/pixi-pack.json",
+          "size": 19,
+          "sha256": "03bb00cdb44afaef2d208482cea9c9c12c84d38bfc8ff214d9e44aa6a52fbe9d"
+        }
+      ],
+      "files": {
+        "blob": {
+          "path": "envs/default/files.json",
+          "size": 359,
+          "sha256": "933908258ba7d189354dcfc6cfed46f958f5c6f3ffbb9325a68b3ea208544022"
+        },
+        "entries": 1
+      }
+    }
+  },
+  "vendor": {
+    "mode": "loose",
+    "crates": 1,
+    "size_bytes": 98,
+    "cargo_lock_sha256": "f894d0c873a3c2c1931883a72a051a1c865612e626f80944c73fca898ada3c2f",
+    "directory": ".pixi-sandbox/vendor",
+    "blobs": [
+      {
+        "path": "vendor/demo-dep-1.0.0/Cargo.toml",
+        "size": 46,
+        "sha256": "2ac306238678c4cc629e1451055009acf83aefb7694c04ed154c40e9b993e22e"
+      },
+      {
+        "path": "vendor/demo-dep-1.0.0/src/lib.rs",
+        "size": 52,
+        "sha256": "6b2f7272fa9dbace0e82cc2e69520555b1bfdaef9be2113e92c936ca893cef12"
+      }
+    ]
+  }
+}

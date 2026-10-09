@@ -46,8 +46,10 @@ rstest = { workspace = true }
 rstest-bdd = { workspace = true }
 rstest-bdd-macros = { workspace = true }
 tempfile = { workspace = true }
-# Parses the `.feature` files the BDD layer binds to the suite (task-86). Same version and
-# feature set rstest-bdd itself declares, so the edge adds no package to the locked graph.
+# Parses the `.feature` files for the BDD layer's binding oracle (`tests/support/bdd.rs`), which
+# is the only runtime parse left now that `#[scenario]` does its own at compile time. Same
+# version and feature set rstest-bdd itself declares, so the edge adds no package to the locked
+# graph.
 gherkin = { version = "0.16.0", default-features = false, features = [
   "parser",
 ] }

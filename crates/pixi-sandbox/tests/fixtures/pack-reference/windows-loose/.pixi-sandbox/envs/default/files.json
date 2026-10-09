@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "excluded": [
+    "conda-meta/pixi_env_prefix",
+    "conda-meta/.pixi-environment-fingerprint",
+    "etc/conda/activate.d/pixi-sandbox-cargo-home.sh",
+    "etc/conda/activate.d/pixi-sandbox-cargo-home.ps1",
+    "etc/conda/activate.d/pixi-sandbox-cargo-home.bat"
+  ],
+  "files": [
+    {
+      "p": "conda-meta/fake-package.json"
+    }
+  ]
+}

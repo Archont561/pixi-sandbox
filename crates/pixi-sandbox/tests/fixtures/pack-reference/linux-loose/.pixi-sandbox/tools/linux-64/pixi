@@ -1,0 +1,2 @@
+#!/bin/sh
+if [ "${1:-}" = '--version' ]; then echo 'pixi 0.0.0'; else echo 'pixi fake'; fi

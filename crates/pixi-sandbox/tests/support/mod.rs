@@ -270,3 +270,205 @@ esac
 pub fn transport_repo_fixture() -> fn(&Path, &str, Bundled) -> PathBuf {
     transport_repo
 }
+
+#[cfg(unix)]
+pub fn write_executable(path: &Path, script: &str) {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::write(path, script).unwrap();
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions).unwrap();
+}
+
+/// Minimal connected-side tools. They make the command contract testable without asking the
+/// fixture project to install pixi or turning this suite into a network test.
+#[cfg(unix)]
+pub fn fake_tools(dir: &Path) {
+    fs::create_dir_all(dir).unwrap();
+    write_executable(
+        &dir.join("pixi-pack"),
+        r#"#!/bin/sh
+set -eu
+out=''
+env=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -e) env="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+mkdir -p "$out/channel/noarch"
+printf '{"version":"fake"}\n' > "$out/pixi-pack.json"
+printf '# fake package for %s\n' "$env" > "$out/channel/noarch/$env-0.1.0-0.conda"
+dd if=/dev/zero bs=1 count=1024 2>/dev/null >> "$out/channel/noarch/$env-0.1.0-0.conda"
+printf 'unpacked 2 KiB\n'
+"#,
+    );
+    write_executable(
+        &dir.join("pixi"),
+        r#"#!/bin/sh
+if [ "${1:-}" = '--version' ]; then echo 'pixi 0.0.0'; else echo 'pixi fake'; fi
+"#,
+    );
+    write_executable(
+        &dir.join("pixi-unpack"),
+        r#"#!/bin/sh
+set -eu
+if [ "${1:-}" = '--version' ]; then echo 'pixi-unpack 0.0.0'; exit 0; fi
+pack="${1:-}"
+test -f "$pack/pixi-pack.json" || { echo "expected pixi-pack.json at pack root" >&2; exit 42; }
+out=''
+env=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -e) env="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+mkdir -p "$out/$env/conda-meta"
+printf 'unpacked %s\n' "$env" > "$out/$env/conda-meta/fake-package.json"
+"#,
+    );
+}
+
+#[cfg(unix)]
+pub fn path_with_fake_tools(dir: &Path) -> std::ffi::OsString {
+    let mut paths = vec![dir.to_path_buf()];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(paths).unwrap()
+}
+
+#[cfg(unix)]
+#[fixture]
+pub fn write_executable_fixture() -> fn(&Path, &str) {
+    write_executable
+}
+
+#[cfg(unix)]
+#[fixture]
+pub fn fake_tools_fixture() -> fn(&Path) {
+    fake_tools
+}
+
+#[cfg(unix)]
+#[fixture]
+pub fn path_with_fake_tools_fixture() -> fn(&Path) -> std::ffi::OsString {
+    path_with_fake_tools
+}
+
+/// Known-good outputs captured before TASK-82's extraction.
+#[fixture]
+pub fn pack_reference() -> PathBuf {
+    crate_dir().join("tests/fixtures/pack-reference")
+}
+
+#[cfg(unix)]
+#[allow(dead_code)] // Shared support compiles into every test binary, each using a subset.
+pub struct SyntheticPackFixture {
+    pub home: tempfile::TempDir,
+    pub project: PathBuf,
+    pub tools: PathBuf,
+}
+
+#[cfg(unix)]
+#[allow(dead_code)] // Paired with synthetic_pack_fixture; not every test root packs.
+impl SyntheticPackFixture {
+    pub fn command(&self) -> Command {
+        let mut command = isolated_bin(self.home.path());
+        command
+            .env("PATH", path_with_fake_tools(&self.tools))
+            .env(
+                "VENDOR_FIXTURE",
+                fixture_transport().join(".pixi-sandbox/vendor"),
+            )
+            .env("CARGO_NET_OFFLINE", "true")
+            .args(["pack", "--envs", "default", "--repo-root"])
+            .arg(&self.project);
+        command
+    }
+
+    pub fn self_bin(&self) -> PathBuf {
+        let path = self.home.path().join("self-bin");
+        write_executable(&path, "#!/bin/sh\necho 'pixi-sandbox 0.6.0'\n");
+        path
+    }
+}
+
+/// The exact external-tool inputs used for the pre-extraction pack reference.
+#[cfg(unix)]
+#[fixture]
+pub fn synthetic_pack_fixture() -> SyntheticPackFixture {
+    let home = isolated_home();
+    let project = home.path().join("project");
+    copy_tree(&demo_project(), &project);
+    git(&project, &["init", "-q", "-b", "fixture-unborn"]);
+    let tools = home.path().join("tools");
+    fake_tools(&tools);
+    write_executable(
+        &tools.join("cargo"),
+        r#"#!/bin/sh
+set -eu
+if [ "${1:-}" = '--version' ]; then echo 'cargo 1.90.0 (fixture)'; exit 0; fi
+test "$1" = vendor
+test "$2" = --locked
+test "$3" = --versioned-dirs
+mkdir -p "$4"
+cp -R "$VENDOR_FIXTURE"/. "$4"/
+find "$4" -exec touch -t 200001010000.00 {} \;
+"#,
+    );
+    write_executable(
+        &tools.join("rustc"),
+        "#!/bin/sh\necho 'rustc 1.90.0 (fixture)'\n",
+    );
+    fs::write(
+        project.join("sandbox.toml"),
+        "schema = 1\n\n[[bundle]]\nname = \"demo\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n\n[host_requirements]\nlibc = \"2.34\"\npackages = [\"fontconfig\"]\ncapabilities = [\"display\"]\n",
+    ).unwrap();
+    SyntheticPackFixture {
+        home,
+        project,
+        tools,
+    }
+}
+
+/// An independent, complete byte-and-exec-bit snapshot; do not use production's tree walker
+/// to judge whether production silently stopped recording a file.
+pub type FileTree = std::collections::BTreeMap<PathBuf, (Vec<u8>, bool)>;
+
+pub fn file_tree(root: &Path) -> FileTree {
+    fn walk(root: &Path, dir: &Path, files: &mut FileTree) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let metadata = fs::symlink_metadata(&path).unwrap();
+            if metadata.is_dir() {
+                walk(root, &path, files);
+            } else {
+                #[cfg(unix)]
+                let executable = {
+                    use std::os::unix::fs::PermissionsExt;
+                    metadata.permissions().mode() & 0o111 != 0
+                };
+                #[cfg(not(unix))]
+                let executable = false;
+                files.insert(
+                    path.strip_prefix(root).unwrap().to_path_buf(),
+                    (fs::read(path).unwrap(), executable),
+                );
+            }
+        }
+    }
+    let mut files = std::collections::BTreeMap::new();
+    walk(root, root, &mut files);
+    files
+}
+
+#[fixture]
+pub fn file_tree_fixture() -> fn(&Path) -> FileTree {
+    file_tree
+}

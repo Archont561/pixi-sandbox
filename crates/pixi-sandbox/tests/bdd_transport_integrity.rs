@@ -1,15 +1,19 @@
-//! BDD feature: transport integrity (task-86).
+//! BDD feature: transport integrity (task-86, bound with the rstest-bdd attribute macros by
+//! task-87).
 //!
-//! Scenarios live in `tests/features/transport_integrity.feature`; each one is bound to the
-//! suite as a plain test below. Steps drive `doctor --verify` black-box through the
-//! `tests/support` fixture builders, against tempdir copies of the fixture transport (D10).
+//! Scenarios live in `tests/features/transport_integrity.feature`, byte-identical to the
+//! sentences this file was written against; each one is bound below by `#[scenario]`, which
+//! emits the rstest test itself, so the names nextest reports did not move. Steps drive
+//! `doctor --verify` black-box through the `tests/support` fixture builders, against tempdir
+//! copies of the fixture transport (D10).
 
 mod support;
 
-use rstest_bdd::{StepContext, StepError, StepExecution, StepKeyword, step};
+use rstest::fixture;
+use rstest_bdd_macros::{given, scenario, then, when};
 use std::path::PathBuf;
 use std::process::Output;
-use support::bdd::{WORLD, run_scenario};
+use support::bdd::assert_every_scenario_is_bound;
 use support::{bin, copy_tree, fixture_transport, host_platform};
 use tempfile::TempDir;
 
@@ -41,63 +45,44 @@ impl TransportWorld {
     }
 }
 
-fn world<'a>(ctx: &'a StepContext<'_>) -> impl std::ops::DerefMut<Target = TransportWorld> + 'a {
-    ctx.try_borrow_mut::<TransportWorld>(WORLD)
-        .expect("the runner inserts the world")
+/// The world every step in this binary borrows: zero-argument, per the `tests/support`
+/// convention. rstest builds one instance per scenario, the steps share it, and it drops —
+/// tempdir and all — when the scenario ends.
+#[fixture]
+fn transport_world() -> TransportWorld {
+    TransportWorld::default()
 }
 
 // --- Given -----------------------------------------------------------------
 
-fn a_packed_transport(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    world(ctx).staged();
-    Ok(StepExecution::from_value(None))
+#[given("a packed transport")]
+fn a_packed_transport(transport_world: &mut TransportWorld) {
+    transport_world.staged();
 }
 
-fn a_packed_transport_carrying_one_tampered_byte(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let mut transport_world = world(ctx);
+#[given("a packed transport carrying one tampered byte")]
+fn a_packed_transport_carrying_one_tampered_byte(transport_world: &mut TransportWorld) {
     transport_world.staged();
     // The same blob the doctor tests in cli.rs tamper: one package inside the packed channel.
     let tampered = transport_world
         .transport_path()
         .join(".pixi-sandbox/envs/demo/pack/channel/noarch/demo-pure-0.1.0-0.conda");
     std::fs::write(&tampered, b"tampered").expect("the blob tampers");
-    Ok(StepExecution::from_value(None))
 }
 
-fn a_packed_transport_carrying_a_tampered_shard_part(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let mut transport_world = world(ctx);
+#[given("a packed transport carrying a tampered shard part")]
+fn a_packed_transport_carrying_a_tampered_shard_part(transport_world: &mut TransportWorld) {
     transport_world.staged();
     let tampered = transport_world
         .transport_path()
         .join(".pixi-sandbox/envs/demo/pack/channel/noarch/demo-big-0.1.0-0.conda.part001");
     std::fs::write(&tampered, b"tampered-part").expect("the shard part tampers");
-    Ok(StepExecution::from_value(None))
 }
 
 // --- When ------------------------------------------------------------------
 
-fn the_operator_verifies_the_transport(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let mut transport_world = world(ctx);
+#[when("the operator verifies the transport")]
+fn the_operator_verifies_the_transport(transport_world: &mut TransportWorld) {
     let transport = transport_world.transport_path().to_path_buf();
     let output = bin()
         .args([
@@ -109,18 +94,12 @@ fn the_operator_verifies_the_transport(
         .output()
         .expect("doctor runs");
     transport_world.result = Some(output);
-    Ok(StepExecution::from_value(None))
 }
 
 // --- Then ------------------------------------------------------------------
 
-fn every_declared_byte_is_reported_to_match(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let transport_world = world(ctx);
+#[then("every declared byte is reported to match")]
+fn every_declared_byte_is_reported_to_match(transport_world: &TransportWorld) {
     let output = transport_world.output();
     assert!(output.status.success(), "doctor --verify must pass");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -128,16 +107,10 @@ fn every_declared_byte_is_reported_to_match(
         stdout.contains("OK — every declared byte matches"),
         "the healthy verdict must reach the operator: {stdout}"
     );
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_verdict_is_honest_about_the_embedded_bootstrap_probe(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let transport_world = world(ctx);
+#[then("the verdict is honest about the embedded bootstrap probe")]
+fn the_verdict_is_honest_about_the_embedded_bootstrap_probe(transport_world: &TransportWorld) {
     let stdout = String::from_utf8_lossy(&transport_world.output().stdout);
     let probe = "tool pixi-sandbox v0.1.0: runs standalone";
     if host_platform() == "linux-64" {
@@ -153,158 +126,70 @@ fn the_verdict_is_honest_about_the_embedded_bootstrap_probe(
             "a foreign platform must not claim the probe ran: {stdout}"
         );
     }
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_verification_is_refused(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let transport_world = world(ctx);
+#[then("the verification is refused")]
+fn the_verification_is_refused(transport_world: &TransportWorld) {
     assert!(
         !transport_world.output().status.success(),
         "a tampered transport must fail verification"
     );
-    Ok(StepExecution::from_value(None))
 }
 
-fn no_healthy_verdict_is_reported(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let transport_world = world(ctx);
+#[then("no healthy verdict is reported")]
+fn no_healthy_verdict_is_reported(transport_world: &TransportWorld) {
     let stdout = String::from_utf8_lossy(&transport_world.output().stdout);
     assert!(
         !stdout.contains("OK"),
         "a failed verification must not print the healthy verdict: {stdout}"
     );
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_refusal_names_the_tampered_blob(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let transport_world = world(ctx);
+#[then("the refusal names the tampered blob")]
+fn the_refusal_names_the_tampered_blob(transport_world: &TransportWorld) {
     let stdout = String::from_utf8_lossy(&transport_world.output().stdout);
     assert!(
         stdout.contains("demo-pure-0.1.0-0.conda"),
         "the failure list must name the blob that failed: {stdout}"
     );
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_refusal_names_the_tampered_part(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let transport_world = world(ctx);
+#[then("the refusal names the tampered part")]
+fn the_refusal_names_the_tampered_part(transport_world: &TransportWorld) {
     let stdout = String::from_utf8_lossy(&transport_world.output().stdout);
     assert!(
         stdout.contains(".part001"),
         "the failure list must name the shard part that failed: {stdout}"
     );
-    Ok(StepExecution::from_value(None))
 }
-
-// --- Registry --------------------------------------------------------------
-
-step!(
-    StepKeyword::Given,
-    "a packed transport",
-    a_packed_transport,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Given,
-    "a packed transport carrying one tampered byte",
-    a_packed_transport_carrying_one_tampered_byte,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Given,
-    "a packed transport carrying a tampered shard part",
-    a_packed_transport_carrying_a_tampered_shard_part,
-    &[WORLD]
-);
-step!(
-    StepKeyword::When,
-    "the operator verifies the transport",
-    the_operator_verifies_the_transport,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "every declared byte is reported to match",
-    every_declared_byte_is_reported_to_match,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the verdict is honest about the embedded bootstrap probe",
-    the_verdict_is_honest_about_the_embedded_bootstrap_probe,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the verification is refused",
-    the_verification_is_refused,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "no healthy verdict is reported",
-    no_healthy_verdict_is_reported,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the refusal names the tampered blob",
-    the_refusal_names_the_tampered_blob,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the refusal names the tampered part",
-    the_refusal_names_the_tampered_part,
-    &[WORLD]
-);
 
 // --- Scenarios -------------------------------------------------------------
 
-#[test]
-fn scenario_a_packed_transport_round_trips_through_verification() {
-    run_scenario::<TransportWorld>(
-        "tests/features/transport_integrity.feature",
-        "A packed transport round-trips through verification",
-    );
-}
+#[scenario(
+    path = "tests/features/transport_integrity.feature",
+    name = "A packed transport round-trips through verification"
+)]
+fn scenario_a_packed_transport_round_trips_through_verification(transport_world: TransportWorld) {}
 
-#[test]
-fn scenario_a_tampered_byte_loses_the_healthy_verdict() {
-    run_scenario::<TransportWorld>(
-        "tests/features/transport_integrity.feature",
-        "A tampered byte loses the healthy verdict",
-    );
-}
+#[scenario(
+    path = "tests/features/transport_integrity.feature",
+    name = "A tampered byte loses the healthy verdict"
+)]
+fn scenario_a_tampered_byte_loses_the_healthy_verdict(transport_world: TransportWorld) {}
 
-#[test]
-fn scenario_a_tampered_shard_part_is_named_in_the_refusal() {
-    run_scenario::<TransportWorld>(
-        "tests/features/transport_integrity.feature",
-        "A tampered shard part is named in the refusal",
-    );
-}
+#[scenario(
+    path = "tests/features/transport_integrity.feature",
+    name = "A tampered shard part is named in the refusal"
+)]
+fn scenario_a_tampered_shard_part_is_named_in_the_refusal(transport_world: TransportWorld) {}
 
+/// The guard that replaces the retired duplicate-registry check: with `#[scenario]` the binding
+/// *is* the test, so this is what notices a scenario the suite silently stopped running. The
+/// duplicate half of the old guard is the macros' job now, at compile time.
 #[test]
-fn the_step_registry_has_no_duplicate_definitions() {
-    support::bdd::assert_no_duplicate_steps();
+fn every_scenario_in_the_feature_file_is_bound() {
+    assert_every_scenario_is_bound(
+        "tests/features/transport_integrity.feature",
+        "tests/bdd_transport_integrity.rs",
+    );
 }

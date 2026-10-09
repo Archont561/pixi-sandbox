@@ -18,84 +18,14 @@ use std::process::Command as StdCommand;
 use support::{
     bin, copy_tree, duplicate_source_project, fixture_transport, host_platform, run_git,
 };
+#[cfg(unix)]
+use support::{fake_tools, path_with_fake_tools, write_executable};
 
 /// Copy the fixture out of the repository: tests never mutate a fixture in place.
 fn transport_copy() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     copy_tree(&fixture_transport(), dir.path());
     dir
-}
-
-#[cfg(unix)]
-fn write_executable(path: &Path, script: &str) {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::write(path, script).unwrap();
-    let mut permissions = fs::metadata(path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(path, permissions).unwrap();
-}
-
-/// Minimal connected-side tools. They make the command contract testable without asking the
-/// fixture project to install pixi or turning this suite into a network test.
-#[cfg(unix)]
-fn fake_tools(dir: &Path) {
-    fs::create_dir_all(dir).unwrap();
-    write_executable(
-        &dir.join("pixi-pack"),
-        r#"#!/bin/sh
-set -eu
-out=''
-env=''
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -o) out="$2"; shift 2 ;;
-    -e) env="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-mkdir -p "$out/channel/noarch"
-printf '{"version":"fake"}\n' > "$out/pixi-pack.json"
-printf '# fake package for %s\n' "$env" > "$out/channel/noarch/$env-0.1.0-0.conda"
-dd if=/dev/zero bs=1 count=1024 2>/dev/null >> "$out/channel/noarch/$env-0.1.0-0.conda"
-printf 'unpacked 2 KiB\n'
-"#,
-    );
-    write_executable(
-        &dir.join("pixi"),
-        r#"#!/bin/sh
-if [ "${1:-}" = '--version' ]; then echo 'pixi 0.0.0'; else echo 'pixi fake'; fi
-"#,
-    );
-    write_executable(
-        &dir.join("pixi-unpack"),
-        r#"#!/bin/sh
-set -eu
-if [ "${1:-}" = '--version' ]; then echo 'pixi-unpack 0.0.0'; exit 0; fi
-pack="${1:-}"
-test -f "$pack/pixi-pack.json" || { echo "expected pixi-pack.json at pack root" >&2; exit 42; }
-out=''
-env=''
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -o) out="$2"; shift 2 ;;
-    -e) env="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-mkdir -p "$out/$env/conda-meta"
-printf 'unpacked %s\n' "$env" > "$out/$env/conda-meta/fake-package.json"
-"#,
-    );
-}
-
-#[cfg(unix)]
-fn path_with_fake_tools(dir: &Path) -> std::ffi::OsString {
-    let mut paths = vec![dir.to_path_buf()];
-    paths.extend(std::env::split_paths(
-        &std::env::var_os("PATH").unwrap_or_default(),
-    ));
-    std::env::join_paths(paths).unwrap()
 }
 
 fn bare_remote(dir: &Path) -> String {

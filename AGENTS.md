@@ -44,7 +44,11 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
 | `crates/pixi-sandbox-core/src/verify.rs` | collects *all* failures instead of stopping at the first — an airlock operator wants the full list; `verify_restored` is the restored-tree half (D13) |
 | `crates/pixi-sandbox-core/src/files_manifest.rs` | the per-file oracle (D13): `scan_prefix` records the unpacked prefix at pack time, canonicalising either side's path spellings to a sentinel so relocation cannot defeat the digests |
 | `crates/pixi-sandbox/src/commands/*` | `init`, `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, `tools list`, and `self-update` — pure Rust, no Python. Thin wiring: these resolve the ambient inputs (HOME, host triple, the running executable) and call into the library, so the logic stays testable from `tests/` |
-| `crates/pixi-sandbox/src/lib.rs` | what `tests/` and `xtask` can reach: `generated`, `host_probe`, `release`, `self_update`, `standalone`, `user_tools`. A module that needs tests is promoted here — the binary target's own modules (`cli.rs`, `commands/`) are only coverable black-box |
+| `crates/pixi-sandbox/src/branch_docs.rs` | pure README/AGENTS rendering from a transport manifest, with a separate writer; generated workflow templates remain under `generated/` |
+| `crates/pixi-sandbox/src/tool_fetch.rs` | pin selection, verified helper caches and embedding; downloads inject a byte stream while the library keeps checksum/version/linkage policy |
+| `crates/pixi-sandbox/src/vendor.rs` | cargo lockfile collision policy and loose/per-crate-tar vendoring; external toolchain paths are explicit at the test boundary |
+| `crates/pixi-sandbox/src/pack.rs` | pack preflight and the per-file oracle (D13), with shared process/filesystem primitives re-exported by `commands/support.rs` instead of duplicated |
+| `crates/pixi-sandbox/src/lib.rs` | what `tests/` and `xtask` can reach: `branch_docs`, `generated`, `host_probe`, `pack`, `release`, `self_update`, `standalone`, `tool_fetch`, `user_tools`, `vendor`. A module that needs tests is promoted here — the binary target's own modules (`cli.rs`, `commands/`) are only coverable black-box |
 | `crates/pixi-sandbox/src/release/` | the `ReleaseSource` trait every network-touching command injects (D9's shape, applied to HTTP), shared by `tools update` and `self-update` so one fake serves both. Two files: `mod.rs` — the trait, `Asset`, `parse_sha256_manifest`, everything a test can reach — and `github.rs`, the real HTTP `GitHubReleaseSource`, deliberately alone because it is the one piece no offline test can exercise (`pixi run coverage` excludes it by name; keep it thin, anything with a decision in it belongs in `mod.rs`) |
 | `crates/pixi-sandbox/src/self_update/*` | the updater's trust boundary (decision-4), in enforcement order: `resolver` (latest vs exact), `assets` (the canonical host→asset map, mirroring `xtask/src/release_assets.rs`), `checksums` (`SHA256SUMS`), `ownership` (the refusal ladder — a Pixi-managed binary is never overwritten), `replace` (stage beside the destination, then swap; see task-37 AC#3 for why Unix renames over a running binary) |
 | `crates/pixi-sandbox-git` | **all** git access: `GitProtocol` + `ShellGit` (real git, with a swappable `Runner`) + `FakeGit` (in-memory mock). Never run `git` from anywhere else |
@@ -200,8 +204,8 @@ invariant 8 applies to git), because one refactor then adjusts both at once, and
 reaching privates hides what the module's real callable surface is. So:
 
 - A module worth testing is **promoted to `lib.rs` as `pub mod`** and tested through its public
-  API from `tests/` — the shape `generated`, `host_probe`, `release`, `self_update`,
-  `standalone` and `user_tools` already have. One test file per module, named after it
+  API from `tests/` — the shape `branch_docs`, `generated`, `host_probe`, `release`, `self_update`,
+  `pack`, `standalone`, `tool_fetch`, `user_tools` and `vendor` already have. One test file per module, named after it
   (`tests/self_update_replace.rs`).
 - A handful of internals a test legitimately needs (a private helper whose failure branch has no
   public route, a marker constant) are exported `#[doc(hidden)] pub` — visible to `tests/`,
@@ -224,13 +228,21 @@ into named `#[case]`s; express universal contracts as bounded `proptest!` proper
 the corresponding `.proptest-regressions` seed file. The `coverage_guard` fixture test requires
 each non-wiring production module to have a named integration-test route under `tests/`.
 
-The BDD layer (task-86) keeps its two halves in two places: the `.feature` files live in
+The BDD layer keeps its two halves in two places: the `.feature` files live in
 `crates/pixi-sandbox/tests/features/`, one per behaviour slice, and the step definitions live in
 the matching `tests/bdd_<feature>.rs` integration-test root — one binary per feature, so each
-feature owns its step registry and its scenarios stay a plain `cargo test` count. Steps register
-with rstest-bdd's `step!` macro and drive the public API through the `tests/support` fixture
-builders; `tests/support/bdd.rs` runs each scenario against the registry (the piece `#[scenario]`
-replaces once `rstest-bdd-macros` becomes vendorable). Scenarios state outcomes only — exit
+feature owns its step registry and its scenarios stay a plain `cargo test` count. Steps are
+ordinary functions annotated `#[given]`/`#[when]`/`#[then]` whose world arrives as a
+fixture-injected parameter — borrowed mutably to stage and drive, shared to assert — each root
+declares that world as a zero-argument `#[fixture]`, and `#[scenario]` binds one named scenario
+per test and emits the rstest test itself. The macros expand onto rstest-bdd's own `step!`
+registry, so matching, specificity and step outcomes stay the published crate's, while the steps
+drive the public API through the `tests/support` fixture builders. Both crates are dev-only and
+vendored, and `strict-compile-time-validation` makes an ambiguous or unmatched sentence a compile
+error. What the macros do not check is whether a scenario still *has* a binding, and with
+`#[scenario]` the binding is the test — so each root carries one `assert_every_scenario_is_bound`
+test from `tests/support/bdd.rs`, which reads the source rather than the compiled test list so
+that a `#[cfg]`-gated binding still counts as bound. Scenarios state outcomes only — exit
 statuses, files on disk, report lines an operator reads — never internals; a platform-specific
 scenario binds behind the same `#[cfg]` the descriptive suite uses.
 

@@ -307,6 +307,12 @@ fn shared_test_helpers_are_defined_once_and_exposed_as_fixtures() {
         ("run_git", "run_git_fixture"),
         ("commit", "commit_fixture"),
         ("transport_repo", "transport_repo_fixture"),
+        ("write_executable", "write_executable_fixture"),
+        ("fake_tools", "fake_tools_fixture"),
+        ("path_with_fake_tools", "path_with_fake_tools_fixture"),
+        ("file_tree", "file_tree_fixture"),
+        ("pack_reference", "pack_reference"),
+        ("synthetic_pack_fixture", "synthetic_pack_fixture"),
     ];
     let mut sources = Vec::new();
     collect_rust(&tests_dir, &mut sources);
@@ -353,9 +359,8 @@ fn shared_test_helpers_are_defined_once_and_exposed_as_fixtures() {
 #[test]
 fn production_sources_carry_no_inline_test_modules() {
     // Pre-rule modules awaiting the same split. Shrink this list; do not extend it.
-    const LEGACY: [&str; 6] = [
+    const LEGACY: [&str; 5] = [
         "commands/init.rs",
-        "commands/pack.rs",
         "commands/restore.rs",
         "commands/tools/update.rs",
         "generated/relock_workflow.rs",
