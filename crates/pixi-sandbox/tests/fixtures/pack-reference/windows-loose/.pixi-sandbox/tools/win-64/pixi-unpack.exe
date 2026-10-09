@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+if [ "${1:-}" = '--version' ]; then echo 'pixi-unpack 0.0.0'; exit 0; fi
+pack="${1:-}"
+test -f "$pack/pixi-pack.json" || { echo "expected pixi-pack.json at pack root" >&2; exit 42; }
+out=''
+env=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -e) env="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+mkdir -p "$out/$env/conda-meta"
+printf 'unpacked %s\n' "$env" > "$out/$env/conda-meta/fake-package.json"

@@ -1,0 +1,2 @@
+#!/bin/sh
+echo 'pixi-sandbox 0.6.0'

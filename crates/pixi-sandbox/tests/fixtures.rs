@@ -307,6 +307,12 @@ fn shared_test_helpers_are_defined_once_and_exposed_as_fixtures() {
         ("run_git", "run_git_fixture"),
         ("commit", "commit_fixture"),
         ("transport_repo", "transport_repo_fixture"),
+        ("write_executable", "write_executable_fixture"),
+        ("fake_tools", "fake_tools_fixture"),
+        ("path_with_fake_tools", "path_with_fake_tools_fixture"),
+        ("file_tree", "file_tree_fixture"),
+        ("pack_reference", "pack_reference"),
+        ("synthetic_pack_fixture", "synthetic_pack_fixture"),
     ];
     let mut sources = Vec::new();
     collect_rust(&tests_dir, &mut sources);

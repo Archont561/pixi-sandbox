@@ -1,9 +1,10 @@
 ---
 id: TASK-82
 title: Move library-grade logic out of commands/pack.rs into promoted library modules
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 18:31'
+updated_date: '2026-10-09'
 labels:
   - architecture
   - pack
@@ -34,3 +35,30 @@ Non-goals: no change to the transport format, manifest schema or rendered output
 - [ ] #5 The promoted modules satisfy the coverage_guard route requirement under tests/.
 - [ ] #6 Work lands in slices, one module per commit, pack first; pixi run --frozen test does not drop below its last count.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-09 — the owner approved four public boundaries before new tests: `pack` (preflight and
+per-file oracle), `vendor` (lockfile policy and the vendor tree), `tool_fetch` (pinned fetch,
+cache verification and embedding), and `branch_docs` (rendering and writing). One extraction
+commit per module, `pack` first; no new dependency, transport/schema/rendering change, or
+workflow-generator rewrite. Push/PR/merge remain reserved.
+
+AC#4's byte comparison has one explicit owner-approved exception: only `manifest.created_at`
+and the corresponding README `Built … from commit` timestamp are normalized. Every other
+byte is compared against pre-extraction output. References were captured with the original
+binary at `d8f14cf8`, sha256 `a73cdd6a540e51f6755f9ef8d80b9a9c1a239650615685ff96d57e5bb9e68fa9`,
+from temporary copies of the demo project and synthetic external-tool programs, not the
+repository as a project. Linux/no-vendor, Linux/loose with host requirements, and Windows/loose
+references are committed under `tests/fixtures/pack-reference/`; Linux/tarballs is retained
+for a raw before/after comparison on this runner because tar headers carry native UID/GID.
+
+Slice 1 (`pack`): public layout preflight, host-requirement resolution and file-oracle assembly;
+shared process/filesystem primitives moved once and re-exported by commands. Nine old inline
+cases moved to `tests/pack.rs` (the combined environment-name case became two named cases),
+plus shard-limit/failure-path and reference tests. Deliberate mutations were seen red and
+reverted: bypassing the unpack copy changes the source pack, and changing the README headline
+fails every golden case. `tests/pack.rs`: 20 passing; full suite: **827 passing / 1 skipped**;
+fmt, lint (11/11), and test (4/4) green.
+<!-- SECTION:NOTES:END -->

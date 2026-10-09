@@ -7,16 +7,15 @@
 use crate::cli::{PackArgs, VendorModeArg};
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
+use pixi_sandbox::pack::{build_files_oracle, fingerprint_of, record_tree, sum_files};
 use pixi_sandbox_core::host_requirements::HostRequirementSet;
 use pixi_sandbox_core::manifest::{
-    Env, EnvFiles, MANIFEST_DIR, MANIFEST_FILE, Manifest, SCHEMA_VERSION, Source, ToolEntry,
-    ToolInfo, Vendor,
+    Env, MANIFEST_DIR, MANIFEST_FILE, Manifest, SCHEMA_VERSION, Source, ToolEntry, ToolInfo, Vendor,
 };
-use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::shard;
 use pixi_sandbox_core::tools_lock::{ToolsLock, executable_filename};
 use pixi_sandbox_core::verify::{self, Linkage};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::env;
 use std::fs::{self, File};
 use std::io;
@@ -97,24 +96,17 @@ struct PackedArtifacts {
 
 impl PackPlan {
     fn from_args(args: PackArgs) -> Result<Self> {
-        let root = support::existing_dir(&args.repo_root, "--repo-root")?;
-        let out = support::absolute(&args.output_dir)?;
-        let payload = out.join(MANIFEST_DIR);
-        let shard_limit = shard_limit_bytes(args.shard_limit_mib)?;
-
-        if !root.join("pixi.lock").is_file() {
-            bail!(
-                "{} has no pixi.lock — run `pixi install` before packing",
-                root.display()
-            );
-        }
-        if out.exists() {
-            bail!(
-                "{} already exists — remove it first rather than packing into a stale transport",
-                out.display()
-            );
-        }
-        validate_env_names(&args.envs)?;
+        let pixi_sandbox::pack::PackLayout {
+            root,
+            out,
+            payload,
+            shard_limit,
+        } = pixi_sandbox::pack::plan_layout(
+            &args.repo_root,
+            &args.output_dir,
+            &args.envs,
+            args.shard_limit_mib,
+        )?;
 
         // Before anything is created: a lockfile cargo cannot vendor is a property of the
         // project, not of this run, and it is the one `--cargo-vendor` failure an operator
@@ -128,7 +120,8 @@ impl PackPlan {
 
         // Resolved here, with the other pre-flight guards: a config that cannot be read or
         // does not validate is a refusal that must leave no output directory behind.
-        let host_requirements = resolve_host_requirements(args.config.as_deref(), &args.platform)?;
+        let host_requirements =
+            pixi_sandbox::pack::resolve_host_requirements(args.config.as_deref(), &args.platform)?;
 
         Ok(Self {
             args,
@@ -524,135 +517,6 @@ struct VendorInfo {
     rustc: String,
 }
 
-fn shard_limit_bytes(mebibytes: f64) -> Result<u64> {
-    if !mebibytes.is_finite() || mebibytes <= 0.0 {
-        bail!("--shard-limit-mib must be a positive finite number");
-    }
-    let bytes = mebibytes * 1024.0 * 1024.0;
-    if bytes > u64::MAX as f64 {
-        bail!("--shard-limit-mib is too large");
-    }
-    Ok(bytes as u64)
-}
-
-/// Build the per-file oracle for one environment (D13): unpack the finished pack with the
-/// pinned unpacker — exactly what `restore` will do on the airlock — and record the tree it
-/// produces, with every prefix-path spelling canonicalised away (see `files_manifest`).
-///
-/// The unpack runs on a *copy* of the pack: pixi-unpack writes its extraction cache into the
-/// pack directory it reads from, and the payload tree must stay exactly what pixi-pack
-/// produced. The scratch lives inside `out` (never `/tmp`, invariant 3) and is removed before
-/// returning, so a successful pack leaves no trace of it.
-fn build_files_oracle(
-    out: &Path,
-    payload: &Path,
-    env: &str,
-    pack: &Path,
-    unpacker: &Path,
-    shard_limit: u64,
-) -> Result<(EnvFiles, u64)> {
-    let scratch = out.join(format!(".pixi-sandbox-verify-{env}"));
-    support::remove_path(&scratch)?;
-    let pack_copy = scratch.join("pack");
-    let stage = scratch.join("stage");
-    fs::create_dir_all(scratch.join("tmp"))
-        .with_context(|| format!("creating {}", scratch.join("tmp").display()))?;
-    fs::create_dir_all(&pack_copy).with_context(|| format!("creating {}", pack_copy.display()))?;
-    fs::create_dir_all(&stage).with_context(|| format!("creating {}", stage.display()))?;
-
-    for file in shard::files_under(pack)? {
-        let relative = file
-            .strip_prefix(pack)
-            .with_context(|| format!("{} is outside {}", file.display(), pack.display()))?;
-        let destination = pack_copy.join(relative);
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-        }
-        fs::copy(&file, &destination)
-            .with_context(|| format!("copying {} for the verification unpack", file.display()))?;
-    }
-
-    let mut command = Command::new(unpacker);
-    command
-        .arg(&pack_copy)
-        .arg("-o")
-        .arg(&stage)
-        .arg("-e")
-        .arg(env);
-    support::use_work_tmp(&mut command, &scratch);
-    support::run(&mut command).with_context(|| {
-        format!(
-            "verification-unpacking environment {env} with {}",
-            unpacker.display()
-        )
-    })?;
-
-    let prefix = stage.join(env);
-    if !prefix.is_dir() {
-        bail!(
-            "the verification unpack completed but did not create {}",
-            prefix.display()
-        );
-    }
-
-    // The paths this side must neutralise: the stage prefix the unpacker stamped in, and the
-    // pack copy it installed from — in both literal and canonical form, so a symlinked
-    // scratch directory cannot defeat the canonicalisation.
-    let mut candidates: Vec<Vec<u8>> = Vec::new();
-    let mut push_candidate = |path: &Path| {
-        let bytes = path.to_string_lossy().into_owned().into_bytes();
-        if !bytes.is_empty() && !candidates.contains(&bytes) {
-            candidates.push(bytes);
-        }
-    };
-    push_candidate(&prefix);
-    if let Ok(canonical) = prefix.canonicalize() {
-        push_candidate(&canonical);
-    }
-    push_candidate(&pack_copy);
-    if let Ok(canonical) = pack_copy.canonicalize() {
-        push_candidate(&canonical);
-    }
-
-    let (doc, unpacked_bytes) =
-        pixi_sandbox_core::files_manifest::scan_prefix(&prefix, &candidates)
-            .context("scanning the verification-unpacked environment")?;
-    support::remove_path(&scratch)?;
-
-    let relative = pixi_sandbox_core::files_manifest::list_rel_path(env);
-    let list_path = payload.join(&relative);
-    let encoded = doc.to_bytes()?;
-    fs::write(&list_path, &encoded).with_context(|| format!("writing {}", list_path.display()))?;
-    let blob = shard::record_file(payload, &relative, shard_limit)
-        .with_context(|| format!("recording {}", list_path.display()))?;
-    Ok((
-        EnvFiles {
-            blob,
-            entries: doc.entries() as u64,
-        },
-        unpacked_bytes,
-    ))
-}
-
-fn validate_env_names(envs: &[String]) -> Result<()> {
-    let mut seen = BTreeSet::new();
-    for name in envs {
-        let path = Path::new(name);
-        if name.is_empty()
-            || name == "."
-            || name == ".."
-            || path.is_absolute()
-            || path.components().count() != 1
-        {
-            bail!("unsafe environment name {name:?}");
-        }
-        if !seen.insert(name) {
-            bail!("environment {name:?} was requested more than once");
-        }
-    }
-    Ok(())
-}
-
 fn tools_cache(explicit: Option<&Path>) -> Result<PathBuf> {
     match explicit {
         Some(path) => support::absolute(path),
@@ -1012,67 +876,6 @@ fn command_version(program: &str) -> Result<String> {
     Ok(support::run(&mut command)?.trim().to_string())
 }
 
-fn record_tree(
-    payload: &Path,
-    root: &Path,
-    shard_limit: u64,
-) -> Result<Vec<pixi_sandbox_core::manifest::Blob>> {
-    let mut blobs = Vec::new();
-    for path in shard::files_under(root)? {
-        let relative = path
-            .strip_prefix(payload)
-            .with_context(|| format!("{} is outside {}", path.display(), payload.display()))?
-            .to_string_lossy()
-            .replace('\\', "/");
-        blobs.push(shard::record_file(payload, &relative, shard_limit)?);
-    }
-    Ok(blobs)
-}
-
-fn sum_files(paths: &[PathBuf]) -> Result<u64> {
-    paths.iter().try_fold(0u64, |sum, path| {
-        let size = fs::metadata(path)
-            .with_context(|| format!("reading metadata for {}", path.display()))?
-            .len();
-        sum.checked_add(size)
-            .ok_or_else(|| anyhow::anyhow!("size overflow while reading {}", path.display()))
-    })
-}
-
-fn fingerprint_of(root: &Path, env: &str) -> Option<String> {
-    let marker = root
-        .join(".pixi")
-        .join("envs")
-        .join(env)
-        .join("conda-meta")
-        .join(".pixi-environment-fingerprint");
-    fs::read_to_string(marker)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
-/// Resolve the `[host_requirements]` a manifest for `platform` carries.
-///
-/// `None` — meaning no section in the manifest at all — when no config was named, when the
-/// config declares no table, or when nothing resolves for that platform's host family. That is
-/// the backward-compatible half of the contract: a project that declares nothing keeps packing
-/// the same bytes earlier releases packed.
-fn resolve_host_requirements(
-    config: Option<&Path>,
-    platform: &str,
-) -> Result<Option<HostRequirementSet>> {
-    let Some(config) = config else {
-        return Ok(None);
-    };
-    let path = support::absolute(config)?;
-    let config = SandboxConfig::load(&path)
-        .with_context(|| format!("loading sandbox config {}", path.display()))?;
-    Ok(config
-        .host_requirements_for(platform)?
-        .filter(|set| !set.is_empty()))
-}
-
 fn write_branch_docs(
     out: &Path,
     manifest: &Manifest,
@@ -1254,7 +1057,7 @@ fn write_branch_docs(
 
 #[cfg(test)]
 mod tests {
-    use super::{MANIFEST_DIR, PackPlan, ToolSource, embed_tool};
+    use super::{PackPlan, ToolSource, embed_tool};
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -1302,62 +1105,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_missing_pixi_lock_is_refused_before_anything_is_created() {
-        let repo = tempfile::tempdir().expect("repo");
-        let output_dir = repo.path().join("out");
-        let error = PackPlan::from_args(args(repo.path(), &output_dir, &["default"]))
-            .expect_err("no pixi.lock");
-        assert!(format!("{error:#}").contains("pixi.lock"), "{error:#}");
-        assert!(!output_dir.exists(), "a refused plan must create nothing");
-    }
-
-    #[test]
-    fn an_existing_output_dir_is_refused() {
-        let repo = tempfile::tempdir().expect("repo");
-        fs::write(repo.path().join("pixi.lock"), "").expect("lockfile");
-        let output_dir = repo.path().join("out");
-        fs::create_dir_all(&output_dir).expect("pre-existing output dir");
-        let error = PackPlan::from_args(args(repo.path(), &output_dir, &["default"]))
-            .expect_err("stale output dir");
-        assert!(format!("{error:#}").contains("already exists"), "{error:#}");
-    }
-
-    #[test]
-    fn unsafe_and_duplicate_env_names_are_refused() {
-        let repo = tempfile::tempdir().expect("repo");
-        fs::write(repo.path().join("pixi.lock"), "").expect("lockfile");
-        let output_dir = repo.path().join("out");
-
-        let error = PackPlan::from_args(args(repo.path(), &output_dir, &[".."]))
-            .expect_err("unsafe env name");
-        assert!(
-            format!("{error:#}").contains("unsafe environment name"),
-            "{error:#}"
-        );
-
-        let error = PackPlan::from_args(args(repo.path(), &output_dir, &["default", "default"]))
-            .expect_err("duplicate env name");
-        assert!(
-            format!("{error:#}").contains("requested more than once"),
-            "{error:#}"
-        );
-    }
-
-    #[test]
-    fn valid_args_resolve_to_absolute_paths_and_a_byte_shard_limit() {
-        let repo = tempfile::tempdir().expect("repo");
-        fs::write(repo.path().join("pixi.lock"), "").expect("lockfile");
-        let output_dir = repo.path().join("out");
-
-        let plan = PackPlan::from_args(args(repo.path(), &output_dir, &["default", "web"]))
-            .expect("valid plan");
-        assert!(plan.root.is_absolute(), "{}", plan.root.display());
-        assert!(plan.out.is_absolute(), "{}", plan.out.display());
-        assert_eq!(plan.payload, plan.out.join(MANIFEST_DIR));
-        assert_eq!(plan.shard_limit, (95.0 * 1024.0 * 1024.0) as u64);
-    }
-
     /// `resolve_tools` is otherwise network-bound (it downloads from the pins it loads), so
     /// this covers the one failure `--tools-lock` can hit entirely on the filesystem: an
     /// override path that does not exist. The PATH-fallback and embedded-pin branches stay
@@ -1379,97 +1126,5 @@ mod tests {
             format!("{error:#}").contains("reading tool-pin override"),
             "{error:#}"
         );
-    }
-
-    /// TASK-75 AC#2: the manifest section is resolved from a real config file, for the platform
-    /// being packed, and is `None` whenever there is nothing to carry.
-    mod host_requirements {
-        use super::super::resolve_host_requirements;
-
-        fn write_config(project: &std::path::Path, body: &str) -> std::path::PathBuf {
-            let path = project.join("pixi-sandbox.toml");
-            std::fs::write(&path, body).expect("config written");
-            path
-        }
-
-        const BASE: &str = "schema = 1\n\n[[bundle]]\nname = \"app\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n";
-
-        #[test]
-        fn no_config_means_no_section() {
-            assert_eq!(resolve_host_requirements(None, "linux-64").unwrap(), None);
-        }
-
-        #[test]
-        fn a_config_without_the_table_means_no_section() {
-            let project = tempfile::tempdir().unwrap();
-            let config = write_config(project.path(), BASE);
-            assert_eq!(
-                resolve_host_requirements(Some(&config), "linux-64").unwrap(),
-                None
-            );
-        }
-
-        #[test]
-        fn the_section_resolves_for_the_packed_platform() {
-            let project = tempfile::tempdir().unwrap();
-            let config = write_config(
-                project.path(),
-                &format!(
-                    "{BASE}\n[host_requirements]\nlibc = \"2.34\"\npackages = [\"fontconfig\"]\n\n\
-                     [host_requirements.windows]\npackages = [\"vcredist\"]\n"
-                ),
-            );
-            let linux = resolve_host_requirements(Some(&config), "linux-64")
-                .unwrap()
-                .expect("linux has a section");
-            assert_eq!(linux.packages, ["fontconfig"].map(String::from));
-            assert_eq!(linux.libc.as_deref(), Some("2.34"));
-
-            // Another platform resolves its own family, not the one just packed.
-            let windows = resolve_host_requirements(Some(&config), "win-64")
-                .unwrap()
-                .expect("windows resolves");
-            assert_eq!(
-                windows.packages,
-                ["fontconfig", "vcredist"].map(String::from)
-            );
-        }
-
-        #[test]
-        fn a_family_with_no_requirements_of_its_own_carries_nothing() {
-            let project = tempfile::tempdir().unwrap();
-            let config = write_config(
-                project.path(),
-                &format!("{BASE}\n[host_requirements.osx]\npackages = [\"fontconfig\"]\n"),
-            );
-            assert_eq!(
-                resolve_host_requirements(Some(&config), "linux-64").unwrap(),
-                None,
-                "a Linux transport must not carry a macOS-only declaration"
-            );
-        }
-
-        #[test]
-        fn an_invalid_config_is_refused_before_anything_is_written() {
-            let project = tempfile::tempdir().unwrap();
-            let config = write_config(
-                project.path(),
-                &format!("{BASE}\n[host_requirements]\ncapabilities = [\"dipslay\"]\n"),
-            );
-            // `{error:#}` walks the context chain: the durable half of the message is the
-            // cause the config loader produced, not the path this call added.
-            let error = format!(
-                "{:#}",
-                resolve_host_requirements(Some(&config), "linux-64").unwrap_err()
-            );
-            assert!(error.contains("dipslay"), "got {error}");
-
-            let missing = project.path().join("absent.toml");
-            let error = format!(
-                "{:#}",
-                resolve_host_requirements(Some(&missing), "linux-64").unwrap_err()
-            );
-            assert!(error.contains("absent.toml"), "got {error}");
-        }
     }
 }
