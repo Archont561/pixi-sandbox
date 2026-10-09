@@ -1527,3 +1527,84 @@ core-only slice is a sane first bite). task-85 and task-73 stay parked: both nee
 > its templates are in `.agents/skills/session/`. The backlog CLI is
 > `.pixi/envs/default/bin/bun node_modules/.bin/backlog …` — note that it breaks on task text
 > containing apostrophes or parentheses when it is called through `pixi run bunx backlog`.
+
+### 2026-10-09 — task-85's verifier judges the revision; AC#6 and one reconcilable pair stay open
+
+**Landed** (so: not proposals) — **task-85 AC#1–#5** as **PR #125**, squash-merged into `ce47e41`;
+`ci`, `docs` and `publish sandbox` green on that commit, transport repacked from it (0.6.0, static).
+`starter::verify` now asks `git` what the next commit would contain (new `ShellGit::ls_publishable`,
+index + untracked-not-ignored) and reports a forbidden path only when it is both present and in that
+answer; `xtask starter-clone` materialises the same set into a scratch repo, commits it and hands back
+a `git clone --no-hardlinks`, and the lane's "fresh clone" dev task runs there; a mismatched
+`source-commit` now dies in its own first job (`xtask starter-check-dispatch`, which `starter`
+`needs:`) naming both commits. Suite **774 → 802 passing / 1 skipped**.
+
+**Two findings worth their own tasks, neither implemented here.**
+
+- **`verify` and `publish` answer different questions about the same tree.** `starter::publish`
+  stages through `ShellGit::worktree_status_files`, which is `git status --porcelain
+  --untracked-files=no` — it never stages an untracked file. `verify` now refuses a tree whose
+  *untracked-but-not-ignored* paths carry runtime state, which is a strictly broader set. So on a
+  starter repository that does not yet track a new file (a first publish, or a file added by a
+  newer generator), publish would skip a file verify just approved, and the "would commit" the
+  verifier speaks of is not the "will be staged" the publisher performs. Either `publish` moves to
+  `git add -A` over the `ls_publishable` answer, or `verify` narrows to what publish can stage.
+  The first keeps the guarantee and fixes the first-publish gap; the second is a weakening.
+  `crates/xtask/tests/support::starter_tree` is the fixture a test for either choice belongs to,
+  and it already takes the workflow-version argument both stamps.
+- **A guard step cannot precede its own manifest.** Making AC#4 "fail in the first job step, before
+  checkout" literally is impossible while the verb is `pixi run -e package xtask …`: the task graph
+  needs the checkout it is trying to avoid. The job-level `needs:` is the shape that gets the
+  semantics (nothing is fetched, written or scaffolded before the guard agrees) without putting
+  shell back into the workflow — worth remembering for task-76, whose end state wants the same
+  property for `publish-sandbox.yml`.
+
+**Record correction, not a proposal.** The 2026-10-08 second-session entry closes at **767** and
+this session found **774** on `12c9824`. The +7 is task-79/81/83's tests: those tasks were closed
+21:31–22:50 that day and delivered through #123/#124 by the session on
+`arena/5fc3a8ee-pixi-sandbox`, which skipped §5 — no scratchpad entry, so the baseline in this file
+read low for a day and the delta looks unexplained. The work is real and the tasks are correctly
+Done; only the hand-off is missing. Next session should not chase it.
+
+**Open, in the order a session should consider them:** **task-86** (medium, primed: #124 landed
+`rstest-bdd 0.6.0` and the current transport's vendor set already carries `rstest-bdd`,
+`rstest-bdd-patterns`, `rstest-bdd-policy` and `gherkin 0.16.0`, so it builds offline today with no
+relock); **task-79-class reconciliation above** (the `verify`/`publish` pair — small, local, and it
+is the kind of gap the audit tasks exist to close); **task-76** (high; AC#8 needs a consumer run);
+**task-82** (medium, local); **task-77** (medium, local, wide mechanical); **task-78** (high, but its
+AC#1 wants a reviewed D-number decision before code, and `pixi-build` is still preview).
+**task-85** itself: AC#6 is one dispatch away for anyone who can click it (see the prompt). task-73
+and task-74 stay parked on issue #101, still open; task-66 still waits for a Castellan PR carrying
+deliberate lockfile drift.
+
+**Prompt to start the next session with:**
+
+> Restore the sandbox and baseline the suite — expect **802 passing / 1 skipped**. The published
+> `sandbox/developer-linux-64` transport is packed by pixi-sandbox 0.6.0 from `ce47e41`, static, and
+> its vendor set already carries `rstest-bdd 0.6.0` and `gherkin 0.16.0`, so the BDD layer builds
+> offline with no relock and no new vendoring. `pixi run --frozen test` is ~27s warm, ~2m10s after a
+> cold restore.
+>
+> Then read `CONTEXT.md` § Session scratchpad — the **2026-10-09** heading lists the open items and
+> carries one record correction (774, not 767, is the honest pre-session baseline).
+>
+> First, one look at the repo state: `gh run list --branch main --limit 3`. If `ci`, `docs` and
+> `publish sandbox` are green on `ce47e41`, task-85's merged half is settled — do not re-run or
+> re-pack anything. If you can dispatch workflows as the owner, task-85's last criterion is one click:
+> `gh workflow run starter.yml -f release-tag=v0.6.0 -f source-commit=8298edce13049ab01a7bc9d3e09c9daf8d14fc08 -f dry-run=true`
+> (it must not publish — `starter-publish` is the step after the one being proven). Green there and
+> task-85 flips to Done; a failure in the *clone* step points at `pixi run --manifest-path` semantics,
+> not at `clone_publishable`.
+>
+> I want to take **task-86** this session — the BDD layer at `crates/pixi-sandbox/tests/features/`,
+> three features (restore verification, transport integrity, user-tools policy) whose steps drive the
+> public API through the existing `tests/support` fixture builders. Decided already: rstest-bdd is
+> dev-only and vendored, scenarios state outcomes only, no existing test is deleted or weakened, and
+> `AGENTS.md` § Test conventions gains the one paragraph saying where `.feature` files and step
+> definitions live. Slices: one feature at a time, red→green per the TDD skill, one conventional
+> commit per feature; AC#1–#5 are all local. Do not push, open a pull request, or merge without my
+> explicit go-ahead.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure and
+> its templates are in `.agents/skills/session/`.
