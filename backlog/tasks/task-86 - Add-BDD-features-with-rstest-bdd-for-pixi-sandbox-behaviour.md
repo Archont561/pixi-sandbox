@@ -1,9 +1,10 @@
 ---
 id: TASK-86
 title: Add BDD features with rstest-bdd for pixi-sandbox behaviour
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-08 23:07'
+updated_date: '2026-10-09 08:56'
 labels:
   - testing
   - bdd
