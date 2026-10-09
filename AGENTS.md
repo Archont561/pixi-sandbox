@@ -224,13 +224,21 @@ into named `#[case]`s; express universal contracts as bounded `proptest!` proper
 the corresponding `.proptest-regressions` seed file. The `coverage_guard` fixture test requires
 each non-wiring production module to have a named integration-test route under `tests/`.
 
-The BDD layer (task-86) keeps its two halves in two places: the `.feature` files live in
+The BDD layer keeps its two halves in two places: the `.feature` files live in
 `crates/pixi-sandbox/tests/features/`, one per behaviour slice, and the step definitions live in
 the matching `tests/bdd_<feature>.rs` integration-test root — one binary per feature, so each
-feature owns its step registry and its scenarios stay a plain `cargo test` count. Steps register
-with rstest-bdd's `step!` macro and drive the public API through the `tests/support` fixture
-builders; `tests/support/bdd.rs` runs each scenario against the registry (the piece `#[scenario]`
-replaces once `rstest-bdd-macros` becomes vendorable). Scenarios state outcomes only — exit
+feature owns its step registry and its scenarios stay a plain `cargo test` count. Steps are
+ordinary functions annotated `#[given]`/`#[when]`/`#[then]` whose world arrives as a
+fixture-injected parameter — borrowed mutably to stage and drive, shared to assert — each root
+declares that world as a zero-argument `#[fixture]`, and `#[scenario]` binds one named scenario
+per test and emits the rstest test itself. The macros expand onto rstest-bdd's own `step!`
+registry, so matching, specificity and step outcomes stay the published crate's, while the steps
+drive the public API through the `tests/support` fixture builders. Both crates are dev-only and
+vendored, and `strict-compile-time-validation` makes an ambiguous or unmatched sentence a compile
+error. What the macros do not check is whether a scenario still *has* a binding, and with
+`#[scenario]` the binding is the test — so each root carries one `assert_every_scenario_is_bound`
+test from `tests/support/bdd.rs`, which reads the source rather than the compiled test list so
+that a `#[cfg]`-gated binding still counts as bound. Scenarios state outcomes only — exit
 statuses, files on disk, report lines an operator reads — never internals; a platform-specific
 scenario binds behind the same `#[cfg]` the descriptive suite uses.
 
