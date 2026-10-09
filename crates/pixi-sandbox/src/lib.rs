@@ -11,3 +11,4 @@ pub mod release;
 pub mod self_update;
 pub mod standalone;
 pub mod user_tools;
+pub mod vendor;

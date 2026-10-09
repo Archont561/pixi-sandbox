@@ -61,4 +61,14 @@ plus shard-limit/failure-path and reference tests. Deliberate mutations were see
 reverted: bypassing the unpack copy changes the source pack, and changing the README headline
 fails every golden case. `tests/pack.rs`: 20 passing; full suite: **827 passing / 1 skipped**;
 fmt, lint (11/11), and test (4/4) green.
+
+Slice 2 (`vendor`): duplicate-source preflight and both storage modes now live in the library;
+`VendorMode` is independent of clap and the process boundary accepts explicit cargo/rustc paths.
+Fourteen integration cases cover same-source repeats, different versions, path members,
+malformed and missing locks, refusal before output, loose bytes, tar contents and cleanup,
+empty output, and honest unknown toolchain labels. Weakening the collision filter was seen
+red and reverted. All four pre/post transports match, including the raw tar archive
+sha256 `c8aebc22e0c9fafc0be24ecbaa40813bd9d90aec35dabb523c0257bbed42004f`; only the two
+approved timestamp locations were normalized. Full suite: **841 passing / 1 skipped**;
+fmt, lint (11/11), and test (4/4) green.
 <!-- SECTION:NOTES:END -->
