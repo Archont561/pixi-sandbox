@@ -224,6 +224,16 @@ into named `#[case]`s; express universal contracts as bounded `proptest!` proper
 the corresponding `.proptest-regressions` seed file. The `coverage_guard` fixture test requires
 each non-wiring production module to have a named integration-test route under `tests/`.
 
+The BDD layer (task-86) keeps its two halves in two places: the `.feature` files live in
+`crates/pixi-sandbox/tests/features/`, one per behaviour slice, and the step definitions live in
+the matching `tests/bdd_<feature>.rs` integration-test root — one binary per feature, so each
+feature owns its step registry and its scenarios stay a plain `cargo test` count. Steps register
+with rstest-bdd's `step!` macro and drive the public API through the `tests/support` fixture
+builders; `tests/support/bdd.rs` runs each scenario against the registry (the piece `#[scenario]`
+replaces once `rstest-bdd-macros` becomes vendorable). Scenarios state outcomes only — exit
+statuses, files on disk, report lines an operator reads — never internals; a platform-specific
+scenario binds behind the same `#[cfg]` the descriptive suite uses.
+
 ## Style
 
 - Rust: `pixi run --frozen fmt`, clippy clean with `-D warnings`, no `unwrap()` in library code paths that

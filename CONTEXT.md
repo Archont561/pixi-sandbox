@@ -1608,3 +1608,56 @@ deliberate lockfile drift.
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure and
 > its templates are in `.agents/skills/session/`.
+
+### 2026-10-09 (second session) — task-86 started; the macros half of rstest-bdd cannot be vendored offline
+
+**Environment.** Restore green (0.6.0 from `ce47e41`, schema 2, static, 13803 blobs / 0 failures);
+baseline **802 passing / 1 skipped** as predicted; user tools registered. `ci`, `docs` and
+`publish sandbox` are all green on `ce47e41` — task-85's merged half is settled, nothing re-run
+or re-packed. The starter dispatch (task-85 AC#6) still 403s for the sandbox token
+(`Resource not accessible by integration`); the dry-run click stays the owner's.
+
+**Finding: the session prompt's "no relock, no new vendoring" premise covers only half of
+rstest-bdd.** The vendored set carries the runtime half (`rstest-bdd` core + `rstest-bdd-patterns`
++ `rstest-bdd-policy` + `gherkin 0.16.0` + `inventory`), but the `#[given]`/`#[when]`/`#[then]`/
+`#[scenario]` attribute macros live in a **separate crate `rstest-bdd-macros`** (a dev-dependency
+of rstest-bdd, never transitive). It is not in Cargo.lock, not vendored, and pulling it in needs
+~fifteen unlocked crates (`rstest-bdd-harness`, `cap-std` tree, `camino`, `proc-macro-error3`,
+`newt-hype`, `walkdir` consumers, …) plus a connected relock for their crates.io checksums —
+which an airlocked session can neither fetch nor fabricate honestly (a guessed checksum builds
+locally and dies in connected CI). Declared this session, task-86 as worded ("`#[scenario]`
+generates one rstest test per scenario") is not executable offline.
+
+**Chosen shape (what the BDD layer therefore is).** Bind scenarios through the vendored half:
+`.feature` files parsed by the real `gherkin` crate; steps registered with rstest-bdd's own
+`step!` macro into its registry (pattern engine, specificity, `StepContext`/`StepExecution`
+runtime — all exercised as published); one thin runner in `tests/support/bdd.rs` doing what the
+macros codegen does (parse → resolve each sentence in the registry → execute against an owned
+world cell), one plain `#[test]` per scenario, failures naming feature/scenario/step. Cost: the
+gherkin dev-dep edge adds one line to `pixi-sandbox`'s lock entry (no new package, offline-safe).
+Deviates from the task's mechanism sentence, satisfies all five ACs. Swap-in path for later: once
+a connected session relocks `rstest-bdd-macros` and a repack vendors it, the runner can be
+replaced by `#[scenario]` without moving the feature files.
+
+**Relock round (same session, on the owner's instruction).** TASK-86 + the macros declaration
+landed as **PR #126** on `arena/b44e8d80-pixi-sandbox`: three `test(bdd)` commits (suite
+802 → 816 passing / 1 skipped, every local gate green), then `chore(deps): declare
+rstest-bdd-macros 0.6.0 for the BDD layer` with `compile-time-validation`, Cargo.lock left
+deliberately stale. The bot ran the textbook cycle: guard failed on the drift, `relock` pushed
+`chore(lock): refresh lockfiles for #126` (+220 lines — the macros crate plus its ~20-crate
+tree, `cap-std`/`camino`/`newt-hype`/…, genuine crates.io checksums, all inside deny.toml's
+allowlist), then dispatched CI + the publisher on the repaired head. One real failure and one
+procedural finding: the dispatched CI red was `lint:toml` — the root declaration had not been
+through taplo after an environment reset mid-session (fixed in `39def33`, CI green after; the
+PR head passes lock guard, ci, airlock, codecov patch); and runs for commits authored by
+`pixi-sandbox[bot]` sit at `action_required` — approving, cancelling and dispatching are all
+owner-token actions, so a bot-commit PR check that needs re-running needs the owner's click.
+**Consequence until the PR merges and the push-trigger repack runs:** airlocked hosts cannot
+build this branch offline (`no matching package named rstest-bdd-macros found` in the vendor
+directory) — connected CI is the proof tier for it, exactly the gap #124 had between
+declaration and repack. Once the repack carries the macros crate, the follow-up is to replace
+`tests/support/bdd.rs` with `#[scenario]`/`#[given]` bindings — feature files and step
+sentences do not move. Also recorded: a sandbox reset between turns re-cloned the workspace and
+dropped the first four local commits; the tree was reconstructed byte-identical, one
+conventional commit per slice, so nothing was lost, but the old local hashes appear nowhere
+remote. task-85's starter dispatch (AC#6) is still the owner's click.
