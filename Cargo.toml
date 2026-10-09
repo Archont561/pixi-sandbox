@@ -45,7 +45,9 @@ rstest-bdd = "0.6.0"
 # session); declaring them here lets the connected relock bot refresh Cargo.lock and the next
 # repack vendor them, after which the tests/support/bdd runner can become #[scenario].
 # compile-time-validation keeps a missing step a compile error, the house's fail-fast shape.
-rstest-bdd-macros = { version = "0.6.0", features = ["compile-time-validation"] }
+rstest-bdd-macros = { version = "0.6.0", features = [
+  "compile-time-validation",
+] }
 tempfile = "3"
 
 [profile.release]
