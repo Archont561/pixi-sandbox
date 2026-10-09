@@ -14,6 +14,8 @@
 //! rstest interpret those runtime arguments as fixture names. Keep properties bounded, add their
 //! committed `.proptest-regressions` file, and use `#[case]` rather than assertion-table loops.
 
+pub mod bdd;
+
 use assert_cmd::Command;
 use rstest::fixture;
 use std::fs;

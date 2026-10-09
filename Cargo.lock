@@ -969,6 +969,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "fs2",
+ "gherkin",
  "pixi-sandbox-core",
  "pixi-sandbox-git",
  "predicates",

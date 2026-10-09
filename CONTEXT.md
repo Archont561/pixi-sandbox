@@ -1608,3 +1608,33 @@ deliberate lockfile drift.
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure and
 > its templates are in `.agents/skills/session/`.
+
+### 2026-10-09 (second session) — task-86 started; the macros half of rstest-bdd cannot be vendored offline
+
+**Environment.** Restore green (0.6.0 from `ce47e41`, schema 2, static, 13803 blobs / 0 failures);
+baseline **802 passing / 1 skipped** as predicted; user tools registered. `ci`, `docs` and
+`publish sandbox` are all green on `ce47e41` — task-85's merged half is settled, nothing re-run
+or re-packed. The starter dispatch (task-85 AC#6) still 403s for the sandbox token
+(`Resource not accessible by integration`); the dry-run click stays the owner's.
+
+**Finding: the session prompt's "no relock, no new vendoring" premise covers only half of
+rstest-bdd.** The vendored set carries the runtime half (`rstest-bdd` core + `rstest-bdd-patterns`
++ `rstest-bdd-policy` + `gherkin 0.16.0` + `inventory`), but the `#[given]`/`#[when]`/`#[then]`/
+`#[scenario]` attribute macros live in a **separate crate `rstest-bdd-macros`** (a dev-dependency
+of rstest-bdd, never transitive). It is not in Cargo.lock, not vendored, and pulling it in needs
+~fifteen unlocked crates (`rstest-bdd-harness`, `cap-std` tree, `camino`, `proc-macro-error3`,
+`newt-hype`, `walkdir` consumers, …) plus a connected relock for their crates.io checksums —
+which an airlocked session can neither fetch nor fabricate honestly (a guessed checksum builds
+locally and dies in connected CI). Declared this session, task-86 as worded ("`#[scenario]`
+generates one rstest test per scenario") is not executable offline.
+
+**Chosen shape (what the BDD layer therefore is).** Bind scenarios through the vendored half:
+`.feature` files parsed by the real `gherkin` crate; steps registered with rstest-bdd's own
+`step!` macro into its registry (pattern engine, specificity, `StepContext`/`StepExecution`
+runtime — all exercised as published); one thin runner in `tests/support/bdd.rs` doing what the
+macros codegen does (parse → resolve each sentence in the registry → execute against an owned
+world cell), one plain `#[test]` per scenario, failures naming feature/scenario/step. Cost: the
+gherkin dev-dep edge adds one line to `pixi-sandbox`'s lock entry (no new package, offline-safe).
+Deviates from the task's mechanism sentence, satisfies all five ACs. Swap-in path for later: once
+a connected session relocks `rstest-bdd-macros` and a repack vendors it, the runner can be
+replaced by `#[scenario]` without moving the feature files.
