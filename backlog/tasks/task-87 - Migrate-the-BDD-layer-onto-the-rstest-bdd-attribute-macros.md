@@ -1,10 +1,10 @@
 ---
 id: TASK-87
 title: Migrate the BDD layer onto the rstest-bdd attribute macros
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-09 15:54'
-updated_date: '2026-10-09 16:13'
+updated_date: '2026-10-09 19:36'
 labels:
   - testing
   - bdd
@@ -83,6 +83,16 @@ Red before green per the TDD skill: each migration slice first proves the bindin
 **Net shape:** 367 insertions against 795 deletions in code and docs — **428 lines removed** while the suite count stayed at 816 and the specification did not move a byte.
 
 **One tooling finding, recorded in `CONTEXT.md` rather than acted on.** The backlog CLI cannot carry prose through `pixi run`: pixi joins task arguments into a command line without quoting them, so spaces split arguments, backticks are command-substituted by the inner shell, and an embedded newline abandons the invocation and prints the task list. This file was therefore written directly and validated by a CLI read-back (`backlog task 87 --plain`), which reads backticks, em dashes and `§` correctly. `.agents/skills/backlog/SKILL.md` advises repeating `--append-*` once per line, which does not survive that argument splitting — a real correction owed to that skill, left unimplemented per invariant 10.
+
+**2026-10-09 integration update.** The earlier no-push/no-PR paragraphs describe the state
+when the implementation was recorded. The seven TASK-87/session commits were subsequently
+pushed through `d8f14cf8`; the owner has now explicitly authorized creating and merging the
+combined TASK-87/TASK-82 pull request. All five TASK-87 acceptance criteria were already
+proven locally, so the status closure is included in that PR in house format rather than
+requiring a separate post-merge main push. TASK-82 adds the independent pack extraction;
+it does not change the specification or the lockfiles. The combined branch baseline is
+**873 passing / 1 skipped**. PR and post-merge check verdicts must still be verified, not
+inferred from the previous main's successful runs.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -96,5 +106,5 @@ The suite is 816 passing / 1 skipped, unchanged, because three binding oracles r
 
 Two things this session learned that outlive it: the macros' compile-time ambiguity check is **expansion-order dependent** — a duplicate declared below its bindings compiles, and rstest-bdd's runtime registry is what catches it, naming file and line — and the macro expansions are **clippy-clean under `-D warnings --all-targets`**, so the house needs no equivalent of upstream's `allow_fixture_expansion_lints`.
 
-Outstanding: the five commits sit on `arena/49e36983-pixi-sandbox`, unpushed, with no pull request open, because that sanction was reserved. All five acceptance criteria are proven locally and checked; the status flips to Done when the work lands on main.
+Integration: all five acceptance criteria are proven and checked, and the owner has authorized the combined TASK-87/TASK-82 PR and merge. Status Done is included in the PR's task closure. TASK-87 itself preserves 816/1; the subsequent TASK-82 extraction raises the combined branch to 873 passing / 1 skipped. The earlier reserved-sanction notes are historical; current integration proof belongs to the PR and its post-merge runs.
 <!-- SECTION:SUMMARY:END -->

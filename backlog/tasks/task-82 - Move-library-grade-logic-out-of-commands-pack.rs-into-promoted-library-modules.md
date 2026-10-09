@@ -4,7 +4,7 @@ title: Move library-grade logic out of commands/pack.rs into promoted library mo
 status: Done
 assignee: []
 created_date: '2026-10-08 18:31'
-updated_date: '2026-10-09'
+updated_date: '2026-10-09 19:36'
 labels:
   - architecture
   - pack
@@ -120,6 +120,12 @@ source, xtask source and the BDD feature files is empty: no dependency, schema, 
 workflow-generator or BDD-sentence change. AGENTS.md names the implemented library surface and
 `xtask check-repository` passes. Status Done means all TASK-82 acceptance criteria are complete
 locally; the new commits remain unpushed on the session branch, not merged into main.
+
+**2026-10-09 integration update.** The owner has now explicitly authorized creating and
+merging the combined TASK-87/TASK-82 PR. The no-push statements above describe the prior
+local hand-off, not the current sanction boundary. All six criteria remain complete;
+required PR checks and the merge-triggered main runs are to be verified before the final
+integration report. No additional product or fixture changes are included in this closure.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
