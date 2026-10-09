@@ -13,6 +13,12 @@ name: starter
 # behind `multiline-run-allowed` opt-outs to do it, and per-platform shell is where the v0.3.6
 # release died.
 #
+# Two shapes here are deliberate, both learned the expensive way (task-85). The dispatch check is
+# a job of its own, so a `source-commit` the tag does not name costs the lane nothing: it fails
+# before the starter repository is fetched or a file is scaffolded. And the dev task runs in a
+# fresh clone the lane assembles with `git`, because the steps above it write `.pixi/` into the
+# tree by design — proving the template in that directory proves the runner, not the starter.
+#
 # Triggered explicitly by release.yml after the GitHub Release exists. A `release: published`
 # trigger would not fire at all, because GitHub suppresses follow-up events for releases
 # created with GITHUB_TOKEN — the same reason the consumer proof and the docs rebuild are
@@ -53,8 +59,33 @@ env:
   ASSET: pixi-sandbox-x86_64-unknown-linux-musl
 
 jobs:
+  # First and cheapest: does the dispatched commit exist at all, and is it the one the release tag
+  # names? Everything after this point can take forty minutes, and a hand-typed `source-commit` is
+  # the one input a human gets to choose.
+  dispatch:
+    name: check the starter dispatch
+    runs-on: ubuntu-latest
+    # A cargo build of xtask with no cache, which is what it costs to answer one question before
+    # the lane spends its forty minutes.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+          cache: false
+
+      - name: Refuse a dispatch whose commit the tag does not name
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pixi run -e package xtask starter-check-dispatch -- --repo "$SOURCE_REPO" --tag "$TAG" --commit "$SOURCE_COMMIT"
+
   starter:
     name: publish starter ${{ inputs.release-tag }}
+    needs: dispatch
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -132,9 +163,14 @@ jobs:
         run: pixi run -e default lint-actions starter/.github/workflows/publish-sandbox.yml starter/.github/workflows/relock.yml
 
       # A fresh clone must install from the lockfile and run the documented command, or the
-      # template's three-step promise is false (TASK-74 AC#2 and AC#9).
+      # template's three-step promise is false (TASK-74 AC#2 and AC#9). The clone is assembled
+      # from what `git` would commit — `init`'s output, the lock, the scaffold — so this proves
+      # the revision and not the directory `pixi lock` and the step above left behind (task-85).
+      - name: Assemble a fresh clone of the tree the starter would commit
+        run: pixi run -e package xtask starter-clone -- --dir starter --out "$RUNNER_TEMP/starter-clone"
+
       - name: Prove a fresh clone runs the documented dev task
-        run: pixi run --manifest-path starter/pixi.toml dev
+        run: pixi run --manifest-path "$RUNNER_TEMP/starter-clone/starter/pixi.toml" dev
 
       - name: Verify the assembled starter
         run: pixi run -e package xtask starter-verify -- --dir starter --tag "$TAG"

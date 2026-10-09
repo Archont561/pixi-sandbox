@@ -13,7 +13,7 @@
 //! shared by every runner instead of duplicated per shell dialect.
 
 use anyhow::{Context, Result, bail};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Files the starter owns that `pixi-sandbox init` does not write.
 ///
@@ -210,10 +210,33 @@ fn is_strict_tag(tag: &str) -> bool {
     crate::util::is_strict_semver(version_of(tag))
 }
 
+/// The paths the starter's next commit would contain, or `None` when there is no git to ask.
+///
+/// `None` is a legitimate answer rather than an error: `verify` is pointed at scratch trees by
+/// tests and by a developer checking a draft, and neither has a repository. What it must not
+/// become is *optimistic* — with no index and no ignore rules in play, the only honest answer
+/// is that nothing can be proven absent, so the caller falls back to the existence check.
+///
+/// A `git` that exists but fails for another reason (a corrupt index, an unreadable work tree)
+/// is an error and propagates, because that failure is worth reporting on its own.
+fn publishable_paths(dir: &Path) -> Result<Option<Vec<String>>> {
+    use pixi_sandbox_git::ShellGit;
+    let git = ShellGit::new();
+    if !git.is_work_tree(dir)? {
+        return Ok(None);
+    }
+    Ok(Some(git.ls_publishable(dir)?))
+}
+
 /// Report every reason `dir` is not a publishable starter revision for `tag`.
 ///
 /// Returns findings rather than failing on the first one, for the same reason
 /// `check-repository` does: one run should tell you everything that is wrong (D13).
+///
+/// The forbidden-path half is judged on *the tree git would commit*, not on the directory
+/// listing: the assembly steps leave runtime state behind on purpose, and the starter's
+/// `.gitignore` is what makes that harmless. Everything else here is about file contents and
+/// is read straight off disk.
 pub fn verify(dir: &Path, tag: &str) -> Result<Vec<String>> {
     let mut findings = Vec::new();
     if !is_strict_tag(tag) {
@@ -229,8 +252,23 @@ pub fn verify(dir: &Path, tag: &str) -> Result<Vec<String>> {
             findings.push(format!("missing required file {required}"));
         }
     }
+    // The verdict is about the revision, not about the directory. The steps that assembled the
+    // starter (`pixi lock`, `pixi run dev`) necessarily leave `.pixi/` behind, and the starter's
+    // own `.gitignore` is what keeps those bytes out of the commit — so ask git what it would
+    // take (task-85 AC#2), and fall back to existence only where there is no work tree to ask.
+    let publishable = publishable_paths(dir)?;
     for forbidden in FORBIDDEN_PATHS {
-        if dir.join(forbidden).exists() {
+        let present = dir.join(forbidden).exists();
+        let git_would_take = match &publishable {
+            Some(paths) => {
+                let prefix = format!("{forbidden}/");
+                paths
+                    .iter()
+                    .any(|path| path == forbidden || path.starts_with(&prefix))
+            }
+            None => present,
+        };
+        if present && git_would_take {
             findings.push(format!(
                 "{forbidden} must not be committed to the starter (runtime state or credential)"
             ));
@@ -336,9 +374,7 @@ pub fn release_findings(
     }
     match tag_commit {
         None => findings.push(format!("{tag} does not resolve to a commit")),
-        Some(actual)
-            if !actual.starts_with(expected_commit) && !expected_commit.starts_with(actual) =>
-        {
+        Some(actual) if !commit_matches(actual, expected_commit) => {
             findings.push(format!(
                 "{tag} resolves to {actual}, not the handed-off commit {expected_commit}"
             ));
@@ -392,20 +428,7 @@ pub fn verify_release(repo: &str, tag: &str, expected_commit: &str) -> Result<()
         })
         .unwrap_or_default();
 
-    let sha = StdCommand::new("gh")
-        .args([
-            "api",
-            &format!("repos/{repo}/commits/{tag}"),
-            "--jq",
-            ".sha",
-        ])
-        .output()
-        .context("starting gh api for the tag's commit")?;
-    let tag_commit = sha
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&sha.stdout).trim().to_string())
-        .filter(|s| !s.is_empty());
+    let tag_commit = resolve_tag_commit(repo, tag)?;
 
     let findings = release_findings(
         tag,
@@ -424,6 +447,104 @@ pub fn verify_release(repo: &str, tag: &str, expected_commit: &str) -> Result<()
         );
     }
     println!("{tag} is a published release of {repo} at {expected_commit}");
+    Ok(())
+}
+
+/// The commit a release tag dereferences to, or `None` when GitHub has no such commit.
+///
+/// Resolved through the commits endpoint rather than a release's `targetCommitish`, which can be
+/// a branch name. Both the release hand-off and the dispatch guard ask this one question, so it
+/// is asked in one place.
+fn resolve_tag_commit(repo: &str, tag: &str) -> Result<Option<String>> {
+    use std::process::Command;
+    let output = Command::new("gh")
+        .args([
+            "api",
+            &format!("repos/{repo}/commits/{tag}"),
+            "--jq",
+            ".sha",
+        ])
+        .output()
+        .context("starting gh api for the tag's commit")?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok((!text.is_empty()).then_some(text))
+}
+
+/// Do these two spellings name the same commit?
+///
+/// Either side may be the short form: a dispatch carries the seven characters the UI offers, a
+/// release endpoint returns the full sha. Prefix agreement is the whole rule, in both directions.
+fn commit_matches(a: &str, b: &str) -> bool {
+    a.starts_with(b) || b.starts_with(a)
+}
+
+/// Decide whether a `starter` dispatch may start work at all, from what the tag resolves to.
+///
+/// The guard runs as the workflow's first job, before the starter repository is checked out or
+/// scaffolded (task-85 AC#4): a mismatch used to surface only after the lane had spent a full job
+/// start learning that the release it was handed was not the one the operator meant. The message
+/// therefore names both commits and states which one to pass.
+#[must_use]
+pub fn dispatch_findings(
+    tag: &str,
+    expected_commit: &str,
+    resolved_commit: Option<&str>,
+) -> Vec<String> {
+    let mut findings = Vec::new();
+    if !is_strict_tag(tag) {
+        findings.push(format!(
+            "{tag:?} is not a strict semver tag like v1.2.3, so it names no release to build a starter from"
+        ));
+    }
+    match resolved_commit {
+        None => findings.push(format!(
+            "{tag} does not resolve to a commit, so the dispatched source-commit {expected_commit} \
+             cannot be checked against it; pass a published release tag"
+        )),
+        Some(actual) if !commit_matches(actual, expected_commit) => findings.push(format!(
+            "{tag} names {actual}, but the dispatch handed off {expected_commit}; the starter is \
+             generated from the release, so re-dispatch with source-commit {actual} or choose the \
+             release built from {expected_commit}"
+        )),
+        Some(_) => {}
+    }
+    findings
+}
+
+/// The one line an accepted dispatch leaves in the log and the job summary.
+///
+/// Reporting the agreement is the point: the task was written from a run where nothing told the
+/// operator which commit the tag actually names.
+#[must_use]
+pub fn dispatch_report(tag: &str, resolved_commit: &str) -> String {
+    format!("{tag} names commit {resolved_commit}, and the dispatch agrees")
+}
+
+/// Check, over the network, that a starter dispatch names the commit its release tag points at.
+pub fn check_dispatch(repo: &str, tag: &str, expected_commit: &str) -> Result<()> {
+    let resolved = resolve_tag_commit(repo, tag)?;
+    let findings = dispatch_findings(tag, expected_commit, resolved.as_deref());
+    if !findings.is_empty() {
+        for finding in &findings {
+            eprintln!("::error::{finding}");
+        }
+        crate::util::github_summary(&format!(
+            "## Starter dispatch refused\n\n- release tag `{tag}`\n- dispatched commit `{expected_commit}`\n\n{}",
+            findings.join("\n")
+        ));
+        bail!(
+            "{} dispatch finding(s); no starter work was started",
+            findings.len()
+        );
+    }
+    // The findings are empty, so a commit came back; the dispatched spelling is the fallback only
+    // for the case the guard already refuses.
+    let report = dispatch_report(tag, resolved.as_deref().unwrap_or(expected_commit));
+    println!("{report} ({repo})");
+    crate::util::github_summary(&format!("## Starter dispatch\n\n- {report}\n"));
     Ok(())
 }
 
@@ -481,6 +602,91 @@ pub fn parse_main_ref(repo: &str, succeeded: bool, stdout: &[u8], stderr: &[u8])
         );
     };
     Ok(sha.to_string())
+}
+
+/// Materialise the tree `dir` would commit into a scratch repository at `out/seed`, commit it,
+/// and return a fresh clone of that commit at `out/starter`.
+///
+/// This is what makes the starter's development-task proof mean something: a user gets a clone of
+/// the revision, not the directory the lane just finished writing into. The clone is therefore
+/// built from the same answer [`verify`] consults — `git`'s, not the filesystem's — and shares no
+/// objects with the source tree (see `ShellGit::clone_fresh`).
+///
+/// `out` must be absent or empty. A proof that quietly reused a previous attempt's directory would
+/// be a proof about two trees at once.
+pub fn clone_publishable(dir: &Path, out: &Path) -> Result<PathBuf> {
+    use pixi_sandbox_git::ShellGit;
+    let git = ShellGit::new();
+    if !git.is_work_tree(dir)? {
+        bail!(
+            "{} is not a git work tree, so the tree the starter would publish cannot be assembled; \
+             run this step against the starter checkout the workflow created",
+            dir.display()
+        );
+    }
+    let paths = git.ls_publishable(dir)?;
+    if paths.is_empty() {
+        bail!(
+            "starter tree {} would commit no files at all, so there is nothing to prove in a clone",
+            dir.display()
+        );
+    }
+    if out.exists() && std::fs::read_dir(out)?.next().is_some() {
+        bail!(
+            "{} is not empty; the clone proof writes into a scratch directory of its own",
+            out.display()
+        );
+    }
+
+    let seed = out.join("seed");
+    let clone = out.join("starter");
+    std::fs::create_dir_all(&seed).with_context(|| format!("creating {}", seed.display()))?;
+    for rel in &paths {
+        let from = dir.join(rel);
+        let to = seed.join(rel);
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        std::fs::copy(&from, &to)
+            .with_context(|| format!("staging {} for the clone", from.display()))?;
+        keep_executable_bit(&from, &to)?;
+    }
+    git.init_repo(&seed)?;
+    git.add_files(&seed, &paths)?;
+    git.commit(&seed, "starter clone proof")?;
+    git.clone_fresh(&seed, &clone)?;
+    println!(
+        "assembled {} file(s) from {} into a fresh clone at {}",
+        paths.len(),
+        dir.display(),
+        clone.display()
+    );
+    Ok(clone)
+}
+
+/// Carry the one mode bit `git` itself records.
+///
+/// A copied launcher that lost its executable bit would clone into a tree a user cannot run, and
+/// the proof would then be measuring the copy rather than the starter. Sizes, times and the rest
+/// of the mode are not in the revision, so they are deliberately not copied.
+#[cfg(unix)]
+fn keep_executable_bit(from: &Path, to: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(from)
+        .with_context(|| format!("reading the mode of {}", from.display()))?
+        .permissions()
+        .mode();
+    if mode & 0o111 != 0 {
+        std::fs::set_permissions(to, std::fs::Permissions::from_mode(0o755))
+            .with_context(|| format!("marking {} executable", to.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn keep_executable_bit(_from: &Path, _to: &Path) -> Result<()> {
+    Ok(())
 }
 
 /// Is there anything to publish, and may we publish it here?

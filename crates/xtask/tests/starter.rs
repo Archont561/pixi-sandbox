@@ -1,13 +1,23 @@
 //! `starter` (moved from the module's inline `#[cfg(test)]`, TASK-83:
 //! names kept, bodies verbatim).
 
-use std::path::Path;
 use xtask::starter::*;
+
+mod support;
+use support::{commit_all, run_git, starter_tree};
 
 const TAG: &str = "v1.2.3";
 const COMMIT: &str = "8193c58068c3245e5267c4c604f989237e4d6e49";
 const SOURCE: &str = "Archont561/pixi-sandbox";
 const STARTER: &str = "Archont561/pixi-sandbox-starter";
+
+/// The lane that publishes the starter, read as text. The two assertions below are about step
+/// *order*, which no unit test can see: they are the reason the workflow still runs the proof on
+/// the artifact a user gets, and refuses a bad dispatch before it touches anything.
+const STARTER_WORKFLOW: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../.github/workflows/starter.yml"
+));
 
 #[test]
 fn an_empty_starter_with_default_main_is_refused_until_an_owner_seeds_the_ref() {
@@ -86,14 +96,55 @@ fn malformed_main_ref_json_is_reported() {
 
 #[test]
 fn starter_workflow_checks_the_real_main_ref_without_creating_or_seeding_the_repo() {
-    const WORKFLOW: &str = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../.github/workflows/starter.yml"
-    ));
-    assert!(WORKFLOW.contains("xtask starter-check-main"), "{WORKFLOW}");
-    assert!(!WORKFLOW.contains(".default_branch // empty"), "{WORKFLOW}");
-    assert!(!WORKFLOW.contains("--method POST"), "{WORKFLOW}");
-    assert!(!WORKFLOW.contains("--method PUT"), "{WORKFLOW}");
+    assert!(STARTER_WORKFLOW.contains("xtask starter-check-main"));
+    assert!(!STARTER_WORKFLOW.contains(".default_branch // empty"));
+    assert!(!STARTER_WORKFLOW.contains("--method POST"));
+    assert!(!STARTER_WORKFLOW.contains("--method PUT"));
+}
+
+/// The template's promise is that a *clone* works, so the proof runs on a clone: assembling it
+/// through `git` is the only way to hand the dev task the tree that would be published rather
+/// than the directory the earlier steps wrote into (task-85 AC#1).
+#[test]
+fn the_starter_dev_proof_runs_in_a_fresh_clone_of_the_would_be_committed_tree() {
+    assert!(
+        STARTER_WORKFLOW.contains("xtask starter-clone -- --dir starter --out"),
+        "{STARTER_WORKFLOW}"
+    );
+    assert!(
+        STARTER_WORKFLOW.contains(
+            r#"pixi run --manifest-path "$RUNNER_TEMP/starter-clone/starter/pixi.toml" dev"#
+        ),
+        "the dev task must run in the clone, not in starter/"
+    );
+    assert!(
+        !STARTER_WORKFLOW.contains("pixi run --manifest-path starter/pixi.toml dev"),
+        "the old proof ran against the tree the tooling had just written into"
+    );
+}
+
+/// A mismatched `source-commit` used to be discovered after a full job start. As its own job it
+/// costs the lane nothing: the starter repository is never fetched and no file is scaffolded
+/// before the guard has agreed (task-85 AC#4).
+#[test]
+fn the_dispatch_guard_is_its_own_job_and_precedes_every_starter_write() {
+    let guard = STARTER_WORKFLOW
+        .find("xtask starter-check-dispatch")
+        .expect("the guard verb the first job runs");
+    let needs = STARTER_WORKFLOW
+        .find("needs: dispatch")
+        .expect("the starter job must wait for the guard");
+    let checkout = STARTER_WORKFLOW
+        .find("repository: Archont561/pixi-sandbox-starter")
+        .expect("the starter checkout, which must come after the guard");
+    let scaffold = STARTER_WORKFLOW
+        .find("xtask starter-scaffold")
+        .expect("the step that first writes into the starter");
+    assert!(guard < needs, "the guard belongs to its own job");
+    assert!(
+        needs < checkout && checkout < scaffold,
+        "{needs} {checkout} {scaffold}"
+    );
 }
 
 /// A starter whose publisher came from a different release is the one failure the whole
@@ -101,7 +152,7 @@ fn starter_workflow_checks_the_real_main_ref_without_creating_or_seeding_the_rep
 #[test]
 fn a_publisher_from_another_release_is_reported() {
     let dir = tempfile::tempdir().unwrap();
-    write_valid_starter(dir.path(), "9.9.9");
+    starter_tree(dir.path(), "9.9.9");
     let findings = verify(dir.path(), TAG).unwrap();
     assert!(
         findings
@@ -114,7 +165,7 @@ fn a_publisher_from_another_release_is_reported() {
 #[test]
 fn a_complete_starter_for_its_own_tag_has_no_findings() {
     let dir = tempfile::tempdir().unwrap();
-    write_valid_starter(dir.path(), "1.2.3");
+    starter_tree(dir.path(), "1.2.3");
     assert_eq!(verify(dir.path(), TAG).unwrap(), Vec::<String>::new());
 }
 
@@ -132,10 +183,13 @@ fn every_required_file_is_reported_when_absent() {
 
 /// Runtime state is the thing a template must never ship: a committed `.pixi/` hands every
 /// user a stale environment that their own lockfile then disagrees with.
+///
+/// This is the conservative half of the rule: with no git work tree to ask, existence decides,
+/// because a scratch directory cannot prove that anything in it is left out of a commit.
 #[test]
 fn committed_runtime_state_is_reported() {
     let dir = tempfile::tempdir().unwrap();
-    write_valid_starter(dir.path(), "1.2.3");
+    starter_tree(dir.path(), "1.2.3");
     std::fs::create_dir_all(dir.path().join(".pixi")).unwrap();
     std::fs::write(dir.path().join("SHA256SUMS"), "x").unwrap();
     let findings = verify(dir.path(), TAG).unwrap();
@@ -144,6 +198,127 @@ fn committed_runtime_state_is_reported() {
         findings.iter().any(|f| f.contains("SHA256SUMS")),
         "{findings:?}"
     );
+}
+
+/// The publish lane's own steps (`pixi lock`, `pixi run dev`) necessarily leave `.pixi/` behind
+/// in the assembled tree, and the starter's own `.gitignore` keeps those bytes out of the
+/// revision. Verdict on the working directory instead of on what git would commit is the
+/// false positive that left the starter unpublishable (task-85 AC#2).
+#[test]
+fn runtime_state_the_ignore_file_keeps_out_of_the_revision_is_not_a_finding() {
+    let dir = tempfile::tempdir().unwrap();
+    starter_tree(dir.path(), "1.2.3");
+    run_git(dir.path(), &["init", "-q"]);
+    std::fs::create_dir_all(dir.path().join(".pixi/envs/default")).unwrap();
+    std::fs::write(dir.path().join(".pixi/envs/default/rg"), "restored state").unwrap();
+    std::fs::create_dir_all(dir.path().join(".pixi-sandbox/vendor")).unwrap();
+    std::fs::write(dir.path().join(".pixi-sandbox/vendor/serde.crate"), "x").unwrap();
+    std::fs::write(
+        dir.path().join("SHA256SUMS"),
+        "downloaded, never committed\n",
+    )
+    .unwrap();
+    assert_eq!(verify(dir.path(), TAG).unwrap(), Vec::<String>::new());
+}
+
+/// The other side of the same rule: once a path is in the index, the ignore file no longer
+/// protects anyone, and a revision that carries runtime state is still refused.
+#[test]
+fn runtime_state_that_git_would_commit_is_still_a_finding() {
+    let dir = tempfile::tempdir().unwrap();
+    starter_tree(dir.path(), "1.2.3");
+    run_git(dir.path(), &["init", "-q"]);
+    std::fs::create_dir_all(dir.path().join(".pixi/envs/default")).unwrap();
+    std::fs::write(
+        dir.path().join(".pixi/envs/default/rg"),
+        "stale environment",
+    )
+    .unwrap();
+    // `-f` is the accident this criterion is about: an ignore rule does not survive a staged file.
+    run_git(dir.path(), &["add", "-f", "-A"]);
+    commit_all(dir.path(), "seed");
+    let findings = verify(dir.path(), TAG).unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.contains(".pixi") && f.contains("must not be committed")),
+        "{findings:?}"
+    );
+}
+
+/// `git add -A` would take a `.env` in an otherwise clean tree — no ignore rule covers it —
+/// so the git-aware verdict must stay loud. This is the case a blanket "if it is ignored, skip
+/// the check" shortcut would silently drop.
+#[test]
+fn a_credential_git_would_take_is_a_finding_even_untracked() {
+    let dir = tempfile::tempdir().unwrap();
+    starter_tree(dir.path(), "1.2.3");
+    run_git(dir.path(), &["init", "-q"]);
+    std::fs::write(dir.path().join(".env"), "TOKEN=leak\n").unwrap();
+    let findings = verify(dir.path(), TAG).unwrap();
+    assert!(findings.iter().any(|f| f.contains(".env")), "{findings:?}");
+}
+
+/// The dispatch guard exists because a mismatched `source-commit` used to surface only after a
+/// full job start (task-85 AC#4). Its contract is small: agree, or name both commits and say
+/// which one to pass.
+#[test]
+fn a_dispatch_naming_the_commit_the_tag_points_at_is_accepted() {
+    assert_eq!(
+        dispatch_findings(TAG, COMMIT, Some(COMMIT)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn an_abbreviated_dispatch_matches_the_full_commit_the_tag_names() {
+    // Parity with `release_findings`: a dispatch may carry the short form the UI offers.
+    assert_eq!(
+        dispatch_findings(TAG, &COMMIT[..7], Some(COMMIT)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_mismatched_dispatch_names_both_commits_and_the_one_to_pass() {
+    let other = "00000000000000000000000000000000000000aa";
+    let findings = dispatch_findings(TAG, other, Some(COMMIT));
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    let message = &findings[0];
+    assert!(message.contains(TAG), "{message}");
+    assert!(
+        message.contains(other) && message.contains(COMMIT),
+        "both commits have to appear: {message}"
+    );
+    assert!(
+        message.contains(other),
+        "the remedy names the tag's commit: {message}"
+    );
+}
+
+#[test]
+fn an_unresolvable_tag_is_a_finding_that_names_the_dispatched_commit() {
+    let other = "00000000000000000000000000000000000000aa";
+    let findings = dispatch_findings(TAG, other, None);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(findings[0].contains("does not resolve"), "{findings:?}");
+    assert!(findings[0].contains(other), "{findings:?}");
+}
+
+#[test]
+fn a_loose_release_tag_is_refused_before_anything_is_dispatched() {
+    let findings = dispatch_findings("latest", COMMIT, Some(COMMIT));
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(findings[0].contains("strict semver"), "{findings:?}");
+}
+
+/// "Nothing in the workflow tells the operator which commit the tag names" is half the complaint
+/// the task was written from, so the accepted case has to say it out loud too.
+#[test]
+fn the_operator_is_told_which_commit_the_tag_names() {
+    let report = dispatch_report(TAG, COMMIT);
+    assert!(report.contains(TAG) && report.contains(COMMIT), "{report}");
+    assert!(report.contains("names"), "{report}");
 }
 
 /// `ubuntu-latest` is a runner label and must not be mistaken for a floating version —
@@ -360,23 +535,4 @@ fn publishing_to_a_fork_or_over_an_existing_revision_is_refused() {
         )
         .is_empty()
     );
-}
-
-fn write_valid_starter(dir: &Path, workflow_version: &str) {
-    scaffold(dir, "starter", TAG, COMMIT, SOURCE, STARTER).unwrap();
-    std::fs::create_dir_all(dir.join(".github/workflows")).unwrap();
-    std::fs::write(dir.join("pixi.lock"), "version: 6\n").unwrap();
-    std::fs::write(dir.join("pixi-sandbox.toml"), "schema = 1\n").unwrap();
-    std::fs::write(
-        dir.join(".github/workflows/publish-sandbox.yml"),
-        format!(
-            "# Generated by pixi-sandbox init\n\
-             # pixi-sandbox-version: {workflow_version}\n\
-             name: publish sandbox\n\
-             env:\n  PIXI_SANDBOX_VERSION: {workflow_version}\n\
-             jobs:\n  x:\n    runs-on: ubuntu-latest\n"
-        ),
-    )
-    .unwrap();
-    std::fs::write(dir.join(".github/workflows/relock.yml"), "name: relock\n").unwrap();
 }
