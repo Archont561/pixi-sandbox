@@ -1661,3 +1661,136 @@ sentences do not move. Also recorded: a sandbox reset between turns re-cloned th
 dropped the first four local commits; the tree was reconstructed byte-identical, one
 conventional commit per slice, so nothing was lost, but the old local hashes appear nowhere
 remote. task-85's starter dispatch (AC#6) is still the owner's click.
+
+### 2026-10-09 (third session) — task-87's macro bindings are proven locally, unpushed; task-86 closed at last
+
+**Environment.** Restore green — twice, because a sandbox reset between turns re-cloned the
+workspace and took `.pixi`, `.pixi-sandbox` and `~/.local/bin` with it; the bootstrap is
+idempotent and the second run came from the same transport (0.6.0 packed from `8dc5bba`, schema 2,
+static, 268 vendored crates, 14495 blobs / 866.3 MiB / 0 failures). Baseline **816 passing /
+1 skipped** exactly as the opening prompt predicted, user tools registered. `ci` (3m47s), `docs`
+(39s) and `publish sandbox` (4m0s) are all green on `8dc5bba` — the merge is settled, nothing
+re-run and nothing re-packed. **The previous session's consequence is closed:** the repack does
+carry `rstest-bdd-macros 0.6.0` and its whole tree (`rstest-bdd-harness`, `cap-std`, `camino`,
+`newt-hype`, `proc-macro-error3`, `convert_case`, `syn 3`), and all of it compiled offline inside
+that baseline run *before* a line of migration code existed — which is the cheapest possible
+proof that the swap-in path was executable, and the reason this session could promise the slice
+without hedging.
+
+**Implemented, and deliberately not pushed** — **task-87** as five commits on the session branch
+`arena/49e36983-pixi-sandbox`, with no pull request open, because that sanction was reserved:
+`docs(backlog)` (task-86 closed 5/5 with its mechanism deviation recorded, task-87 opened), one
+`test(bdd)` migration commit per binary — transport integrity, restore verification, user-tools
+policy — and the runner's retirement. task-87's five ACs are all checked on local evidence and its
+status stays `In Progress` until the work lands on main, which is a one-line edit afterwards; a
+task marked Done whose commits exist only on an unpushed branch is the stale claim §5 warns about.
+Suite **816 passing / 1 skipped, unchanged**, which was the
+constraint rather than a coincidence: eleven scenarios kept the test names nextest already
+reported, and three binding oracles replaced three duplicate-registry guards one for one. The
+three `.feature` files, all three lockfiles and every `crates/*/src` are byte-identical to
+`8dc5bba`, each proven with `git diff --exit-code` rather than asserted. Step bodies went from
+four-argument `StepContext` callbacks returning `Result<StepExecution, StepError>` to ordinary
+functions on a fixture-injected world, and the largest file lost 176 net lines doing it.
+
+**Four findings worth keeping, none of them proposals.**
+
+- **The compile-time ambiguity check is expansion-order dependent.** A duplicated step pattern
+  declared *above* the `#[scenario]` bindings is a compile error — `Ambiguous step definition for
+  'a packed transport'`, pointing at the binding, listing both patterns. The same duplicate
+  declared *below* them compiles cleanly, because the macro validates against the registry as it
+  stands when it expands. What catches that half is rstest-bdd's own runtime registry
+  (`registry/mod.rs:238`), which panics `duplicate step for 'Given' + 'a packed transport' defined
+  at <file>:<line>` and fails every scenario in the binary. So retiring
+  `assert_no_duplicate_steps()` lost nothing: the duplicate ground is covered twice by the
+  published crate, once earlier and once more precisely than the hand-rolled guard managed. Any
+  future claim that the macros "check the registry at compile time" should carry this caveat, and
+  a step declared below its bindings is the case that slips through the first tier.
+- **`strict-compile-time-validation` is what makes an unmatched sentence a build failure.** With
+  only `compile-time-validation` declared — the state #126 left — a sentence no step matches is a
+  *warning*, and the `Cargo.toml` comment claimed otherwise; it is corrected now. Under `strict`
+  it is `error: No matching step definition found for 'Given a packed transportt'` listing the
+  three definitions that do exist. The feature implies the non-strict one and adds no dependency,
+  so `Cargo.lock` did not move — the "no lockfile change" constraint and the fail-fast upgrade
+  turned out to be compatible rather than a trade.
+- **The macro expansions are clippy-clean under `-D warnings --all-targets`.** Upstream needs its
+  own `rstest_bdd_test_macros::allow_fixture_expansion_lints` to survive its lint config; that
+  helper crate is not vendored and the house needs no equivalent. The only clippy error this
+  migration produced was in the new guard's own code (`redundant_closure`). Worth remembering
+  before anyone adds a lint-suppression shim on the grounds that upstream ships one.
+- **A binding *is* the test now, so an unbound scenario is a silent coverage loss.** That is the
+  one failure mode the retired runner could not have: it needed a hand-written `#[test]` per
+  scenario sitting beside the registry, so a forgotten scenario was a visible gap in the file.
+  `assert_every_scenario_is_bound` reads the test root's *source* for `name = "…"` selectors
+  rather than the compiled test list, because the user-tools pre-policy binding is `#[cfg]`-gated
+  — on a foreign host it is absent from the binary while still bound in the source, and counting
+  compiled tests would raise a false alarm on every non-linux-64 runner. Proven red by pointing
+  two bindings at one scenario, which named the third as unbound. The `#[cfg]` also moved onto the
+  step attributes themselves, which is why four cfg attributes left with the `step!` registry
+  block instead of being dropped.
+
+**One tooling finding, and a correction owed to a skill file.** The backlog CLI cannot carry prose
+through `pixi run`: pixi joins task arguments into a command line *without quoting them*, so spaces
+split arguments ("too many arguments for 'create'. Expected 1 argument but got 6"), backticks are
+command-substituted by the inner shell (`rstest-bdd: command not found`), and an embedded newline
+abandons the invocation entirely and prints the task list. Wrapping the whole inner command in one
+pre-quoted argument does not help either — pixi escapes it into a single `bun x` package spec. So a
+task file with real prose has to be written directly and then validated by a CLI *read-back*
+(`backlog task 87 --plain`), which handles backticks, em dashes and `§` fine; the CLI also parsed
+`&mut World` inside an inline code span as a markdown error before any shell got near it. The
+backlog skill's advice to "repeat the `--append-*` variant once per line" does not survive that
+argument splitting. `.agents/skills/backlog/SKILL.md` therefore states something that is not true
+in this sandbox, and correcting it is a real (small, unimplemented) item — recorded here per
+invariant 10 rather than edited into the skill on spec.
+
+**Also closed this session, and it was overdue:** task-86 sat `In Progress` with **0/5** ACs
+checked and no NOTES or SUMMARY at all, although #126 merged green on `8dc5bba` — the §5 step-2
+close never happened, and neither did that session's report or its next opening prompt, which is
+why the prompt that started this session appears nowhere in this file. The AC-by-AC evidence is
+now in the task, with the mechanism deviation stated plainly: all five criteria were met by what
+merged, and only the Description's mechanism sentence deviated, because `rstest-bdd-macros` was
+not vendorable offline when the work was done.
+
+**Open, in the order a session should consider them:** **task-87's five commits** — proven, gated
+and unpushed on `arena/49e36983-pixi-sandbox`; the only thing outstanding is the owner's sanction
+to push and open the pull request, after which the task flips to Done and §5 can run properly.
+**task-85** AC#6 — one dispatch away for
+anyone who can click it; it still 403s for the sandbox token (`Resource not accessible by
+integration`). **The `verify`/`publish` reconciliation** from the 2026-10-09 first entry — small,
+local, and the kind of gap the audit tasks exist to close: `starter::publish` stages through
+`worktree_status_files` (`--untracked-files=no`) while `verify` now judges `ls_publishable`, a
+strictly broader set, so a first publish can skip a file verify just approved. **task-76** (high,
+deps TASK-36/TASK-71 both Done so it is unblocked; AC#8 needs a consumer run, and the 2026-10-09
+first entry's "a guard step cannot precede its own manifest" finding is the shape its end state
+wants). **task-82** (medium, local). **task-77** (medium, local, wide mechanical — note it would
+have met the clippy finding above, since the macro expansions are already clean). **task-78**
+(high, but AC#1 wants a reviewed D-number decision before code and `pixi-build` is still preview).
+task-73 and task-74 stay parked on issue #101; task-66 still waits for a Castellan PR carrying
+deliberate lockfile drift. Nothing in the BDD layer is open: the layer is on the macros, the
+runner is gone, and the only guard left is the one the macros cannot replace.
+
+**Prompt to start the next session with:**
+
+> Restore the sandbox and baseline the suite — expect **816 passing / 1 skipped**. The published
+> `sandbox/developer-linux-64` transport is packed by pixi-sandbox 0.6.0 from `8dc5bba`, static,
+> and its vendor set carries the whole rstest-bdd tree including `rstest-bdd-macros 0.6.0` with
+> `strict-compile-time-validation`, so the BDD layer builds offline with no relock and no new
+> vendoring. A sandbox reset between turns drops `.pixi` and `~/.local/bin`; `bash
+> scripts/restore.sh` is idempotent and takes about four minutes.
+>
+> Then read `CONTEXT.md` § Session scratchpad — the **2026-10-09 third-session** heading lists the
+> open items and carries four findings about the rstest-bdd macros, first among them that the
+> compile-time ambiguity check is expansion-order dependent.
+>
+> First, one look at the repo state: `gh run list --branch main --limit 3`. If `ci`, `docs` and
+> `publish sandbox` are green on the tip of main, the last merge is settled — do not re-run or
+> re-pack anything. Note that task-87 landed on a session branch and was **not pushed**, so main
+> may still be at `8dc5bba`; check whether its pull request merged before assuming either way.
+>
+> I want to take **<task>** this session — <shape, plus every decision already made>. Decided
+> already: <…>. Slices: <the locally provable ones> first, <anything needing a push, a release or
+> a native runner> last, which needs <the sanction you are reserving>. Do not push, open a pull
+> request, or merge without my explicit go-ahead.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
+> and its templates are in `.agents/skills/session/`.
