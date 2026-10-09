@@ -1,17 +1,22 @@
-//! BDD feature: user-tools policy (task-86).
+//! BDD feature: user-tools policy (task-86, bound with the rstest-bdd attribute macros by
+//! task-87).
 //!
-//! Scenarios live in `tests/features/user_tools_policy.feature`; each one is bound to the
-//! suite as a plain test below. Steps drive the binary black-box through the `tests/support`
-//! fixture builders against an isolated home (task-33's contract, D10). The pre-policy
-//! scenario drives `scripts/restore.sh` against a `transport_repo` staged with the
-//! pre-0.3.7 shim, so it binds only where that fixture exists (unix, linux-64 transport).
+//! Scenarios live in `tests/features/user_tools_policy.feature`, byte-identical to the
+//! sentences this file was written against; each one is bound below by `#[scenario]`, which
+//! emits the rstest test itself, so the names nextest reports did not move. Steps drive the
+//! binary black-box through the `tests/support` fixture builders against an isolated home
+//! (task-33's contract, D10). The pre-policy scenario drives `scripts/restore.sh` against a
+//! `transport_repo` staged with the pre-0.3.7 shim, so its binding and its steps carry the
+//! same `#[cfg]` the descriptive suite uses (unix, linux-64 transport) — on a foreign host the
+//! scenario is absent from the binary rather than failing in it.
 
 mod support;
 
-use rstest_bdd::{StepContext, StepError, StepExecution, StepKeyword, step};
+use rstest::fixture;
+use rstest_bdd_macros::{given, scenario, then, when};
 use std::path::PathBuf;
 use std::process::Output;
-use support::bdd::{WORLD, run_scenario};
+use support::bdd::assert_every_scenario_is_bound;
 use support::{copy_tree, fixture_transport, isolated_bin};
 use tempfile::TempDir;
 
@@ -68,11 +73,6 @@ impl PolicyWorld {
     }
 }
 
-fn world<'a>(ctx: &'a StepContext<'_>) -> impl std::ops::DerefMut<Target = PolicyWorld> + 'a {
-    ctx.try_borrow_mut::<PolicyWorld>(WORLD)
-        .expect("the runner inserts the world")
-}
-
 fn is_executable(path: &std::path::Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path)
@@ -80,36 +80,29 @@ fn is_executable(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-// --- Given -----------------------------------------------------------------
-
-fn a_packed_transport_and_an_isolated_home(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    world(ctx).staged();
-    Ok(StepExecution::from_value(None))
+/// The world every step in this binary borrows: zero-argument, per the `tests/support`
+/// convention. rstest builds one instance per scenario, the steps share it, and it drops —
+/// tempdir and all — when the scenario ends.
+#[fixture]
+fn policy_world() -> PolicyWorld {
+    PolicyWorld::default()
 }
 
-fn the_environment_selects_the_skip_policy(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    world(ctx).env_policy = Some("skip");
-    Ok(StepExecution::from_value(None))
+// --- Given -----------------------------------------------------------------
+
+#[given("a packed transport and an isolated home")]
+fn a_packed_transport_and_an_isolated_home(policy_world: &mut PolicyWorld) {
+    policy_world.staged();
+}
+
+#[given("the environment selects the skip policy")]
+fn the_environment_selects_the_skip_policy(policy_world: &mut PolicyWorld) {
+    policy_world.env_policy = Some("skip");
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn a_bootstrap_packed_before_user_tools(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let mut policy_world = world(ctx);
+#[given("a bootstrap packed before user-tools")]
+fn a_bootstrap_packed_before_user_tools(policy_world: &mut PolicyWorld) {
     policy_world.staged();
     let root = policy_world
         .root
@@ -123,7 +116,6 @@ fn a_bootstrap_packed_before_user_tools(
         support::Bundled::PreUserTools,
     );
     policy_world.script_repo = Some(repo);
-    Ok(StepExecution::from_value(None))
 }
 
 // --- When ------------------------------------------------------------------
@@ -148,38 +140,21 @@ fn restore_binary_command(policy_world: &PolicyWorld, extra_args: &[&str]) -> Ou
     command.output().expect("restore runs")
 }
 
-fn the_operator_restores_the_transport_without_stating_a_policy(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let mut policy_world = world(ctx);
-    let output = restore_binary_command(&policy_world, &[]);
+#[when("the operator restores the transport without stating a policy")]
+fn the_operator_restores_the_transport_without_stating_a_policy(policy_world: &mut PolicyWorld) {
+    let output = restore_binary_command(policy_world, &[]);
     policy_world.result = Some(output);
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_operator_restores_the_transport_asking_to_skip_registration(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let mut policy_world = world(ctx);
-    let output = restore_binary_command(&policy_world, &["--user-tools", "skip"]);
+#[when("the operator restores the transport asking to skip registration")]
+fn the_operator_restores_the_transport_asking_to_skip_registration(policy_world: &mut PolicyWorld) {
+    let output = restore_binary_command(policy_world, &["--user-tools", "skip"]);
     policy_world.result = Some(output);
-    Ok(StepExecution::from_value(None))
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn the_operator_runs_the_restore_script_asking_to_register(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let mut policy_world = world(ctx);
+#[when("the operator runs the restore script asking to register")]
+fn the_operator_runs_the_restore_script_asking_to_register(policy_world: &mut PolicyWorld) {
     let repo = policy_world
         .script_repo
         .as_ref()
@@ -205,18 +180,12 @@ fn the_operator_runs_the_restore_script_asking_to_register(
         .output()
         .expect("the restore script runs");
     policy_world.result = Some(output);
-    Ok(StepExecution::from_value(None))
 }
 
 // --- Then ------------------------------------------------------------------
 
-fn the_restore_registers_pixi_and_pixi_sandbox_in_the_home(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let policy_world = world(ctx);
+#[then("the restore registers pixi and pixi-sandbox in the home")]
+fn the_restore_registers_pixi_and_pixi_sandbox_in_the_home(policy_world: &PolicyWorld) {
     assert!(
         policy_world.output().status.success(),
         "restore must succeed"
@@ -232,16 +201,10 @@ fn the_restore_registers_pixi_and_pixi_sandbox_in_the_home(
         );
         assert!(is_executable(&launcher), "the {name} launcher must run");
     }
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_launchers_exec_the_manifest_verified_tool_copies(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let policy_world = world(ctx);
+#[then("the launchers exec the manifest-verified tool copies")]
+fn the_launchers_exec_the_manifest_verified_tool_copies(policy_world: &PolicyWorld) {
     let tools = policy_world.project_path().join(".pixi/tools/linux-64");
     for name in ["pixi", "pixi-sandbox"] {
         let body = std::fs::read_to_string(policy_world.home_path().join(".local/bin").join(name))
@@ -251,16 +214,10 @@ fn the_launchers_exec_the_manifest_verified_tool_copies(
             "the {name} launcher must exec the manifest-verified copy: {body}"
         );
     }
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_shell_profile_gains_exactly_one_managed_path_block(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let policy_world = world(ctx);
+#[then("the shell profile gains exactly one managed PATH block")]
+fn the_shell_profile_gains_exactly_one_managed_path_block(policy_world: &PolicyWorld) {
     let profile = std::fs::read_to_string(policy_world.home_path().join(".profile"))
         .expect("the profile exists");
     let bin = policy_world.home_path().join(".local/bin");
@@ -273,31 +230,19 @@ fn the_shell_profile_gains_exactly_one_managed_path_block(
         1,
         "exactly one managed block: {profile}"
     );
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_report_says_an_already_running_shell_cannot_be_changed(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let policy_world = world(ctx);
+#[then("the report says an already-running shell cannot be changed")]
+fn the_report_says_an_already_running_shell_cannot_be_changed(policy_world: &PolicyWorld) {
     let stdout = String::from_utf8_lossy(&policy_world.output().stdout);
     assert!(
         stdout.contains("an already-running shell cannot be changed"),
         "the operator must be told what registration cannot do: {stdout}"
     );
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_report_says_nothing_was_registered(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let policy_world = world(ctx);
+#[then("the report says nothing was registered")]
+fn the_report_says_nothing_was_registered(policy_world: &PolicyWorld) {
     assert!(
         policy_world.output().status.success(),
         "restore must succeed"
@@ -307,30 +252,18 @@ fn the_report_says_nothing_was_registered(
         stdout.contains("none registered (--user-tools skip"),
         "the opt-out report must reach the operator: {stdout}"
     );
-    Ok(StepExecution::from_value(None))
 }
 
-fn nothing_is_registered_in_the_home(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let policy_world = world(ctx);
+#[then("nothing is registered in the home")]
+fn nothing_is_registered_in_the_home(policy_world: &PolicyWorld) {
     assert!(
         !policy_world.home_path().join(".local").exists(),
         "no launcher directory may appear under the home"
     );
-    Ok(StepExecution::from_value(None))
 }
 
-fn the_project_still_receives_its_environment(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let policy_world = world(ctx);
+#[then("the project still receives its environment")]
+fn the_project_still_receives_its_environment(policy_world: &PolicyWorld) {
     assert!(
         policy_world
             .project_path()
@@ -338,17 +271,11 @@ fn the_project_still_receives_its_environment(
             .is_file(),
         "the opt-out is about the home, never the project"
     );
-    Ok(StepExecution::from_value(None))
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn the_report_names_the_bundled_version_that_ignored_the_policy(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let policy_world = world(ctx);
+#[then("the report names the bundled version that ignored the policy")]
+fn the_report_names_the_bundled_version_that_ignored_the_policy(policy_world: &PolicyWorld) {
     let log = policy_world.combined_log();
     assert!(
         policy_world.output().status.success(),
@@ -368,159 +295,56 @@ fn the_report_names_the_bundled_version_that_ignored_the_policy(
         !log.contains("unknown version"),
         "the version must come from the restored copy: {log}"
     );
-    Ok(StepExecution::from_value(None))
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn the_report_does_not_claim_a_registration(
-    ctx: &mut StepContext<'_>,
-    _text: &str,
-    _doc: Option<&str>,
-    _table: Option<&[&[&str]]>,
-) -> Result<StepExecution, StepError> {
-    let policy_world = world(ctx);
+#[then("the report does not claim a registration")]
+fn the_report_does_not_claim_a_registration(policy_world: &PolicyWorld) {
     let log = policy_world.combined_log();
     assert!(
         !log.contains("user tools: registered pixi"),
         "a registration that did not happen must not be announced: {log}"
     );
-    Ok(StepExecution::from_value(None))
 }
-
-// --- Registry --------------------------------------------------------------
-
-step!(
-    StepKeyword::Given,
-    "a packed transport and an isolated home",
-    a_packed_transport_and_an_isolated_home,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Given,
-    "the environment selects the skip policy",
-    the_environment_selects_the_skip_policy,
-    &[WORLD]
-);
-step!(
-    StepKeyword::When,
-    "the operator restores the transport without stating a policy",
-    the_operator_restores_the_transport_without_stating_a_policy,
-    &[WORLD]
-);
-step!(
-    StepKeyword::When,
-    "the operator restores the transport asking to skip registration",
-    the_operator_restores_the_transport_asking_to_skip_registration,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the restore registers pixi and pixi-sandbox in the home",
-    the_restore_registers_pixi_and_pixi_sandbox_in_the_home,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the launchers exec the manifest-verified tool copies",
-    the_launchers_exec_the_manifest_verified_tool_copies,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the shell profile gains exactly one managed PATH block",
-    the_shell_profile_gains_exactly_one_managed_path_block,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the report says an already-running shell cannot be changed",
-    the_report_says_an_already_running_shell_cannot_be_changed,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the report says nothing was registered",
-    the_report_says_nothing_was_registered,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "nothing is registered in the home",
-    nothing_is_registered_in_the_home,
-    &[WORLD]
-);
-step!(
-    StepKeyword::Then,
-    "the project still receives its environment",
-    the_project_still_receives_its_environment,
-    &[WORLD]
-);
-
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-step!(
-    StepKeyword::Given,
-    "a bootstrap packed before user-tools",
-    a_bootstrap_packed_before_user_tools,
-    &[WORLD]
-);
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-step!(
-    StepKeyword::When,
-    "the operator runs the restore script asking to register",
-    the_operator_runs_the_restore_script_asking_to_register,
-    &[WORLD]
-);
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-step!(
-    StepKeyword::Then,
-    "the report names the bundled version that ignored the policy",
-    the_report_names_the_bundled_version_that_ignored_the_policy,
-    &[WORLD]
-);
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-step!(
-    StepKeyword::Then,
-    "the report does not claim a registration",
-    the_report_does_not_claim_a_registration,
-    &[WORLD]
-);
 
 // --- Scenarios -------------------------------------------------------------
 
-#[test]
-fn scenario_a_verified_restore_registers_the_tools_by_default() {
-    run_scenario::<PolicyWorld>(
-        "tests/features/user_tools_policy.feature",
-        "A verified restore registers the tools by default",
-    );
-}
+#[scenario(
+    path = "tests/features/user_tools_policy.feature",
+    name = "A verified restore registers the tools by default"
+)]
+fn scenario_a_verified_restore_registers_the_tools_by_default(policy_world: PolicyWorld) {}
 
-#[test]
-fn scenario_the_skip_policy_touches_nothing_outside_the_project() {
-    run_scenario::<PolicyWorld>(
-        "tests/features/user_tools_policy.feature",
-        "The skip policy touches nothing outside the project",
-    );
-}
+#[scenario(
+    path = "tests/features/user_tools_policy.feature",
+    name = "The skip policy touches nothing outside the project"
+)]
+fn scenario_the_skip_policy_touches_nothing_outside_the_project(policy_world: PolicyWorld) {}
 
-#[test]
-fn scenario_the_policy_can_travel_as_an_environment_variable() {
-    run_scenario::<PolicyWorld>(
-        "tests/features/user_tools_policy.feature",
-        "The policy can travel as an environment variable",
-    );
-}
+#[scenario(
+    path = "tests/features/user_tools_policy.feature",
+    name = "The policy can travel as an environment variable"
+)]
+fn scenario_the_policy_can_travel_as_an_environment_variable(policy_world: PolicyWorld) {}
 
-#[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn scenario_a_pre_policy_bootstrap_reports_honestly_instead_of_announcing() {
-    run_scenario::<PolicyWorld>(
-        "tests/features/user_tools_policy.feature",
-        "A pre-policy bootstrap reports honestly instead of announcing",
-    );
+#[scenario(
+    path = "tests/features/user_tools_policy.feature",
+    name = "A pre-policy bootstrap reports honestly instead of announcing"
+)]
+fn scenario_a_pre_policy_bootstrap_reports_honestly_instead_of_announcing(
+    policy_world: PolicyWorld,
+) {
 }
 
+/// The guard that replaces the retired duplicate-registry check: with `#[scenario]` the binding
+/// *is* the test, so this is what notices a scenario the suite silently stopped running. It reads
+/// the source rather than the compiled test list precisely because of the platform-gated binding
+/// above — on a foreign host that scenario is not in the binary, but it is still bound.
 #[test]
-fn the_step_registry_has_no_duplicate_definitions() {
-    support::bdd::assert_no_duplicate_steps();
+fn every_scenario_in_the_feature_file_is_bound() {
+    assert_every_scenario_is_bound(
+        "tests/features/user_tools_policy.feature",
+        "tests/bdd_user_tools_policy.rs",
+    );
 }
