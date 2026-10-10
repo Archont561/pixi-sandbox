@@ -54,7 +54,7 @@ pub const LEVELS: &[&str] = &["read", "write", "none"];
 /// real: pushing a commit that touches `.github/workflows/**` does need a `workflows` right.
 /// But that right lives on the *token*, not in this block — a PAT's `workflow` scope, a
 /// fine-grained token's `Workflows: read and write`, or a GitHub App permission. `permissions:`
-/// only tunes GITHUB_TOKEN, which GitHub bars from workflow files no matter what it says, so
+/// only tunes `GITHUB_TOKEN`, which GitHub bars from workflow files no matter what it says, so
 /// the scope can never appear here however badly a workflow needs the capability.
 ///
 /// Unlike check 9 this does not exempt a generated render: an invalid scope bricks a

@@ -99,8 +99,7 @@ pub fn run(root: &Path, selector: &str) -> Result<String> {
             cmd.stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status()
-                .map(|s| s.success())
-                .unwrap_or(false)
+                .is_ok_and(|s| s.success())
         };
         if !quiet(true) && !quiet(false) {
             eprintln!(
@@ -196,6 +195,7 @@ pub fn stamp_version(path: &Path, semver: &str) -> Result<()> {
 }
 
 #[doc(hidden)] // test boundary (tests/prepare_release.rs)
+#[must_use]
 pub fn reversion_line(line: &str, semver: &str) -> Option<String> {
     let rest = line.strip_prefix("version = \"")?;
     let close = rest.find('"')?;

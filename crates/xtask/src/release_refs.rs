@@ -72,7 +72,7 @@ fn ref_files(root: &Path) -> Vec<PathBuf> {
         })
         .flatten()
         .filter(|e| e.file_type().is_file())
-        .map(|e| e.into_path())
+        .map(walkdir::DirEntry::into_path)
         .filter(|p| p.extension().is_some_and(|x| x == "md" || x == "mdx"))
         .filter(|p| p.file_name().is_none_or(|n| n != "CHANGELOG.md"))
         .collect();
@@ -88,7 +88,7 @@ fn docs_files(root: &Path) -> Vec<PathBuf> {
         .into_iter()
         .flatten()
         .filter(|e| e.file_type().is_file())
-        .map(|e| e.into_path())
+        .map(walkdir::DirEntry::into_path)
         .filter(|p| p.extension().is_some_and(|x| x == "md" || x == "mdx"))
         .collect();
     files.sort();
