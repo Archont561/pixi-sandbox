@@ -299,6 +299,10 @@ fn run() -> Result<()> {
     run_args(Args::parse())
 }
 
+// The dispatcher is one arm per subcommand, and each arm is a single call that unpacks its
+// arguments. Splitting the match into per-command functions only adds a forwarding layer without
+// making any arm easier to read (TASK-77 AC#6).
+#[allow(clippy::too_many_lines)]
 fn run_args(args: Args) -> Result<()> {
     let root = args.root;
     match args.command {
