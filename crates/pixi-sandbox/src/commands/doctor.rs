@@ -662,7 +662,53 @@ fn as_json(
     host: Option<&HostReport>,
     budget: Option<&BudgetReport>,
 ) -> Value {
-    let envs: Vec<Value> = manifest
+    let (env_bytes, tool_bytes, vendor_bytes) = manifest.payload_split();
+    let mut out = json!({
+        "manifest": path.display().to_string(),
+        "schema": manifest.schema,
+        "platform": manifest.platform,
+        "created_at": manifest.created_at,
+        "commit": manifest.source.commit,
+        "envs": json_envs(manifest),
+        "tools": json_tools(manifest),
+        "vendor": manifest.vendor.as_ref().map(|v| json!({
+            "mode": v.mode,
+            "crates": v.crates,
+            "size_bytes": v.size_bytes,
+            "cargo_lock_sha256": v.cargo_lock_sha256,
+        })),
+        "payload_bytes": manifest.payload_bytes(),
+        "payload_bytes_by_kind": { "envs": env_bytes, "tools": tool_bytes, "vendor": vendor_bytes },
+    });
+
+    if let Some(report) = report {
+        out["verify"] = json_verify_section(report);
+    }
+
+    if let Some((project, restored)) = restored {
+        out["restored"] = json_restored_section(project, restored);
+    }
+
+    if let Some(host) = host {
+        // One object under the key the manifest spells: the declaration that travelled in the
+        // transport, what this host turned out to be, and the counts a CI job should branch on
+        // (`ok` is exactly `missing == 0`).
+        out["host_requirements"] = json_host_section(host);
+    }
+
+    if let Some(budget) = budget {
+        out["budget"] = serde_json::to_value(budget).expect("budget report serialises");
+    }
+
+    if let Some(standalone) = standalone {
+        out["standalone"] = json_standalone_section(standalone);
+    }
+    out
+}
+
+/// The environments section of the JSON report.
+fn json_envs(manifest: &Manifest) -> Vec<Value> {
+    manifest
         .envs
         .iter()
         .map(|(name, env)| {
@@ -676,9 +722,12 @@ fn as_json(
                 "file_entries": env.files.as_ref().map(|f| f.entries),
             })
         })
-        .collect();
+        .collect()
+}
 
-    let tools: Vec<Value> = manifest
+/// The tools section of the JSON report.
+fn json_tools(manifest: &Manifest) -> Vec<Value> {
+    manifest
         .tools
         .iter()
         .map(|(name, tool)| {
@@ -690,109 +739,88 @@ fn as_json(
                 "pinned_sha256": tool.pinned_sha256,
             })
         })
+        .collect()
+}
+
+/// The `--verify` section of the JSON report.
+fn json_verify_section(report: &Report) -> Value {
+    let failures: Vec<Value> = report
+        .failures
+        .iter()
+        .map(|f| json!({ "path": f.path, "kind": f.kind.as_str(), "detail": f.detail }))
         .collect();
+    json!({
+        "files": report.files,
+        "bytes": report.bytes,
+        "ok": report.ok(),
+        "failures": failures,
+    })
+}
 
-    let (env_bytes, tool_bytes, vendor_bytes) = manifest.payload_split();
-    let mut out = json!({
-        "manifest": path.display().to_string(),
-        "schema": manifest.schema,
-        "platform": manifest.platform,
-        "created_at": manifest.created_at,
-        "commit": manifest.source.commit,
-        "envs": envs,
-        "tools": tools,
-        "vendor": manifest.vendor.as_ref().map(|v| json!({
-            "mode": v.mode,
-            "crates": v.crates,
-            "size_bytes": v.size_bytes,
-            "cargo_lock_sha256": v.cargo_lock_sha256,
-        })),
-        "payload_bytes": manifest.payload_bytes(),
-        "payload_bytes_by_kind": { "envs": env_bytes, "tools": tool_bytes, "vendor": vendor_bytes },
-    });
+/// The restored-tree section of the JSON report.
+fn json_restored_section(project: &Path, restored: &RestoredReport) -> Value {
+    let failures: Vec<Value> = restored
+        .report
+        .failures
+        .iter()
+        .map(|f| json!({ "path": f.path, "kind": f.kind.as_str(), "detail": f.detail }))
+        .collect();
+    json!({
+        "project": project.display().to_string(),
+        "verified": restored.verified,
+        "unverifiable": restored.unverifiable,
+        "entries": restored.report.files,
+        "bytes": restored.report.bytes,
+        "ok": restored.ok(),
+        "failures": failures,
+    })
+}
 
-    if let Some(report) = report {
-        let failures: Vec<Value> = report
-            .failures
-            .iter()
-            .map(|f| json!({ "path": f.path, "kind": f.kind.as_str(), "detail": f.detail }))
-            .collect();
-        out["verify"] = json!({
-            "files": report.files,
-            "bytes": report.bytes,
-            "ok": report.ok(),
-            "failures": failures,
-        });
-    }
-
-    if let Some((project, restored)) = restored {
-        let failures: Vec<Value> = restored
-            .report
-            .failures
-            .iter()
-            .map(|f| json!({ "path": f.path, "kind": f.kind.as_str(), "detail": f.detail }))
-            .collect();
-        out["restored"] = json!({
-            "project": project.display().to_string(),
-            "verified": restored.verified,
-            "unverifiable": restored.unverifiable,
-            "entries": restored.report.files,
-            "bytes": restored.report.bytes,
-            "ok": restored.ok(),
-            "failures": failures,
-        });
-    }
-
-    if let Some(host) = host {
-        // One object under the key the manifest spells: the declaration that travelled in the
-        // transport, what this host turned out to be, and the counts a CI job should branch on
-        // (`ok` is exactly `missing == 0`).
-        let findings: Vec<Value> = host
-            .findings
-            .iter()
-            .map(|finding| {
-                let mut value = json!({
-                    "kind": finding.kind,
-                    "name": finding.name,
-                    "status": finding.status,
-                    "detail": finding.detail,
-                });
-                if let Some(remedy) = &finding.remedy {
-                    value["remedy"] = json!(remedy);
-                }
-                value
-            })
-            .collect();
-        out["host_requirements"] = json!({
-            "declared": host.declared,
-            "platform_family": host.platform_family,
-            "host_family": host.host_family,
-            "distro": host.distro,
-            "applicable": host.applicable(),
-            "ok": host.ok(),
-            "satisfied": host.satisfied(),
-            "missing": host.missing(),
-            "unknown": host.unknown(),
-            "findings": findings,
-        });
-    }
-
-    if let Some(budget) = budget {
-        out["budget"] = serde_json::to_value(budget).expect("budget report serialises");
-    }
-
-    if let Some(standalone) = standalone {
-        out["standalone"] = match standalone {
-            StandaloneProbe::Skipped(reason) => json!({ "status": "skipped", "reason": reason }),
-            StandaloneProbe::Runs { version } => {
-                json!({ "status": "ok", "tool": "pixi-sandbox", "version": version })
+/// The host-requirements section of the JSON report: the declaration that travelled in the
+/// transport, what this host turned out to be, and the counts a CI job should branch on
+/// (`ok` is exactly `missing == 0`).
+fn json_host_section(host: &HostReport) -> Value {
+    let findings: Vec<Value> = host
+        .findings
+        .iter()
+        .map(|finding| {
+            let mut value = json!({
+                "kind": finding.kind,
+                "name": finding.name,
+                "status": finding.status,
+                "detail": finding.detail,
+            });
+            if let Some(remedy) = &finding.remedy {
+                value["remedy"] = json!(remedy);
             }
-            StandaloneProbe::Refused { detail } => {
-                json!({ "status": "failed", "tool": "pixi-sandbox", "detail": detail })
-            }
-        };
+            value
+        })
+        .collect();
+    json!({
+        "declared": host.declared,
+        "platform_family": host.platform_family,
+        "host_family": host.host_family,
+        "distro": host.distro,
+        "applicable": host.applicable(),
+        "ok": host.ok(),
+        "satisfied": host.satisfied(),
+        "missing": host.missing(),
+        "unknown": host.unknown(),
+        "findings": findings,
+    })
+}
+
+/// The standalone-probe section of the JSON report.
+fn json_standalone_section(standalone: &StandaloneProbe) -> Value {
+    match standalone {
+        StandaloneProbe::Skipped(reason) => json!({ "status": "skipped", "reason": reason }),
+        StandaloneProbe::Runs { version } => {
+            json!({ "status": "ok", "tool": "pixi-sandbox", "version": version })
+        }
+        StandaloneProbe::Refused { detail } => {
+            json!({ "status": "failed", "tool": "pixi-sandbox", "detail": detail })
+        }
     }
-    out
 }
 
 fn labelled(label: &str, text: &str) {
