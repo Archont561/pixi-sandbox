@@ -1,0 +1,11 @@
+[package]
+name = "newt-hype"
+version = "0.2.0"
+edition = "2024"
+authors = ["sam0x17"]
+description = "A very easy-to-use crate for creating wrapper structs using the new-type pattern"
+keywords = ["newtype", "orphan", "hype", "new", "type"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sam0x17/newt-hype"
+homepage = "https://sam0x17.dev"
+documentation = "https://docs.rs/newt-hype/latest/newt_hype/"

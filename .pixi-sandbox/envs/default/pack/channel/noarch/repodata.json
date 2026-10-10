@@ -1,0 +1,141 @@
+{
+  "info": {
+    "subdir": "noarch"
+  },
+  "packages": {},
+  "packages.conda": {
+    "ca-certificates-2026.7.22-hbd8a1cb_0.conda": {
+      "build": "hbd8a1cb_0",
+      "build_number": 0,
+      "depends": [
+        "__unix"
+      ],
+      "license": "ISC",
+      "md5": "0f51e2391ade309db462a55611263e9c",
+      "name": "ca-certificates",
+      "noarch": "generic",
+      "run_exports": {},
+      "sha256": "0a0544cf95f64394fe4959286f5c71f5444ad58feb0602e53becb27448d24da6",
+      "size": 131780,
+      "subdir": "noarch",
+      "timestamp": 1784754889428,
+      "version": "2026.7.22"
+    },
+    "kernel-headers_linux-64-4.18.0-he073ed8_9.conda": {
+      "build": "he073ed8_9",
+      "build_number": 9,
+      "constrains": [
+        "sysroot_linux-64 ==2.28"
+      ],
+      "depends": [],
+      "license": "LGPL-2.0-or-later AND LGPL-2.0-or-later WITH exceptions AND GPL-2.0-or-later",
+      "license_family": "GPL",
+      "md5": "86d9cba083cd041bfbf242a01a7a1999",
+      "name": "kernel-headers_linux-64",
+      "noarch": "generic",
+      "run_exports": {},
+      "sha256": "41557eeadf641de6aeae49486cef30d02a6912d8da98585d687894afd65b356a",
+      "size": 1278712,
+      "subdir": "noarch",
+      "timestamp": 1765578681495,
+      "version": "4.18.0"
+    },
+    "libgcc-devel_linux-64-16.2.0-he3ce08f_105.conda": {
+      "build": "he3ce08f_105",
+      "build_number": 105,
+      "depends": [
+        "__unix"
+      ],
+      "license": "GPL-3.0-only WITH GCC-exception-3.1",
+      "license_family": "GPL",
+      "md5": "fba9fe1cd6b560a30e93ecf43ce9bf05",
+      "name": "libgcc-devel_linux-64",
+      "noarch": "generic",
+      "run_exports": {},
+      "sha256": "8c50468146b12ae9f2c7b457aa54fef603f69f7c46d607d6c892c16d1c8d2f70",
+      "size": 3093468,
+      "subdir": "noarch",
+      "timestamp": 1789485750659,
+      "version": "16.2.0"
+    },
+    "libstdcxx-devel_linux-64-16.2.0-h86e191b_105.conda": {
+      "build": "h86e191b_105",
+      "build_number": 105,
+      "depends": [
+        "__unix"
+      ],
+      "license": "GPL-3.0-only WITH GCC-exception-3.1",
+      "license_family": "GPL",
+      "md5": "1d4921231b3b9f0b2d0de0796c19a8cb",
+      "name": "libstdcxx-devel_linux-64",
+      "noarch": "generic",
+      "run_exports": {},
+      "sha256": "db4009a129f73e5f4e301a06b443bb5d160dbd7a89685ca54db1f50cd47f6963",
+      "size": 22154557,
+      "subdir": "noarch",
+      "timestamp": 1789485768896,
+      "version": "16.2.0"
+    },
+    "rust-std-x86_64-unknown-linux-gnu-1.98.1-h2c6d0dc_2.conda": {
+      "build": "h2c6d0dc_2",
+      "build_number": 2,
+      "constrains": [
+        "rust >=1.98.1,<1.98.2.0a0"
+      ],
+      "depends": [
+        "__unix"
+      ],
+      "license": "MIT",
+      "license_family": "MIT",
+      "md5": "d26821c482dd4577f7bca11d4f34a460",
+      "name": "rust-std-x86_64-unknown-linux-gnu",
+      "noarch": "generic",
+      "run_exports": {},
+      "sha256": "0b174b85c848fb74994debad1590dd13b2245daadc4b244a3d4e5f044ccd7759",
+      "size": 36854225,
+      "subdir": "noarch",
+      "timestamp": 1788888197535,
+      "version": "1.98.1"
+    },
+    "sysroot_linux-64-2.28-h4ee821c_9.conda": {
+      "build": "h4ee821c_9",
+      "build_number": 9,
+      "depends": [
+        "__glibc >=2.28",
+        "kernel-headers_linux-64 4.18.0 he073ed8_9",
+        "tzdata"
+      ],
+      "license": "LGPL-2.0-or-later AND LGPL-2.0-or-later WITH exceptions AND GPL-2.0-or-later",
+      "license_family": "GPL",
+      "md5": "13dc3adbc692664cd3beabd216434749",
+      "name": "sysroot_linux-64",
+      "noarch": "generic",
+      "run_exports": {
+        "strong": [
+          "__glibc >=2.28,<3.0.a0"
+        ]
+      },
+      "sha256": "c47299fe37aebb0fcf674b3be588e67e4afb86225be4b0d452c7eb75c086b851",
+      "size": 24008591,
+      "subdir": "noarch",
+      "timestamp": 1765578833462,
+      "version": "2.28"
+    },
+    "tzdata-2026c-h151e31d_0.conda": {
+      "build": "h151e31d_0",
+      "build_number": 0,
+      "depends": [],
+      "license": "LicenseRef-Public-Domain",
+      "md5": "fcb489df604d100968b737f2cb6076c6",
+      "name": "tzdata",
+      "noarch": "generic",
+      "run_exports": {},
+      "sha256": "b928c30ddcb0e3f544c6eade8352737e6e610e263276b90232db6a578ef899d8",
+      "size": 118849,
+      "subdir": "noarch",
+      "timestamp": 1784250406640,
+      "version": "2026c"
+    }
+  },
+  "repodata_version": 2
+}
