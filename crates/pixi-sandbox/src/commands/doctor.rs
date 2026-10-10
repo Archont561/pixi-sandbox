@@ -39,28 +39,7 @@ pub fn run(args: &DoctorArgs) -> Result<()> {
         None => None,
     };
 
-    // The restored-tree check trusts the manifest as its oracle, so it always verifies the
-    // transport first — an unchecked oracle would turn the check into theater.
-    let report = (args.verify || project.is_some()).then(|| {
-        crate::diagnostics::phase("verify-transport", "checking every declared transport byte");
-        verify::verify(&manifest, &args.branch_location, only)
-    });
-    let restored = project.as_deref().map(|project| {
-        crate::diagnostics::phase(
-            "verify-restored",
-            "checking restored files against the oracle",
-        );
-        (
-            project,
-            verify::verify_restored(
-                &manifest,
-                &args.branch_location,
-                project,
-                only,
-                args.work_dir.as_deref(),
-            ),
-        )
-    });
+    let (report, restored) = run_verifications(args, &manifest, only, project.as_deref());
 
     // The standalone probe (issue #81, AC#3). Hashes prove the embedded tool is the
     // declared file; only executing it — under the empty environment an airlock has —
@@ -72,115 +51,35 @@ pub fn run(args: &DoctorArgs) -> Result<()> {
     );
     let standalone = standalone_probe(&args.branch_location, &manifest, report.as_ref());
 
-    // Host requirements (issue #109, TASK-75). Probed only when the transport declares some,
-    // and only against a host of the transport's own family: a Linux libc floor says nothing
-    // about a macOS machine, and `evaluate` answers `not applicable` there without querying
-    // anything. The probes are read-only and never install, start or launch what they look for.
-    let host = manifest
-        .host_requirements
-        .as_ref()
-        .filter(|declared| !declared.is_empty())
-        .map(|declared| {
-            crate::diagnostics::phase(
-                "probe-host",
-                "classifying the transport's host requirements on this machine",
-            );
-            let platform_family = Platform::from_str(&manifest.platform)
-                .ok()
-                .map(Platform::host_family);
-            evaluate(declared, platform_family, &SystemHostProbe::new())
-        });
+    // Host requirements (issue #109, TASK-75) are probed by probe_host — read-only, and
+    // never on a host of the transport's wrong family.
+    let host = probe_host(&manifest);
 
-    let budget = match &args.budget_config {
-        Some(config) => {
-            crate::diagnostics::phase(
-                "check-budgets",
-                "checking transport size budgets before publish",
-            );
-            let config_path = support::absolute(config)?;
-            let config = SandboxConfig::load(&config_path).with_context(|| {
-                format!("loading sandbox budget config {}", config_path.display())
-            })?;
-            let branch_root = transport_root_from_manifest(&path);
-            let snapshot_bytes = repository_snapshot_bytes(&branch_root)?;
-            Some(transport_budget::check(
-                &manifest,
-                Some(snapshot_bytes),
-                config.budgets.to_transport_budgets()?,
-            ))
-        }
-        None => None,
-    };
+    let budget = check_budgets(args, &manifest, &path)?;
 
-    crate::diagnostics::phase(
-        "render-report",
-        "writing the requested human or JSON report",
-    );
-    let restored_section = restored
-        .as_ref()
-        .map(|(project, report)| (*project, report));
-    if args.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&as_json(
-                &path,
-                &manifest,
-                report.as_ref(),
-                restored_section,
-                standalone.as_ref(),
-                host.as_ref(),
-                budget.as_ref()
-            ))?
-        );
-    } else {
-        print_human(
-            &path,
-            &manifest,
-            report.as_ref(),
-            restored_section,
-            standalone.as_ref(),
-            host.as_ref(),
-            budget.as_ref(),
-        );
-    }
+    render_report(
+        args,
+        &path,
+        &manifest,
+        &ReportSections {
+            report: report.as_ref(),
+            restored: restored
+                .as_ref()
+                .map(|(project, report)| (*project, report)),
+            standalone: standalone.as_ref(),
+            host: host.as_ref(),
+            budget: budget.as_ref(),
+        },
+    )?;
 
-    if let Some(report) = &report {
-        if !report.ok() {
-            // Everything is already on stdout; the exit code is for scripts.
-            bail!("verify failed: {} failure(s)", report.failures.len());
-        }
-    }
-    if let Some((_, restored)) = &restored {
-        if !restored.ok() {
-            bail!(
-                "restored-tree verification failed: {} failure(s)",
-                restored.report.failures.len()
-            );
-        }
-    }
-    if let Some(StandaloneProbe::Refused { detail }) = &standalone {
-        bail!("standalone probe failed:\n{detail}");
-    }
-    if let Some(budget) = &budget {
-        if !budget.ok() {
-            bail!(
-                "transport budget exceeded: {} threshold(s)",
-                budget.violations.len()
-            );
-        }
-    }
-    if args.require_host_requirements {
-        if let Some(host) = &host {
-            if !host.ok() {
-                bail!(
-                    "host requirements not met: {} missing ({} unknown, never a failure)",
-                    host.missing(),
-                    host.unknown()
-                );
-            }
-        }
-    }
-    Ok(())
+    check_failures(
+        args,
+        report.as_ref(),
+        restored.as_ref(),
+        standalone.as_ref(),
+        budget.as_ref(),
+        host.as_ref(),
+    )
 }
 
 /// The probe's single outcome: skipped (with the honest reason), proven to run, or refused
@@ -200,6 +99,183 @@ enum StandaloneProbe {
 /// doctor always had) and only after the hash report is green; and a foreign-platform
 /// binary cannot be judged here, so cross-platform hosts skip — the skip is printed, never
 /// silent, because an airlock operator must know *who* still owes this proof.
+/// The two verifications: the transport itself, and the restored tree when
+/// `--verify-restored` names a project. The restored-tree check trusts the manifest as its
+/// oracle, so it always verifies the transport first — an unchecked oracle would turn the
+/// check into theater.
+fn run_verifications<'a>(
+    args: &DoctorArgs,
+    manifest: &Manifest,
+    only: Option<&[String]>,
+    project: Option<&'a Path>,
+) -> (Option<Report>, Option<(&'a Path, RestoredReport)>) {
+    let report = (args.verify || project.is_some()).then(|| {
+        crate::diagnostics::phase("verify-transport", "checking every declared transport byte");
+        verify::verify(manifest, &args.branch_location, only)
+    });
+    let restored = project.map(|project| {
+        crate::diagnostics::phase(
+            "verify-restored",
+            "checking restored files against the oracle",
+        );
+        (
+            project,
+            verify::verify_restored(
+                manifest,
+                &args.branch_location,
+                project,
+                only,
+                args.work_dir.as_deref(),
+            ),
+        )
+    });
+    (report, restored)
+}
+
+/// Host requirements (issue #109, TASK-75). Probed only when the transport declares some,
+/// and only against a host of the transport's own family: a Linux libc floor says nothing
+/// about a macOS machine, and `evaluate` answers `not applicable` there without querying
+/// anything. The probes are read-only and never install, start or launch what they look for.
+fn probe_host(manifest: &Manifest) -> Option<HostReport> {
+    manifest
+        .host_requirements
+        .as_ref()
+        .filter(|declared| !declared.is_empty())
+        .map(|declared| {
+            crate::diagnostics::phase(
+                "probe-host",
+                "classifying the transport's host requirements on this machine",
+            );
+            let platform_family = Platform::from_str(&manifest.platform)
+                .ok()
+                .map(Platform::host_family);
+            evaluate(declared, platform_family, &SystemHostProbe::new())
+        })
+}
+
+/// The transport-size budget check, when a budget config is named.
+fn check_budgets(
+    args: &DoctorArgs,
+    manifest: &Manifest,
+    path: &Path,
+) -> Result<Option<BudgetReport>> {
+    match &args.budget_config {
+        Some(config) => {
+            crate::diagnostics::phase(
+                "check-budgets",
+                "checking transport size budgets before publish",
+            );
+            let config_path = support::absolute(config)?;
+            let config = SandboxConfig::load(&config_path).with_context(|| {
+                format!("loading sandbox budget config {}", config_path.display())
+            })?;
+            let branch_root = transport_root_from_manifest(path);
+            let snapshot_bytes = repository_snapshot_bytes(&branch_root)?;
+            Ok(Some(transport_budget::check(
+                manifest,
+                Some(snapshot_bytes),
+                config.budgets.to_transport_budgets()?,
+            )))
+        }
+        None => Ok(None),
+    }
+}
+
+/// The report's optional sections, in the shape both renderers take.
+struct ReportSections<'a> {
+    report: Option<&'a Report>,
+    restored: Option<(&'a Path, &'a RestoredReport)>,
+    standalone: Option<&'a StandaloneProbe>,
+    host: Option<&'a HostReport>,
+    budget: Option<&'a BudgetReport>,
+}
+
+/// Print the requested report: human-readable by default, JSON with `--json`.
+fn render_report(
+    args: &DoctorArgs,
+    path: &Path,
+    manifest: &Manifest,
+    sections: &ReportSections<'_>,
+) -> Result<()> {
+    crate::diagnostics::phase(
+        "render-report",
+        "writing the requested human or JSON report",
+    );
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&as_json(
+                path,
+                manifest,
+                sections.report,
+                sections.restored,
+                sections.standalone,
+                sections.host,
+                sections.budget
+            ))?
+        );
+    } else {
+        print_human(
+            path,
+            manifest,
+            sections.report,
+            sections.restored,
+            sections.standalone,
+            sections.host,
+            sections.budget,
+        );
+    }
+    Ok(())
+}
+
+/// The exit-code contract: every failure mode bails after the report is on stdout.
+fn check_failures(
+    args: &DoctorArgs,
+    report: Option<&Report>,
+    restored: Option<&(&Path, RestoredReport)>,
+    standalone: Option<&StandaloneProbe>,
+    budget: Option<&BudgetReport>,
+    host: Option<&HostReport>,
+) -> Result<()> {
+    if let Some(report) = report {
+        if !report.ok() {
+            // Everything is already on stdout; the exit code is for scripts.
+            bail!("verify failed: {} failure(s)", report.failures.len());
+        }
+    }
+    if let Some((_, restored)) = restored {
+        if !restored.ok() {
+            bail!(
+                "restored-tree verification failed: {} failure(s)",
+                restored.report.failures.len()
+            );
+        }
+    }
+    if let Some(StandaloneProbe::Refused { detail }) = standalone {
+        bail!("standalone probe failed:\n{detail}");
+    }
+    if let Some(budget) = budget {
+        if !budget.ok() {
+            bail!(
+                "transport budget exceeded: {} threshold(s)",
+                budget.violations.len()
+            );
+        }
+    }
+    if args.require_host_requirements {
+        if let Some(host) = host {
+            if !host.ok() {
+                bail!(
+                    "host requirements not met: {} missing ({} unknown, never a failure)",
+                    host.missing(),
+                    host.unknown()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn standalone_probe(
     branch_location: &Path,
     manifest: &Manifest,
