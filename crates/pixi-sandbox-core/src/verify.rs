@@ -383,7 +383,7 @@ fn check_restored_entry(
                     return;
                 }
             };
-            let actual = crate::files_manifest::canonical_sha256(&raw, candidates);
+            let actual = crate::files_manifest::canonical_file_sha256(&entry.p, &raw, candidates);
             if &actual != expected {
                 report.failures.push(Check {
                     path: entry.p.clone(),
@@ -461,7 +461,7 @@ fn check_unlisted(
 ) {
     for rel in walked.files.keys().chain(walked.symlinks.keys()) {
         if !listed.contains_key(rel.as_str())
-            && !crate::files_manifest::ALLOWED_EXTRAS.contains(&rel.as_str())
+            && !crate::files_manifest::is_allowed_extra(rel.as_str())
         {
             report.failures.push(Check {
                 path: rel.clone(),
