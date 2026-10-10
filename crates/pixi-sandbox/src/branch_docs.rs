@@ -189,6 +189,10 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
 }
 
 /// Write the two guides, preserving the original filenames, order and error context.
+///
+/// # Errors
+///
+/// Returns an error if either guide cannot be written into `out`.
 pub fn write_branch_docs(
     out: &Path,
     manifest: &Manifest,

@@ -24,6 +24,11 @@ pub struct PackLayout {
 
 /// Resolve pack's paths and refuse missing locks, stale output, and unsafe selections.
 /// No directory is created by preflight.
+///
+/// # Errors
+///
+/// Returns an error if `repo_root` is not a directory, a required lockfile is missing, the
+/// output directory is stale, or a selection is unsafe.
 pub fn plan_layout(
     repo_root: &Path,
     output_dir: &Path,
@@ -93,6 +98,11 @@ fn validate_env_names(envs: &[String]) -> Result<()> {
 /// config declares no table, or when nothing resolves for that platform's host family. That is
 /// the backward-compatible half of the contract: a project that declares nothing keeps packing
 /// the same bytes earlier releases packed.
+///
+/// # Errors
+///
+/// Returns an error if the config cannot be read or parsed, or names a platform the
+/// manifest does not carry.
 pub fn resolve_host_requirements(
     config: Option<&Path>,
     platform: &str,
@@ -116,6 +126,11 @@ pub fn resolve_host_requirements(
 /// pack directory it reads from, and the payload tree must stay exactly what pixi-pack
 /// produced. The scratch lives inside `out` (never `/tmp`, invariant 3) and is removed before
 /// returning, so a successful pack leaves no trace of it.
+///
+/// # Errors
+///
+/// Returns an error if the verification unpack cannot be created or run, or the oracle
+/// cannot be recorded.
 pub fn build_files_oracle(
     out: &Path,
     payload: &Path,
@@ -207,6 +222,11 @@ pub fn build_files_oracle(
     ))
 }
 
+/// Record every file under `root` (relative to `payload`) as transport blobs.
+///
+/// # Errors
+///
+/// Returns an error if the payload tree cannot be walked or a file cannot be recorded.
 pub fn record_tree(
     payload: &Path,
     root: &Path,
@@ -224,6 +244,11 @@ pub fn record_tree(
     Ok(blobs)
 }
 
+/// Total size of `paths` in bytes.
+///
+/// # Errors
+///
+/// Returns an error if any path's metadata cannot be read, or the total overflows u64.
 pub fn sum_files(paths: &[PathBuf]) -> Result<u64> {
     paths.iter().try_fold(0u64, |sum, path| {
         let size = fs::metadata(path)

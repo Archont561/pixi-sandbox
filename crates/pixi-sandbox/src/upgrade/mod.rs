@@ -43,6 +43,11 @@ use crate::pipeline::{PhaseCommand, PhaseRunner};
 pub trait PullRequestSource {
     /// Open a pull request from `head` onto `base` in `repo` (`owner/name`); `token`
     /// authenticates the call.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API call fails (a rejected token, a validation failure, a
+    /// missing base branch).
     fn create(
         &self,
         repo: &str,
@@ -135,6 +140,11 @@ pub struct Refusal {
 /// Run the upgrade lane. `Ok(Outcome)` covers every delivery verdict; `Err` is reserved
 /// for hard failures (the regeneration failing, the commit failing, the artifact not
 /// writable) — the cases where the shell's `set -e` also stopped the step.
+///
+/// # Errors
+///
+/// Returns an error for hard failures (the regeneration, the commit, the artifact write);
+/// every delivery verdict is an `Ok(Outcome)`.
 pub fn run(
     spec: &Spec,
     runner: &mut dyn PhaseRunner,

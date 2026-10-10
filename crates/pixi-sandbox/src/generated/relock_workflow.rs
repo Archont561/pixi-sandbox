@@ -94,6 +94,11 @@ pub fn plan_vendors_cargo(config: &Path) -> bool {
 }
 
 /// Render the lockfile-refresh workflow.
+///
+/// # Panics
+///
+/// Panics if a workflow filename cannot be serialised to JSON (a bug, not an input:
+/// the filenames are strings).
 #[must_use]
 pub fn render_relock_workflow(options: RelockWorkflowOptions<'_>) -> String {
     let template = r#"# __GENERATED_MARKER__

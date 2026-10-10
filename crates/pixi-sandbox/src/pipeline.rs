@@ -105,6 +105,10 @@ pub struct Failure {
 pub trait PhaseRunner: std::fmt::Debug {
     /// Run `command`; return the child's exit code. An `Err` means the child could not be
     /// started at all — the shell's answer to that was exit 127, so the caller maps it there.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the child process cannot be spawned at all.
     fn run(&mut self, command: &PhaseCommand, log: &mut (dyn Write + Send)) -> Result<i32>;
 }
 
@@ -277,6 +281,10 @@ pub fn plan(spec: &Spec) -> Vec<PhaseCommand> {
 /// Run the whole pipeline. `Ok(())` when every phase succeeded; `Err(Failure)` naming the
 /// phase that failed, with the annotation and summary already produced (and the summary
 /// appended to `$GITHUB_STEP_SUMMARY` when the runner provides it).
+///
+/// # Errors
+///
+/// Returns `Err(Failure)` naming the phase that failed or could not be started.
 pub fn run(spec: &Spec, runner: &mut dyn PhaseRunner) -> Result<(), Failure> {
     // The log directory and the transport directory are reset first, exactly like the
     // shell's `rm -rf` + `mkdir -p`: a rerun never appends to a previous run's evidence,

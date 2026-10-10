@@ -11,6 +11,11 @@ use std::process::Command;
 
 /// A `--cargo-vendor` preflight: the lockfile must exist, and no crate+version may be
 /// reachable from two sources.
+///
+/// # Errors
+///
+/// Returns an error if the lockfile is missing, unreadable, or names a crate+version
+/// reachable from two sources.
 pub fn validate_vendorable_lockfile(root: &Path) -> Result<()> {
     let cargo_lock = root.join("Cargo.lock");
     if !cargo_lock.is_file() {
@@ -137,6 +142,11 @@ impl Default for Toolchain {
 }
 
 /// Vendor a validated project using cargo and rustc from the caller's environment.
+///
+/// # Errors
+///
+/// Returns an error if cargo or rustc cannot be run, or the vendored tree cannot be
+/// written.
 pub fn vendor_tree(
     root: &Path,
     out: &Path,
@@ -147,6 +157,11 @@ pub fn vendor_tree(
 }
 
 /// The same vendoring operation with explicit external-program paths.
+///
+/// # Errors
+///
+/// Returns an error if the named cargo or rustc cannot be run, or the vendored tree
+/// cannot be written.
 pub fn vendor_tree_with_toolchain(
     root: &Path,
     out: &Path,

@@ -80,6 +80,11 @@ pub struct Applied {
 
 /// Steps 1 and 2: resolve the release and classify the destination. Writes nothing, downloads
 /// nothing but the release metadata.
+///
+/// # Errors
+///
+/// Returns an error if the host has no release asset or the requested version cannot be
+/// resolved.
 pub fn plan(source: &dyn ReleaseSource, request: &Request<'_>) -> Result<Plan> {
     let asset = assets::asset_for(request.host_os, request.host_arch)?;
     let resolved = resolver::resolve(source, request.repo, request.requested_version)?;
@@ -94,6 +99,11 @@ pub fn plan(source: &dyn ReleaseSource, request: &Request<'_>) -> Result<Plan> {
 }
 
 /// Steps 3 to 5: download, verify, replace. Refuses a non-standalone destination first.
+///
+/// # Errors
+///
+/// Returns an error if the destination is not standalone, the download fails, the checksum
+/// does not match, or the replacement cannot be written.
 pub fn apply(source: &dyn ReleaseSource, request: &Request<'_>, plan: Plan) -> Result<Applied> {
     if !plan.ownership.is_standalone() {
         // The ladder's verdict is final and carries its own remedy; every refusal happens
@@ -146,6 +156,11 @@ pub fn apply(source: &dyn ReleaseSource, request: &Request<'_>, plan: Plan) -> R
 /// binary, so the running binary's version says nothing about what the destination holds.
 /// Every call resolves, downloads, verifies and installs (decision-4 / D16 — the bootstrap
 /// is the pinned, checksum-verified binary, always).
+///
+/// # Errors
+///
+/// Returns an error if the destination is not standalone, the download fails, the checksum
+/// does not match, or the installation cannot be written.
 pub fn fetch_release(source: &dyn ReleaseSource, request: &Request<'_>) -> Result<Applied> {
     let plan = plan(source, request)?;
     if let Some(refusal) = plan.ownership.refusal(&plan.destination) {
@@ -248,6 +263,11 @@ impl Applied {
 /// which state — is testable. `commands/self_update.rs` is left with the part that genuinely
 /// cannot be tested offline: reading the running executable's path, the host triple and the
 /// compiled-in version, then printing.
+///
+/// # Errors
+///
+/// Returns an error if the release cannot be resolved or the destination is not standalone;
+/// an up-to-date destination is a report, not an error.
 pub fn run(source: &dyn ReleaseSource, request: &Request<'_>, check: bool) -> Result<Vec<String>> {
     let plan = plan(source, request)?;
     let mut lines = plan.report();

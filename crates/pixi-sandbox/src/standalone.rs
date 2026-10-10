@@ -282,6 +282,11 @@ fn indent_tail(output: &str, lines: usize) -> String {
 }
 
 /// Judge one execution: exit 0 is the whole contract.
+///
+/// # Errors
+///
+/// Returns the `Refusal` describing the failing verdict — a non-zero exit is a refusal,
+/// not a crash.
 pub fn probe(exe: &Path, anchor: &Path, runner: &impl ProbeRunner) -> Result<(), Refusal> {
     match runner.run_version(exe, anchor) {
         ProbeVerdict::Exited { success: true, .. } => Ok(()),

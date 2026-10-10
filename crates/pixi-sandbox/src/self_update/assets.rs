@@ -28,6 +28,10 @@ pub const SUPPORTED_HOSTS: [(&str, &str, &str); Platform::ALL.len()] = {
 
 /// The asset name for an explicit host. A parameter rather than a `cfg!` read so every row of
 /// the table is exercised on whatever machine runs the tests.
+///
+/// # Errors
+///
+/// Returns an error naming the unsupported host when `(os, arch)` is not in the table.
 pub fn asset_for(os: &str, arch: &str) -> Result<&'static str> {
     if let Some((_, _, name)) = SUPPORTED_HOSTS
         .iter()

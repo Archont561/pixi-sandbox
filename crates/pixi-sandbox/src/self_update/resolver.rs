@@ -39,6 +39,10 @@ impl Selection {
 }
 
 /// Resolve `requested` (or latest) against `source`.
+///
+/// # Errors
+///
+/// Returns an error if the requested version does not parse or does not exist upstream.
 pub fn resolve(
     source: &dyn ReleaseSource,
     repo: &str,
@@ -70,6 +74,10 @@ pub fn resolve(
 ///
 /// Strict on purpose: a loose parser turns a typo into a 404 from the download step, where the
 /// error no longer says which input was wrong.
+///
+/// # Errors
+///
+/// Returns an error naming the malformed input when it is not `X.Y.Z` or `vX.Y.Z`.
 pub fn normalise_version(input: &str) -> Result<String> {
     let bare = input.strip_prefix('v').unwrap_or(input);
     let parts: Vec<&str> = bare.split('.').collect();

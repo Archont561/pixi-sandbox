@@ -63,6 +63,10 @@ pub const STAGING_INFIX: &str = ".pixi-sandbox-update-";
 /// Staging in that directory — not `$TMPDIR` (invariant 3) — is what makes the final rename a
 /// same-filesystem operation and therefore atomic; a cross-device rename would silently become
 /// a copy with a torn-write window.
+///
+/// # Errors
+///
+/// Returns an error if the bytes cannot be staged or the destination cannot be replaced.
 pub fn install(
     strategy: ReplaceStrategy,
     destination: &Path,
