@@ -1,8 +1,8 @@
 //! The real implementation: a `git` binary driven through a [`Runner`].
 
 use crate::{
-    DEFAULT_SCRATCH_NAME, Error, GitProtocol, Published, Result, Snapshot, snapshot_bytes,
-    snapshot_files,
+    DEFAULT_SCRATCH_NAME, Error, FileCommit, FileCommitted, GitProtocol, Published, Result,
+    Snapshot, snapshot_bytes, snapshot_files,
 };
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
@@ -57,6 +57,7 @@ impl Command {
     }
 
     /// A shell-ish rendering, for logs, `--dry-run`, and readable test failures.
+    #[must_use]
     pub fn rendered(&self) -> String {
         let env: String = self.env.iter().map(|(k, v)| format!("{k}={v} ")).collect();
         let args: String = self
@@ -78,10 +79,12 @@ pub struct Output {
 }
 
 impl Output {
+    #[must_use]
     pub fn ok(&self) -> bool {
         self.status == 0
     }
 
+    #[must_use]
     pub fn utf8(&self) -> String {
         String::from_utf8_lossy(&self.stdout).into_owned()
     }
@@ -129,6 +132,7 @@ impl Runner for ProcessRunner {
 ///
 /// Pack treats source provenance as optional, so an unavailable Git executable, a non-repository,
 /// or non-UTF-8 output all become `None`; the command still lives behind this crate's runner.
+#[must_use]
 pub fn current_commit(root: &Path) -> Option<String> {
     current_commit_with(&ProcessRunner, root)
 }
@@ -158,6 +162,7 @@ pub struct RecordingRunner {
 }
 
 impl RecordingRunner {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -188,6 +193,7 @@ pub struct PreviewRunner {
 }
 
 impl PreviewRunner {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -232,6 +238,7 @@ impl Default for ShellGit {
 }
 
 impl ShellGit {
+    #[must_use]
     pub fn new() -> Self {
         ShellGit {
             runner: Box::new(ProcessRunner),
@@ -249,6 +256,7 @@ impl ShellGit {
         }
     }
 
+    #[must_use]
     pub fn with_runner(runner: Box<dyn Runner>) -> Self {
         ShellGit {
             runner,
@@ -257,6 +265,7 @@ impl ShellGit {
     }
 
     /// A `ShellGit` that runs nothing: every call returns the commands it *would* run.
+    #[must_use]
     pub fn preview() -> Self {
         Self::with_runner(Box::new(PreviewRunner::new()))
     }
@@ -437,12 +446,12 @@ impl ShellGit {
     }
 
     // ------------------------------------------------------------------
-    // Working-tree primitives for repository automation (xtask `commit-release`). These are
-    // NOT transport operations — the GitProtocol trait below stays the transport surface —
-    // but they are still git, so they live here rather than as bare `Command::new("git")`
-    // calls in a consumer crate (D9). Every command carries the caller's `root` as cwd and
-    // this instance's identity through the `-c` pair, so an automation commit never depends
-    // on the invoking user's git config.
+    // Working-tree primitives for repository automation (xtask `commit-release`, the
+    // consumer-checkout operations on the GitProtocol trait below). These are still git, so
+    // they live here rather than as bare `Command::new("git")` calls in a consumer crate
+    // (D9). Every command carries the caller's `root` as cwd and this instance's identity
+    // through the `-c` pair, so an automation commit never depends on the invoking user's
+    // git config.
     // ------------------------------------------------------------------
 
     /// Run a command and return its raw output, for git invocations whose non-zero exit is
@@ -808,6 +817,64 @@ impl GitProtocol for ShellGit {
         }
         let _ = branch; // the object store is per repository, not per branch
         Ok(Some(bytes))
+    }
+
+    fn commit_files(&self, commit: &FileCommit<'_>) -> Result<FileCommitted> {
+        let root = commit.work_tree;
+        // Create or reset the branch at the checkout's current HEAD — a re-proposal onto a
+        // version-derived name starts from the same main commit, never from the last attempt.
+        self.run(&self.git(["checkout", "-B"]).arg(commit.branch).cwd(root))?;
+        // Stage exactly the listed files; nothing else in the tree is ever staged.
+        self.add_files(root, commit.files)?;
+        // `git diff --cached --quiet` answers "are there staged changes" with its exit code:
+        // 0 means the files matched HEAD and there is nothing to propose.
+        let staged = self.run_raw(&self.git(["diff", "--cached", "--quiet"]).cwd(root))?;
+        match staged.status {
+            0 => {
+                return Ok(FileCommitted {
+                    commit: String::new(),
+                    changed: false,
+                    patch: Vec::new(),
+                });
+            }
+            1 => {}
+            status => {
+                return Err(Error::Command {
+                    command: "git diff --cached --quiet".to_string(),
+                    status,
+                    stderr: staged.stderr.trim().to_string(),
+                });
+            }
+        }
+        self.commit(root, commit.message)?;
+        let sha = self.run_text(&self.git(["rev-parse", "HEAD"]).cwd(root))?;
+        // The patch artifact is the commit's binary diff against its parent — raw bytes,
+        // because `--binary` output is not UTF-8.
+        let patch = self
+            .run(&self.git(["diff", "HEAD^", "HEAD", "--binary"]).cwd(root))?
+            .stdout;
+        Ok(FileCommitted {
+            commit: sha,
+            changed: true,
+            patch,
+        })
+    }
+
+    fn push_branch(&self, work_tree: &Path, remote: &str, branch: &str, force: bool) -> Result<()> {
+        let mut command = self.git(["push"]).cwd(work_tree);
+        if force {
+            command = command.arg("--force");
+        }
+        let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+        let command = command.arg(remote).arg(&refspec);
+        match self.run(&command) {
+            Err(Error::Command { stderr, .. }) => Err(Error::Rejected {
+                remote: remote.to_string(),
+                branch: branch.to_string(),
+                stderr,
+            }),
+            other => other.map(|_| ()),
+        }
     }
 }
 

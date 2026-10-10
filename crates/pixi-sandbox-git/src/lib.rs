@@ -38,7 +38,7 @@ pub use shell::{
     current_commit,
 };
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -120,6 +120,7 @@ pub struct Snapshot<'a> {
 impl Snapshot<'_> {
     /// Snapshots to leave on the branch: rotation is opt-in, so anything below 2 is the
     /// historical single-snapshot behaviour.
+    #[must_use]
     pub fn retained(&self) -> usize {
         self.keep.max(1) as usize
     }
@@ -133,6 +134,36 @@ pub struct Published {
     pub bytes: u64,
     /// The git commands that ran (empty for [`FakeGit`]); `--dry-run` prints exactly these.
     pub commands: Vec<String>,
+}
+
+/// One reviewed-file commit on a branch of the *consumer's own* checkout (TASK-76's upgrade
+/// lane): reset `branch` to the working tree's current HEAD, stage exactly `files`, and
+/// commit them. The commit is authored by the implementation's configured identity — the
+/// automation bot, never the invoking user's git config. Does not push.
+#[derive(Debug, Clone)]
+pub struct FileCommit<'a> {
+    /// The consumer's checked-out working tree.
+    pub work_tree: &'a Path,
+    /// Branch to create or reset at the current HEAD, then commit onto. A name derived from
+    /// a version, so a re-proposal reuses it.
+    pub branch: &'a str,
+    /// Paths to stage, relative to `work_tree`. Exactly these — nothing else is ever staged.
+    pub files: &'a [PathBuf],
+    /// Commit message.
+    pub message: &'a str,
+}
+
+/// What a [`GitProtocol::commit_files`] call produced.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FileCommitted {
+    /// Full sha of the new commit — empty when `changed` is `false`.
+    pub commit: String,
+    /// `false` when the staged files matched HEAD: no commit was created, there is nothing
+    /// to propose. This is an answer, not an error.
+    pub changed: bool,
+    /// `git diff HEAD^ HEAD --binary` — the patch artifact for the delivery fallback. Empty
+    /// when `changed` is `false`.
+    pub patch: Vec<u8>,
 }
 
 /// The operations this project needs from git — and not one more.
@@ -149,6 +180,15 @@ pub trait GitProtocol: Send + Sync + std::fmt::Debug {
     /// Size of the served payload for `branch`, when the remote is reachable as a local path.
     /// The git wire protocol has no "how big is this branch" query, hence `None` for a URL.
     fn remote_size(&self, remote: &str, branch: &str) -> Result<Option<u64>>;
+
+    /// Reset `commit.branch` to the working tree's HEAD, stage exactly `commit.files`, and
+    /// commit them under the implementation's identity. See [`FileCommit`]/[`FileCommitted`]
+    /// for the contract; a no-change result is `changed == false`, never an error.
+    fn commit_files(&self, commit: &FileCommit<'_>) -> Result<FileCommitted>;
+
+    /// Push `branch` from the working tree at `work_tree` to `remote`. `force` replaces an
+    /// existing branch — the upgrade lane re-proposes onto a version-derived name.
+    fn push_branch(&self, work_tree: &Path, remote: &str, branch: &str, force: bool) -> Result<()>;
 }
 
 /// Every file under `dir`, as `(relative path with `/` separators, size in bytes)`.
@@ -201,6 +241,7 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, u64)>) -> Result<()> 
 }
 
 /// Total size of a snapshot, in bytes.
+#[must_use]
 pub fn snapshot_bytes(files: &[(String, u64)]) -> u64 {
     files.iter().map(|(_, size)| size).sum()
 }

@@ -73,6 +73,7 @@ jobs:
         id: bootstrap-unix
         if: runner.os != 'Windows'
         shell: bash
+        # multiline-run-allowed: host bootstrap — a source build with cross-target rustup selection (musl) that pixi cannot provide; this repository's publisher is deliberately source-fresh, unlike the generated consumer workflow
         run: |
           case "${{ matrix.platform }}" in
             linux-64) target=x86_64-unknown-linux-musl ;;
@@ -90,6 +91,7 @@ jobs:
         id: bootstrap-windows
         if: runner.os == 'Windows'
         shell: pwsh
+        # multiline-run-allowed: host bootstrap — the Windows half of the same source build (see the Unix step's marker); deliberately source-fresh, not release-based
         run: |
           pixi run -e package build-release-binary
           "path=$((Get-Location).Path)\target\release\pixi-sandbox.exe" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -105,6 +107,7 @@ jobs:
           SELF_BIN: ${{ steps.bootstrap-unix.outputs.path }}
           REMOTE: ${{ github.server_url }}/${{ github.repository }}.git
           PUSH_TOKEN: ${{ github.token }}
+        # multiline-run-allowed: this repository's publisher is deliberately source-built (the caveat at the top of the file); the generated consumer workflow's `pipeline` verb is the consumer shape
         run: |
           set -euo pipefail
           IFS=',' read -ra ENVS <<< "$ENVIRONMENTS"
@@ -141,6 +144,7 @@ jobs:
           SELF_BIN: ${{ steps.bootstrap-windows.outputs.path }}
           REMOTE: ${{ github.server_url }}/${{ github.repository }}.git
           PUSH_TOKEN: ${{ github.token }}
+        # multiline-run-allowed: the PowerShell twin of the same deliberately source-built publisher (see the Bash step's marker)
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true

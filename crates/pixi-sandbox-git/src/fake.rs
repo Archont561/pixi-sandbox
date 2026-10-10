@@ -3,7 +3,10 @@
 //! Integration tests use this instead of a real repository, which keeps them fast, offline and
 //! — the point of the exercise — impossible to run against somebody's actual project.
 
-use crate::{Error, GitProtocol, Published, Result, Snapshot, snapshot_bytes, snapshot_files};
+use crate::{
+    Error, FileCommit, FileCommitted, GitProtocol, Published, Result, Snapshot, snapshot_bytes,
+    snapshot_files,
+};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -35,6 +38,11 @@ pub enum Op {
         remote: String,
         branch: String,
     },
+    CommitFiles {
+        branch: String,
+        files: Vec<String>,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -53,6 +61,7 @@ struct State {
     log: Vec<Op>,
     counter: u64,
     fail_push: Option<String>,
+    commit_result: Option<FileCommitted>,
 }
 
 /// A mock remote. Cheap to build, impossible to misuse.
@@ -62,6 +71,7 @@ pub struct FakeGit {
 }
 
 impl FakeGit {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -116,6 +126,13 @@ impl FakeGit {
             .iter()
             .filter(|op| matches!(op, Op::Push { .. }))
             .count()
+    }
+
+    /// Script the result of the next `commit_files` call — the no-change answer
+    /// (`changed == false`) is a case the upgrade lane must handle, and the mock cannot
+    /// diff a real work tree to discover it on its own.
+    pub fn script_commit(&self, result: FileCommitted) {
+        self.state.lock().expect("fake git lock").commit_result = Some(result);
     }
 }
 
@@ -262,5 +279,49 @@ impl GitProtocol for FakeGit {
                 branch: branch.to_string(),
             }),
         }
+    }
+
+    fn commit_files(&self, commit: &FileCommit<'_>) -> Result<FileCommitted> {
+        let mut state = self.state.lock().expect("fake git lock");
+        state.log.push(Op::CommitFiles {
+            branch: commit.branch.to_string(),
+            files: commit
+                .files
+                .iter()
+                .map(|file| file.display().to_string())
+                .collect(),
+            message: commit.message.to_string(),
+        });
+        Ok(state.commit_result.take().unwrap_or_else(|| {
+            state.counter += 1;
+            FileCommitted {
+                commit: format!("mock{:036x}", state.counter),
+                changed: true,
+                patch: b"mock patch".to_vec(),
+            }
+        }))
+    }
+
+    fn push_branch(
+        &self,
+        _work_tree: &Path,
+        remote: &str,
+        branch: &str,
+        force: bool,
+    ) -> Result<()> {
+        let mut state = self.state.lock().expect("fake git lock");
+        state.log.push(Op::Push {
+            remote: remote.to_string(),
+            branch: branch.to_string(),
+            forced: force,
+        });
+        if let Some(reason) = state.fail_push.take() {
+            return Err(Error::Rejected {
+                remote: remote.to_string(),
+                branch: branch.to_string(),
+                stderr: reason,
+            });
+        }
+        Ok(())
     }
 }

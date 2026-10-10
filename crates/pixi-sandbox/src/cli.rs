@@ -37,6 +37,140 @@ pub enum Command {
     Tools(ToolsArgs),
     /// Replace this standalone binary with a published release (decision-4).
     SelfUpdate(SelfUpdateArgs),
+    /// Download the checksum-verified standalone release binary for this host (workflow bootstrap).
+    FetchRelease(FetchReleaseArgs),
+    /// Install, pack, verify, and publish a transport — the generated publisher's pipeline.
+    Pipeline(PipelineArgs),
+    /// Regenerate the owned files with this binary and deliver the upgrade as a pull request.
+    ///
+    /// Reads its ambient inputs from the runner's environment: `PIXI_SANDBOX_UPGRADE_TOKEN`
+    /// (the optional workflow-capable secret — when absent, delivery is refused with a
+    /// handoff and the prepared patch, never a red scheduled lane), `GITHUB_TOKEN` (what the
+    /// pull request authenticates with), and `$GITHUB_STEP_SUMMARY` / `$GITHUB_OUTPUT`.
+    Upgrade(UpgradeArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct UpgradeArgs {
+    /// The consumer repository's checked-out working tree; the git operations run here.
+    #[arg(long, default_value = ".")]
+    pub repo_root: PathBuf,
+
+    /// GitHub Actions workflow path, relative to the project root — `init`'s flag name, so
+    /// the upgrade forwards the exact generation arguments (D16).
+    #[arg(long, value_name = "PATH")]
+    pub github_workflow_path: PathBuf,
+
+    /// Lockfile-refresh workflow path, relative to the project root.
+    #[arg(long, value_name = "PATH")]
+    pub relock_workflow_path: PathBuf,
+
+    /// Workflow the relock bot dispatches after pushing a lock commit.
+    #[arg(long)]
+    pub relock_ci_workflow: String,
+
+    /// Airlock launcher path, relative to the project root.
+    #[arg(long, value_name = "PATH")]
+    pub script_path: PathBuf,
+
+    /// Reviewed sandbox plan path (`init`'s `--config`), forwarded to both `init` calls.
+    /// The config itself is reviewed data and is never regenerated or staged (D16).
+    #[arg(long, value_name = "PATH")]
+    pub config: Option<PathBuf>,
+
+    /// Default local sandbox branch archived by the launcher (`init`'s `--branch`).
+    #[arg(long)]
+    pub branch: String,
+
+    /// Where the upgrade patch and the regenerated copies are written — the artifact
+    /// fallback a human applies when delivery is refused.
+    #[arg(long, value_name = "PATH")]
+    pub artifact_dir: PathBuf,
+
+    /// The consumer repository as `owner/name`, for the pull request.
+    #[arg(long, value_name = "OWNER/NAME")]
+    pub repo: String,
+
+    /// Base branch for the pull request.
+    #[arg(long, default_value = "main")]
+    pub base: String,
+}
+
+#[derive(Debug, Args)]
+pub struct PipelineArgs {
+    /// Comma-separated pixi environment names to install and pack (the plan matrix's value).
+    #[arg(long, value_name = "LIST")]
+    pub envs: String,
+
+    /// Target platform for the packed environments.
+    #[arg(long, default_value = "linux-64")]
+    pub platform: String,
+
+    /// Orphan branch to publish the transport to.
+    #[arg(long)]
+    pub branch: String,
+
+    /// Git remote (URL) to publish to. The publish phase authenticates with the
+    /// `PIXI_SANDBOX_PUSH_TOKEN` environment variable (the generated workflow sets it to
+    /// `github.token`); without it, the operator's own git credentials apply.
+    #[arg(long)]
+    pub remote: String,
+
+    /// Reviewed sandbox config: `pack --config` records host requirements from it, and
+    /// `doctor --budget-config` enforces its budgets before anything is published.
+    #[arg(long, value_name = "PATH")]
+    pub config: PathBuf,
+
+    /// The standalone binary to bundle as the transport bootstrap. The generated workflow
+    /// runs the pipeline as that very binary, so the default is the running executable.
+    #[arg(long, value_name = "PATH")]
+    pub self_bin: Option<PathBuf>,
+
+    /// Also vendor cargo dependencies (`--cargo-vendor`). Value-taking as well as bare, so
+    /// the workflow can pass the matrix's `true`/`false` through one spelling (the same shape
+    /// `plan --cargo-vendor` already uses).
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", default_value_t = false)]
+    pub cargo_vendor: bool,
+
+    /// Where `pack` writes the transport directory. Reset before packing: `pack` refuses a
+    /// stale output directory, and a rerun must not inherit one.
+    #[arg(long, value_name = "PATH", default_value = "pixi-sandbox-transport")]
+    pub transport_dir: PathBuf,
+
+    /// Where the pipeline log and the per-phase diagnostic logs are written. Reset at the
+    /// start of every run.
+    #[arg(long, value_name = "PATH", default_value = "pixi-sandbox-logs")]
+    pub log_dir: PathBuf,
+
+    /// The `pixi` executable the install phase runs (default: `pixi` from PATH).
+    #[arg(long, default_value = "pixi")]
+    pub pixi: String,
+}
+
+#[derive(Debug, Args)]
+// The root sets `propagate_version`, which hands every subcommand an auto-generated
+// `--version`. Here that name belongs to the pinned release being fetched, so the inherited
+// flag is turned off rather than renaming the argument an operator would reach for first —
+// the same reason `SelfUpdateArgs` disables it.
+#[command(disable_version_flag = true)]
+pub struct FetchReleaseArgs {
+    /// Where to install the verified standalone binary.
+    ///
+    /// The form the generated workflows use: a disposable path in runner scratch, installed
+    /// by the package-managed CLI so the released standalone binary can drive the rest of
+    /// the job. The destination is classified by the same ownership ladder `self-update`
+    /// uses — a Pixi-managed path is refused before anything is downloaded.
+    #[arg(long, value_name = "PATH")]
+    pub dest: PathBuf,
+
+    /// Exact release to fetch (`X.Y.Z` or `vX.Y.Z`). The generated workflows always pin —
+    /// the workflow's own `PIXI_SANDBOX_VERSION` stamp — never float.
+    #[arg(long, value_name = "X.Y.Z")]
+    pub version: String,
+
+    /// Repository publishing the standalone release assets.
+    #[arg(long, default_value = pixi_sandbox::self_update::DEFAULT_REPO)]
+    pub repo: String,
 }
 
 #[derive(Debug, Args)]
@@ -351,7 +485,7 @@ pub struct InitArgs {
     pub relock_workflow_path: PathBuf,
 
     /// Workflow the relock bot dispatches after pushing a lock commit, relative to
-    /// .github/workflows/. A GITHUB_TOKEN push triggers nothing, so this dispatch is the only
+    /// .github/workflows/. A `GITHUB_TOKEN` push triggers nothing, so this dispatch is the only
     /// verdict the lock commit gets.
     #[arg(long, default_value = "ci.yml")]
     pub relock_ci_workflow: String,
@@ -412,7 +546,7 @@ pub struct PlanArgs {
 
     /// Cargo-vendor policy for the ad-hoc target. Value-taking (`--cargo-vendor false`) as
     /// well as bare (`--cargo-vendor`, = true), because a `default_value_t = true` bool is
-    /// otherwise a SetTrue flag that can never be false — the airlock workflow's
+    /// otherwise a `SetTrue` flag that can never be false — the airlock workflow's
     /// `cargo-vendor: false` input was unreachable through this CLI until task-36 fixed it.
     #[arg(
         long,
@@ -514,6 +648,9 @@ pub fn run() -> Result<()> {
         Command::Plan(args) => commands::plan(args),
         Command::Tools(args) => commands::tools(args),
         Command::SelfUpdate(args) => commands::self_update(args),
+        Command::FetchRelease(args) => commands::fetch_release(args),
+        Command::Pipeline(args) => commands::pipeline(args),
+        Command::Upgrade(args) => commands::upgrade(args),
     };
 
     match result {

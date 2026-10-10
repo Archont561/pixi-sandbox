@@ -64,6 +64,7 @@ pub struct Plan {
 
 impl Plan {
     /// True when the destination already holds the version we would install.
+    #[must_use]
     pub fn is_up_to_date(&self) -> bool {
         self.current_version == self.resolved.version
     }
@@ -136,6 +137,23 @@ pub fn apply(source: &dyn ReleaseSource, request: &Request<'_>, plan: Plan) -> R
     })
 }
 
+/// Fetch the pinned standalone release asset for this host and install it at
+/// `request.destination`, checksum-verified — the bootstrap download the generated
+/// workflows run before any pixi-sandbox binary of their own exists on the runner
+/// (TASK-76).
+///
+/// Unlike [`run`] there is no up-to-date shortcut: the destination is not the running
+/// binary, so the running binary's version says nothing about what the destination holds.
+/// Every call resolves, downloads, verifies and installs (decision-4 / D16 — the bootstrap
+/// is the pinned, checksum-verified binary, always).
+pub fn fetch_release(source: &dyn ReleaseSource, request: &Request<'_>) -> Result<Applied> {
+    let plan = plan(source, request)?;
+    if let Some(refusal) = plan.ownership.refusal(&plan.destination) {
+        bail!("{refusal}");
+    }
+    apply(source, request, plan)
+}
+
 /// The lines a run prints, built as data so they are testable.
 ///
 /// Formatting lives here rather than in `commands/` for a reason the coverage report made
@@ -145,6 +163,7 @@ pub fn apply(source: &dyn ReleaseSource, request: &Request<'_>, plan: Plan) -> R
 /// thin wiring (resolve ambient inputs, print these lines).
 impl Plan {
     /// The header every run prints, mutating or not.
+    #[must_use]
     pub fn report(&self) -> Vec<String> {
         vec![
             format!("self-update  {}", self.destination.display()),
@@ -159,6 +178,7 @@ impl Plan {
     }
 
     /// The verdict `--check` prints. Writes nothing by construction: it is a pure function.
+    #[must_use]
     pub fn check_verdict(&self) -> Vec<String> {
         let verdict = if self.is_up_to_date() {
             "  verdict  up to date — nothing to do".to_string()
@@ -172,6 +192,7 @@ impl Plan {
     }
 
     /// The verdict a mutating run prints when there is nothing to do.
+    #[must_use]
     pub fn up_to_date_verdict(&self) -> String {
         format!("  verdict  already {}; nothing to do", self.current_version)
     }
@@ -179,6 +200,7 @@ impl Plan {
 
 impl Applied {
     /// What a completed update prints.
+    #[must_use]
     pub fn report(&self) -> Vec<String> {
         let mut lines = vec![format!("  sha256   {}", self.digest)];
         for swept in &self.replacement.swept {
@@ -200,6 +222,22 @@ impl Applied {
             self.plan.current_version, self.plan.resolved.version
         ));
         lines
+    }
+
+    /// What a `fetch-release` run prints: the verified bytes now at the destination. The
+    /// wording deliberately differs from [`Applied::report`] — nothing was updated, the
+    /// destination was provisioned.
+    #[must_use]
+    pub fn fetch_report(&self) -> Vec<String> {
+        vec![
+            format!("fetch-release  {}", self.plan.destination.display()),
+            format!(
+                "  version  {} ({})",
+                self.plan.resolved.version, self.plan.resolved.tag
+            ),
+            format!("  asset    {}", self.plan.asset),
+            format!("  sha256   {}", self.digest),
+        ]
     }
 }
 
