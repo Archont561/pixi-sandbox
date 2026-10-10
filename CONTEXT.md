@@ -1942,3 +1942,56 @@ local lint candidate. TASK-85 still needs the owner's dispatch and TASK-66 a Cas
 > TASK-87/TASK-82 integration — do not push a new task, open another PR, merge, release or
 > dispatch without new go-ahead. House rules are in `AGENTS.md` (invariant 10: unimplemented
 > work goes in this scratchpad), with the session procedure in `.agents/skills/session/`.
+
+### 2026-10-10 — TASK-76 local slices landed (In Progress: AC#8 carried), TASK-77 next
+
+**TASK-76, six slices on `arena/00dbb795-pixi-sandbox`** (b37eab27 `fetch-release`,
+303876bd git `commit_files`/`push_branch`, 911c0c7b `pipeline`, 59227002 `upgrade`,
+7aae83ec the render, cfb7c958 check 9). The generated publisher is now pixi-sandbox's
+entrypoint: the render (198 lines, was 421) has no literal `run: |` block and no
+`shell: pwsh`; non-comment embedded shell fell from 218 lines to 35 single-command lines.
+`pipeline` owns install→pack→doctor→publish with per-phase outcome recording, the failure
+step summary and phase exit codes (PhaseRunner seam); `upgrade` owns check→regenerate→
+commit→deliver (runner + GitProtocol + PullRequestSource seams, REST PR creation isolated
+in `src/upgrade/github.rs`, coverage-excluded); `fetch-release` is the single
+checksum-verified bootstrap download. Check 9 no longer exempts generated artifacts; this
+repo's own source-built publisher marks its four blocks with `multiline-run-allowed`
+reasons. Suite 873/1 → **924/1**; lint, check-repository and actionlint+shellcheck clean.
+`scripts/restore.sh` and `relock.yml` untouched. Seams agreed with the owner before tests:
+PR creation via the REST API behind a trait (not `gh`); TASK-77 will also extract the long
+functions beyond the five named.
+
+**AC#8 carried, not claimed:** a real consumer run on a *released* binary is still missing
+(no release ships the new verbs; Castellan has not run the new render). TASK-76 stays In
+Progress; the task file names the missing proof and the three steps to close it.
+
+**Environment note for the next session:** the restored environment does not always survive
+turn boundaries here — `.pixi/`, `~/.local` and `~/.cache` were rolled back once mid-session
+(the turn-end patchset cap); `bash scripts/restore.sh` (idempotent, offline, ~60 s) brings
+it back, and `git fetch origin +refs/heads/sandbox/developer-linux-64:refs/remotes/origin/sandbox/developer-linux-64`
+restores the sandbox remote-tracking ref, which the default fetch refspec does not cover.
+Re-baseline after any restore (expect 924/1 now).
+
+**TASK-77 starts next on the post-TASK-76 tree** (its rendered workflows are the byte
+identity baseline). Fresh pedantic+nursery audit at startup: **637 unique findings**
+(doc-12 said 469; the tree grew under TASK-82/87) — core 239, pixi-sandbox 228, xtask 100,
+git 69. Top: use_self 122, missing_errors_doc 116, must_use_candidate 101,
+too_long_first_doc_paragraph 42, map_unwrap_or 25, missing_const_for_fn 24,
+option_if_let_else 20, too_many_lines 16, redundant_pub_crate 16, doc_markdown 16,
+redundant_closure 14, missing_panics_doc 13, literal_string_with_formatting_args 12.
+too_many_lines now lists 16 functions: the five doc-9 A3 remainder (doctor::print_human 226,
+restore::register_user_tools 121, doctor::run 138, restore::run 110, tools::update::refresh
+101), plus verify_env_restored 192, assemble_artifacts 185, host_requirements probe 158,
+branch_docs render 162, doctor JSON renderer 121, lint_generated_workflow 112 — the owner
+chose to extract these too, not just the five. Allowed in place: xtask main::run_args (161),
+two e2e narrative tests (137, 124), both workflow renderers (naming TASK-76). Cast sites at
+shard.rs:124, transport_budget.rs:232, pack.rs:68 (the third moved into src/pack.rs with
+TASK-82). Policy approved: `[workspace.lints.clippy]` pedantic = "warn" inherited by all
+four crates, nursery off, `literal_string_with_formatting_args` allowed with a reason,
+recorded as D20; the gate is red between the policy commit and the per-crate fix commits
+(nothing pushed in between). LEGACY inline-test list still has 5 entries; only
+`commands/tools/update.rs` migrates in this task.
+
+**Not implemented:** TASK-76 AC#8 (release + consumer run), TASK-77 itself, TASK-78,
+external maintainer/consumer proofs. No push, PR, merge, release or dispatch made — the
+owner's sanction covers local implementation only.
