@@ -47,6 +47,7 @@ pub enum LauncherKind {
 }
 
 impl LauncherKind {
+    #[must_use]
     pub fn current() -> Self {
         if cfg!(windows) {
             Self::Windows
@@ -173,6 +174,7 @@ impl UserTools<'_> {
 }
 
 /// The single launcher file name for a tool on this launcher flavour.
+#[must_use]
 pub fn launcher_file_name(name: &str, kind: LauncherKind) -> String {
     match kind {
         LauncherKind::Posix => name.to_string(),
@@ -442,6 +444,7 @@ pub fn powershell_user_path_script(bin_dir: &Path) -> Result<String> {
 /// `~/.local/bin`; Windows gets its own `~\.pixi-sandbox\bin` because `~\.pixi\bin` belongs
 /// to `pixi global install` and its trampolines (D4) — colliding with it would be confusing
 /// by design, and the whole point is a recognisable, pixi-sandbox-owned location.
+#[must_use]
 pub fn default_bin_dir(home: &Path) -> PathBuf {
     if cfg!(windows) {
         home.join(".pixi-sandbox").join("bin")

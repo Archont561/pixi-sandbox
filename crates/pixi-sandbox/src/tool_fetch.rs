@@ -125,16 +125,15 @@ pub struct FetchedTool {
 }
 
 pub fn tools_cache(explicit: Option<&Path>, home: Option<&std::ffi::OsStr>) -> Result<PathBuf> {
-    match explicit {
-        Some(path) => support::absolute(path),
-        None => {
-            let home = home
-                .ok_or_else(|| anyhow::anyhow!("cannot choose a tools cache: HOME is not set"))?;
-            Ok(PathBuf::from(home)
-                .join(".cache")
-                .join("pixi-sandbox")
-                .join("tools"))
-        }
+    if let Some(path) = explicit {
+        support::absolute(path)
+    } else {
+        let home =
+            home.ok_or_else(|| anyhow::anyhow!("cannot choose a tools cache: HOME is not set"))?;
+        Ok(PathBuf::from(home)
+            .join(".cache")
+            .join("pixi-sandbox")
+            .join("tools"))
     }
 }
 
@@ -161,9 +160,7 @@ pub fn fetch_tool_with(
     let cached_name = executable_filename(&format!("{name}-{}-{platform}", tool.version), platform);
     let destination = cache.join(cached_name);
     let cached = destination.is_file()
-        && shard::sha256_file(&destination)
-            .map(|actual| actual == pin.sha256)
-            .unwrap_or(false);
+        && shard::sha256_file(&destination).is_ok_and(|actual| actual == pin.sha256);
 
     if !cached {
         println!("  fetch {name} {} ({})", tool.version, pin.target);

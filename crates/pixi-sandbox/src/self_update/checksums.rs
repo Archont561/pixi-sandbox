@@ -20,12 +20,14 @@ pub struct Checksums {
 impl Checksums {
     /// Parse the file. An unparsable body yields no entries, which `digest_for` then reports
     /// against the asset the caller actually wanted — a better message than "parse error".
+    #[must_use]
     pub fn parse(body: &str) -> Self {
         Self {
             entries: parse_sha256_manifest(body),
         }
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

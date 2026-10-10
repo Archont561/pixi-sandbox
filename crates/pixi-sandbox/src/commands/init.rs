@@ -406,9 +406,7 @@ fn ensure_replaceable(path: &Path, force: bool) -> Result<()> {
     if !path.exists() || force {
         return Ok(());
     }
-    let generated = fs::read_to_string(path)
-        .map(|text| is_generated(&text))
-        .unwrap_or(false);
+    let generated = fs::read_to_string(path).is_ok_and(|text| is_generated(&text));
     if generated {
         return Ok(());
     }
@@ -428,7 +426,7 @@ fn write(path: &Path, content: &str) -> Result<()> {
 /// mapping (task-55); kept as its own function for the error message `init`'s callers expect.
 fn current_platform() -> Result<&'static str> {
     pixi_sandbox_core::platform::Platform::current()
-        .map(|platform| platform.as_str())
+        .map(pixi_sandbox_core::platform::Platform::as_str)
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "init does not support host platform {}-{}",

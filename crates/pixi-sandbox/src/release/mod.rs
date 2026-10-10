@@ -48,6 +48,7 @@ pub struct Asset {
 }
 
 impl Asset {
+    #[must_use]
     pub fn sha256(&self) -> String {
         pixi_sandbox_core::shard::sha256_bytes(&self.bytes)
     }
@@ -57,6 +58,7 @@ impl Asset {
 ///
 /// pixi's `sha256.sum` is coreutils-shaped, but accepting both costs one branch and means a
 /// mirror that emits the other order is not silently treated as "no manifest".
+#[must_use]
 pub fn parse_sha256_manifest(body: &str) -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
     for line in body.lines() {
@@ -74,6 +76,7 @@ pub fn parse_sha256_manifest(body: &str) -> BTreeMap<String, String> {
     map
 }
 
+#[must_use]
 pub fn is_sha256(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|b| b.is_ascii_hexdigit())
 }

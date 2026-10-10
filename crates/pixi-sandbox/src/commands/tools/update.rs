@@ -100,7 +100,7 @@ pub fn run(args: ToolsUpdateArgs) -> Result<()> {
 
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Report {
-    /// (tool, platform, old_version, new_version) for every asset that changed.
+    /// (tool, platform, `old_version`, `new_version`) for every asset that changed.
     changed: Vec<(String, String, String, String)>,
     /// Assets whose version and hash were already current.
     unchanged: usize,
@@ -645,7 +645,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
         let leftovers: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
-            .filter_map(|entry| entry.ok())
+            .filter_map(std::result::Result::ok)
             .map(|entry| entry.file_name().to_string_lossy().to_string())
             .filter(|name| name.contains("update-"))
             .collect();

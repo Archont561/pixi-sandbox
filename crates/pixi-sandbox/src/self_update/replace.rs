@@ -29,6 +29,7 @@ pub enum ReplaceStrategy {
 }
 
 impl ReplaceStrategy {
+    #[must_use]
     pub fn current() -> Self {
         if cfg!(windows) {
             Self::Windows
@@ -172,12 +173,14 @@ fn sweep_displaced(parent: &Path) -> Vec<PathBuf> {
 }
 
 fn file_name_of(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "pixi-sandbox".to_string())
+    path.file_name().map_or_else(
+        || "pixi-sandbox".to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
 #[doc(hidden)]
+#[must_use]
 pub fn staging_path(destination: &Path) -> PathBuf {
     destination.with_file_name(format!(
         "{STAGING_INFIX}{}-{}",

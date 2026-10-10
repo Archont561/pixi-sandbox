@@ -278,36 +278,33 @@ impl PackPlan {
         println!("embed tools");
         let mut entries = BTreeMap::new();
         for name in ["pixi", "pixi-unpack"] {
-            let source = match &tools.lock {
-                Some(lock) => {
-                    let fetched = fetch_tool(
-                        lock,
-                        name,
-                        &self.args.platform,
-                        tools
-                            .cache
-                            .as_deref()
-                            .expect("a fetched tool always has a cache"),
-                    )?;
-                    ToolSource {
-                        path: fetched.path,
-                        version: fetched.version,
-                        url: Some(fetched.url),
-                        pinned_sha256: Some(fetched.sha256),
-                    }
+            let source = if let Some(lock) = &tools.lock {
+                let fetched = fetch_tool(
+                    lock,
+                    name,
+                    &self.args.platform,
+                    tools
+                        .cache
+                        .as_deref()
+                        .expect("a fetched tool always has a cache"),
+                )?;
+                ToolSource {
+                    path: fetched.path,
+                    version: fetched.version,
+                    url: Some(fetched.url),
+                    pinned_sha256: Some(fetched.sha256),
                 }
-                None => {
-                    let path = support::find_executable(name).ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "{name} is not on PATH (pass --fetch-tools to use embedded pins)"
-                        )
-                    })?;
-                    ToolSource {
-                        version: reported_version(&path)?,
-                        path,
-                        url: None,
-                        pinned_sha256: None,
-                    }
+            } else {
+                let path = support::find_executable(name).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "{name} is not on PATH (pass --fetch-tools to use embedded pins)"
+                    )
+                })?;
+                ToolSource {
+                    version: reported_version(&path)?,
+                    path,
+                    url: None,
+                    pinned_sha256: None,
                 }
             };
             let entry = embed_tool(

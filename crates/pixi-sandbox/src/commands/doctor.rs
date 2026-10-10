@@ -267,8 +267,7 @@ fn transport_root_from_manifest(manifest_path: &Path) -> PathBuf {
     manifest_path
         .parent()
         .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| manifest_path.to_path_buf())
+        .map_or_else(|| manifest_path.to_path_buf(), Path::to_path_buf)
 }
 
 fn repository_snapshot_bytes(root: &Path) -> Result<u64> {
@@ -420,7 +419,7 @@ fn print_human(
             support::mib(vendor)
         ));
     }
-    println!("  payload {} MiB total ({split})", support::mib(total),);
+    println!("  payload {} MiB total ({split})", support::mib(total));
 
     match report {
         None => labelled(
@@ -487,8 +486,7 @@ fn print_human(
                     budget
                         .measurements
                         .repository_push_bytes
-                        .map(support::mib)
-                        .unwrap_or_else(|| "unknown".to_string()),
+                        .map_or_else(|| "unknown".to_string(), support::mib),
                     support::mib(budget.measurements.restore_required_bytes),
                 ),
             );

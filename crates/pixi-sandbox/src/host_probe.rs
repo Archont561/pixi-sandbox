@@ -175,6 +175,7 @@ fn which(name: &str) -> Option<std::path::PathBuf> {
 /// - `ldd (GNU libc) 2.34`
 /// - `musl libc (x86_64)\nVersion 1.2.4` (Alpine — its floor legitimately compares as older)
 /// - `getconf (GNU libc) 2.39` from the fallback
+#[must_use]
 pub fn parse_libc_version(text: &str) -> LibcObservation {
     let first_line = text
         .lines()
@@ -199,6 +200,7 @@ pub fn parse_libc_version(text: &str) -> LibcObservation {
 
 /// `dpkg-query -W -f=${Status} <name>` prints `install ok installed` for a present package and
 /// nothing for an absent one.
+#[must_use]
 pub fn classify_dpkg(stdout: &str) -> Observation {
     let status = stdout.trim();
     if status.contains("install ok installed") {
@@ -212,6 +214,7 @@ pub fn classify_dpkg(stdout: &str) -> Observation {
 
 /// `rpm -q` and `pacman -Q` print the package version on success and an error sentence on
 /// stdout/stderr when it is absent.
+#[must_use]
 pub fn classify_rpm_like(program: &str, stdout: &str, stderr: &str) -> Observation {
     let stdout = stdout.trim();
     if stdout.is_empty() {
@@ -227,6 +230,7 @@ pub fn classify_rpm_like(program: &str, stdout: &str, stderr: &str) -> Observati
 
 /// `systemctl is-active <name>` prints exactly one state word; `unknown` is the unit not
 /// existing, which for a declared *requirement* is "missing" rather than "cannot tell".
+#[must_use]
 pub fn classify_systemctl(stdout: &str) -> Observation {
     match stdout.trim() {
         "active" => Observation::satisfied("systemctl: active"),
@@ -238,6 +242,7 @@ pub fn classify_systemctl(stdout: &str) -> Observation {
 
 /// A session bus is reachable when this process has its address, or when the system socket
 /// exists — the two things a GUI workload actually uses, neither of which needs systemd.
+#[must_use]
 pub fn classify_dbus(session_address: bool, system_socket: bool) -> Observation {
     match (session_address, system_socket) {
         (true, _) => Observation::satisfied("DBUS_SESSION_BUS_ADDRESS is set"),
@@ -248,6 +253,7 @@ pub fn classify_dbus(session_address: bool, system_socket: bool) -> Observation 
     }
 }
 
+#[must_use]
 pub fn classify_display(display: Option<&str>, wayland: Option<&str>) -> Observation {
     match (display, wayland) {
         (Some(value), _) if !value.is_empty() => Observation::satisfied(format!("DISPLAY={value}")),
@@ -260,6 +266,7 @@ pub fn classify_display(display: Option<&str>, wayland: Option<&str>) -> Observa
 
 /// `true` when the device directory holds at least one entry — a render or card node means the
 /// kernel driver is bound and the workload may be able to open it.
+#[must_use]
 pub fn classify_gpu(dev_dri: &Path) -> Observation {
     let entries = match std::fs::read_dir(dev_dri) {
         Ok(entries) => entries.flatten().count(),

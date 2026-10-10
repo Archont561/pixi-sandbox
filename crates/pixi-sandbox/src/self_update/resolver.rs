@@ -29,6 +29,7 @@ pub enum Selection {
 }
 
 impl Selection {
+    #[must_use]
     pub fn describe(self) -> &'static str {
         match self {
             Selection::Latest => "latest",
@@ -43,28 +44,25 @@ pub fn resolve(
     repo: &str,
     requested: Option<&str>,
 ) -> Result<Resolved> {
-    match requested {
-        Some(requested) => {
-            let version = normalise_version(requested)?;
-            Ok(Resolved {
-                tag: format!("v{version}"),
-                version,
-                selection: Selection::Pinned,
-            })
-        }
-        None => {
-            let tag = source
-                .latest_tag(repo)
-                .with_context(|| format!("resolving the latest pixi-sandbox release of {repo}"))?;
-            let version = normalise_version(&tag).with_context(|| {
-                format!("{repo}'s latest release tag {tag:?} is not a vX.Y.Z release")
-            })?;
-            Ok(Resolved {
-                tag,
-                version,
-                selection: Selection::Latest,
-            })
-        }
+    if let Some(requested) = requested {
+        let version = normalise_version(requested)?;
+        Ok(Resolved {
+            tag: format!("v{version}"),
+            version,
+            selection: Selection::Pinned,
+        })
+    } else {
+        let tag = source
+            .latest_tag(repo)
+            .with_context(|| format!("resolving the latest pixi-sandbox release of {repo}"))?;
+        let version = normalise_version(&tag).with_context(|| {
+            format!("{repo}'s latest release tag {tag:?} is not a vX.Y.Z release")
+        })?;
+        Ok(Resolved {
+            tag,
+            version,
+            selection: Selection::Latest,
+        })
     }
 }
 

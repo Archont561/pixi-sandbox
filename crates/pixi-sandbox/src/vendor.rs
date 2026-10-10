@@ -232,12 +232,12 @@ pub fn vendor_tree_with_toolchain(
 fn crate_directories(root: &Path) -> Result<Vec<PathBuf>> {
     let mut directories = fs::read_dir(root)
         .with_context(|| format!("reading cargo vendor output {}", root.display()))?
-        .filter_map(|entry| entry.ok())
+        .filter_map(std::result::Result::ok)
         .filter_map(|entry| {
             entry
                 .file_type()
                 .ok()
-                .filter(|kind| kind.is_dir())
+                .filter(std::fs::FileType::is_dir)
                 .map(|_| entry.path())
         })
         .collect::<Vec<_>>();

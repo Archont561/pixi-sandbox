@@ -48,6 +48,7 @@ pub fn asset_for(os: &str, arch: &str) -> Result<&'static str> {
 }
 
 /// The host this binary is running on, in the spelling `asset_for` expects.
+#[must_use]
 pub fn current_host() -> (&'static str, &'static str) {
     (std::env::consts::OS, std::env::consts::ARCH)
 }

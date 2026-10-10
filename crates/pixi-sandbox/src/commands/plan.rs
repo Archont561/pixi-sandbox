@@ -38,10 +38,10 @@ pub fn run(args: PlanArgs) -> Result<()> {
             // `push_paths` is surfaced here, not inside `SandboxConfig::plan`, because deriving
             // it needs a repo root to check which optional vendor manifests actually exist
             // (task-53 AC#3) — every other caller of `plan()` stays filesystem-free.
-            let repo_root = path
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| support::absolute(Path::new(".")).unwrap_or_default());
+            let repo_root = path.parent().map_or_else(
+                || support::absolute(Path::new(".")).unwrap_or_default(),
+                Path::to_path_buf,
+            );
             let config_display = args.config.to_string_lossy().replace('\\', "/");
             plan.push_paths = config.resolved_push_paths(&repo_root, &config_display);
             plan

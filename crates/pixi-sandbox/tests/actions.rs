@@ -37,7 +37,7 @@ fn parse_checksums(content: &str) -> HashMap<String, String> {
     map
 }
 
-/// Map (RUNNER_OS, RUNNER_ARCH) to Rust target triple and executable extension.
+/// Map (`RUNNER_OS`, `RUNNER_ARCH`) to Rust target triple and executable extension.
 fn resolve_target(os: &str, arch: &str) -> Result<(&'static str, &'static str), String> {
     match (os, arch) {
         ("Linux", "X64") | ("linux", "x86_64") => Ok(("x86_64-unknown-linux-musl", "")),

@@ -28,11 +28,13 @@ pub enum Ownership {
 }
 
 impl Ownership {
+    #[must_use]
     pub fn is_standalone(&self) -> bool {
         matches!(self, Ownership::Standalone)
     }
 
     /// The refusal message, or `None` when the path may be replaced.
+    #[must_use]
     pub fn refusal(&self, path: &Path) -> Option<String> {
         let path = path.display();
         match self {
@@ -69,6 +71,7 @@ impl Ownership {
 pub const CONDA_META: &str = "conda-meta";
 
 /// Classify `path`. First match wins; see the module docs for why the order is the contract.
+#[must_use]
 pub fn classify(path: &Path) -> Ownership {
     if is_managed_launcher(path) {
         return Ownership::ManagedLauncher;
@@ -94,9 +97,7 @@ fn is_managed_launcher(path: &Path) -> bool {
         Ok(meta) if meta.len() <= 64 * 1024 => {}
         _ => return false,
     }
-    std::fs::read_to_string(path)
-        .map(|text| text.contains(crate::user_tools::MANAGED_MARKER))
-        .unwrap_or(false)
+    std::fs::read_to_string(path).is_ok_and(|text| text.contains(crate::user_tools::MANAGED_MARKER))
 }
 
 /// `pixi global install` exposes commands as trampolines with a sibling

@@ -307,7 +307,7 @@ fn register_user_tools(
                 "  PATH: added {} to {}",
                 bin_dir.display(),
                 profile.display()
-            )
+            );
         }
         PathChange::Replaced { profile } => println!(
             "  PATH: {} updated in {} (the bin directory changed)",
@@ -319,16 +319,16 @@ fn register_user_tools(
                 "  PATH: {} already on PATH in {}",
                 bin_dir.display(),
                 profile.display()
-            )
+            );
         }
         PathChange::RegistryAdded => {
             println!(
                 "  PATH: {} added to the user PATH (registry)",
                 bin_dir.display()
-            )
+            );
         }
         PathChange::RegistryAlreadyPresent => {
-            println!("  PATH: {} already on the user PATH", bin_dir.display())
+            println!("  PATH: {} already on the user PATH", bin_dir.display());
         }
     }
     if let Some(notice) = notice {
@@ -487,8 +487,10 @@ fn tool_file_name(manifest: &Manifest, name: &str) -> String {
         .and_then(|entry| entry.path.as_deref())
         .and_then(|relative| Path::new(relative).file_name())
         .and_then(|file| file.to_str())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| executable_filename(name, &manifest.platform))
+        .map_or_else(
+            || executable_filename(name, &manifest.platform),
+            ToOwned::to_owned,
+        )
 }
 
 fn install_environment(

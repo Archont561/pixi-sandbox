@@ -234,6 +234,7 @@ pub fn sum_files(paths: &[PathBuf]) -> Result<u64> {
     })
 }
 
+#[must_use]
 pub fn fingerprint_of(root: &Path, env: &str) -> Option<String> {
     let marker = root
         .join(".pixi")
@@ -333,6 +334,7 @@ pub mod support {
             .env("TEMP", temporary);
     }
 
+    #[must_use]
     pub fn mib(bytes: u64) -> String {
         format!("{:.1}", bytes as f64 / (1024.0 * 1024.0))
     }

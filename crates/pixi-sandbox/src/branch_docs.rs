@@ -18,6 +18,7 @@ pub struct BranchDocs {
 }
 
 /// Render exactly the given manifest; pack validates it before calling this boundary.
+#[must_use]
 pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDocs {
     let rows = manifest
         .envs
