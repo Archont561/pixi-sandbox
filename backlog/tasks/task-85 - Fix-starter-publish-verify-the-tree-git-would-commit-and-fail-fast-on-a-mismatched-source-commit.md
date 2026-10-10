@@ -106,6 +106,28 @@ the missing proof, not a missing test. Until that run is green the task stays `I
 Suite 774 → 802 passing / 1 skipped (xtask 133 → 155, pixi-sandbox-git 21 → 27).
 `pixi run --frozen lint` 11 gates green, `xtask check-repository` clean (check 9 included — every
 new step is a single `pixi run` line), `lint-actions` on the changed workflow clean.
+
+**AC#6 rehearsed 2026-10-10; the dispatch itself still needs a maintainer's click.** The
+dispatch was attempted and refused from this sandbox's token:
+`gh workflow run starter.yml --ref main -f release-tag=v0.6.0
+-f source-commit=8298edce13049ab01a7bc9d3e09c9daf8d14fc08 -f dry-run=true` returns
+`HTTP 403: Resource not accessible by integration`, so the run cannot start here.
+Everything the lane checks *before* touching the starter was instead executed directly
+against the remote with the flags the workflow passes: `starter-check-dispatch` ("v0.6.0
+names commit 8298edce..., and the dispatch agrees"), `starter-verify-release` ("v0.6.0 is
+a published release of Archont561/pixi-sandbox at 8298edce...") and `starter-check-main`
+("starter Archont561/pixi-sandbox-starter has refs/heads/main at d3b0ce0") all exit 0. The
+local steps were rehearsed in a tempdir: `starter-scaffold` writes the three files it owns,
+`init --force` adds `pixi-sandbox.toml` and the two workflows, and `init --check` reports
+every owned file byte-identical to a fresh render. `starter-verify` then reports exactly one
+finding — `missing required file pixi.lock` — the single step that needs network: `pixi lock`
+fails here against `https://prefix.dev/conda-forge/linux-64/repodata_shards.msgpack.zst`
+with `tls handshake eof`, the airlock boundary this sandbox sits behind. So every gate the
+lane runs is either green or provably network-bound, and `dry-run` reaches the publish step
+as `starter-publish ... --dry-run`, which does not push. Note `--ref main` is the correct
+ref: `starter.yml` does not exist at v0.6.0 (`git cat-file -e
+v0.6.0:.github/workflows/starter.yml` fails) while `source-commit` names the v0.6.0 SHA. A
+rehearsal is not the dispatch, so AC#6 stays open.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -101,4 +101,21 @@ publishing through `pipeline`; (3) the upgrade lane's delivery, which additional
 task-71 AC#5 / task-73's credentialed token. Until then this task stays In Progress, and
 no push, PR, release or consumer-repository modification has been made (the owner's
 sanction covers local implementation only).
+
+**2026-10-10: the release AC#8 needs is confirmed necessary, sufficient, and blocked on
+exactly one click.** `b9d5d0a2` (the single-entrypoint refactor) is a descendant of the
+v0.6.0 tag `8298edce` — `git merge-base --is-ancestor v0.6.0 HEAD` is true while the
+refactor itself merged later, in PR #129 — so v0.6.0 provably predates the refactored
+lane and any AC#8 proof needs a release after PR #131. Cutting one is *sufficient to start*
+the proof: `release.yml` already dispatches `consumer proof` itself once the GitHub Release
+exists (the v0.6.0 chain, runs 5–7: release → consumer proof → docs), so no hand-off step
+is missing. The push permission is also not the obstacle it looked like:
+`RELEASE_PUSH_TOKEN` is set and carries the Workflows permission, proved by observation
+rather than inference when the v0.6.0 release commit (`8298edc`, which modifies
+`.github/workflows/relock.yml`) succeeded. The remaining blocker is dispatch:
+`gh workflow run auto-release.yml` from an agent sandbox returns `HTTP 403: Resource not
+accessible by integration`, and an agent session is confined to its own branch, so the
+release commit could not be pushed to `main` from here even if the token allowed it. One
+maintainer dispatch of `auto-release.yml` with its default `bump=auto` cuts the release;
+the transport repack and the consumer proof then follow without further action.
 <!-- SECTION:NOTES:END -->
