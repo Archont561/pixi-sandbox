@@ -6,7 +6,237 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [v0.6.0](https://github.com/Archont561/pixi-sandbox/compare/v0.5.3...ea0f77d892111a7c33ed5d21d423864917cc5b38) (2026-10-06)
+### [v0.6.1](https://github.com/Archont561/pixi-sandbox/compare/v0.6.0...73b498d9fc1d39ab5f73d41c718ea1090ac80645) (2026-10-10)
+
+#### Features
+
+* make pixi-sandbox the single entrypoint in generated workflows
+([b9d5d0a](https://github.com/Archont561/pixi-sandbox/commit/b9d5d0a22c94b4de962ed9af97975420ba0bfacd))
+* **host-requirements:** declare, carry, diagnose and document host requirements (#120)
+([469f408](https://github.com/Archont561/pixi-sandbox/commit/469f408542895e5012729c8e8122bdede6948692)),
+closes [#120](https://github.com/Archont561/pixi-sandbox/issues/120)
+[#117](https://github.com/Archont561/pixi-sandbox/issues/117)
+[#119](https://github.com/Archont561/pixi-sandbox/issues/119)
+* **starter:** publish a release-pinned starter template on every release
+([b359b5f](https://github.com/Archont561/pixi-sandbox/commit/b359b5ff74298b4ab1da23948ba0a099de93e66d))
+* **xtask:** add the starter scaffold and its release-pinning checks
+([02c0684](https://github.com/Archont561/pixi-sandbox/commit/02c06842f4de988e1296b4674e4204ab83912421))
+
+#### Fixes
+
+* **pixi-sandbox-core:** stop digesting uv-regenerated install metadata in the oracle
+([73fbbd4](https://github.com/Archont561/pixi-sandbox/commit/73fbbd422ef37e30eacd96a06c9444efd342abaa)),
+closes [#128](https://github.com/Archont561/pixi-sandbox/issues/128)
+* **pixi-sandbox:** resolve the pack cast sites
+([7ae7420](https://github.com/Archont561/pixi-sandbox/commit/7ae74208f6af0e51d4213896669caf5726166c7e)),
+closes [#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+* **pixi-sandbox:** resolve the mechanical pedantic findings
+([eb854ea](https://github.com/Archont561/pixi-sandbox/commit/eb854ea3a283d2d8d6222943ee4a7a8738f9b0fa))
+* **pixi-sandbox-git:** clear the pedantic doc and builder debt
+([74bf640](https://github.com/Archont561/pixi-sandbox/commit/74bf640d9b0c2fff267450e07b96f6a991e2c98d)),
+closes [#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+* **pixi-sandbox-core:** resolve the transport-size cast sites
+([b3a195e](https://github.com/Archont561/pixi-sandbox/commit/b3a195ed48f982900efe6053fb22a84b83b252b0)),
+closes [#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+* **xtask:** apply machine-applicable pedantic fixes
+([38d6dc3](https://github.com/Archont561/pixi-sandbox/commit/38d6dc3bcfc6ff866e4411421f219c30f002104e))
+* **pixi-sandbox:** apply machine-applicable pedantic fixes
+([afa06c6](https://github.com/Archont561/pixi-sandbox/commit/afa06c63d1c6d9bafcaf947c63fe4edd667c1121))
+* **pixi-sandbox-core:** apply machine-applicable pedantic fixes
+([08a7e76](https://github.com/Archont561/pixi-sandbox/commit/08a7e76552af2d2fc41e843a946112ee66726293))
+* **starter:** verify the tree git would commit, not the working directory (#125)
+([ce47e41](https://github.com/Archont561/pixi-sandbox/commit/ce47e414c6650358f3dd14606c2fea8d53191427)),
+closes [#125](https://github.com/Archont561/pixi-sandbox/issues/125)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+* **core:** reject manifest paths with no file name instead of panicking in shard.rs (TASK-80)
+(#122)
+([5a4b4a7](https://github.com/Archont561/pixi-sandbox/commit/5a4b4a79a0eea6dfd9db3adbc4ccb254ab360a1d)),
+closes [#122](https://github.com/Archont561/pixi-sandbox/issues/122)
+[#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+* **ci:** verify starter main ref before checkout (#119) (#119)
+([a42bcac](https://github.com/Archont561/pixi-sandbox/commit/a42bcace23fa06b91a4765080527a5e8f0d05a5e)),
+closes [#119](https://github.com/Archont561/pixi-sandbox/issues/119)
+[#119](https://github.com/Archont561/pixi-sandbox/issues/119)
+* **ci:** forward starter workflow task arguments (#118)
+([57a78df](https://github.com/Archont561/pixi-sandbox/commit/57a78df6e2de1fe4ef364b75831b7b67045d7300)),
+closes [#118](https://github.com/Archont561/pixi-sandbox/issues/118)
+
+#### Refactoring
+
+* **pixi-sandbox:** promote the tools update core into the lib
+([7d8e3cb](https://github.com/Archont561/pixi-sandbox/commit/7d8e3cb84c975ac75bd2390709bb7ab939577dcd)),
+closes [#9](https://github.com/Archont561/pixi-sandbox/issues/9)
+* **xtask:** extract the relock render lint from lint_generated_workflow
+([0aa99b2](https://github.com/Archont561/pixi-sandbox/commit/0aa99b2517d2dd648875c6920cde37cb0fd1849c))
+* **xtask:** apply the mechanical pedantic fixes
+([c915b0d](https://github.com/Archont561/pixi-sandbox/commit/c915b0d48b39c58081da9ad4926eaf2fc85229f2))
+* **branch-docs:** extract render's pieces and guide renderers
+([f0f4868](https://github.com/Archont561/pixi-sandbox/commit/f0f486886873176576be99eea58d182aef7dae5c))
+* **pack:** extract assemble_artifacts' three phases
+([bf71955](https://github.com/Archont561/pixi-sandbox/commit/bf71955f7da5b73e3c22d858386dd9e40f6b9c21))
+* **doctor:** extract as_json's report sections
+([d7ef844](https://github.com/Archont561/pixi-sandbox/commit/d7ef844fab53b3d8c2c29b5b42721c8931c5a3f3))
+* **tools-update:** extract refresh's per-platform pin update
+([fc321ec](https://github.com/Archont561/pixi-sandbox/commit/fc321ec36e6467c59f1e3731ea65d50b12cbfcbf)),
+closes [#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+* **restore:** extract run's unpacker, vendor and cargo-wiring phases
+([3981801](https://github.com/Archont561/pixi-sandbox/commit/39818011445ef9377e292200fabbf3036192445b)),
+closes [#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+* **doctor:** extract run's verification, report and failure phases
+([acd3f79](https://github.com/Archont561/pixi-sandbox/commit/acd3f79227feaf0f504d58889c11e48e9506da4e)),
+closes [#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+* **restore:** extract register_user_tools' registration report
+([93dc616](https://github.com/Archont561/pixi-sandbox/commit/93dc616c7dcadac232d14d3af26169bca5f01e19)),
+closes [#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+* **doctor:** extract print_human's six report sections
+([69ee561](https://github.com/Archont561/pixi-sandbox/commit/69ee56134b6d60eec90c5d5474b30edb1a155a75)),
+closes [#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+* **pixi-sandbox-core:** extract evaluate's libc and capability phases
+([4b5dfaf](https://github.com/Archont561/pixi-sandbox/commit/4b5dfaf208e6047f0843353f92fcf139a272c0bb))
+* **pixi-sandbox-core:** extract verify_env_restored's four phases
+([7cdace6](https://github.com/Archont561/pixi-sandbox/commit/7cdace61245c09eb6977f2097b5d307e95d5805b))
+* **pixi-sandbox-core:** resolve the audited pedantic judgement items
+([577eb52](https://github.com/Archont561/pixi-sandbox/commit/577eb52c136249b109375c71faf33787ec147cdd))
+* **pack:** promote library policy and migrate BDD bindings (#127) (#127)
+([0a036ba](https://github.com/Archont561/pixi-sandbox/commit/0a036ba2649e8fae684930a3fc423fe0a4a81586)),
+closes [#127](https://github.com/Archont561/pixi-sandbox/issues/127)
+[#127](https://github.com/Archont561/pixi-sandbox/issues/127)
+[#126](https://github.com/Archont561/pixi-sandbox/issues/126)
+
+#### Documentation
+
+* **context:** record the TASK-88 session and the next session prompt
+([7f98e22](https://github.com/Archont561/pixi-sandbox/commit/7f98e22d0a255c9e10ab84048e856add9a139d68)),
+closes [#128](https://github.com/Archont561/pixi-sandbox/issues/128)
+[#109](https://github.com/Archont561/pixi-sandbox/issues/109)
+* **backlog:** file TASK-88 for issue #128 at 7 of 8
+([7bd0582](https://github.com/Archont561/pixi-sandbox/commit/7bd0582af4d4759451febf486bf1a61c8f5d411c)),
+closes [#128](https://github.com/Archont561/pixi-sandbox/issues/128)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+* **knowledge:** record D21 on uv-regenerated install metadata in the oracle
+([ef45808](https://github.com/Archont561/pixi-sandbox/commit/ef45808966d89cc28074fb68c65c4d35239cf9e5)),
+closes [#128](https://github.com/Archont561/pixi-sandbox/issues/128)
+* **context:** record the close-out session and the next session prompt
+([0450668](https://github.com/Archont561/pixi-sandbox/commit/0450668d0c386fe459c8dfd6b98fa0b02442bcd6))
+* **backlog:** record the starter-lane rehearsal evidence for TASK-85 AC#6 and TASK-76 AC#8
+([1f6af1a](https://github.com/Archont561/pixi-sandbox/commit/1f6af1a6cafbd6147657d62cbd658ccc4b7c89ac)),
+closes [#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+[#131](https://github.com/Archont561/pixi-sandbox/issues/131)
+* **context:** add the next session prompt to the TASK-77 closure entry
+([4faec30](https://github.com/Archont561/pixi-sandbox/commit/4faec30e589909bc24ab4964dea30ff55f225bfc)),
+closes [#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+* **backlog:** close TASK-77 with the final evidence entry
+([bb8cabe](https://github.com/Archont561/pixi-sandbox/commit/bb8cabe6d7325323bce878c5ed586c57b3b8bb0c)),
+closes [#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#10](https://github.com/Archont561/pixi-sandbox/issues/10)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#10](https://github.com/Archont561/pixi-sandbox/issues/10)
+* **xtask:** shorten first doc paragraphs to a summary line
+([db71dbc](https://github.com/Archont561/pixi-sandbox/commit/db71dbc1b7be1d949809f0c473ca0ac71c1fc166)),
+closes [#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+* **pixi-sandbox:** shorten first doc paragraphs to a summary line
+([7b180fa](https://github.com/Archont561/pixi-sandbox/commit/7b180faab62be69b2af8d5f17c4448204c09e699)),
+closes [#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+* **pixi-sandbox-git:** shorten the first doc paragraph on FileCommit
+([cc7748c](https://github.com/Archont561/pixi-sandbox/commit/cc7748c8ee4e6915c08f3b0c39ca5fdd5a54b987)),
+closes [#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+* **pixi-sandbox-core:** shorten first doc paragraphs to a summary line
+([a54b717](https://github.com/Archont561/pixi-sandbox/commit/a54b7174b9e30f56ea3ea0cc13a88159ee8d4d3f)),
+closes [#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+* **task-77:** record the closure evidence; AC#4 and AC#10 stay open
+([11673a2](https://github.com/Archont561/pixi-sandbox/commit/11673a2acb2b067548a2574edb30cca445ec4594)),
+closes [#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#10](https://github.com/Archont561/pixi-sandbox/issues/10)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+[#9](https://github.com/Archont561/pixi-sandbox/issues/9)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#10](https://github.com/Archont561/pixi-sandbox/issues/10)
+* **agents:** name the promoted tools_update module in the repo map
+([833e5d9](https://github.com/Archont561/pixi-sandbox/commit/833e5d99affad3c4e36094876b99b7b7950f2ff2))
+* **xtask:** document the error and panic contracts for the pedantic gate
+([68aa870](https://github.com/Archont561/pixi-sandbox/commit/68aa87086e390d30c44d9a0d8e27bef0e903ec0a))
+* **context:** TASK-77 checkpoint — core/git/pixi-sandbox clean, xtask remainder handed off
+([bf08574](https://github.com/Archont561/pixi-sandbox/commit/bf085748ad1a1f219756c2d83aa150892b3fbb12)),
+closes [#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+[#9](https://github.com/Archont561/pixi-sandbox/issues/9)
+* **pixi-sandbox:** write the missing # Errors and # Panics sections
+([a8b9deb](https://github.com/Archont561/pixi-sandbox/commit/a8b9deb8f9fbba1faab92f4e838f496ac4ae9391)),
+closes [#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+* **pixi-sandbox-core:** write the missing # Errors sections
+([2068785](https://github.com/Archont561/pixi-sandbox/commit/206878506b3a5a7856f79ebc98ed4b5121281884)),
+closes [#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+* **context:** record TASK-76 evidence and the carried AC#8
+([b69c002](https://github.com/Archont561/pixi-sandbox/commit/b69c0028fa04a63dd087ca9d554017ce3600cd7c)),
+closes [#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#9](https://github.com/Archont561/pixi-sandbox/issues/9)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+* **context:** close the task-85 session with its open findings and a baseline correction
+([924b322](https://github.com/Archont561/pixi-sandbox/commit/924b3225594295369846ae19eee08c1b2e5486e3)),
+closes [#125](https://github.com/Archont561/pixi-sandbox/issues/125)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+* **agents:** correct the repo map and promoted-module list to match the tree (TASK-84) (#123)
+([1a5b84d](https://github.com/Archont561/pixi-sandbox/commit/1a5b84daae8f97cea84630eff9c1ebdd31523682)),
+closes [#123](https://github.com/Archont561/pixi-sandbox/issues/123)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#122](https://github.com/Archont561/pixi-sandbox/issues/122)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+* **backlog:** audit findings as tasks 79-85, add audit and clean-code-principles skills (#121)
+([13d3a86](https://github.com/Archont561/pixi-sandbox/commit/13d3a866a7b8860790351ba44bc13118d44765d6)),
+closes [#121](https://github.com/Archont561/pixi-sandbox/issues/121)
+* **backlog:** add task-78 and close task-71 on the proven upgrade lane
+([542c57b](https://github.com/Archont561/pixi-sandbox/commit/542c57bd0573b4a45f54dc08f04930ffc67ddb32)),
+closes [#115](https://github.com/Archont561/pixi-sandbox/issues/115)
+* **backlog:** record the starter lane against task-74
+([d9ad695](https://github.com/Archont561/pixi-sandbox/commit/d9ad695fb7733fccc42399a50547bf0c5acd5728)),
+closes [#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+* **backlog:** audit the Rust source for pedantic lint debt and long functions
+([b43ba1a](https://github.com/Archont561/pixi-sandbox/commit/b43ba1ae986c925f0af2b5992cf759f48bfb3ed7))
+* **backlog:** add task-76 to make pixi-sandbox the entrypoint in generated workflows
+([db2d446](https://github.com/Archont561/pixi-sandbox/commit/db2d446525a8e6f618bd57643629c5bd0ee76755)),
+closes [#9](https://github.com/Archont561/pixi-sandbox/issues/9)
+* **backlog:** record the Castellan 0.6.0 bootstrap and close nothing on it
+([b7dfd95](https://github.com/Archont561/pixi-sandbox/commit/b7dfd95a2bcde23f7ac7be807ef085f4a115d836)),
+closes [#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+* **context:** record the v0.6.0 push-trigger watch and the PR-114 verdicts
+([1ba752a](https://github.com/Archont561/pixi-sandbox/commit/1ba752a0b36932beb8a939fa9ea14556986b470e))
+
+#### CI
+
+* bootstrap starter repository before checkout
+([f28db3a](https://github.com/Archont561/pixi-sandbox/commit/f28db3ab7400479d2e19e53f97c7a624ef2e3092))
+
+## [v0.6.0](https://github.com/Archont561/pixi-sandbox/compare/v0.5.3...v0.6.0) (2026-10-06)
 
 ### Features
 
