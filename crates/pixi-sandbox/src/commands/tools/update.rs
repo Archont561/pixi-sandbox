@@ -19,43 +19,10 @@
 
 use crate::cli::ToolsUpdateArgs;
 use crate::commands::support;
-use anyhow::{Context, Result, bail};
-use pixi_sandbox::release::{GitHubReleaseSource, PIXI_CHECKSUM_MANIFEST, ReleaseSource};
-use pixi_sandbox_core::tools_lock::{PlatformPin, Tool, ToolsLock};
-use pixi_sandbox_core::verify::{Linkage, linkage_of_bytes};
-use std::collections::BTreeMap;
-use std::path::Path;
-
-/// The release asset name: the last path segment of a fully substituted download URL.
-pub fn asset_name_of(url: &str) -> Option<&str> {
-    let name = url.rsplit('/').next()?;
-    if name.is_empty() || name.contains('{') {
-        return None;
-    }
-    Some(name)
-}
-
-/// The `owner/repo` a pin downloads from, read out of its own URL template.
-///
-/// The template is the single source of truth for *where* a build came from (AC#1): the same
-/// source the existing pin was compiled from, never a hardcoded repository somewhere in this
-/// file that could drift away from the data it is meant to serve.
-pub fn github_repo(url_template: &str) -> Option<&str> {
-    let rest = url_template.strip_prefix("https://github.com/")?;
-    let mut parts = rest.split('/');
-    let owner = parts.next()?;
-    let repo = parts.next()?;
-    // A GitHub release asset is always at /owner/repo/releases/download/<tag>/<name>. Requiring
-    // the literal `releases` segment keeps a repo-less path from being read as a repository
-    // called "releases" — which would resolve "latest" against the wrong project entirely.
-    if parts.next()? != "releases" {
-        return None;
-    }
-    if owner.is_empty() || repo.is_empty() || owner.contains('{') || repo.contains('{') {
-        return None;
-    }
-    Some(&rest[..owner.len() + 1 + repo.len()])
-}
+use anyhow::{Context, Result};
+use pixi_sandbox::release::GitHubReleaseSource;
+use pixi_sandbox::tools_update::{refresh, render, report_check, write_atomic};
+use pixi_sandbox_core::tools_lock::ToolsLock;
 
 /// `generated_at` and the `note` on every pin we touch are the audit trail: the next reader must
 /// be able to tell a hash that was cross-checked from one that was merely observed.
@@ -75,7 +42,7 @@ pub fn run(args: &ToolsUpdateArgs) -> Result<()> {
     let (lock, path) = target;
 
     let source = GitHubReleaseSource::new();
-    let (updated, report) = refresh(&lock, &source, &args.tool)?;
+    let (updated, report) = refresh(&lock, &source, &args.tool, &support::now_rfc3339())?;
 
     if args.check {
         return report_check(&report);
@@ -96,240 +63,6 @@ pub fn run(args: &ToolsUpdateArgs) -> Result<()> {
         }
         Some(path) => write_atomic(&path, &rendered).context("writing the updated tools lock"),
     }
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct Report {
-    /// (tool, platform, `old_version`, `new_version`) for every asset that changed.
-    changed: Vec<(String, String, String, String)>,
-    /// Assets whose version and hash were already current.
-    unchanged: usize,
-    checked: usize,
-    skipped: Vec<String>,
-}
-
-impl Report {
-    fn is_change(&self) -> bool {
-        !self.changed.is_empty()
-    }
-}
-
-fn report_check(report: &Report) -> Result<()> {
-    for (tool, platform, from, to) in &report.changed {
-        println!("update {tool}/{platform}: {from} -> {to}");
-    }
-    for note in &report.skipped {
-        println!("skipped {note}");
-    }
-    println!(
-        "{} asset(s) checked, {} unchanged, {} to update",
-        report.checked,
-        report.unchanged,
-        report.changed.len()
-    );
-    if report.is_change() {
-        // Non-zero is the point: this is what a scheduled workflow keys on.
-        bail!("tool pins are out of date; run `pixi-sandbox tools update`");
-    }
-    Ok(())
-}
-
-/// Rebuild the catalogue against the newest releases, verifying every asset on the way.
-fn refresh(
-    lock: &ToolsLock,
-    source: &dyn ReleaseSource,
-    only: &[String],
-) -> Result<(ToolsLock, Report)> {
-    let mut updated = lock.clone();
-    let mut report = Report::default();
-
-    for name in lock.names() {
-        if !only.is_empty() && !only.iter().any(|wanted| wanted == name) {
-            report.skipped.push(format!("{name} (not selected)"));
-            continue;
-        }
-        let tool = &lock.tools[name];
-        let Some(repo) = github_repo(&tool.url_template) else {
-            // An organisation mirror's URL is not a GitHub release path, so there is no
-            // "latest" to resolve. Leaving the pin untouched is the safe reading: we cannot
-            // know what a mirror's newest build is, and guessing would replace reviewed data.
-            report.skipped.push(format!(
-                "{name}: url_template is not a GitHub release URL, so the latest version cannot be \
-                 resolved; keep this pin or point --tools-lock at a GitHub-hosted mirror"
-            ));
-            continue;
-        };
-
-        let tag = source
-            .latest_tag(repo)
-            .with_context(|| format!("resolving the latest {name} release from {repo}"))?;
-        let version = tag.trim_start_matches('v').to_string();
-        if version == tool.version {
-            report.unchanged += tool.platforms.len();
-            report.checked += tool.platforms.len();
-            continue;
-        }
-
-        let checksums = source
-            .published_checksums(repo, &tag)
-            .with_context(|| format!("reading published checksums for {repo} {tag}"))?;
-        let mut platforms = BTreeMap::new();
-
-        for platform in tool.platforms.keys() {
-            let pin = refresh_platform(&mut PlatformRefresh {
-                source,
-                report: &mut report,
-                name,
-                tool,
-                version: &version,
-                platform,
-                checksums: checksums.as_ref(),
-                repo,
-                tag: &tag,
-            })?;
-            platforms.insert(platform.clone(), pin);
-        }
-
-        updated.tools.insert(
-            name.to_string(),
-            Tool {
-                version,
-                url_template: tool.url_template.clone(),
-                platforms,
-            },
-        );
-    }
-
-    if report.is_change() {
-        updated.generated_at = Some(support::now_rfc3339());
-    }
-    Ok((updated, report))
-}
-
-/// What one platform refresh needs, bundled so the helper stays under the argument limit.
-struct PlatformRefresh<'a> {
-    source: &'a dyn ReleaseSource,
-    report: &'a mut Report,
-    name: &'a str,
-    tool: &'a Tool,
-    version: &'a str,
-    platform: &'a str,
-    checksums: Option<&'a BTreeMap<String, String>>,
-    repo: &'a str,
-    tag: &'a str,
-}
-
-/// Refresh one platform pin of a tool whose version changed: download the release asset,
-/// record its hash (cross-checked against the published manifest when it lists the asset),
-/// verify the linkage claim, and return the new pin.
-fn refresh_platform(ctx: &mut PlatformRefresh<'_>) -> Result<PlatformPin> {
-    let PlatformRefresh {
-        source,
-        report,
-        name,
-        tool,
-        version,
-        platform,
-        checksums,
-        repo,
-        tag,
-    } = ctx;
-    let previous = &tool.platforms[*platform];
-    let url = tool
-        .url_template
-        .replace("{version}", version)
-        .replace("{target}", &previous.target);
-    // The release asset is the *file name* of the substituted URL, which the template
-    // builds as e.g. `pixi-x86_64-unknown-linux-musl`. Deriving it from the template
-    // rather than from `target` alone is what keeps the tool prefix in the name; using
-    // the target directly 404s against real GitHub.
-    let asset_name = asset_name_of(&url).with_context(|| {
-        format!("the url_template for {name} has no file name to download: {url}")
-    })?;
-    let asset = source
-        .asset(repo, tag, asset_name)
-        .with_context(|| format!("downloading {name} {version} for {platform}"))?;
-    report.checked += 1;
-
-    let actual = asset.sha256();
-    let published = checksums.and_then(|map| map.get(asset_name));
-    let note = match (checksums, published) {
-        (Some(_), Some(expected)) if expected != &actual => bail!(
-            "integrity: {name} {version} for {platform} hashes to {actual}, but {repo} \
-             publishes {expected} for {asset_name} in {PIXI_CHECKSUM_MANIFEST}. Refusing \
-             to write the lock; the download or the upstream manifest is not trustworthy."
-        ),
-        (_, Some(_)) => {
-            format!("cross-checked against {PIXI_CHECKSUM_MANIFEST} in {repo} {tag}")
-        }
-        // Measured 2026-09-29: pixi publishes `sha256.sum` covering only the archives
-        // (`pixi-x86_64-unknown-linux-musl.tar.gz`, `.zip`, `.msi`), while the catalogue
-        // pins the *bare* binary that is not listed. Saying "cross-checked" there would be
-        // a claim no one verified, so the weaker guarantee is written into the pin.
-        (Some(_), None) => format!(
-            "{PIXI_CHECKSUM_MANIFEST} in {repo} {tag} does not list {asset_name} (it \
-             covers archives); hash observed and linkage verified locally, not \
-             cross-checked"
-        ),
-        (None, _) => format!(
-            "no upstream checksum manifest; hash observed on {tag} and linkage verified \
-             locally, not cross-checked"
-        ),
-    };
-
-    let linkage = linkage_of_bytes(&asset.bytes);
-    if previous.linkage == Linkage::Static.as_str() && linkage != Linkage::Static {
-        bail!(
-            "integrity: {name} {version} for {platform} is a {} binary, but the pin \
-             declares it static ({url}). A dynamic helper works on the build machine and \
-             dies in the airlock (D4) — this is the failure the pin exists to prevent. \
-             Refusing to write the lock.",
-            linkage.as_str()
-        );
-    }
-
-    report.changed.push((
-        name.to_string(),
-        platform.to_string(),
-        tool.version.clone(),
-        version.to_string(),
-    ));
-    Ok(PlatformPin {
-        target: previous.target.clone(),
-        sha256: actual,
-        // Write what was observed. A pin that can carry a stale `linkage` claim is a
-        // pin that will lie to whoever reads it next.
-        linkage: linkage.as_str().to_string(),
-        note: Some(note),
-    })
-}
-
-fn render(lock: &ToolsLock) -> Result<String> {
-    let mut text = serde_json::to_string_pretty(lock).context("serialising the tools lock")?;
-    text.push('\n');
-    Ok(text)
-}
-
-/// Write via a sibling temp file and rename, so a reader never sees a half-written lock and a
-/// failure never truncates the existing one (invariant 1: verify before write).
-fn write_atomic(path: &Path, contents: &str) -> Result<()> {
-    let temporary = path.with_file_name(format!(
-        ".{}.update-{}",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("tools.lock.json"),
-        std::process::id()
-    ));
-    let result = (|| -> Result<()> {
-        std::fs::write(&temporary, contents)
-            .with_context(|| format!("writing {}", temporary.display()))?;
-        std::fs::rename(&temporary, path)
-            .with_context(|| format!("moving the new tools lock into place at {}", path.display()))
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result
 }
 
 /// A scratch catalogue for the unit tests: one tool, one platform, already current.
@@ -389,6 +122,11 @@ fn dynamic_elf() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pixi_sandbox::release::ReleaseSource;
+    use pixi_sandbox::tools_update::{Report, asset_name_of, github_repo};
+    use std::collections::BTreeMap;
+
+    const STAMP: &str = "2026-10-10T00:00:00Z";
     use pixi_sandbox::release::{Asset, parse_sha256_manifest};
 
     struct FakeSource {
@@ -478,7 +216,7 @@ mod tests {
             static_elf(),
         );
         let (updated, report) =
-            refresh(&scratch_lock("0.81.0", OLD), &source, &[]).expect("refresh");
+            refresh(&scratch_lock("0.81.0", OLD), &source, &[], STAMP).expect("refresh");
 
         let pin = updated.pin("pixi", "linux-64").expect("pin");
         assert_eq!(updated.tools["pixi"].version, "0.82.0");
@@ -509,7 +247,7 @@ mod tests {
             )
             .with_checksums(REPO, "v0.82.0", map);
 
-        let error = refresh(&scratch_lock("0.81.0", OLD), &source, &[])
+        let error = refresh(&scratch_lock("0.81.0", OLD), &source, &[], STAMP)
             .expect_err("a manifest disagreement must not be written")
             .to_string();
         assert!(error.contains("Refusing to write the lock"), "got: {error}");
@@ -527,7 +265,7 @@ mod tests {
             dynamic_elf(),
         );
 
-        let error = refresh(&scratch_lock("0.81.0", OLD), &source, &[])
+        let error = refresh(&scratch_lock("0.81.0", OLD), &source, &[], STAMP)
             .expect_err("a dynamic binary must not become a static pin")
             .to_string();
         assert!(error.contains("dynamic"), "got: {error}");
@@ -544,7 +282,8 @@ mod tests {
             "pixi-x86_64-unknown-linux-musl",
             static_elf(),
         );
-        let (updated, _) = refresh(&scratch_lock("0.81.0", OLD), &source, &[]).expect("refresh");
+        let (updated, _) =
+            refresh(&scratch_lock("0.81.0", OLD), &source, &[], STAMP).expect("refresh");
 
         let note = updated
             .pin("pixi", "linux-64")
@@ -579,7 +318,8 @@ mod tests {
                 static_elf(),
             )
             .with_checksums(REPO, "v0.82.0", map);
-        let (updated, _) = refresh(&scratch_lock("0.81.0", OLD), &source, &[]).expect("refresh");
+        let (updated, _) =
+            refresh(&scratch_lock("0.81.0", OLD), &source, &[], STAMP).expect("refresh");
 
         let pin = updated.pin("pixi", "linux-64").unwrap();
         let note = pin.note.clone().unwrap();
@@ -606,7 +346,8 @@ mod tests {
                 static_elf(),
             )
             .with_checksums(REPO, "v0.82.0", map);
-        let (updated, _) = refresh(&scratch_lock("0.81.0", OLD), &source, &[]).expect("refresh");
+        let (updated, _) =
+            refresh(&scratch_lock("0.81.0", OLD), &source, &[], STAMP).expect("refresh");
 
         let note = updated
             .pin("pixi", "linux-64")
@@ -627,7 +368,7 @@ mod tests {
         let current = sha_of(&static_elf());
         let source = FakeSource::new().with_latest(REPO, "v0.81.0");
         let (updated, report) =
-            refresh(&scratch_lock("0.81.0", &current), &source, &[]).expect("refresh");
+            refresh(&scratch_lock("0.81.0", &current), &source, &[], STAMP).expect("refresh");
 
         assert!(!report.is_change(), "nothing newer: {report:?}");
         assert_eq!(report.unchanged, 1);
@@ -650,7 +391,7 @@ mod tests {
         lock.tools.get_mut("pixi").unwrap().url_template =
             "https://mirror.example.internal/pixi/v{version}/pixi-{target}".to_string();
         let source = FakeSource::new();
-        let (updated, report) = refresh(&lock, &source, &[]).expect("refresh");
+        let (updated, report) = refresh(&lock, &source, &[], STAMP).expect("refresh");
 
         assert_eq!(updated.tools["pixi"].version, "0.81.0");
         assert_eq!(updated.pin("pixi", "linux-64").unwrap().sha256, OLD);
