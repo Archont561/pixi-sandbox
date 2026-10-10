@@ -3,7 +3,7 @@
 
 use pixi_sandbox_core::manifest::Manifest;
 use pixi_sandbox_core::verify::{
-    Kind, Linkage, linkage_of, linkage_of_bytes, manifest_path, verify,
+    Kind, Linkage, linkage_of, linkage_of_bytes, manifest_path, verify, verify_restored,
 };
 use rstest::{fixture, rstest};
 use std::fs;
@@ -296,6 +296,9 @@ mod restored {
         // byte the oracle must record, not reject (an env resolving perl could never pack).
         fs::create_dir_all(staged.join("man/man3")).unwrap();
         fs::write(staged.join("man/man3/App::Cpan.3"), "doc stub\n").unwrap();
+        // issue #128: a pypi dependency, which the transport carries as a *wheel* and so
+        // uv reinstalls at restore time — the two files below come back regenerated.
+        super::uv_installed_dist_info(&staged.join(super::SITE_PACKAGES), 1_791_622_638, "AAAA");
         std::os::unix::fs::symlink("thing.pc", staged.join("lib/link.pc")).unwrap();
         fs::set_permissions(staged.join("bin/tool"), fs::Permissions::from_mode(0o755)).unwrap();
 
@@ -757,4 +760,114 @@ fn an_absurd_program_header_entry_size_is_unknown_not_a_wrong_verdict() {
     let mut bytes = elf(3 /* PT_INTERP */);
     bytes[54..56].copy_from_slice(&5000u16.to_le_bytes()); // e_phentsize
     assert_eq!(linkage_of_bytes(&bytes), Linkage::Unknown);
+}
+
+// ---------------------------------------------------------------------------
+// issue #128 — a pypi environment restored by uv, not by unpacking bytes
+// ---------------------------------------------------------------------------
+
+/// Where uv installs one wheel inside a conda prefix. The interpreter directory in this
+/// path is the real one a wheel unpacks into, not a reference to the implementation
+/// task-6 deleted — which is what the stale-reference check forbids.
+#[cfg(unix)]
+const SITE_PACKAGES: &str = "lib/python3.12/site-packages"; // stale-ref-allowed
+
+/// The shape uv leaves behind for one installed wheel. The caller passes the two things
+/// that differ between the pack-time install and the restore-time one: the wall-clock
+/// second, and the `uv_cache.json` row of the package's own `RECORD`.
+#[cfg(unix)]
+fn uv_installed_dist_info(site_packages: &Path, secs_since_epoch: u64, uv_cache_hash: &str) {
+    let dist_info = site_packages.join("typer-0.27.3.dist-info");
+    fs::create_dir_all(&dist_info).unwrap();
+    fs::write(
+        dist_info.join("uv_cache.json"),
+        format!(
+            r#"{{"timestamp":{{"secs_since_epoch":{secs_since_epoch},"nanos_since_epoch":619607908}},"commit":null,"tags":null,"env":{{}},"directories":{{}}}}"#
+        ),
+    )
+    .unwrap();
+    fs::write(
+        dist_info.join("RECORD"),
+        format!(
+            "typer/__init__.py,sha256=AAAA,10\nuv_cache.json,sha256={uv_cache_hash},88\n\
+             typer-0.27.3.dist-info/INSTALLER,,\n"
+        ),
+    )
+    .unwrap();
+    // The transported payload itself. This one must keep its full content check.
+    fs::create_dir_all(site_packages.join("typer")).unwrap();
+    fs::write(
+        site_packages.join("typer/__init__.py"),
+        "__version__ = '0.27.3'\n",
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_uv_reinstalled_pypi_environment_matches_the_oracle() {
+    // The whole of #128: pack scans a prefix uv installed, restore reinstalls the same
+    // wheel with a fresh timestamp, and the final tree check must still pass. Before the
+    // fix those two files were reported as content mismatches and `restore` exited
+    // non-zero — which also skipped user-tool registration, so the documented next
+    // command then failed with `pixi: command not found`.
+    let temp = tempfile::tempdir().unwrap();
+    let world = restored::world(temp.path());
+
+    // What `pixi-unpack` does when it reinstalls the wheel it carried: a different
+    // second, and therefore a different hash in the RECORD row.
+    uv_installed_dist_info(
+        &world.final_prefix.join(SITE_PACKAGES),
+        1_799_999_999,
+        "ZZZZ",
+    );
+
+    let report = verify_restored(
+        &world.manifest,
+        &world.transport,
+        &world.project,
+        None,
+        None,
+    );
+    assert!(
+        report.report.failures.is_empty(),
+        "a regenerated uv install must not fail the oracle: {:?}",
+        report.report.failures
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn tampering_with_the_payload_of_an_uv_installed_package_is_still_caught() {
+    // The complement: exempting uv's own metadata must not exempt the package it shipped.
+    let temp = tempfile::tempdir().unwrap();
+    let world = restored::world(temp.path());
+    fs::write(
+        world
+            .final_prefix
+            .join(SITE_PACKAGES)
+            .join("typer/__init__.py"),
+        "__version__ = '0.0.0-evil'\n",
+    )
+    .unwrap();
+
+    let report = verify_restored(
+        &world.manifest,
+        &world.transport,
+        &world.project,
+        None,
+        None,
+    );
+    let kinds: Vec<&str> = report
+        .report
+        .failures
+        .iter()
+        .map(|f| f.kind.as_str())
+        .collect();
+    assert_eq!(
+        kinds,
+        vec!["integrity"],
+        "only the tampered payload may be reported: {:?}",
+        report.report.failures
+    );
 }
