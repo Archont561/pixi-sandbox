@@ -272,9 +272,20 @@ fn register_user_tools(
             || "the restored project itself is complete, but registering user tools was refused",
         )?;
 
+    print_registration(&bin_dir, &launchers, &path, notice.as_deref());
+    Ok(())
+}
+
+/// Print what the registration did: the launchers, the PATH change, and the shell notice.
+fn print_registration(
+    bin_dir: &Path,
+    launchers: &[(String, LauncherChange)],
+    path: &PathChange,
+    notice: Option<&str>,
+) {
     println!("register user tools");
     let mut retargeted = false;
-    for (name, change) in &launchers {
+    for (name, change) in launchers {
         let launcher = bin_dir.join(user_tools::launcher_file_name(
             name,
             LauncherKind::current(),
@@ -301,7 +312,7 @@ fn register_user_tools(
             "  the most recently registered restore is now the user-level source of these tools"
         );
     }
-    match &path {
+    match path {
         PathChange::Added { profile } => {
             println!(
                 "  PATH: added {} to {}",
@@ -339,7 +350,6 @@ fn register_user_tools(
          `export PATH=\"{}:$PATH\"` in this one",
         bin_dir.display()
     );
-    Ok(())
 }
 
 /// Remove this restore's scratch: the unpacker's TMPDIR, one materialised pack and one stage per
