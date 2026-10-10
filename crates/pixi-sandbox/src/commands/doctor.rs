@@ -315,6 +315,54 @@ fn print_human(
         manifest.platform, manifest.schema, manifest.created_at, commit
     );
 
+    print_manifest_summary(manifest);
+
+    // What the transport expects from the *host* is printed as declared data, never as a
+    // verdict about the machine this build runs on (issue #109, TASK-75).
+    if let Some(host) = host {
+        print_host_report(host);
+    }
+
+    let (envs, tools, vendor) = manifest.payload_split();
+    let total = manifest.payload_bytes();
+    let mut split = format!(
+        "envs {} MiB · tools {} MiB",
+        support::mib(envs),
+        support::mib(tools)
+    );
+    if manifest.vendor.is_some() {
+        let share = vendor.saturating_mul(100).checked_div(total).unwrap_or(0);
+        let _ = write!(
+            split,
+            " · vendor {} MiB, {share}% vendor",
+            support::mib(vendor)
+        );
+    }
+    println!("  payload {} MiB total ({split})", support::mib(total));
+
+    match report {
+        None => labelled(
+            "hint",
+            "pass --verify to check every sha256 (nothing is written)",
+        ),
+        Some(report) => print_verify_report(report),
+    }
+
+    if let Some(standalone) = standalone {
+        print_standalone(standalone);
+    }
+
+    if let Some(budget) = budget {
+        print_budget(budget);
+    }
+
+    if let Some((project, restored)) = restored {
+        print_restored(project, restored);
+    }
+}
+
+/// The manifest's own sections: environments, tools, vendor.
+fn print_manifest_summary(manifest: &Manifest) {
     for (name, env) in &manifest.envs {
         let fingerprint = env
             .pixi_environment_fingerprint
@@ -361,190 +409,171 @@ fn print_human(
             capitalise(&vendor.mode),
         );
     }
+}
 
-    // What the transport expects from the *host*, straight from the manifest (issue #109,
-    // TASK-75). Printed as declared data: this build reports it without probing the machine, so
-    // the line must not read as a verdict about the host it is running on.
-    if let Some(host) = host {
-        labelled(
-            "host",
-            &format!("declared requirements: {}", host.declared.summary()),
+/// What the transport expects from the *host*, straight from the manifest (issue #109,
+/// TASK-75). Printed as declared data: this build reports it without probing the machine, so
+/// the line must not read as a verdict about the host it is running on.
+fn print_host_report(host: &HostReport) {
+    labelled(
+        "host",
+        &format!("declared requirements: {}", host.declared.summary()),
+    );
+    labelled(
+        "conda",
+        "conda-provided libraries travel with the transport and are not probed here",
+    );
+    for finding in &host.findings {
+        let mut line = format!(
+            "{} {}: {} ({})",
+            finding.kind.as_str(),
+            finding.name,
+            finding.status,
+            finding.detail
         );
-        labelled(
-            "conda",
-            "conda-provided libraries travel with the transport and are not probed here",
-        );
-        for finding in &host.findings {
-            let mut line = format!(
-                "{} {}: {} ({})",
-                finding.kind.as_str(),
-                finding.name,
-                finding.status,
-                finding.detail
-            );
-            if let Some(remedy) = &finding.remedy {
-                line.push_str(" — ");
-                line.push_str(remedy);
-            }
-            println!("  {line}");
+        if let Some(remedy) = &finding.remedy {
+            line.push_str(" — ");
+            line.push_str(remedy);
         }
+        println!("  {line}");
+    }
+    labelled(
+        "host",
+        &format!(
+            "{} of {} satisfied · {} missing · {} unknown",
+            host.satisfied(),
+            host.findings.len(),
+            host.missing(),
+            host.unknown()
+        ),
+    );
+    if !host.applicable() {
         labelled(
             "host",
+            "not applicable on this host — nothing was probed (see the findings above)",
+        );
+    }
+}
+
+/// The `--verify` outcome: every failure, then the verdict.
+fn print_verify_report(report: &Report) {
+    for failure in &report.failures {
+        println!(
+            "  {}: {}: {}",
+            failure.path,
+            failure.kind.as_str(),
+            failure.detail
+        );
+    }
+    labelled(
+        "verify",
+        &format!(
+            "{} blob(s), {} MiB checked, {} failure(s)",
+            report.files,
+            support::mib(report.bytes),
+            report.failures.len()
+        ),
+    );
+    if report.ok() {
+        labelled("verify", "OK — every declared byte matches the manifest");
+    } else {
+        labelled("verify", "FAILED — do not restore from this branch");
+    }
+}
+
+/// The standalone probe outcome for the embedded tool.
+fn print_standalone(standalone: &StandaloneProbe) {
+    match standalone {
+        StandaloneProbe::Skipped(reason) => {
+            labelled("probe", &format!("skipped — {reason}"));
+        }
+        StandaloneProbe::Runs { version } => {
+            labelled(
+                "probe",
+                &format!(
+                    "tool pixi-sandbox v{version}: runs standalone (--version, empty environment)"
+                ),
+            );
+        }
+        StandaloneProbe::Refused { detail } => {
+            labelled(
+                "probe",
+                "FAILED — the embedded tool does not run standalone",
+            );
+            println!("  {detail}");
+        }
+    }
+}
+
+/// The transport budget verdict.
+fn print_budget(budget: &BudgetReport) {
+    if budget.ok() {
+        labelled(
+            "budget",
             &format!(
-                "{} of {} satisfied · {} missing · {} unknown",
-                host.satisfied(),
-                host.findings.len(),
-                host.missing(),
-                host.unknown()
+                "OK — blob {} MiB, transport {} MiB, push {} MiB, restore preflight {} MiB",
+                support::mib(budget.measurements.largest_blob_bytes),
+                support::mib(budget.measurements.transport_bytes),
+                budget
+                    .measurements
+                    .repository_push_bytes
+                    .map_or_else(|| "unknown".to_string(), support::mib),
+                support::mib(budget.measurements.restore_required_bytes),
             ),
         );
-        if !host.applicable() {
-            labelled(
-                "host",
-                "not applicable on this host — nothing was probed (see the findings above)",
+    } else {
+        labelled(
+            "budget",
+            &format!("FAILED — {} threshold(s) exceeded", budget.violations.len()),
+        );
+        for violation in &budget.violations {
+            println!(
+                "  {}: {} MiB > {} MiB — {}",
+                violation.field,
+                support::mib(violation.measured_bytes),
+                support::mib(violation.limit_bytes),
+                violation.remedy
             );
         }
     }
+}
 
-    let (envs, tools, vendor) = manifest.payload_split();
-    let total = manifest.payload_bytes();
-    let mut split = format!(
-        "envs {} MiB · tools {} MiB",
-        support::mib(envs),
-        support::mib(tools)
-    );
-    if manifest.vendor.is_some() {
-        let share = vendor.saturating_mul(100).checked_div(total).unwrap_or(0);
-        let _ = write!(
-            split,
-            " · vendor {} MiB, {share}% vendor",
-            support::mib(vendor)
+/// The restored-tree verification outcome.
+fn print_restored(project: &Path, restored: &RestoredReport) {
+    labelled("restored", &project.display().to_string());
+    for name in &restored.verified {
+        println!(
+            "  env {name}: checked against the manifest's file list — {} entry(ies), 0 failure(s)",
+            restored.report.files
         );
     }
-    println!("  payload {} MiB total ({split})", support::mib(total));
-
-    match report {
-        None => labelled(
-            "hint",
-            "pass --verify to check every sha256 (nothing is written)",
-        ),
-        Some(report) => {
-            for failure in &report.failures {
-                println!(
-                    "  {}: {}: {}",
-                    failure.path,
-                    failure.kind.as_str(),
-                    failure.detail
-                );
-            }
-            labelled(
-                "verify",
-                &format!(
-                    "{} blob(s), {} MiB checked, {} failure(s)",
-                    report.files,
-                    support::mib(report.bytes),
-                    report.failures.len()
-                ),
-            );
-            if report.ok() {
-                labelled("verify", "OK — every declared byte matches the manifest");
-            } else {
-                labelled("verify", "FAILED — do not restore from this branch");
-            }
-        }
+    for name in &restored.unverifiable {
+        println!(
+            "  env {name}: no per-file digests in this manifest (schema 1 predates the oracle) — content not verified"
+        );
     }
-
-    if let Some(standalone) = standalone {
-        match standalone {
-            StandaloneProbe::Skipped(reason) => {
-                labelled("probe", &format!("skipped — {reason}"));
-            }
-            StandaloneProbe::Runs { version } => {
-                labelled(
-                    "probe",
-                    &format!(
-                        "tool pixi-sandbox v{version}: runs standalone (--version, empty environment)"
-                    ),
-                );
-            }
-            StandaloneProbe::Refused { detail } => {
-                labelled(
-                    "probe",
-                    "FAILED — the embedded tool does not run standalone",
-                );
-                println!("  {detail}");
-            }
-        }
+    for failure in &restored.report.failures {
+        println!(
+            "  {}: {}: {}",
+            failure.path,
+            failure.kind.as_str(),
+            failure.detail
+        );
     }
-
-    if let Some(budget) = budget {
-        if budget.ok() {
-            labelled(
-                "budget",
-                &format!(
-                    "OK — blob {} MiB, transport {} MiB, push {} MiB, restore preflight {} MiB",
-                    support::mib(budget.measurements.largest_blob_bytes),
-                    support::mib(budget.measurements.transport_bytes),
-                    budget
-                        .measurements
-                        .repository_push_bytes
-                        .map_or_else(|| "unknown".to_string(), support::mib),
-                    support::mib(budget.measurements.restore_required_bytes),
-                ),
-            );
-        } else {
-            labelled(
-                "budget",
-                &format!("FAILED — {} threshold(s) exceeded", budget.violations.len()),
-            );
-            for violation in &budget.violations {
-                println!(
-                    "  {}: {} MiB > {} MiB — {}",
-                    violation.field,
-                    support::mib(violation.measured_bytes),
-                    support::mib(violation.limit_bytes),
-                    violation.remedy
-                );
-            }
-        }
-    }
-
-    if let Some((project, restored)) = restored {
-        labelled("restored", &project.display().to_string());
-        for name in &restored.verified {
-            println!(
-                "  env {name}: checked against the manifest's file list — {} entry(ies), 0 failure(s)",
-                restored.report.files
-            );
-        }
-        for name in &restored.unverifiable {
-            println!(
-                "  env {name}: no per-file digests in this manifest (schema 1 predates the oracle) — content not verified"
-            );
-        }
-        for failure in &restored.report.failures {
-            println!(
-                "  {}: {}: {}",
-                failure.path,
-                failure.kind.as_str(),
-                failure.detail
-            );
-        }
-        if restored.ok() {
-            if restored.verified.is_empty() {
-                labelled(
-                    "restored",
-                    "nothing to verify — the selected envs predate the per-file oracle",
-                );
-            } else {
-                labelled("restored", "OK — the restored tree matches the manifest");
-            }
-        } else {
+    if restored.ok() {
+        if restored.verified.is_empty() {
             labelled(
                 "restored",
-                "FAILED — the restored project is not the tree the manifest describes",
+                "nothing to verify — the selected envs predate the per-file oracle",
             );
+        } else {
+            labelled("restored", "OK — the restored tree matches the manifest");
         }
+    } else {
+        labelled(
+            "restored",
+            "FAILED — the restored project is not the tree the manifest describes",
+        );
     }
 }
 
