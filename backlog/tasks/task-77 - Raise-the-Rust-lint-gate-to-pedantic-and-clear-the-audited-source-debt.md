@@ -1,7 +1,7 @@
 ---
 id: TASK-77
 title: Raise the Rust lint gate to pedantic and clear the audited source debt
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-06 20:24'
 labels:
@@ -47,13 +47,13 @@ Encode the policy first so the gate holds the line for free, then sweep, then fi
 - [x] #1 A reviewed clippy policy lives in a `[workspace.lints.clippy]` table that all four crates inherit, every deliberate allow carries a reason comment, and the choice is recorded in .knowledge/decisions.md as a new D-number rather than left implicit.
 - [x] #2 The policy allows clippy::literal_string_with_formatting_args with a reason, because all 10 hits are intentional: placeholder templates such as `.replace("{version}", ...)` and shell parameter expansions such as `${PREFIX:-sandbox}` asserted inside Rust string literals, per doc-12 Finding 6.
 - [x] #3 The 261 MachineApplicable findings are applied in reviewed per-crate commits with no behaviour change, and pixi run --frozen lint passes on all four crates at the raised bar.
-- [ ] #4 Documentation debt the policy demands is paid rather than silently downgraded: 58 missing_errors_doc, 28 too_long_first_doc_paragraph, 12 missing_panics_doc and 16 doc_markdown are each either written or allowed with a recorded reason.
+- [x] #4 Documentation debt the policy demands is paid rather than silently downgraded: 58 missing_errors_doc, 28 too_long_first_doc_paragraph, 12 missing_panics_doc and 16 doc_markdown are each either written or allowed with a recorded reason.
 - [x] #5 The five long functions doc-9 A3 listed and never executed are extracted, one function per commit: doctor::print_human at 179 lines, restore::register_user_tools at 121, doctor::run at 111, restore::run at 110, and tools::update::refresh at 101.
 - [x] #6 xtask main::run_args at 101 lines and the 137-line narrative test in tests/e2e.rs stay as they are, allowed in place with a reason, because splitting a subcommand dispatcher or a single offline end-to-end proof makes both worse.
 - [x] #7 The two workflow renderers are left to task-76: this task does not restructure render_github_workflow at 476 lines or render_relock_workflow at 347, and where the raised gate would fail on them it adds a function-scoped allow naming task-76 as the owner instead of reshaping the templates.
 - [x] #8 The three cast sites in transport-size arithmetic are each read and resolved: shard.rs:122, transport_budget.rs:232 and pack.rs:523 are either corrected with a test pinning the bound, or annotated with why the cast cannot truncate, since a silent truncation there yields a wrong budget verdict rather than a crash.
 - [x] #9 The 413-line inline test module in commands/tools/update.rs, 54 percent of that file against a 22 percent workspace rate, moves to a tests/ sibling matching the crate self_update_*.rs convention, with no test lost.
-- [ ] #10 pixi run --frozen test reports at least 654 passing before and after every commit in this task, no test added or changed points at this checkout or a real HOME per D10, no new crate dependency is added because the vendored tree cannot fetch one without a relock cycle, and no rendered workflow, manifest schema, transport format or git-access path changes.
+- [x] #10 pixi run --frozen test reports at least 654 passing before and after every commit in this task, no test added or changed points at this checkout or a real HOME per D10, no new crate dependency is added because the vendored tree cannot fetch one without a relock cycle, and no rendered workflow, manifest schema, transport format or git-access path changes.
 <!-- AC:END -->
 
 <!-- SECTION:NOTES:BEGIN -->
@@ -96,10 +96,15 @@ test 928/1 (35 git / 212 core / 525 pixi-sandbox / 156 xtask); check-repository 
 lint-generated-workflow green; convco green over `ae79772..HEAD`. Full evidence and the open
 items are in CONTEXT.md (third session, 2026-10-10).
 
-Still open, so the task stays In Progress: AC#4 — 52 `too_long_first_doc_paragraph` findings
-(nursery, not enforced by D20) are neither written nor allowed; AC#10 — the per-commit suite
-clause is evidenced for the behaviour-touching commits and HEAD, not for the three docs-only and
-attribute-only commits.
+Closed 2026-10-10 on `arena/773888b7-pixi-sandbox` (base `8d9e3b41`, the PR #130 merge):
+AC#4 met — all 52 `too_long_first_doc_paragraph` findings are rewritten (one summary
+paragraph plus detail paragraphs; none allowed, so no decisions.md amendment), the locating
+command reports 0 at HEAD, and the three pedantic doc groups stay clean under the enforced
+gate. AC#10 met — the suite was run at each of the four per-crate `docs(...)` commits this
+session (928/1 every time, ≥654 required), the range diff is doc-comment-only with no
+lockfile or fixture change, and the full gate set (fmt, lint, test, check-repository,
+lint-generated-workflow, convco) is green at HEAD. Full evidence in CONTEXT.md, 2026-10-10
+(fourth session).
 <!-- SECTION:NOTES:END -->
 
 ## Definition of Done

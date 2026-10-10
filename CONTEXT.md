@@ -2105,3 +2105,71 @@ diff on the branch.
   run. The no-new-dependency, no-real-HOME and no-render-change clauses hold.
 
 Task-77 stays In Progress until AC#4 and the per-commit clause of AC#10 are evidenced.
+
+### 2026-10-10 (fourth session) — TASK-77 closed: the 52 too_long_first_doc_paragraph findings are rewritten; AC#4 and AC#10 met
+
+Branch note: this session is fixed to `arena/773888b7-pixi-sandbox`, based on main after
+the PR #130 merge (`8d9e3b41`). Restore ran via `scripts/restore.sh`; baseline
+`pixi run --frozen test` 928/1 (35 git / 212 core / 525 pixi-sandbox, 1 skipped / 156
+xtask). This entry carries TASK-77 evidence only; TASK-76 evidence stays in its own
+entries.
+
+**Commits on top of `8d9e3b41` (four, convco-clean, one per crate):**
+
+1. `a54b7174` docs(pixi-sandbox-core): 8 first paragraphs rewritten — files_manifest ×1,
+   manifest ×2, sandbox_config ×3, transport_budget ×2.
+2. `cc7748c8` docs(pixi-sandbox-git): 1 — `FileCommit`.
+3. `7b180faa` docs(pixi-sandbox): 31 — user_tools ×10, pipeline ×4,
+   generated/relock_workflow ×3, generated/mod ×3, upgrade ×3, standalone ×3,
+   self_update ×3 (mod ×2, assets ×1), pack, release/mod.
+4. `db71dbc1` docs(xtask): 12 — airlock ×4, workflow ×3, release_assets ×2,
+   conda_platforms, release_refs, util.
+
+Every rewrite is the same shape: the first paragraph becomes a one-sentence summary
+under the lint's 200-character text threshold, the detail moves to following paragraphs.
+All 52 findings are rewritten; **none is allowed**, so there is no decisions.md amendment
+to make (D20 keeps nursery out of the gate, and the debt itself is paid rather than
+suppressed). The doc-comment edits inside the generated module sources
+(`src/generated/*.rs`) touch no template literal; the golden fixtures are byte-identical.
+
+**AC#10 — per-commit suite runs (every run ≥654; baseline 928/1):**
+
+| commit | content | `pixi run --frozen test` |
+| --- | --- | --- |
+| `8d9e3b41` (base) | baseline | 928 passed / 1 skipped (35+212+525+156) |
+| `a54b7174` | 8 doc rewrites (core) | 928 passed / 1 skipped |
+| `cc7748c8` | 1 doc rewrite (git) | 928 passed / 1 skipped |
+| `7b180faa` | 31 doc rewrites (pixi-sandbox) | 928 passed / 1 skipped |
+| `db71dbc1` | 12 doc rewrites (xtask) | 928 passed / 1 skipped |
+
+The task-closing documentation commit (this entry plus the task file) is markdown-only —
+no Rust, test, manifest or lockfile change — and the full gate set below was re-run at
+that final HEAD. No test was added or changed (none at all this session), no new crate
+dependency (`Cargo.toml`/`Cargo.lock` have zero diff across `8d9e3b41..HEAD`), and no
+rendered workflow, manifest schema, transport format or git-access path changed: every
+changed line in the range is a `///` doc comment, and
+`git diff 8d9e3b4..HEAD -- crates/pixi-sandbox/tests/fixtures/generated/` is empty.
+
+**AC#4 — evidence:**
+
+- `too_long_first_doc_paragraph`: the locating command from the brief
+  (`pixi run --frozen -- cargo clippy --offline --workspace --all-targets
+  --message-format=short -- -W clippy::too_long_first_doc_paragraph`) reported 52 at the
+  base and **0 at HEAD**; all 52 rewritten, 0 allowed.
+- `missing_errors_doc` (58), `missing_panics_doc` (12), `doc_markdown` (16): clean under
+  the enforced gate — full `pixi run --frozen lint` exits 0 with clippy `-D warnings`
+  green on all four crates, and these three are pedantic, so the gate proves them.
+
+**Final gates at HEAD:**
+
+| gate | result |
+| --- | --- |
+| `pixi run --frozen fmt --check` | exit 0 |
+| `pixi run --frozen lint` | exit 0, 11/11 tasks; clippy `-D warnings` green on all four crates (only sandbox-environmental cargo-deny noise: none this run; advisories/bans/licenses/sources ok) |
+| `pixi run --frozen test` | 928 passed / 1 skipped (≥654 required) |
+| `pixi run --frozen xtask check-repository` | exit 0 |
+| `pixi run --frozen xtask lint-generated-workflow` | exit 0, actionlint clean |
+| `pixi run --frozen -- convco check 8d9e3b4..HEAD` | no errors in the 4 code commits plus the documentation commit |
+| `git diff 8d9e3b4..HEAD -- crates/pixi-sandbox/tests/fixtures/generated/` | empty |
+
+With AC#4 and the per-commit clause of AC#10 evidenced above, TASK-77 is set to Done.
