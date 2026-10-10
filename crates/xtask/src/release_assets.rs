@@ -74,6 +74,10 @@ pub fn host_triple() -> Result<String> {
 /// Stripping is best-effort, like the `strip "$BIN" || true` this replaces: the release
 /// profile already strips (`strip = true` in the workspace profile), so a missing or failing
 /// strip tool must never fail a release — it is a size optimisation, not a correctness step.
+///
+/// # Errors
+///
+/// Fails when the built binary is not found at its expected path, or when it cannot be copied into `out_dir` or marked executable. A failing or missing `strip` is not an error.
 pub fn stage_release_binary(
     target: Option<&str>,
     target_dir: &Path,
@@ -147,6 +151,10 @@ fn standalone_binaries(dir: &Path) -> Result<Vec<PathBuf>> {
 /// Write `SHA256SUMS` over the standalone release binaries in `dir`, then verify the written
 /// file covers every one of them — the completeness check the shell did with `grep`, kept as
 /// a real second pass over the bytes on disk so a bug in the writer cannot pass unnoticed.
+///
+/// # Errors
+///
+/// Fails when `dir` holds no standalone release binary, when a binary cannot be hashed, or when `SHA256SUMS` cannot be written or fails [`verify_completeness`].
 pub fn release_checksums(dir: &Path) -> Result<PathBuf> {
     let binaries = standalone_binaries(dir)?;
     if binaries.is_empty() {
@@ -183,6 +191,10 @@ pub fn release_checksums(dir: &Path) -> Result<PathBuf> {
 /// Assert every binary has a line in `SHA256SUMS` (`<digest>  <name>`, two spaces), and that
 /// the file holds no stale extra lines. Separate from the writer so a fixture can prove the
 /// check fires on a tampered file.
+///
+/// # Errors
+///
+/// Fails when `SHA256SUMS` cannot be read, when a binary has no line in it, or when it lists a stale name not among `binaries`.
 pub fn verify_completeness(sums: &Path, binaries: &[PathBuf]) -> Result<()> {
     let body = fs::read_to_string(sums).with_context(|| format!("reading {}", sums.display()))?;
     let covered: Vec<String> = body

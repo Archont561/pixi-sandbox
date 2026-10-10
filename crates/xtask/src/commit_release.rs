@@ -27,6 +27,10 @@ const BRANCH_REF: &str = "HEAD:main";
 /// Order matters and matches the shell this replaced: the remote-tag refusal fires before
 /// anything is staged (a dry-run over an existing tag is a red build, not a diff), and the
 /// dry-run stops after the diff, before `.release-touched` is even required.
+///
+/// # Errors
+///
+/// Fails when `tag` is not `vX.Y.Z`, when `tag` already exists on `remote`, when the touched-file list cannot be read, or when staging, committing, tagging, or pushing fails.
 #[allow(clippy::too_many_arguments)]
 pub fn commit_release(root: &Path, tag: &str, dry_run: bool, remote: &str) -> Result<()> {
     let semver = tag.strip_prefix('v').unwrap_or_default();

@@ -35,6 +35,10 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// Canonical upstream identity, independent of interfaces that releases may retire.
+///
+/// # Errors
+///
+/// Always returns `Ok` today, because the identity is a constant. The `Result` stays in the signature so every caller already handles the failure case.
 pub fn project_root_ident(_root: &Path) -> Result<String> {
     Ok("Archont561/pixi-sandbox".to_string())
 }
@@ -104,6 +108,10 @@ fn display_rel(root: &Path, path: &Path) -> String {
 
 /// Report every reference of ours that disagrees with the declared version (README family)
 /// and every literal tag of ours in the derived docs. Empty means consistent.
+///
+/// # Errors
+///
+/// Fails when the workspace version cannot be read or a reference file cannot be read.
 pub fn scan(root: &Path) -> Result<Vec<String>> {
     let current = format!("v{}", crate::version::workspace_version(root)?);
     let root_ident = project_root_ident(root)?;
@@ -158,6 +166,10 @@ pub fn scan(root: &Path) -> Result<Vec<String>> {
 /// Rewrites are byte-faithful outside the approved lines: content is carried through
 /// `split_inclusive`, so line endings and a missing trailing newline survive untouched (the
 /// retired shell pipeline once truncated 1978 lines of documentation by getting this wrong).
+///
+/// # Errors
+///
+/// Fails when `new_tag` is empty, when the project identity cannot be resolved, when the workspace version cannot be parsed, or when a reference file cannot be read or written.
 pub fn rewrite(root: &Path, new_tag: &str) -> Result<usize> {
     if new_tag.is_empty() {
         bail!("rewrite needs a destination tag");

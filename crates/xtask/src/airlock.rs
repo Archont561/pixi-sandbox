@@ -82,6 +82,10 @@ pub fn plan_argv(
 /// because the workflow reads `fromJSON(...).include` — only `.include` is a matrix, and
 /// Actions would read every other key (the scalar `schema`) as a dimension that must be an
 /// array, silently yielding zero jobs.
+///
+/// # Errors
+///
+/// Fails when `json` is not JSON, has no `include` array, or has an empty `include` — an empty matrix would prove nothing on no runner.
 pub fn validate_matrix(json: &str) -> Result<String> {
     let parsed: Value = serde_json::from_str(json)
         .with_context(|| format!("the plan output is not JSON: {}", json.trim()))?;
@@ -96,6 +100,10 @@ pub fn validate_matrix(json: &str) -> Result<String> {
 }
 
 /// Build the matrix from the plan binary's stdout and hand it to the workflow.
+///
+/// # Errors
+///
+/// Fails when the plan binary cannot be started or exits non-zero, or when its output is rejected by [`validate_matrix`].
 pub fn airlock_matrix(
     bin: &str,
     config: &str,
@@ -153,6 +161,10 @@ fn shaped_like_tag(tag: &str) -> bool {
 ///    tag whose assets do not exist yet;
 /// 3. the newest published release, so a mid-release proof proves the last real thing;
 /// 4. nothing reachable — an error, never a silent skip.
+///
+/// # Errors
+///
+/// Fails when an explicit override is not a published release (a 404 is a real error, not a skip), when no declared, published, or latest release can be found, or when the resolved tag is not `vX.Y.Z`.
 pub fn resolve_tag(
     declared: &str,
     override_tag: &str,
@@ -201,6 +213,10 @@ fn gh_tag(repo: &str, endpoint: &str) -> Option<String> {
 }
 
 /// Resolve and report: `resolved=` to `$GITHUB_OUTPUT`, the proving line to the step summary.
+///
+/// # Errors
+///
+/// Fails when the declared version cannot be read from the workspace `Cargo.toml`, when no release can be resolved (see [`resolve_tag`]), or when the `GITHUB_OUTPUT` or step summary cannot be written.
 pub fn resolve_release_tag(root: &Path, repo: &str, override_tag: &str) -> Result<()> {
     let version = crate::version::workspace_version(root)
         .context("could not read the declared version from the workspace Cargo.toml")?;
@@ -229,6 +245,10 @@ pub fn resolve_release_tag(root: &Path, repo: &str, override_tag: &str) -> Resul
 /// The release asset name for a Pixi platform id. Delegates to
 /// [`pixi_sandbox_core::platform::Platform`] (task-55/task-59) instead of restating the five
 /// names xtask also stages and checksums (`release_assets.rs`).
+///
+/// # Errors
+///
+/// Fails when `platform` has no static pixi-sandbox release asset.
 pub fn static_asset_for_platform(platform: &str) -> Result<&'static str> {
     Platform::from_str(platform)
         .map(Platform::asset_name)
@@ -237,6 +257,11 @@ pub fn static_asset_for_platform(platform: &str) -> Result<&'static str> {
         })
 }
 
+/// Download the released standalone binary for `platform` at `tag` into `out`.
+///
+/// # Errors
+///
+/// Fails when the output directory cannot be created, when `gh release download` cannot be started, or when it exits non-zero for `tag`.
 pub fn airlock_self_bin(repo: &str, tag: &str, platform: &str, out: &Path) -> Result<()> {
     airlock_self_bin_with_gh(Path::new("gh"), repo, tag, platform, out)
 }
@@ -292,6 +317,10 @@ pub fn airlock_self_bin_with_gh(
 
 /// Split the matrix `environments` value (`default,web`) into names. Empty names are
 /// dropped; zero names left is the same error the plan CLI raises for `--envs ""`.
+///
+/// # Errors
+///
+/// Fails when no environment names remain once empty entries are dropped.
 pub fn split_envs(envs: &str) -> Result<Vec<String>> {
     let names: Vec<String> = envs
         .split(',')
@@ -395,6 +424,10 @@ pub fn pack_argv(envs: &str, out: &Path, cargo_vendor: bool, self_bin: &Path) ->
 
 /// Materialise every named environment (`pixi install --frozen`, the loop the shell did),
 /// then pack the transport with the released binary found on PATH (or `self_bin`).
+///
+/// # Errors
+///
+/// Fails when an environment cannot be installed with `pixi install --frozen`, or when the transport cannot be packed with the chosen `pixi-sandbox` binary.
 pub fn airlock_pack(
     repo_root: &Path,
     envs: &str,
@@ -474,6 +507,10 @@ pub fn airlock_pack_with_pixi(
 
 /// Fetch the published branch the way a developer's machine would: a fresh host repo, a
 /// remote, one shallow fetch, a linked worktree — all through `pixi-sandbox-git` (D9).
+///
+/// # Errors
+///
+/// Fails when the host directory cannot be cleared or created, or when any git step (adding the remote, the shallow fetch, the linked worktree) fails.
 pub fn airlock_fetch(remote: &str, branch: &str, host_dir: &Path, worktree: &Path) -> Result<()> {
     if host_dir.exists() {
         std::fs::remove_dir_all(host_dir)
@@ -499,6 +536,10 @@ pub fn airlock_fetch(remote: &str, branch: &str, host_dir: &Path, worktree: &Pat
 /// namespace — no route, no DNS, nothing to fall back to), `sudo sandbox-exec` with the
 /// outbound-denied profile on macOS, and a loud error anywhere else, because a proof that
 /// silently ran with the network reachable would be a green build that proves nothing.
+///
+/// # Errors
+///
+/// Fails for an operating system with no known egress-denial mechanism. Silently running with the network reachable would be a green build that proves nothing.
 pub fn denial_argv(os: &str, command: &[String]) -> Result<Vec<String>> {
     let mut argv: Vec<String> = match os {
         "linux" => ["sudo", "unshare", "-n", "--"]
@@ -538,6 +579,10 @@ pub fn command_with_absolute_program(
 
 /// Re-exec `command` under the platform's egress denial, inheriting stdio, and exit with
 /// whatever it exited with — the gate's failure must look like the gate's failure.
+///
+/// # Errors
+///
+/// Fails when the egress-denial wrapper cannot be built (see [`denial_argv`]) or the denied command cannot be started. A command that runs and fails is not an error here: its exit status is passed through.
 pub fn deny_egress(command: &[String]) -> Result<()> {
     let command =
         command_with_absolute_program(command, &std::env::var_os("PATH").unwrap_or_default())?;

@@ -66,7 +66,14 @@ mod staged_and_binary_name_properties {
 
             let staged = staged_name(&target);
             prop_assert!(staged.starts_with("pixi-sandbox-"), "{}", staged);
-            prop_assert_eq!(staged.ends_with(".exe"), windows, "{}", staged);
+            prop_assert_eq!(
+                std::path::Path::new(&staged)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("exe")),
+                windows,
+                "{}",
+                staged
+            );
             prop_assert_eq!(
                 staged.clone(),
                 format!("pixi-sandbox-{target}{}", if windows { ".exe" } else { "" })

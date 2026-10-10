@@ -11,6 +11,10 @@ use std::path::Path;
 /// Read `[workspace.package].version` from `<root>/Cargo.toml`, parsed as TOML rather than
 /// matched by line shape, so a dependency pin or a member manifest can never be mistaken for
 /// the declared version.
+///
+/// # Errors
+///
+/// Fails when `Cargo.toml` cannot be read or parsed, or when it has no `[workspace.package].version`.
 pub fn workspace_version(root: &Path) -> Result<String> {
     let manifest_path = root.join("Cargo.toml");
     let manifest: toml::Table = crate::util::read(&manifest_path)?
@@ -32,6 +36,10 @@ pub fn workspace_version(root: &Path) -> Result<String> {
 
 /// `xtask version`: print the bare semver (no leading `v`, no trailing newline chatter),
 /// so `$(cargo run -q -p xtask -- version)` is a plain command substitution.
+///
+/// # Errors
+///
+/// Fails when the workspace version cannot be read.
 pub fn print_version(root: &Path) -> Result<()> {
     print!("{}", workspace_version(root)?);
     Ok(())

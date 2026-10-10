@@ -3,6 +3,7 @@
 
 mod support;
 
+use std::fmt::Write as _;
 use std::fs;
 use support::{headlines, valid_fixture};
 
@@ -10,10 +11,11 @@ use support::{headlines, valid_fixture};
 /// and `modules` are the claims under test; everything else is scaffolding the other
 /// checks need.
 fn agents_md(paths: &[&str], modules: &[&str]) -> String {
-    let rows: String = paths
-        .iter()
-        .map(|path| format!("| `{path}` | a row |\n"))
-        .collect();
+    let mut rows = String::new();
+    for path in paths {
+        // A String sink cannot fail, so the fmt::Result carries no information.
+        let _ = writeln!(rows, "| `{path}` | a row |");
+    }
     format!(
         "## Repo map\n\n| path | notes |\n| --- | --- |\n{rows}\n\
          ### Test conventions\n\n\
@@ -31,7 +33,10 @@ fn agents_md(paths: &[&str], modules: &[&str]) -> String {
 fn fixture(paths: &[&str], modules: &[&str], lib_mods: &[&str]) -> tempfile::TempDir {
     let dir = valid_fixture();
     fs::write(dir.path().join("AGENTS.md"), agents_md(paths, modules)).expect("AGENTS.md");
-    let lib: String = lib_mods.iter().map(|m| format!("pub mod {m};\n")).collect();
+    let mut lib = String::new();
+    for m in lib_mods {
+        let _ = writeln!(lib, "pub mod {m};");
+    }
     fs::write(dir.path().join(xtask::repo_checks::agents_md::LIB), lib).expect("lib.rs");
     dir
 }

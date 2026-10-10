@@ -27,10 +27,15 @@
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_git::ShellGit;
 use regex::Regex;
+use std::fmt::Write as _;
 use std::path::Path;
 use std::process::Command;
 
 /// Run the whole preparation; returns the `vX.Y.Z` tag for the caller to print.
+///
+/// # Errors
+///
+/// Fails when `selector` does not resolve to an `X.Y.Z` version, or when a manifest cannot be stamped with it.
 pub fn run(root: &Path, selector: &str) -> Result<String> {
     let semver = resolve_version(root, selector)?;
     // The version flows into git tags and file contents; keep it a strict semver core.
@@ -241,7 +246,11 @@ pub fn write_touched_report(root: &Path, touched_file: &Path) -> Result<()> {
         .worktree_status_files(root)
         .context("running git status for the touched-file report")?;
     files.sort();
-    let report = files.iter().map(|f| format!("{f}\n")).collect::<String>();
+    let mut report = String::new();
+    for file in &files {
+        // A String sink cannot fail, so the fmt::Result carries no information.
+        let _ = writeln!(report, "{file}");
+    }
     crate::util::write_atomic(touched_file, &report)?;
     eprintln!(
         "  {} file(s) recorded in {}",

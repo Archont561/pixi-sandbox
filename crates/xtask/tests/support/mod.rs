@@ -85,16 +85,16 @@ pub fn run_git(cwd: &Path, args: &[&str]) -> String {
         "-c",
         "user.email=test@example.invalid",
     ];
-    let mut argv: Vec<&str> = identity.to_vec();
-    argv.extend_from_slice(args);
+    let mut command_args: Vec<&str> = identity.to_vec();
+    command_args.extend_from_slice(args);
     let out = std::process::Command::new("git")
-        .args(&argv)
+        .args(&command_args)
         .current_dir(cwd)
         .output()
         .expect("git runs");
     assert!(
         out.status.success(),
-        "git {argv:?} failed in {}: {}",
+        "git {command_args:?} failed in {}: {}",
         cwd.display(),
         String::from_utf8_lossy(&out.stderr)
     );

@@ -2047,3 +2047,61 @@ workflows unchanged (the golden tests prove it). AC#1, #2, #5, #7, #8 met; #3, #
 **Not implemented:** TASK-76 AC#8 (release + consumer run on a released binary —
 carried), TASK-77's xtask remainder and AC#9 (above), TASK-78+ backlog. The lint
 gate is red on xtask between this merge and the next session's xtask commit.
+
+### 2026-10-10 (third session) — TASK-77 closed on the xtask sweep and the tools-update migration; In Progress for two ACs
+
+Branch note: this session is fixed to `arena/ef708741-pixi-sandbox` (the brief named
+`arena/00dbb795-pixi-sandbox`); the work is on this branch, based on the PR #129 merge
+`ae79772`. The base `0a036ba2` is not present in this shallow clone, so the convco range is
+`ae79772..HEAD`. Restore ran via `scripts/restore.sh`; the baseline was 928/1 (35 git / 212 core /
+525 pixi-sandbox / 156 xtask), and it is 928/1 at HEAD.
+
+**Commits on top of `ae79772` (seven, convco-clean):**
+
+1. `68aa8708` docs(xtask): `# Errors` for 38 public fallible entry points, and `# Panics` on `version_tag_re`.
+2. `c915b0d4` refactor(xtask): mechanical fixes (format_collect ×4 to `writeln!`, `argv` renamed,
+   `.exe` by `Path::extension`, `stale_implementation_references` infallible with a closure
+   adapter in the check table).
+3. `0aa99b25` refactor(xtask): extract `lint_relock_renders` out of `lint_generated_workflow`
+   (112 → under 100 lines; rendered output unchanged).
+4. `838bae08` chore(xtask): function-scoped `too_many_lines` allow on `run_args` with its
+   reason (AC#6).
+5. `7d8e3cb8` refactor(pixi-sandbox): `tools_update` promoted to the lib (`refresh` takes the
+   stamp from the caller, so the lib is clock-free).
+6. `c3ed7ccb` test(pixi-sandbox): the 13 inline tests of `commands/tools/update.rs` move to
+   `tests/tools_update.rs`; the LEGACY list in `tests/fixtures.rs` drops to four entries.
+7. `833e5d99` docs(agents): `tools_update` in the repo map and promoted-module list (the
+   repo-consistency check requires it).
+
+**Gates at HEAD:** `fmt --check` green; full `lint` exits 0 with all 11 tasks successful, and
+clippy `-D warnings` is green on all four crates. The only `lint` output besides command echo
+is `cargo deny` noise: `index-failure` (no crates index reachable from the sandbox) and
+`duplicate` entries for `getrandom`, `syn` and `windows-sys`, which come from the existing graph.
+`test` 928/1; `xtask check-repository` green; `xtask lint-generated-workflow` clean;
+`convco check ae79772..HEAD` no errors in 7 commits; the generated golden fixtures have zero
+diff on the branch.
+
+**Acceptance criteria, against evidence:**
+
+- AC#3 met: the MachineApplicable sweeps are the per-crate commits of the TASK-77 history on
+  `arena/00dbb795-pixi-sandbox` (`08a7e765` core, `afa06c63` pixi-sandbox, `38d6dc3b` xtask, and
+  the per-function extractions). Pedantic is clean across all four crates.
+- AC#4 **open**: `missing_errors_doc`, `missing_panics_doc` and `doc_markdown` are all clean.
+  `too_long_first_doc_paragraph` is a nursery lint, so D20 does not enforce it, and it is
+  neither written nor allowed for 52 locations (`pixi-sandbox` 31, `xtask` 12, `pixi-sandbox-core`
+  8, `pixi-sandbox-git` 1). Recorded here, not in code: user_tools.rs ×10, airlock.rs ×4,
+  pipeline.rs ×4, workflow.rs ×3, upgrade/mod.rs ×3, standalone.rs ×3,
+  generated/relock_workflow.rs ×3, generated/mod.rs ×3, sandbox_config.rs ×3,
+  release_assets.rs ×2, self_update/mod.rs ×2, transport_budget.rs ×2, manifest.rs ×2,
+  and one each in util.rs, release_refs.rs, conda_platforms.rs, self_update/assets.rs,
+  release/mod.rs, pack.rs, pixi-sandbox-git lib.rs and files_manifest.rs. The brief did not
+  list these, so the task stays In Progress until they are written or allowed.
+- AC#6 met: `main::run_args` carries the reasoned allow; `tests/e2e.rs` keeps its two reasoned
+  allows for the narrative proofs.
+- AC#9 met: 13 tests migrated with none lost (525 pixi-sandbox both before and after).
+- AC#10 **open on the per-commit clause**: the suite was run at the mechanical, extraction,
+  promotion and migration commits and at HEAD (928/1 each time it was run). The docs-only,
+  attribute-only and AGENTS commits were verified by compile and lint, not by a separate suite
+  run. The no-new-dependency, no-real-HOME and no-render-change clauses hold.
+
+Task-77 stays In Progress until AC#4 and the per-commit clause of AC#10 are evidenced.

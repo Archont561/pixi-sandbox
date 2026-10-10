@@ -17,6 +17,11 @@ use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+/// Smoke-test the `.conda` package in `out_dir` against the version this tree declares.
+///
+/// # Errors
+///
+/// Fails when the workspace version cannot be read, when no `.conda` package exists in `out_dir`, when `pixi` is not on PATH, or when the packaged binary reports a different version or cannot parse its own arguments.
 pub fn smoke_conda_package(root: &Path, out_dir: &Path) -> Result<()> {
     // The version the tree declares is the only version a package built from this tree may
     // carry. `check-repository` proves the package *manifest* agrees; this proves the artifact

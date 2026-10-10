@@ -94,6 +94,10 @@ pub fn validate(dir: &Path, platforms: &[&str]) -> (Vec<String>, Vec<String>) {
 }
 
 /// `xtask check-conda-platforms <dir>`: GitHub-annotated adapter over [`validate`].
+///
+/// # Errors
+///
+/// Fails when any platform package has a problem. Each problem is printed as a GitHub annotation first.
 pub fn check(dir: &Path) -> Result<()> {
     let platforms: Vec<&str> = SUPPORTED_PLATFORMS.to_vec();
     let (ok, diagnostics) = validate(dir, &platforms);
