@@ -29,6 +29,10 @@ pub fn lines_without_opt_out(text: &str) -> impl Iterator<Item = (usize, &str)> 
 
 /// A literal `vX.Y.Z` release tag, the token both the reference scan and the workflow-tag
 /// check hunt for.
+///
+/// # Panics
+///
+/// Never: the pattern is a constant that is known to compile, and the first call compiles it.
 pub fn version_tag_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"v[0-9]+\.[0-9]+\.[0-9]+").expect("static regex"))
@@ -46,12 +50,21 @@ pub fn is_strict_semver(version: &str) -> bool {
             .all(|p| p.is_some_and(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())))
 }
 
+/// Read a UTF-8 text file.
+///
+/// # Errors
+///
+/// Fails when the file cannot be read or is not valid UTF-8.
 pub fn read(path: &Path) -> Result<String> {
     fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
 }
 
 /// Write through a sibling temp file and an atomic rename, so a failure part-way never leaves
 /// a half-written file behind (the release preparation edits a dozen files in sequence).
+///
+/// # Errors
+///
+/// Fails when the parent directory cannot be created, or when the temp file cannot be written or renamed over `path`.
 pub fn write_atomic(path: &Path, contents: &str) -> Result<()> {
     let parent = path
         .parent()

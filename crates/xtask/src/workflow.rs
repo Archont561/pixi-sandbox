@@ -23,6 +23,10 @@ pub const RELOCK_PATH: &str = ".github/workflows/relock.yml";
 /// Render the relock workflow *for this repository*: the pixi pin from the embedded catalogue,
 /// the cargo half decided by the reviewed publish plan, and this repository's own CI workflow
 /// as the dispatch target.
+///
+/// # Errors
+///
+/// Fails when the workspace version cannot be read, or when the embedded tools lock declares no pixi pin.
 pub fn relock_render(root: &Path) -> Result<String> {
     let cli_version = crate::version::workspace_version(root)
         .context("reading the workspace version for the relock workflow")?;
@@ -40,6 +44,10 @@ pub fn relock_render(root: &Path) -> Result<String> {
 
 /// Write this repository's render. The committed file is derived, so this is the one command
 /// that may change it — `check-repository` fails when the two disagree.
+///
+/// # Errors
+///
+/// Fails when the render fails (see [`relock_render`]), or when the workflow directory or file cannot be written.
 pub fn render_relock(root: &Path) -> Result<()> {
     let path = root.join(RELOCK_PATH);
     let rendered = relock_render(root)?;
@@ -65,6 +73,10 @@ pub fn render_relock(root: &Path) -> Result<()> {
 /// Validate the exact workflow renderer used by `pixi-sandbox init` with GitHub's external
 /// workflow linter. Structural contracts that actionlint cannot evaluate live in the product
 /// crate's Rust tests; this adapter owns only temporary-project and process orchestration.
+///
+/// # Errors
+///
+/// Fails when a temporary project cannot be created or a generated workflow cannot be written, when the embedded tools lock declares no pixi pin, or when `actionlint` reports a problem in any generated workflow.
 pub fn lint_generated_workflow(actionlint: &Path) -> Result<()> {
     let project = tempfile::tempdir().context("creating a temporary generated project")?;
     let workflow_path = project.path().join(WORKFLOW_PATH);

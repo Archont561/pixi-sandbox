@@ -31,6 +31,10 @@ use std::path::Path;
 use std::process::Command;
 
 /// Run the whole preparation; returns the `vX.Y.Z` tag for the caller to print.
+///
+/// # Errors
+///
+/// Fails when `selector` does not resolve to an `X.Y.Z` version, or when a manifest cannot be stamped with it.
 pub fn run(root: &Path, selector: &str) -> Result<String> {
     let semver = resolve_version(root, selector)?;
     // The version flows into git tags and file contents; keep it a strict semver core.

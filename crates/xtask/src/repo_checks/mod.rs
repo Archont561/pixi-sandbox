@@ -106,6 +106,10 @@ const CHECKS: &[Check] = &[
 ];
 
 /// Run every check, returning all failures in one pass so a red run names every problem.
+///
+/// # Errors
+///
+/// Fails only when a check cannot run at all, such as an unreadable file. A check that finds a problem is returned as a [`Failure`] instead.
 pub fn check_repository(root: &Path) -> Result<Vec<Failure>> {
     let mut failures = Vec::new();
     for check in CHECKS {
@@ -115,6 +119,10 @@ pub fn check_repository(root: &Path) -> Result<Vec<Failure>> {
 }
 
 /// `xtask check-repository`: GitHub-annotated adapter over [`check_repository`].
+///
+/// # Errors
+///
+/// Fails when [`check_repository`] cannot run, or when any check reports a failure. Each failure is printed as a GitHub annotation first.
 pub fn run(root: &Path) -> Result<()> {
     let failures = check_repository(root)?;
     if !failures.is_empty() {
