@@ -2206,3 +2206,107 @@ With AC#4 and the per-commit clause of AC#10 evidenced above, TASK-77 is set to 
 > commit, `pixi run --frozen test` ≥654 at every commit. Do not push, open a pull
 > request, merge, release or dispatch without my explicit go-ahead — propose the slice
 > and stop.
+
+### 2026-10-10 (fifth session) — both close-outs reduce to one maintainer click; the starter lane rehearsed green
+
+Branch note: session fixed to `arena/eac8e2fe-pixi-sandbox`, based on main at `6ed6fe6`
+(PR #131, TASK-77). Restore ran via `scripts/restore.sh` (72 s, 14 495 blobs verified,
+0 failures); manifest names commit `6ed6fe6`, schema 2, tool pixi-sandbox v0.6.0, vendor
+268 crates. User tools registered in `~/.local/bin`. Baseline `pixi run --frozen test`
+**928 passing / 1 skipped** (35 git / 212 core / 525 pixi-sandbox / 156 xtask) — identical
+to the number the fourth session recorded; `pixi run --frozen lint` 11/11 green.
+
+**Environment finding worth carrying: this checkout arrives as a shallow,
+branch-filtered clone.** `git rev-list --count HEAD` was **1**, `.git/shallow` listed two
+boundaries, and `remote.origin.fetch` was scoped to the session branch alone
+(`+refs/heads/arena/eac8e2fe-pixi-sandbox*:…`). The visible consequence is that
+`git merge-base --is-ancestor v0.6.0 HEAD` answers **NO** — v0.6.0 is not an ancestor of
+anything, `git log` shows one commit, and `convco check HEAD~1..HEAD` is meaningless. None
+of these are repository facts; they are artefacts of the clone. Fixed in place with
+`git fetch --deepen=300 origin main` (311 commits, `.git/shallow` gone, **no config
+change** — the refspec was passed on the command line, not written). A session that skips
+this will silently mis-read release ordering, which is exactly what TASK-76's blocker below
+turns on. Worth a line in the session skill's opening-prompt template.
+
+**Scope was narrowed by the owner to closing TASK-85 AC#6 and TASK-76 AC#8, no feature
+code.** Both are blocked on a maintainer action; neither is blocked on missing engineering.
+
+**TASK-85 AC#6 — dispatch refused, everything around it proven.** `gh workflow run
+starter.yml --ref main -f release-tag=v0.6.0
+-f source-commit=8298edce13049ab01a7bc9d3e09c9daf8d14fc08 -f dry-run=true` returns
+`HTTP 403: Resource not accessible by integration` — this sandbox's token cannot dispatch
+workflows, matching the session skill's standing warning. Every gate the lane runs before
+the publish step was therefore executed directly against the remote with the workflow's own
+flags: `starter-check-dispatch`, `starter-verify-release` and `starter-check-main` all exit
+0 (`Archont561/pixi-sandbox-starter` exists, is a template, and has `refs/heads/main` at
+`d3b0ce0`). The local steps were rehearsed in a tempdir: `starter-scaffold` → 3 files,
+`init --force` → `pixi-sandbox.toml` + two workflows, `init --check` → "every owned file
+matches a fresh render", and `starter-verify` → exactly one finding,
+`missing required file pixi.lock`. That last one is purely network: `pixi lock` fails on
+`https://prefix.dev/conda-forge/linux-64/repodata_shards.msgpack.zst` with `tls handshake
+eof`. `dry-run` reaches the publish step as `starter-publish … --dry-run`, which does not
+push, so the run cannot publish. Note `--ref main` is required: `starter.yml` does not
+exist at v0.6.0, while `source-commit` names the v0.6.0 SHA. **AC#6 stays unchecked — a
+rehearsal is not the dispatch.**
+
+**TASK-76 AC#8 — the release is necessary, sufficient, and not blocked on secrets.** The
+ordering the previous session asserted is now proven rather than recalled: `b9d5d0a2` (the
+single-entrypoint refactor) is a descendant of the v0.6.0 tag `8298edce`, so v0.6.0
+predates the refactored lane and any proof needs a release after PR #131. Cutting one is
+sufficient to *start* it — `release.yml` dispatches `consumer proof` itself once the
+GitHub Release exists (v0.6.0 chain runs 5–7) — and the push permission is present:
+`RELEASE_PUSH_TOKEN` is set with the Workflows permission, observed when the v0.6.0 release
+commit (which modifies `.github/workflows/relock.yml`) succeeded. The blocker is again the
+403 dispatch, plus the fact that an agent session may only push its own branch, so the
+release commit could not reach `main` from here even with permission. **AC#8 stays
+unchecked.**
+
+**Not implemented, deliberately:** TASK-78 (To Do, 0/10, no dependencies) was surveyed and
+not started — the owner chose close-outs only. The shape decision its AC#1 demands was
+settled in conversation and is recorded here rather than in the task file: **a
+`rattler-build` recipe driven by `xtask`, not a new `pixi-sandbox` verb.** `rattler-build`
+is not a dependency of any of the four crates, the vendored tree is frozen at 268 crates
+with crates.io unreachable, and a new verb would pull rattler's crate tree into the CLI's
+own payload and force a relock cycle this airlock cannot do. The recipe keeps the vendor
+diff empty and leaves `pixi-build`'s preview status a documented risk instead of a
+load-bearing dependency. Also carried: the backlog CLI quoting guidance and the
+verify/publish reconciliation pair from the 2026-10-09 integration entry, and TASK-66's
+Castellan drift PR.
+
+**Prompt to start the next session with:**
+
+> Restore only if the tree or `.pixi/` is missing (`bash scripts/restore.sh`, ~72 s,
+> offline and idempotent; then `export PATH="$HOME/.local/bin:$PATH"`). **If `git
+> rev-list --count HEAD` returns 1, the clone is shallow: `git fetch --deepen=300 origin
+> main` before believing any release-ordering fact** — the session branch's fetch refspec
+> is scoped to itself and git history-dependent checks silently misreport until you do.
+> Baseline through Pixi from the repo root — expect **928 passing / 1 skipped** (35 git /
+> 212 core / 525 pixi-sandbox / 156 xtask) and `lint` 11/11. Pixi only
+> (`pixi run --frozen …`), cargo `--offline`, never two pixi commands in parallel, never
+> source `.pixi/sandbox-env.sh`.
+>
+> **Two maintainer clicks unblock the two near-done tasks, and only those.** Neither is
+> blocked on engineering: (1) *Actions → starter → Run workflow*, ref `main`,
+> `release-tag=v0.6.0`,
+> `source-commit=8298edce13049ab01a7bc9d3e09c9daf8d14fc08`, `dry-run=true` — every gate
+> before the publish step has been run from here and is green or provably network-bound, so
+> this should succeed; a green run closes TASK-85 AC#6. (2) *Actions → auto-release → Run
+> workflow*, defaults (`bump=auto`) — cuts the release TASK-76 AC#8 needs; `release.yml`
+> then dispatches `consumer proof` by itself, and that run is the AC#8 evidence. An agent
+> token gets `403 Resource not accessible by integration` on both.
+>
+> If a click has already happened, check it before proposing anything: `gh run list
+> --workflow starter.yml --limit 3` and `gh release list --limit 3`. New work is
+> **TASK-78** (high, no dependencies, 0/10) — package arbitrary prebuilt binary payloads
+> as conda packages. AC#1 gates the shape on a D-number decision first, and the shape is
+> already decided: **a `rattler-build` recipe driven by `xtask`, not a new `pixi-sandbox`
+> verb** — `rattler-build` is not a dependency of any of the four crates, the vendor tree
+> is frozen at 268 crates with crates.io unreachable, and a new verb would drag rattler's
+> crate tree into the CLI payload and force a relock cycle this airlock cannot run. Carry
+> the decision, not the deliberation.
+>
+> House rules: `AGENTS.md` (invariant 10: anything you do not implement goes in
+> `CONTEXT.md` § Session scratchpad, not into the files it speculates about), session
+> procedure in `.agents/skills/session/`; conventional commits, one crate or concern per
+> commit, `pixi run --frozen test` ≥654 at every commit. Do not push, open a pull
+> request, merge, release or dispatch without my explicit go-ahead.
