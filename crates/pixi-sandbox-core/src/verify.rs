@@ -309,26 +309,7 @@ fn verify_env_restored(
         }
     };
 
-    // The prefix-path spellings this side must neutralise: the final prefix (in both its
-    // literal and canonical form — a symlinked `.pixi` must not defeat the check), plus the
-    // restore-scratch paths that survive inside NUL-fixed binaries and conda-meta records.
-    let mut candidates: Vec<Vec<u8>> = Vec::new();
-    let mut push_candidate = |path: &PathBuf| {
-        let bytes = path.to_string_lossy().into_owned().into_bytes();
-        if !bytes.is_empty() && !candidates.contains(&bytes) {
-            candidates.push(bytes);
-        }
-    };
-    push_candidate(&prefix);
-    if let Ok(canonical) = prefix.canonicalize() {
-        push_candidate(&canonical);
-    }
-    let work = work_dir.map_or_else(
-        || project.join(".pixi").join(".restore-work"),
-        std::path::Path::to_path_buf,
-    );
-    push_candidate(&work.join(format!("stage-{name}")).join(name));
-    push_candidate(&work.join(format!("pack-{name}")));
+    let candidates = prefix_candidates(&prefix, project, name, work_dir);
 
     let listed: std::collections::BTreeMap<&str, &crate::files_manifest::FileEntry> = doc
         .files
@@ -338,91 +319,146 @@ fn verify_env_restored(
 
     // Every listed entry must exist, with the recorded content, mode and symlink target.
     for entry in &doc.files {
-        report.files += 1;
-        if let Some(path) = walked.files.get(&entry.p) {
-            report.bytes += std::fs::metadata(path).map_or(0, |m| m.len());
-            if let Some(expected) = &entry.h {
-                let raw = match std::fs::read(path) {
-                    Ok(raw) => raw,
-                    Err(e) => {
-                        report.failures.push(Check {
-                            path: entry.p.clone(),
-                            kind: Kind::Missing,
-                            detail: format!("env {name}: {e}"),
-                        });
-                        continue;
-                    }
-                };
-                let actual = crate::files_manifest::canonical_sha256(&raw, &candidates);
-                if &actual != expected {
-                    report.failures.push(Check {
-                        path: entry.p.clone(),
-                        kind: Kind::Integrity,
-                        detail: format!(
-                            "env {name}: content does not match the manifest's file list \
-                             (expected {expected}, got {actual})"
-                        ),
-                    });
-                }
-            }
-            match crate::files_manifest::is_executable(path) {
-                Ok(actual) if actual != entry.x => {
-                    report.failures.push(Check {
-                        path: entry.p.clone(),
-                        kind: Kind::Mode,
-                        detail: format!(
-                            "env {name}: executable bit is {}, the manifest records {}",
-                            if entry.x { "clear" } else { "set" },
-                            if entry.x { "set" } else { "clear" }
-                        ),
-                    });
-                }
-                Err(e) => report.failures.push(Check {
-                    path: entry.p.clone(),
-                    kind: Kind::Missing,
-                    detail: format!("env {name}: {e}"),
-                }),
-                _ => {}
-            }
-        } else if let Some(path) = walked.symlinks.get(&entry.p) {
-            let actual = match std::fs::read_link(path) {
-                Ok(target) => String::from_utf8_lossy(&crate::files_manifest::canonicalise(
-                    target.to_string_lossy().as_bytes(),
-                    &candidates,
-                ))
-                .into_owned(),
+        check_restored_entry(name, entry, &walked, &candidates, report);
+    }
+
+    // Nothing unlisted, except the bookkeeping files pixi and restore own (the allowlist is
+    // exactly conda-meta markers — see files_manifest::ALLOWED_EXTRAS).
+    check_unlisted(name, &walked, &listed, report);
+
+    // The fingerprint marker restore writes must still say what the manifest recorded.
+    check_fingerprint(name, env, &prefix, report);
+}
+
+/// The prefix-path spellings this side must neutralise: the final prefix (in both its
+/// literal and canonical form — a symlinked `.pixi` must not defeat the check), plus the
+/// restore-scratch paths that survive inside NUL-fixed binaries and conda-meta records.
+fn prefix_candidates(
+    prefix: &Path,
+    project: &Path,
+    name: &str,
+    work_dir: Option<&Path>,
+) -> Vec<Vec<u8>> {
+    let mut candidates: Vec<Vec<u8>> = Vec::new();
+    let mut push_candidate = |path: &Path| {
+        let bytes = path.to_string_lossy().into_owned().into_bytes();
+        if !bytes.is_empty() && !candidates.contains(&bytes) {
+            candidates.push(bytes);
+        }
+    };
+    push_candidate(prefix);
+    if let Ok(canonical) = prefix.canonicalize() {
+        push_candidate(&canonical);
+    }
+    let work = work_dir.map_or_else(
+        || project.join(".pixi").join(".restore-work"),
+        std::path::Path::to_path_buf,
+    );
+    push_candidate(&work.join(format!("stage-{name}")).join(name));
+    push_candidate(&work.join(format!("pack-{name}")));
+    candidates
+}
+
+/// One listed entry: it must exist in the restored prefix with the recorded content,
+/// mode and symlink target.
+fn check_restored_entry(
+    name: &str,
+    entry: &crate::files_manifest::FileEntry,
+    walked: &crate::files_manifest::Walked,
+    candidates: &[Vec<u8>],
+    report: &mut Report,
+) {
+    report.files += 1;
+    if let Some(path) = walked.files.get(&entry.p) {
+        report.bytes += std::fs::metadata(path).map_or(0, |m| m.len());
+        if let Some(expected) = &entry.h {
+            let raw = match std::fs::read(path) {
+                Ok(raw) => raw,
                 Err(e) => {
                     report.failures.push(Check {
                         path: entry.p.clone(),
                         kind: Kind::Missing,
                         detail: format!("env {name}: {e}"),
                     });
-                    continue;
+                    return;
                 }
             };
-            let expected = entry.l.clone().unwrap_or_default();
-            if actual != expected {
+            let actual = crate::files_manifest::canonical_sha256(&raw, candidates);
+            if &actual != expected {
                 report.failures.push(Check {
                     path: entry.p.clone(),
                     kind: Kind::Integrity,
                     detail: format!(
-                        "env {name}: symlink points at {actual:?}, the manifest records {expected:?}"
+                        "env {name}: content does not match the manifest's file list \
+                         (expected {expected}, got {actual})"
                     ),
                 });
             }
-        } else {
-            report.failures.push(Check {
+        }
+        match crate::files_manifest::is_executable(path) {
+            Ok(actual) if actual != entry.x => {
+                report.failures.push(Check {
+                    path: entry.p.clone(),
+                    kind: Kind::Mode,
+                    detail: format!(
+                        "env {name}: executable bit is {}, the manifest records {}",
+                        if entry.x { "clear" } else { "set" },
+                        if entry.x { "set" } else { "clear" }
+                    ),
+                });
+            }
+            Err(e) => report.failures.push(Check {
                 path: entry.p.clone(),
                 kind: Kind::Missing,
+                detail: format!("env {name}: {e}"),
+            }),
+            _ => {}
+        }
+    } else if let Some(path) = walked.symlinks.get(&entry.p) {
+        let actual = match std::fs::read_link(path) {
+            Ok(target) => String::from_utf8_lossy(&crate::files_manifest::canonicalise(
+                target.to_string_lossy().as_bytes(),
+                candidates,
+            ))
+            .into_owned(),
+            Err(e) => {
+                report.failures.push(Check {
+                    path: entry.p.clone(),
+                    kind: Kind::Missing,
+                    detail: format!("env {name}: {e}"),
+                });
+                return;
+            }
+        };
+        let expected = entry.l.clone().unwrap_or_default();
+        if actual != expected {
+            report.failures.push(Check {
+                path: entry.p.clone(),
+                kind: Kind::Integrity,
                 detail: format!(
-                    "env {name}: in the manifest's file list but not in the restored prefix"
+                    "env {name}: symlink points at {actual:?}, the manifest records {expected:?}"
                 ),
             });
         }
+    } else {
+        report.failures.push(Check {
+            path: entry.p.clone(),
+            kind: Kind::Missing,
+            detail: format!(
+                "env {name}: in the manifest's file list but not in the restored prefix"
+            ),
+        });
     }
+}
 
-    // Nothing unlisted, except the bookkeeping files pixi and restore own (the allowlist is
-    // exactly conda-meta markers — see files_manifest::ALLOWED_EXTRAS).
+/// Nothing unlisted, except the bookkeeping files pixi and restore own (the allowlist is
+/// exactly conda-meta markers — see `files_manifest::ALLOWED_EXTRAS`).
+fn check_unlisted(
+    name: &str,
+    walked: &crate::files_manifest::Walked,
+    listed: &std::collections::BTreeMap<&str, &crate::files_manifest::FileEntry>,
+    report: &mut Report,
+) {
     for rel in walked.files.keys().chain(walked.symlinks.keys()) {
         if !listed.contains_key(rel.as_str())
             && !crate::files_manifest::ALLOWED_EXTRAS.contains(&rel.as_str())
@@ -437,8 +473,10 @@ fn verify_env_restored(
             });
         }
     }
+}
 
-    // The fingerprint marker restore writes must still say what the manifest recorded.
+/// The fingerprint marker restore writes must still say what the manifest recorded.
+fn check_fingerprint(name: &str, env: &crate::manifest::Env, prefix: &Path, report: &mut Report) {
     if let Some(expected) = &env.pixi_environment_fingerprint {
         let marker = prefix
             .join("conda-meta")
