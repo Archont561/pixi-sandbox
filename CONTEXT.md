@@ -2310,3 +2310,70 @@ Castellan drift PR.
 > procedure in `.agents/skills/session/`; conventional commits, one crate or concern per
 > commit, `pixi run --frozen test` ≥654 at every commit. Do not push, open a pull
 > request, merge, release or dispatch without my explicit go-ahead.
+
+### 2026-10-10 (sixth session) — TASK-88 for issue #128; the oracle learns about pypi
+
+**Issue #128 was untracked and is the most valuable work on the board.** Filed today against
+`Archont561/qgis-rust`: `restore` exits non-zero on its final tree check for every project
+with a pypi dependency, and because it exits non-zero it also skips user-tool registration, so
+the documented next command fails with `pixi: command not found`. This repository cannot
+reproduce its own bug — `pixi.toml` resolves no pypi package, so its transport has no
+`dist-info` at all and restores with 0 failures across 5520 entries. Written up as TASK-88,
+fixed as D21.
+
+**Landed:** 935 passing / 1 skipped (core 212 → 219), `lint` 11/11, `check-repository` clean.
+AC#1–#7 proven locally; **AC#8 left open** — the connected proof needs a real
+`pixi-pack` → `pixi-unpack` round trip of a wheel, and `pixi lock` cannot reach prefix.dev
+from here. Both new regression tests were confirmed to fail with the fix neutralised, so they
+test the defect rather than restating the code.
+
+**Not implemented, deliberately — issue #128's third suggestion.** Registering user tools
+*even when* the final tree check fails. It is not in TASK-88 because it answers a different
+question: not "is the oracle sound?" but "when may `restore` mutate `$PATH`?". Today the
+tools are registered only after a clean verification, and the environments are already
+correct at that point — the reporter's `.pixi/tools/linux-64/pixi` works fine via its full
+path. So the change would trade a strict exit code for a working PATH on a tree that might
+genuinely be tampered with. That trade is worth making, but it is an invariant decision and
+wants its own task and D-number, not a rider on a soundness fix. Carried for a future
+session; the strongest form of it is "register the tools, keep the failure".
+
+**Also untracked, noted while surveying the board:** issue #109 maps to TASK-75, which has been
+`Done` since 2026-10-08, but the issue is still open. The repo's convention is to close an
+issue when its task lands — 13 of 17 are. It is a one-click close, and it is the owner's.
+
+**Prompt to start the next session with:**
+
+> Restore only if the tree or `.pixi/` is missing (`bash scripts/restore.sh`, ~72 s; then
+> `export PATH="$HOME/.local/bin:$PATH"`). **If `git rev-list --count HEAD` returns 1, the
+> clone is shallow: `git fetch --deepen=300 origin main` first** — the session branch's fetch
+> refspec is scoped to itself, so release-ordering facts silently invert until you do. Expect
+> **935 passing / 1 skipped** (35 git / 219 core / 525 pixi-sandbox / 156 xtask), `lint`
+> 11/11. Pixi only, cargo `--offline`, never two pixi commands in parallel.
+>
+> **TASK-88 is In Progress at 7/8 and needs one connected proof.** AC#8 is the real
+> `pixi-pack` → `pixi-unpack` reinstall of a wheel; it cannot be produced on an airlocked
+> host because `pixi lock` cannot reach prefix.dev. Once a release carrying the fix exists,
+> re-pack `qgis-rust`'s transport and run its `restore` — a clean verdict is the proof. Until
+> then leave the task In Progress and do not check AC#8.
+>
+> **Two maintainer clicks are still open** and neither is blocked on engineering:
+> *Actions → starter → Run workflow* (ref `main`, `release-tag=v0.6.0`,
+> `source-commit=8298edce13049ab01a7bc9d3e09c9daf8d14fc08`, `dry-run=true`) closes TASK-85
+> AC#6 — every gate before its publish step has been run from here and is green or provably
+> network-bound. *Actions → auto-release → Run workflow* (defaults) cuts the release
+> TASK-76 AC#8 needs; `release.yml` dispatches `consumer proof` itself, and that run is the
+> evidence. An agent token gets `403 Resource not accessible by integration` on both. Issue
+> #109 is also closable now that TASK-75 is Done.
+>
+> New work: **TASK-78** (high, no dependencies) — package arbitrary prebuilt binary payloads
+> as conda packages. AC#1 gates the shape on a D-number decision first, and the shape is
+> already decided: **a `rattler-build` recipe driven by `xtask`, not a new `pixi-sandbox`
+> verb** — `rattler-build` is not a dependency of any of the four crates, the vendor tree is
+> frozen at 268 crates with crates.io unreachable, and a new verb would drag rattler's crate
+> tree into the CLI payload and force a relock cycle this airlock cannot run.
+>
+> House rules: `AGENTS.md` (invariant 10: anything you do not implement goes in
+> `CONTEXT.md` § Session scratchpad), session procedure in `.agents/skills/session/`;
+> conventional commits, one crate or concern per commit, `pixi run --frozen test` ≥654 at
+> every commit. Do not push, open a pull request, merge, release or dispatch without my
+> explicit go-ahead.
