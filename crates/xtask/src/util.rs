@@ -36,6 +36,7 @@ pub fn version_tag_re() -> &'static Regex {
 
 /// Strict semver core: `X.Y.Z` with nothing else. Versions flow into git tags, download URLs
 /// and file contents, so anything looser is rejected at the door.
+#[must_use]
 pub fn is_strict_semver(version: &str) -> bool {
     let mut parts = version.split('.');
     let three = [parts.next(), parts.next(), parts.next()];

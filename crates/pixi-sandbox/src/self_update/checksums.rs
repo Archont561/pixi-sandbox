@@ -20,12 +20,14 @@ pub struct Checksums {
 impl Checksums {
     /// Parse the file. An unparsable body yields no entries, which `digest_for` then reports
     /// against the asset the caller actually wanted — a better message than "parse error".
+    #[must_use]
     pub fn parse(body: &str) -> Self {
         Self {
             entries: parse_sha256_manifest(body),
         }
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -35,6 +37,11 @@ impl Checksums {
     }
 
     /// The published digest for `asset`, or an error naming what the file did cover.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checksum manifest is empty or unparsable, or does not list
+    /// `asset`.
     pub fn digest_for(&self, asset: &str) -> Result<&str> {
         if self.is_empty() {
             bail!(
@@ -56,6 +63,10 @@ impl Checksums {
     ///
     /// Both failure modes are checked here so no caller can accidentally fetch a digest and
     /// forget to compare it (invariant 1, "verify before write", applied to the updater).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the digest is unavailable or the bytes do not match it.
     pub fn verify(&self, asset: &str, bytes: &[u8]) -> Result<String> {
         let expected = self.digest_for(asset)?;
         let actual = pixi_sandbox_core::shard::sha256_bytes(bytes);

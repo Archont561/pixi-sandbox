@@ -307,6 +307,7 @@ pub fn verify(dir: &Path, tag: &str) -> Result<Vec<String>> {
 /// a version resolution, and it appears in every generated workflow. Only the spellings that
 /// would actually float a pixi-sandbox version are findings.
 #[doc(hidden)] // test boundary (tests/starter.rs)
+#[must_use]
 pub fn floating_version_findings(text: &str, what: &str) -> Vec<String> {
     const FLOATING: [&str; 4] = ["releases/latest", "==latest", "--version latest", "@latest"];
     crate::util::lines_without_opt_out(text)
@@ -695,6 +696,7 @@ fn keep_executable_bit(_from: &Path, _to: &Path) -> Result<()> {
 /// files to stage; an empty list means the verified tag reproduced the current revision
 /// exactly, which the publication contract requires to be a success, not a no-op failure.
 #[doc(hidden)] // test boundary (tests/starter.rs)
+#[must_use]
 pub fn publish_refusals(
     remote: &str,
     starter_repo: &str,

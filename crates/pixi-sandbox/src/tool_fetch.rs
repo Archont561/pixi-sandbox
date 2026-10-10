@@ -20,6 +20,18 @@ pub struct ToolSource {
     pub pinned_sha256: Option<String>,
 }
 
+/// Embed one helper tool into the payload: copy, chmod, size-limit, digest-pin and
+/// linkage checks.
+///
+/// # Errors
+///
+/// Returns an error if the tool cannot be copied or made executable, exceeds the shard
+/// limit, fails its pin, or is dynamically linked.
+///
+/// # Panics
+///
+/// Panics if the computed destination has no parent directory (a bug in this function,
+/// not an input: the path is built from fixed segments).
 pub fn embed_tool(
     payload: &Path,
     platform: &str,
@@ -75,6 +87,10 @@ pub fn embed_tool(
 }
 
 /// Load the embedded pins, or a deliberate override resolved relative to the project.
+///
+/// # Errors
+///
+/// Returns an error if the override or the embedded pins cannot be read or parsed.
 pub fn resolve_lock(root: &Path, override_path: Option<&Path>) -> Result<ToolsLock> {
     match override_path {
         Some(path) => {
@@ -93,6 +109,10 @@ pub fn resolve_lock(root: &Path, override_path: Option<&Path>) -> Result<ToolsLo
 /// The external download boundary. Policy still owns checksum verification, atomic cache
 /// replacement, permissions and version checking; an adapter supplies only the byte stream.
 pub trait ToolDownload {
+    /// # Errors
+    ///
+    /// Returns an error if the URL cannot be opened (a failed request, a non-2xx
+    /// response).
     fn open(&self, url: &str) -> Result<Box<dyn Read>>;
 }
 
@@ -107,6 +127,11 @@ impl ToolDownload for HttpDownload {
 }
 
 /// Download, verify, cache and version-check one fully pinned helper.
+///
+/// # Errors
+///
+/// Returns an error if the download, the checksum verification, the cache write, or the
+/// version check fails.
 pub fn fetch_tool(
     lock: &ToolsLock,
     name: &str,
@@ -124,20 +149,35 @@ pub struct FetchedTool {
     pub sha256: String,
 }
 
+/// The tools cache directory: `explicit` when given, else `$HOME/.cache/pixi-sandbox/tools`.
+///
+/// # Errors
+///
+/// Returns an error if no explicit path is given and HOME is not set, or the path cannot
+/// be made absolute.
 pub fn tools_cache(explicit: Option<&Path>, home: Option<&std::ffi::OsStr>) -> Result<PathBuf> {
-    match explicit {
-        Some(path) => support::absolute(path),
-        None => {
-            let home = home
-                .ok_or_else(|| anyhow::anyhow!("cannot choose a tools cache: HOME is not set"))?;
-            Ok(PathBuf::from(home)
-                .join(".cache")
-                .join("pixi-sandbox")
-                .join("tools"))
-        }
+    if let Some(path) = explicit {
+        support::absolute(path)
+    } else {
+        let home =
+            home.ok_or_else(|| anyhow::anyhow!("cannot choose a tools cache: HOME is not set"))?;
+        Ok(PathBuf::from(home)
+            .join(".cache")
+            .join("pixi-sandbox")
+            .join("tools"))
     }
 }
 
+/// [`fetch_tool`] with an explicit download adapter — the seam tests fake.
+///
+/// # Errors
+///
+/// Returns an error if the download, the checksum verification, the cache write, or the
+/// version check fails.
+///
+/// # Panics
+///
+/// Panics if the selected pin is missing (a bug: the pin was checked before download).
 pub fn fetch_tool_with(
     lock: &ToolsLock,
     name: &str,
@@ -161,9 +201,7 @@ pub fn fetch_tool_with(
     let cached_name = executable_filename(&format!("{name}-{}-{platform}", tool.version), platform);
     let destination = cache.join(cached_name);
     let cached = destination.is_file()
-        && shard::sha256_file(&destination)
-            .map(|actual| actual == pin.sha256)
-            .unwrap_or(false);
+        && shard::sha256_file(&destination).is_ok_and(|actual| actual == pin.sha256);
 
     if !cached {
         println!("  fetch {name} {} ({})", tool.version, pin.target);
@@ -224,6 +262,11 @@ pub fn fetch_tool_with(
     })
 }
 
+/// Ask a tool binary for its `--version` output.
+///
+/// # Errors
+///
+/// Returns an error if the tool cannot be run or its output cannot be read.
 pub fn reported_version(path: &Path) -> Result<String> {
     let mut command = Command::new(path);
     command.arg("--version");

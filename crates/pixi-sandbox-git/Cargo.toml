@@ -14,3 +14,7 @@ thiserror = { workspace = true }
 [dev-dependencies]
 rstest = { workspace = true }
 tempfile = { workspace = true }
+
+# Inherit the workspace lint policy (decision D20): the gate is pedantic, workspace-wide.
+[lints]
+workspace = true

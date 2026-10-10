@@ -160,11 +160,16 @@ pub struct Vendor {
 
 impl Manifest {
     /// Path of the manifest inside a transport directory / extracted branch.
+    #[must_use]
     pub fn path_in(branch_location: &Path) -> PathBuf {
         branch_location.join(MANIFEST_DIR).join(MANIFEST_FILE)
     }
 
     /// Read + validate. `path` must be the manifest itself (see [`Manifest::path_in`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read, is not valid JSON, or fails validation.
     pub fn load(path: &Path) -> Result<Self> {
         let bytes = std::fs::read(path).map_err(|e| Error::io(path, e))?;
         let manifest: Manifest =
@@ -178,6 +183,11 @@ impl Manifest {
 
     /// The rules that make a manifest safe to act on. Everything here is cheap; the
     /// expensive checks (hashing 250 MiB) live in [`crate::verify`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming the first rule violated: an unsupported schema, a missing
+    /// field, an unknown platform, or a malformed blob or tool entry.
     pub fn validate(&self) -> Result<()> {
         // A published branch outlives the binary that wrote it: an airlock may restore a
         // transport packed by an older release (which simply carries fewer fields), but a
@@ -232,6 +242,7 @@ impl Manifest {
     /// Every blob of every (selected) environment, plus the vendored tree when present.
     /// The vendor blobs are not filtered by `only`: a partial `--envs` restore still
     /// needs the crates, so they are verified and materialised either way.
+    #[must_use]
     pub fn blobs(&self, only: Option<&[String]>) -> Vec<(&str, &Blob)> {
         let mut out = Vec::new();
         for (name, env) in &self.envs {
@@ -253,23 +264,26 @@ impl Manifest {
     }
 
     /// Bytes the payload occupies inside the branch (packed environments, not unpacked).
+    #[must_use]
     pub fn payload_bytes(&self) -> u64 {
         let envs: u64 = self.envs.values().map(|e| e.packed_size_bytes).sum();
         let tools: u64 = self.tools.values().map(|t| t.size_bytes).sum();
-        let vendor = self.vendor.as_ref().map(|v| v.size_bytes).unwrap_or(0);
+        let vendor = self.vendor.as_ref().map_or(0, |v| v.size_bytes);
         envs + tools + vendor
     }
 
     /// (envs, tools, vendor) split of [`Manifest::payload_bytes`], in bytes.
+    #[must_use]
     pub fn payload_split(&self) -> (u64, u64, u64) {
         (
             self.envs.values().map(|e| e.packed_size_bytes).sum(),
             self.tools.values().map(|t| t.size_bytes).sum(),
-            self.vendor.as_ref().map(|v| v.size_bytes).unwrap_or(0),
+            self.vendor.as_ref().map_or(0, |v| v.size_bytes),
         )
     }
 
     /// Where a blob lives inside the transport directory.
+    #[must_use]
     pub fn blob_abs_path(&self, branch_location: &Path, blob: &Blob) -> PathBuf {
         branch_location.join(MANIFEST_DIR).join(&blob.path)
     }
@@ -297,6 +311,7 @@ fn check_blob(context: &str, blob: &Blob) -> Result<()> {
 }
 
 /// True when this build can act on the manifest's schema (see [`SCHEMA_VERSION`]).
+#[must_use]
 pub fn schema_supported(schema: u32) -> bool {
     (1..=SCHEMA_VERSION).contains(&schema)
 }

@@ -134,6 +134,11 @@ impl Default for BudgetPolicy {
 
 impl BudgetPolicy {
     /// Convert reviewed MiB thresholds to byte ceilings used by `doctor`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a threshold is not a positive, representable MiB value, or
+    /// `max_blob_mib` exceeds the upstream blob limit.
     pub fn to_transport_budgets(&self) -> Result<TransportBudgets> {
         validate_positive_mib("budgets.max_blob_mib", self.max_blob_mib)?;
         if self.max_blob_mib > DEFAULT_MAX_BLOB_MIB {
@@ -264,6 +269,11 @@ pub const OVERRIDE_BUNDLE: &str = "custom";
 /// someone dispatched by hand — the precise drift D11 exists to prevent. Composing a synthetic
 /// config and running the normal [`SandboxConfig::plan`] means an override cannot skip the
 /// runner-label check or the embedded helper-coverage check.
+///
+/// # Errors
+///
+/// Returns an error if the synthetic config fails validation: an unknown platform, a
+/// runner label no native matrix can serve, or a platform without complete helper pins.
 pub fn plan_override(
     bundle: &str,
     environments: &[String],
@@ -313,6 +323,10 @@ pub fn derive_push_paths(repo_root: &Path, config_display: &str) -> Vec<String> 
 
 impl SandboxConfig {
     /// Read and validate a project declaration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read, is not valid TOML, or fails validation.
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
         let config: SandboxConfig =
@@ -325,6 +339,11 @@ impl SandboxConfig {
     }
 
     /// Produce a stable one-entry-per-(bundle × platform) publish plan.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config fails validation, or a declared platform has no
+    /// complete embedded helper pins.
     pub fn plan(&self) -> Result<PublishPlan> {
         self.validate()?;
         // The release-driven publisher has no project-local tool lock input: it deliberately
@@ -649,7 +668,7 @@ fn validate_workflow_policy(workflow: &WorkflowPolicy) -> Result<()> {
 fn validate_workflow_path(value: &str) -> Result<()> {
     let bare = value.strip_prefix('!').unwrap_or(value);
     if bare.is_empty()
-        || value.chars().any(|c| c.is_control())
+        || value.chars().any(char::is_control)
         || bare.starts_with('/')
         || bare.contains("..")
     {
@@ -677,6 +696,7 @@ fn validate_runner_label(platform: &str, runner: &str) -> Result<()> {
 /// the property test in `tests/restore_script.rs` generates printable branch names and checks
 /// their answers agree. This deliberately follows Git's ref-name restrictions plus a leading
 /// dash guard, because a branch is passed to command-line plumbing as well as to ref parsing.
+#[must_use]
 pub fn is_safe_git_ref(value: &str) -> bool {
     if value.is_empty()
         || value.starts_with('-')
@@ -700,7 +720,9 @@ pub fn is_safe_git_ref(value: &str) -> bool {
             && component != ".."
             && !component.starts_with('.')
             && !component.ends_with('.')
-            && !component.ends_with(".lock")
+            && !Path::new(component)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("lock"))
     })
 }
 

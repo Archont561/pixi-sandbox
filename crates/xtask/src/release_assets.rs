@@ -19,6 +19,7 @@ pub const SUMS_NAME: &str = "SHA256SUMS";
 /// Asset name of a staged binary: `pixi-sandbox-<target>`, with the `.exe` suffix Windows
 /// targets require. Derived from the triple so the naming is testable without a Windows host.
 #[doc(hidden)] // test boundary (tests/release_assets.rs)
+#[must_use]
 pub fn staged_name(target: &str) -> String {
     if target.contains("windows") {
         format!("pixi-sandbox-{target}.exe")
@@ -29,6 +30,7 @@ pub fn staged_name(target: &str) -> String {
 
 /// The binary name cargo produces (`pixi-sandbox`, `pixi-sandbox.exe` on Windows targets).
 #[doc(hidden)] // test boundary (tests/release_assets.rs)
+#[must_use]
 pub fn binary_name(target: &str) -> String {
     if target.contains("windows") {
         "pixi-sandbox.exe".to_string()
@@ -41,6 +43,7 @@ pub fn binary_name(target: &str) -> String {
 /// passed, `target/release/` for a host build — the host triple *names* the binary but does
 /// not nest it, which is exactly the difference the staging has to honour.
 #[doc(hidden)] // test boundary (tests/release_assets.rs)
+#[must_use]
 pub fn built_binary_path(target_dir: &Path, target: Option<&str>, host_triple: &str) -> PathBuf {
     let release = match target {
         Some(triple) => target_dir.join(triple).join("release"),
@@ -78,7 +81,7 @@ pub fn stage_release_binary(
     strip: &str,
 ) -> Result<PathBuf> {
     let host = host_triple()?;
-    let triple = target.map(str::to_string).unwrap_or_else(|| host.clone());
+    let triple = target.map_or_else(|| host.clone(), str::to_string);
     let source = built_binary_path(target_dir, target, &host);
     if !source.is_file() {
         let remedy = match target {
@@ -154,10 +157,10 @@ pub fn release_checksums(dir: &Path) -> Result<PathBuf> {
     }
     let mut body = String::new();
     for binary in &binaries {
-        let name = binary
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| binary.display().to_string());
+        let name = binary.file_name().map_or_else(
+            || binary.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        );
         let digest =
             sha256_file(binary).with_context(|| format!("hashing {}", binary.display()))?;
         body.push_str(&digest);
@@ -187,10 +190,10 @@ pub fn verify_completeness(sums: &Path, binaries: &[PathBuf]) -> Result<()> {
         .filter_map(|line| line.split_once("  ").map(|(_, name)| name.to_string()))
         .collect();
     for binary in binaries {
-        let name = binary
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| binary.display().to_string());
+        let name = binary.file_name().map_or_else(
+            || binary.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        );
         if !covered.contains(&name) {
             bail!("missing checksum for {name} in {}", sums.display());
         }

@@ -41,7 +41,6 @@ fn bare_remote(dir: &Path) -> String {
 
 /// Recursive `(path, size)` listing — how "nothing changed" is asserted on a plain directory.
 fn tree_snapshot(dir: &Path) -> Vec<(String, u64)> {
-    let mut out = Vec::new();
     fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, u64)>) {
         for entry in fs::read_dir(dir).unwrap().flatten() {
             let path = entry.path();
@@ -59,6 +58,7 @@ fn tree_snapshot(dir: &Path) -> Vec<(String, u64)> {
             }
         }
     }
+    let mut out = Vec::new();
     walk(dir, dir, &mut out);
     out.sort();
     out
@@ -81,12 +81,125 @@ fn prints_version(mut bin: Command) {
 #[case("init")]
 #[case("plan")]
 #[case("tools")]
+#[case("self-update")]
+#[case("fetch-release")]
+#[case("pipeline")]
+#[case("upgrade")]
 fn documents_every_verb(mut bin: Command, #[case] verb: &str) {
     let out = bin.arg("--help").assert().success();
     let text = String::from_utf8(out.get_output().stdout.clone()).unwrap();
     assert!(text.contains(verb), "`{verb}` missing from --help");
     // The branch-facing restore command must remain discoverable from the top-level help.
     assert!(text.contains("Verify and unpack a sandbox branch"));
+}
+
+/// TASK-76: `fetch-release` is the workflow bootstrap download. Its contract is documented
+/// where an operator meets it: the destination and the exact pinned version are required, and
+/// the pin is exact rather than floating (decision-4 / D16).
+#[rstest]
+fn fetch_release_documents_its_bootstrap_contract(mut bin: Command) {
+    let output = bin
+        .args(["fetch-release", "--help"])
+        .output()
+        .expect("CLI help");
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).expect("UTF-8 help");
+    for needle in ["--dest", "--version", "--repo", "checksum-verified"] {
+        assert!(
+            help.contains(needle),
+            "fetch-release help missing {needle}\n{help}"
+        );
+    }
+
+    // Both required arguments: the destination and the exact pin.
+    support::bin()
+        .arg("fetch-release")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--dest"));
+    support::bin()
+        .args(["fetch-release", "--dest", "scratch/pixi-sandbox"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--version"));
+}
+
+/// TASK-76: `pipeline` is the generated publisher's single entrypoint — install, pack,
+/// verify, publish. Its contract is documented where an operator meets it, and the
+/// workflow's inputs are required arguments rather than ambient assumptions.
+#[rstest]
+fn pipeline_documents_its_publish_contract(mut bin: Command) {
+    let output = bin.args(["pipeline", "--help"]).output().expect("CLI help");
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).expect("UTF-8 help");
+    for needle in [
+        "--envs",
+        "--branch",
+        "--remote",
+        "--config",
+        "--cargo-vendor",
+        "--transport-dir",
+        "--log-dir",
+        "--self-bin",
+        "PIXI_SANDBOX_PUSH_TOKEN",
+    ] {
+        assert!(
+            help.contains(needle),
+            "pipeline help missing {needle}\n{help}"
+        );
+    }
+
+    // The workflow always passes every one of these; a bare invocation must say so.
+    support::bin()
+        .arg("pipeline")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--envs"));
+    support::bin()
+        .args(["pipeline", "--envs", "default"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--branch"));
+}
+
+/// TASK-76: `upgrade` is the generated upgrade lane's single entrypoint — check, regenerate,
+/// commit, deliver. Its contract is documented where an operator meets it: the exact
+/// generation arguments are required (D16: never defaults that could diverge), and the
+/// delivery credentials stay environment variables the tool reads natively.
+#[rstest]
+fn upgrade_documents_its_delivery_contract(mut bin: Command) {
+    let output = bin.args(["upgrade", "--help"]).output().expect("CLI help");
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).expect("UTF-8 help");
+    for needle in [
+        "--github-workflow-path",
+        "--relock-workflow-path",
+        "--relock-ci-workflow",
+        "--script-path",
+        "--config",
+        "--branch",
+        "--artifact-dir",
+        "--repo",
+        "--base",
+        "PIXI_SANDBOX_UPGRADE_TOKEN",
+    ] {
+        assert!(
+            help.contains(needle),
+            "upgrade help missing {needle}\n{help}"
+        );
+    }
+
+    // The exact generation arguments are required, not defaulted.
+    support::bin()
+        .arg("upgrade")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--github-workflow-path"));
+    support::bin()
+        .args(["upgrade", "--github-workflow-path", "wf.yml"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--relock-workflow-path"));
 }
 
 #[rstest]
@@ -1626,11 +1739,50 @@ fn init_is_provider_neutral_and_generates_only_this_platforms_launcher() {
         "PIXI_SANDBOX_VERSION: {}",
         env!("CARGO_PKG_VERSION")
     )));
+    // TASK-76: the render is the tool's entrypoint — the pipeline and upgrade verbs carry
+    // the config (and with it the budget enforcement), not embedded shell.
     assert!(workflow.contains("--config pixi-sandbox.toml"));
-    assert!(workflow.contains("--budget-config pixi-sandbox.toml"));
-    assert!(workflow.contains("\"$SELF_BIN\" doctor --branch-location \"$TRANSPORT\" --verify"));
+    assert!(workflow.contains("\"$PIXI_SANDBOX_BIN\" pipeline"));
+    assert!(workflow.contains("\"$PIXI_SANDBOX_BIN\" upgrade"));
     assert!(project.join("pixi-sandbox.toml").is_file());
     assert!(!project.join(".pixi-sandbox.toml").exists());
+}
+
+/// TASK-76 AC#7: init/render identity — the workflow `init` writes is byte-identical to
+/// `render_github_workflow` called with the same options, so the golden fixture, the
+/// committed renders and `init --check` all judge the same bytes.
+#[test]
+fn init_writes_the_exact_render_the_generator_produces() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    init_command(&project)
+        .args(["--branch", "sandbox/developer-linux-64"])
+        .assert()
+        .success();
+
+    let written =
+        fs::read_to_string(project.join(".github/workflows/publish-sandbox.yml")).unwrap();
+    let expected = pixi_sandbox::generated::render_github_workflow(
+        pixi_sandbox::generated::GithubWorkflowOptions {
+            version: env!("CARGO_PKG_VERSION"),
+            config_path: "pixi-sandbox.toml",
+            workflow_path: ".github/workflows/publish-sandbox.yml",
+            relock_workflow_path: ".github/workflows/relock.yml",
+            relock_ci_workflow: "ci.yml",
+            script_path: "restore.sh",
+            branch: "sandbox/developer-linux-64",
+            push_paths: &[],
+            scoped_permissions: false,
+            concurrency: None,
+            plan_timeout_minutes: None,
+            publish_timeout_minutes: None,
+            pixi_version: None,
+            setup_pixi_cache: None,
+        },
+    );
+    assert_eq!(written, expected);
 }
 
 #[test]

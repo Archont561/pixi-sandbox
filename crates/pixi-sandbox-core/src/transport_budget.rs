@@ -9,6 +9,9 @@ use serde::Serialize;
 
 /// Bytes in one mebibyte.
 pub const MIB: u64 = 1024 * 1024;
+/// `MIB` in f64 — 2^20 is exact, so the budget conversions below lose nothing to the
+/// float domain itself.
+const MIB_F64: f64 = 1024.0 * 1024.0;
 
 /// GitHub's hard blob limit is 100 MiB; the default leaves the same margin the packer already
 /// uses for sharding.
@@ -222,17 +225,25 @@ fn restore_required_bytes(manifest: &Manifest) -> u64 {
     let vendor = manifest
         .vendor
         .as_ref()
-        .map(|vendor| vendor.size_bytes.saturating_mul(2))
-        .unwrap_or(0);
+        .map_or(0, |vendor| vendor.size_bytes.saturating_mul(2));
     envs.saturating_add(vendor)
 }
 
+/// MiB (possibly fractional) to bytes. Budget inputs are human-edited, so the
+/// conversion saturates instead of wrapping: Rust's f64->u64 `as` cast saturates
+/// (NaN and negatives become 0, anything above `u64::MAX` becomes `u64::MAX`) — a
+/// silent wrap would under-report a limit. The bounds are pinned by
+/// `mib_to_bytes_converts_exactly_and_saturates_at_the_bounds`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[must_use]
 pub fn mib_to_bytes(value: f64) -> u64 {
-    (value * MIB as f64).round() as u64
+    (value * MIB_F64).round() as u64
 }
 
+/// Bytes to MiB for human-readable reports. The u64->f64 cast can lose the low bits of
+/// huge byte counts; that is inherent to a display conversion and harmless here.
+#[allow(clippy::cast_precision_loss)]
 #[must_use]
 pub fn bytes_to_mib(value: u64) -> f64 {
-    value as f64 / MIB as f64
+    value as f64 / MIB_F64
 }

@@ -108,6 +108,11 @@ pub struct FilesDoc {
 impl FilesDoc {
     /// Parse and validate. The rules are the manifest's rules: relative safe paths and
     /// well-formed digests, because this document is trusted the same way.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bytes are not valid JSON or fail validation: a non-relative
+    /// or unsafe path, or a malformed digest.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let doc: FilesDoc = serde_json::from_slice(bytes)
             .map_err(|e| Error::Invalid(format!("files manifest: {e}")))?;
@@ -115,6 +120,12 @@ impl FilesDoc {
         Ok(doc)
     }
 
+    /// The manifest's path and digest rules, applied to this document.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming the first entry that violates the rules (a non-relative or
+    /// unsafe path, or a malformed digest).
     pub fn validate(&self) -> Result<()> {
         self.validate_labelled("files manifest entry")
     }
@@ -162,6 +173,11 @@ impl FilesDoc {
 
     /// Serialise the way `pack` writes the file: pretty JSON with a final newline, so the
     /// bytes (and therefore the manifest's blob digest) are stable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the document cannot be serialised (a fixed shape, so this is
+    /// not expected in practice — the signature stays honest rather than infallible).
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
         let mut bytes = serde_json::to_vec_pretty(self)
             .map_err(|e| Error::Other(format!("serialising files manifest: {e}")))?;
@@ -169,6 +185,7 @@ impl FilesDoc {
         Ok(bytes)
     }
 
+    #[must_use]
     pub fn entries(&self) -> usize {
         self.files.len()
     }
@@ -176,12 +193,14 @@ impl FilesDoc {
 
 /// Path of an environment's file list inside the transport payload, relative to
 /// [`crate::manifest::MANIFEST_DIR`].
+#[must_use]
 pub fn list_rel_path(env: &str) -> String {
     format!("envs/{env}/{FILE_NAME}")
 }
 
 /// The canonical form in which pack-time and restore-time trees hash equally: NUL runs
 /// collapsed, then every known prefix-path spelling replaced by [`SENTINEL`].
+#[must_use]
 pub fn canonicalise(bytes: &[u8], candidates: &[Vec<u8>]) -> Vec<u8> {
     let mut out = collapse_nul_runs(bytes);
     for candidate in candidates {
@@ -193,11 +212,13 @@ pub fn canonicalise(bytes: &[u8], candidates: &[Vec<u8>]) -> Vec<u8> {
 }
 
 /// sha256 of the canonicalised content — the digest a [`FileEntry`] records.
+#[must_use]
 pub fn canonical_sha256(bytes: &[u8], candidates: &[Vec<u8>]) -> String {
     sha256_bytes(&canonicalise(bytes, candidates))
 }
 
 #[doc(hidden)] // test boundary: the NUL-run rule the canonical form is built on (tests/files_manifest.rs)
+#[must_use]
 pub fn collapse_nul_runs(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     let mut at = 0;
@@ -238,6 +259,7 @@ fn find_at(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 }
 
 #[doc(hidden)] // test boundary: the neutralisation step both entry points share (tests/files_manifest.rs)
+#[must_use]
 pub fn replace_all(haystack: &[u8], needle: &[u8], replacement: &[u8]) -> Vec<u8> {
     // Deliberately dependency-free (memmem would be faster, but the airlock builds from the
     // vendored tree and D6 keeps that tree exactly as locked — no new crates for a scan that
@@ -265,6 +287,11 @@ pub struct Walked {
     pub symlinks: BTreeMap<String, PathBuf>,
 }
 
+/// Walk `prefix` into the plain files and symlinks it contains, relative paths, sorted.
+///
+/// # Errors
+///
+/// Returns an error if the tree cannot be walked (a missing or unreadable prefix).
 pub fn walk_prefix(prefix: &Path) -> Result<Walked> {
     let mut walked = Walked::default();
     for entry in walkdir::WalkDir::new(prefix).sort_by_file_name() {
@@ -317,6 +344,7 @@ fn rel_of(prefix: &Path, path: &Path) -> Result<String> {
 
 /// Is this path one of the files `restore` writes itself? Its content is a function of the
 /// restoring host, never of the transport, so it cannot be part of the oracle.
+#[must_use]
 pub fn is_restore_marker(rel: &str) -> bool {
     RESTORE_MARKERS.contains(&rel)
 }
@@ -326,7 +354,11 @@ pub fn is_restore_marker(rel: &str) -> bool {
 /// files — both differ per host by construction, so only presence is checkable. Presence is
 /// still exact, which is what catching a forged record requires.
 fn is_presence_only(rel: &str) -> bool {
-    (rel.starts_with("conda-meta/") && rel.ends_with(".json")) || rel == "conda-meta/history"
+    (rel.starts_with("conda-meta/")
+        && Path::new(rel)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json")))
+        || rel == "conda-meta/history"
 }
 
 /// Scan a staged prefix into a [`FilesDoc`] plus the tree's size in bytes (the honest
@@ -334,6 +366,11 @@ fn is_presence_only(rel: &str) -> bool {
 ///
 /// `candidates` are the prefix-path spellings this side must neutralise — at pack time the
 /// verification stage's prefix and the pack copy pixi-unpack read from.
+///
+/// # Errors
+///
+/// Returns an error if the prefix cannot be walked, a file cannot be read or hashed, or a
+/// scanned path violates the manifest's path rules.
 pub fn scan_prefix(prefix: &Path, candidates: &[Vec<u8>]) -> Result<(FilesDoc, u64)> {
     let walked = walk_prefix(prefix)?;
     let mut files = Vec::with_capacity(walked.files.len() + walked.symlinks.len());
@@ -376,13 +413,21 @@ pub fn scan_prefix(prefix: &Path, candidates: &[Vec<u8>]) -> Result<(FilesDoc, u
 
     let doc = FilesDoc {
         schema: DOC_SCHEMA,
-        excluded: RESTORE_MARKERS.iter().map(|s| s.to_string()).collect(),
+        excluded: RESTORE_MARKERS
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect(),
         files,
     };
     doc.validate_labelled("scanned environment file")?;
     Ok((doc, bytes))
 }
 
+/// The executable bit of `path` (false on platforms without one).
+///
+/// # Errors
+///
+/// Returns an error if the path's metadata cannot be read.
 pub fn is_executable(path: &Path) -> Result<bool> {
     #[cfg(unix)]
     {

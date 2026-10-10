@@ -48,7 +48,7 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
 | `crates/pixi-sandbox/src/tool_fetch.rs` | pin selection, verified helper caches and embedding; downloads inject a byte stream while the library keeps checksum/version/linkage policy |
 | `crates/pixi-sandbox/src/vendor.rs` | cargo lockfile collision policy and loose/per-crate-tar vendoring; external toolchain paths are explicit at the test boundary |
 | `crates/pixi-sandbox/src/pack.rs` | pack preflight and the per-file oracle (D13), with shared process/filesystem primitives re-exported by `commands/support.rs` instead of duplicated |
-| `crates/pixi-sandbox/src/lib.rs` | what `tests/` and `xtask` can reach: `branch_docs`, `generated`, `host_probe`, `pack`, `release`, `self_update`, `standalone`, `tool_fetch`, `user_tools`, `vendor`. A module that needs tests is promoted here — the binary target's own modules (`cli.rs`, `commands/`) are only coverable black-box |
+| `crates/pixi-sandbox/src/lib.rs` | what `tests/` and `xtask` can reach: `branch_docs`, `generated`, `host_probe`, `pack`, `pipeline`, `release`, `self_update`, `standalone`, `tool_fetch`, `upgrade`, `user_tools`, `vendor`. A module that needs tests is promoted here — the binary target's own modules (`cli.rs`, `commands/`) are only coverable black-box |
 | `crates/pixi-sandbox/src/release/` | the `ReleaseSource` trait every network-touching command injects (D9's shape, applied to HTTP), shared by `tools update` and `self-update` so one fake serves both. Two files: `mod.rs` — the trait, `Asset`, `parse_sha256_manifest`, everything a test can reach — and `github.rs`, the real HTTP `GitHubReleaseSource`, deliberately alone because it is the one piece no offline test can exercise (`pixi run coverage` excludes it by name; keep it thin, anything with a decision in it belongs in `mod.rs`) |
 | `crates/pixi-sandbox/src/self_update/*` | the updater's trust boundary (decision-4), in enforcement order: `resolver` (latest vs exact), `assets` (the canonical host→asset map, mirroring `xtask/src/release_assets.rs`), `checksums` (`SHA256SUMS`), `ownership` (the refusal ladder — a Pixi-managed binary is never overwritten), `replace` (stage beside the destination, then swap; see task-37 AC#3 for why Unix renames over a running binary) |
 | `crates/pixi-sandbox-git` | **all** git access: `GitProtocol` + `ShellGit` (real git, with a swappable `Runner`) + `FakeGit` (in-memory mock). Never run `git` from anywhere else |
@@ -205,7 +205,7 @@ reaching privates hides what the module's real callable surface is. So:
 
 - A module worth testing is **promoted to `lib.rs` as `pub mod`** and tested through its public
   API from `tests/` — the shape `branch_docs`, `generated`, `host_probe`, `release`, `self_update`,
-  `pack`, `standalone`, `tool_fetch`, `user_tools` and `vendor` already have. One test file per module, named after it
+  `pack`, `pipeline`, `standalone`, `tool_fetch`, `upgrade`, `user_tools` and `vendor` already have. One test file per module, named after it
   (`tests/self_update_replace.rs`).
 - A handful of internals a test legitimately needs (a private helper whose failure branch has no
   public route, a marker constant) are exported `#[doc(hidden)] pub` — visible to `tests/`,

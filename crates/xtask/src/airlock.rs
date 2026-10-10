@@ -34,6 +34,7 @@ pub const DARWIN_EGRESS_PROFILE: &str = "(version 1)(allow default)(deny network
 
 /// The argv for the plan binary: override mode when `envs` is non-empty (a manual dispatch
 /// names its target), config mode otherwise (the reviewed `.pixi-sandbox.toml`).
+#[must_use]
 pub fn plan_argv(
     bin: &str,
     config: &str,
@@ -158,23 +159,23 @@ pub fn resolve_tag(
     published: &dyn Fn(&str) -> Option<String>,
     latest: &dyn Fn() -> Option<String>,
 ) -> Result<(String, String)> {
-    let resolved = if !override_tag.is_empty() {
-        override_tag.to_string()
-    } else {
+    let resolved = if override_tag.is_empty() {
         match published(declared) {
             Some(tag) => tag,
             None => latest().context(
                 "could not reach the releases API — neither the declared release nor the latest one answered",
             )?,
         }
+    } else {
+        override_tag.to_string()
     };
     if !shaped_like_tag(&resolved) {
         bail!("resolved release tag '{resolved}' is not a vX.Y.Z tag");
     }
-    let summary = if !override_tag.is_empty() {
-        format!("proving {resolved} (SANDBOX_RELEASE_VERSION override)")
-    } else {
+    let summary = if override_tag.is_empty() {
         format!("proving {resolved} (declared {declared})")
+    } else {
+        format!("proving {resolved} (SANDBOX_RELEASE_VERSION override)")
     };
     Ok((resolved, summary))
 }
@@ -307,6 +308,7 @@ pub fn split_envs(envs: &str) -> Result<Vec<String>> {
 /// Resolve `bin` against a PATH value (not the process PATH — a parameter, so it is
 /// testable). The airlock proof packs with the *released* binary the job installed, and the
 /// shell this replaces found it with `command -v pixi-sandbox`.
+#[must_use]
 pub fn resolve_on_path(bin: &str, path_value: &std::ffi::OsStr) -> Option<PathBuf> {
     for dir in std::env::split_paths(path_value) {
         let candidate = dir.join(bin);
@@ -323,6 +325,7 @@ pub fn resolve_on_path(bin: &str, path_value: &std::ffi::OsStr) -> Option<PathBu
 /// the packer never shipped. Follow the config to the real package binary before `pack --self-bin`
 /// embeds it.
 #[doc(hidden)] // test boundary (tests/airlock.rs)
+#[must_use]
 pub fn resolve_pixi_trampoline(bin: &Path) -> PathBuf {
     let Some(name) = bin.file_name().and_then(|name| name.to_str()) else {
         return bin.to_path_buf();
@@ -365,9 +368,7 @@ fn is_executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(path)
-            .map(|m| m.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
+        std::fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
     }
     #[cfg(not(unix))]
     {
@@ -377,6 +378,7 @@ fn is_executable(path: &Path) -> bool {
 
 /// The pack argv, with the `--cargo-vendor` flag only when asked — a flag with no value
 /// form, which is exactly the conditional a plain task cannot express.
+#[must_use]
 pub fn pack_argv(envs: &str, out: &Path, cargo_vendor: bool, self_bin: &Path) -> Vec<String> {
     let mut argv: Vec<String> = ["pack", "--repo-root", ".", "--envs", envs, "--output-dir"]
         .iter()

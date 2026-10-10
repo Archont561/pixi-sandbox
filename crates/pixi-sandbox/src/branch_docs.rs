@@ -18,8 +18,67 @@ pub struct BranchDocs {
 }
 
 /// Render exactly the given manifest; pack validates it before calling this boundary.
+#[must_use]
 pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDocs {
-    let rows = manifest
+    let pieces = guide_pieces(manifest, vendor_info);
+    let readme = render_readme(manifest, &pieces);
+    let agents = render_agents(manifest, &pieces);
+    BranchDocs { readme, agents }
+}
+
+/// The pieces both guides share, computed once from the manifest.
+struct GuidePieces {
+    rows: String,
+    commit: String,
+    lock: String,
+    pixi_file: String,
+    self_file: String,
+    has_self: bool,
+    vendor: String,
+    bootstrap: String,
+    shell_language: &'static str,
+    restore_commands: String,
+    host_section: String,
+    host_bullet: String,
+}
+
+/// Compute every piece the two guides render from.
+fn guide_pieces(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> GuidePieces {
+    let pixi_file = executable_filename("pixi", &manifest.platform);
+    let self_file = executable_filename("pixi-sandbox", &manifest.platform);
+    let has_self = manifest.tools.contains_key("pixi-sandbox");
+    let (bootstrap, shell_language, restore_commands) =
+        bootstrap_section(manifest, has_self, &self_file);
+    let (host_section, host_bullet) = host_sections(manifest);
+    GuidePieces {
+        rows: env_table_rows(manifest),
+        commit: manifest
+            .source
+            .commit
+            .as_deref()
+            .unwrap_or("unknown")
+            .to_string(),
+        lock: manifest
+            .source
+            .lock_sha256
+            .as_deref()
+            .unwrap_or("unknown")
+            .to_string(),
+        pixi_file,
+        self_file,
+        has_self,
+        vendor: vendor_section(manifest, vendor_info),
+        bootstrap,
+        shell_language,
+        restore_commands,
+        host_section,
+        host_bullet,
+    }
+}
+
+/// The environments table: one row per env, in manifest order.
+fn env_table_rows(manifest: &Manifest) -> String {
+    manifest
         .envs
         .iter()
         .map(|(name, env)| {
@@ -32,13 +91,12 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
             )
         })
         .collect::<Vec<_>>()
-        .join("\n");
-    let commit = manifest.source.commit.as_deref().unwrap_or("unknown");
-    let lock = manifest.source.lock_sha256.as_deref().unwrap_or("unknown");
-    let pixi_file = executable_filename("pixi", &manifest.platform);
-    let self_file = executable_filename("pixi-sandbox", &manifest.platform);
-    let has_self = manifest.tools.contains_key("pixi-sandbox");
-    let vendor = manifest
+        .join("\n")
+}
+
+/// The vendor paragraph, when the manifest carries a vendored cargo tree.
+fn vendor_section(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> String {
+    manifest
         .vendor
         .as_ref()
         .map(|vendor| {
@@ -61,7 +119,16 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
                     .collect::<String>(),
             )
         })
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
+
+/// The bootstrap paragraph plus the restore snippet: which shell, and the exact commands,
+/// for transports with and without an embedded self-bootstrap binary.
+fn bootstrap_section(
+    manifest: &Manifest,
+    has_self: bool,
+    self_file: &str,
+) -> (String, &'static str, String) {
     let bootstrap = if has_self {
         format!(
             "The verified self-bootstrap binary is stored at `.pixi-sandbox/tools/{}/{}`. \
@@ -71,8 +138,9 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
     } else {
         "This transport has no embedded self-bootstrap binary; use an installed `pixi-sandbox` to restore it.\n\n".to_string()
     };
-    let (shell_language, restore_commands) = if !has_self {
+    if !has_self {
         (
+            bootstrap,
             if manifest.platform.starts_with("win-") {
                 "powershell"
             } else {
@@ -83,6 +151,7 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
         )
     } else if manifest.platform.starts_with("win-") {
         (
+            bootstrap,
             "powershell",
             format!(
                 ".\\.pixi-sandbox\\tools\\{}\\{} doctor --branch-location . --verify\n.\\.pixi-sandbox\\tools\\{}\\{} restore --branch-location . --output-path <project> --force",
@@ -91,14 +160,18 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
         )
     } else {
         (
+            bootstrap,
             "bash",
             format!(
                 "./.pixi-sandbox/tools/{}/{} doctor --branch-location . --verify\n./.pixi-sandbox/tools/{}/{} restore --branch-location . --output-path <project> --force",
                 manifest.platform, self_file, manifest.platform, self_file
             ),
         )
-    };
+    }
+}
 
+/// The host-requirements lines: a paragraph for the README, a bullet for AGENTS.md.
+fn host_sections(manifest: &Manifest) -> (String, String) {
     // The manifest is the machine-readable carrier; these two renderings are the human ones — a
     // reader of the branch learns what the machine must provide before launching anything.
     let declared_host = manifest
@@ -121,8 +194,12 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
             )
         })
         .unwrap_or_default();
+    (host_section, host_bullet)
+}
 
-    let readme = format!(
+/// The README guide.
+fn render_readme(manifest: &Manifest, pieces: &GuidePieces) -> String {
+    format!(
         "# Offline sandbox (orphan branch)\n\n\
          Built {} from commit `{}` for platform `{}`.\n\
          `pixi.lock` sha256 `{}`.\n\n\
@@ -141,25 +218,29 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
          ```\n\n\
          Every manifest blob is verified before it is written into the working tree.\n",
         manifest.created_at,
-        commit,
+        pieces.commit,
         manifest.platform,
-        lock,
-        bootstrap,
-        rows,
-        vendor,
-        host_section,
-        shell_language,
-        restore_commands,
-    );
-    let agents_bootstrap = if has_self {
+        pieces.lock,
+        pieces.bootstrap,
+        pieces.rows,
+        pieces.vendor,
+        pieces.host_section,
+        pieces.shell_language,
+        pieces.restore_commands,
+    )
+}
+
+/// The AGENTS.md guide.
+fn render_agents(manifest: &Manifest, pieces: &GuidePieces) -> String {
+    let agents_bootstrap = if pieces.has_self {
         format!(
             "- verified bootstrap: `.pixi-sandbox/tools/{}/{}`; the branch root contains documentation only;\n",
-            manifest.platform, self_file
+            manifest.platform, pieces.self_file
         )
     } else {
         "- restore with an installed `pixi-sandbox`; this transport does not contain a self-bootstrap binary;\n".to_string()
     };
-    let agents = format!(
+    format!(
         "# AGENTS.md — machine instructions for this bundle\n\n\
          This is an **offline pixi sandbox**, not source code to merge.\n\n\
          - authoritative manifest: `.pixi-sandbox/manifest.json` (schema {});\n\
@@ -173,7 +254,7 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
         manifest.schema,
         manifest.envs.keys().cloned().collect::<Vec<_>>().join(", "),
         manifest.platform,
-        host_bullet,
+        pieces.host_bullet,
         agents_bootstrap,
         manifest
             .tools
@@ -182,12 +263,15 @@ pub fn render(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> BranchDo
             .collect::<Vec<_>>()
             .join(", "),
         manifest.platform,
-        pixi_file,
-    );
-    BranchDocs { readme, agents }
+        pieces.pixi_file,
+    )
 }
 
 /// Write the two guides, preserving the original filenames, order and error context.
+///
+/// # Errors
+///
+/// Returns an error if either guide cannot be written into `out`.
 pub fn write_branch_docs(
     out: &Path,
     manifest: &Manifest,

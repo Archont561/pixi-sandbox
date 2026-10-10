@@ -33,10 +33,10 @@ pub fn smoke_conda_package(root: &Path, out_dir: &Path) -> Result<()> {
     }
 
     for package in &packages {
-        let name = package
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| package.display().to_string());
+        let name = package.file_name().map_or_else(
+            || package.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
         eprintln!("installing {name}");
 
         let install = Command::new("pixi")

@@ -1,8 +1,8 @@
 //! The real implementation: a `git` binary driven through a [`Runner`].
 
 use crate::{
-    DEFAULT_SCRATCH_NAME, Error, GitProtocol, Published, Result, Snapshot, snapshot_bytes,
-    snapshot_files,
+    DEFAULT_SCRATCH_NAME, Error, FileCommit, FileCommitted, GitProtocol, Published, Result,
+    Snapshot, snapshot_bytes, snapshot_files,
 };
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
@@ -23,6 +23,7 @@ pub struct Command {
 }
 
 impl Command {
+    #[must_use]
     pub fn new(program: impl Into<String>) -> Self {
         Command {
             program: program.into(),
@@ -32,11 +33,13 @@ impl Command {
         }
     }
 
+    #[must_use]
     pub fn arg(mut self, arg: impl Into<String>) -> Self {
         self.args.push(arg.into());
         self
     }
 
+    #[must_use]
     pub fn args<I, S>(mut self, args: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -46,27 +49,32 @@ impl Command {
         self
     }
 
+    #[must_use]
     pub fn cwd(mut self, dir: impl Into<PathBuf>) -> Self {
         self.cwd = Some(dir.into());
         self
     }
 
+    #[must_use]
     pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.env.push((key.into(), value.into()));
         self
     }
 
     /// A shell-ish rendering, for logs, `--dry-run`, and readable test failures.
+    #[must_use]
     pub fn rendered(&self) -> String {
-        let env: String = self.env.iter().map(|(k, v)| format!("{k}={v} ")).collect();
-        let args: String = self
-            .args
-            .iter()
-            .map(|a| format!("{a} "))
-            .collect::<String>()
-            .trim_end()
-            .to_string();
-        format!("{env}{} {args}", self.program)
+        use std::fmt::Write as _;
+
+        let mut env = String::new();
+        for (key, value) in &self.env {
+            let _ = write!(env, "{key}={value} ");
+        }
+        let mut args = String::new();
+        for arg in &self.args {
+            let _ = write!(args, "{arg} ");
+        }
+        format!("{env}{} {}", self.program, args.trim_end())
     }
 }
 
@@ -78,10 +86,12 @@ pub struct Output {
 }
 
 impl Output {
+    #[must_use]
     pub fn ok(&self) -> bool {
         self.status == 0
     }
 
+    #[must_use]
     pub fn utf8(&self) -> String {
         String::from_utf8_lossy(&self.stdout).into_owned()
     }
@@ -89,6 +99,10 @@ impl Output {
 
 /// How commands get executed. Implement this to record, preview, or fake git.
 pub trait Runner: Send + Sync + std::fmt::Debug {
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be executed at all (a missing `git` binary);
+    /// a non-zero exit is an [`Output`], not an error.
     fn run(&self, command: &Command) -> Result<Output>;
 }
 
@@ -129,6 +143,7 @@ impl Runner for ProcessRunner {
 ///
 /// Pack treats source provenance as optional, so an unavailable Git executable, a non-repository,
 /// or non-UTF-8 output all become `None`; the command still lives behind this crate's runner.
+#[must_use]
 pub fn current_commit(root: &Path) -> Option<String> {
     current_commit_with(&ProcessRunner, root)
 }
@@ -158,10 +173,14 @@ pub struct RecordingRunner {
 }
 
 impl RecordingRunner {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (a thread panicked while holding it).
     pub fn commands(&self) -> Vec<Command> {
         self.seen.lock().expect("runner lock").clone()
     }
@@ -188,10 +207,14 @@ pub struct PreviewRunner {
 }
 
 impl PreviewRunner {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (a thread panicked while holding it).
     pub fn commands(&self) -> Vec<Command> {
         self.seen.lock().expect("runner lock").clone()
     }
@@ -232,6 +255,7 @@ impl Default for ShellGit {
 }
 
 impl ShellGit {
+    #[must_use]
     pub fn new() -> Self {
         ShellGit {
             runner: Box::new(ProcessRunner),
@@ -249,6 +273,7 @@ impl ShellGit {
         }
     }
 
+    #[must_use]
     pub fn with_runner(runner: Box<dyn Runner>) -> Self {
         ShellGit {
             runner,
@@ -257,27 +282,35 @@ impl ShellGit {
     }
 
     /// A `ShellGit` that runs nothing: every call returns the commands it *would* run.
+    #[must_use]
     pub fn preview() -> Self {
         Self::with_runner(Box::new(PreviewRunner::new()))
     }
 
+    #[must_use]
     pub fn program(mut self, program: impl Into<String>) -> Self {
         self.program = program.into();
         self
     }
 
+    #[must_use]
     pub fn identity(mut self, name: impl Into<String>, email: impl Into<String>) -> Self {
         self.name = name.into();
         self.email = email.into();
         self
     }
 
+    #[must_use]
     pub fn scratch_name(mut self, name: impl Into<String>) -> Self {
         self.scratch_name = name.into();
         self
     }
 
     /// Every command this instance has run (or previewed), oldest first.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (a thread panicked while holding it).
     pub fn log(&self) -> Vec<String> {
         self.log.lock().expect("git log lock").clone()
     }
@@ -437,12 +470,12 @@ impl ShellGit {
     }
 
     // ------------------------------------------------------------------
-    // Working-tree primitives for repository automation (xtask `commit-release`). These are
-    // NOT transport operations — the GitProtocol trait below stays the transport surface —
-    // but they are still git, so they live here rather than as bare `Command::new("git")`
-    // calls in a consumer crate (D9). Every command carries the caller's `root` as cwd and
-    // this instance's identity through the `-c` pair, so an automation commit never depends
-    // on the invoking user's git config.
+    // Working-tree primitives for repository automation (xtask `commit-release`, the
+    // consumer-checkout operations on the GitProtocol trait below). These are still git, so
+    // they live here rather than as bare `Command::new("git")` calls in a consumer crate
+    // (D9). Every command carries the caller's `root` as cwd and this instance's identity
+    // through the `-c` pair, so an automation commit never depends on the invoking user's
+    // git config.
     // ------------------------------------------------------------------
 
     /// Run a command and return its raw output, for git invocations whose non-zero exit is
@@ -456,6 +489,11 @@ impl ShellGit {
     }
 
     /// Does `tag` already exist on `remote`?
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the remote cannot be queried; exit code 2 (no such tag) is
+    /// the `Ok(false)` answer.
     pub fn remote_tag_exists(&self, remote: &str, tag: &str) -> Result<bool> {
         let command = self
             .git(["ls-remote", "--exit-code", "--tags"])
@@ -474,6 +512,11 @@ impl ShellGit {
     }
 
     /// Stage exactly the listed files in the working tree at `root`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git add` fails (a path outside the repository, a locked
+    /// index).
     pub fn add_files(&self, root: &Path, files: &[impl AsRef<Path>]) -> Result<()> {
         let mut command = self.git(["add", "--"]).cwd(root);
         for file in files {
@@ -488,6 +531,10 @@ impl ShellGit {
     /// HEAD` also report *staged* changes, so run after a `git add` they name every file
     /// just staged and reject every release. Automation that just staged a list and asks
     /// "what is modified and unaccounted for?" wants this question and no other.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git diff` fails or its output is not UTF-8.
     pub fn unstaged_modifications(&self, root: &Path) -> Result<Vec<String>> {
         let text = self.run_text(&self.git(["diff", "--name-only"]).cwd(root))?;
         Ok(text.lines().map(str::to_string).collect())
@@ -497,6 +544,10 @@ impl ShellGit {
     ///
     /// This is the porcelain form used by release preparation to account for every tracked
     /// modification without invoking Git from the consumer crate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git status` fails or its output is not UTF-8.
     pub fn worktree_status_files(&self, root: &Path) -> Result<Vec<String>> {
         let output = self.run(
             &self
@@ -515,12 +566,20 @@ impl ShellGit {
     }
 
     /// Commit the staged changes under the instance's identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git commit` fails (nothing staged, a locked index).
     pub fn commit(&self, root: &Path, message: &str) -> Result<()> {
         self.run(&self.git(["commit", "-m"]).arg(message).cwd(root))
             .map(|_| ())
     }
 
     /// An annotated tag whose message is its own name, the release convention.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git tag` fails (the tag already exists).
     pub fn tag_annotated(&self, root: &Path, tag: &str) -> Result<()> {
         self.run(
             &self
@@ -534,23 +593,39 @@ impl ShellGit {
     }
 
     /// Push one refspec to `remote` from the working tree at `root`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the remote rejects the push.
     pub fn push_refspec(&self, root: &Path, remote: &str, refspec: &str) -> Result<()> {
         self.run(&self.git(["push"]).arg(remote).arg(refspec).cwd(root))
             .map(|_| ())
     }
 
     /// The unstaged diff of the working tree at `root`, unpaged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git diff` fails or its output is not UTF-8.
     pub fn worktree_diff(&self, root: &Path) -> Result<String> {
         self.run_text(&self.git(["--no-pager", "diff"]).cwd(root))
     }
 
     /// Initialise a fresh repository at `root` — the airlock host starts as an empty repo
     /// and only ever fetches into it (task-36 `airlock-fetch`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git init` fails.
     pub fn init_repo(&self, root: &Path) -> Result<()> {
         self.run(&self.git(["init", "-q"]).cwd(root)).map(|_| ())
     }
 
     /// Register `url` under `name` in the repository at `root`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git remote add` fails (the name already exists).
     pub fn remote_add(&self, root: &Path, name: &str, url: &str) -> Result<()> {
         self.run(&self.git(["remote", "add"]).arg(name).arg(url).cwd(root))
             .map(|_| ())
@@ -558,6 +633,11 @@ impl ShellGit {
 
     /// Fetch `refspec` from `remote` at depth 1 into the repository at `root` — the shallow
     /// fetch a developer's machine makes, which is the path the airlock proof exercises.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the fetch fails (an unreachable remote, a refspec that matches
+    /// nothing).
     pub fn fetch_shallow(&self, root: &Path, remote: &str, refspec: &str) -> Result<()> {
         self.run(
             &self
@@ -570,6 +650,11 @@ impl ShellGit {
     }
 
     /// Check `branch` out as a linked worktree at `target`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git worktree add` fails (the branch is already checked out,
+    /// `target` is not empty).
     pub fn worktree_add(
         &self,
         root: &Path,
@@ -586,6 +671,10 @@ impl ShellGit {
     }
 
     /// `--stat` form of [`Self::worktree_diff`], for summaries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git diff --stat` fails or its output is not UTF-8.
     pub fn worktree_diff_stat(&self, root: &Path) -> Result<String> {
         self.run_text(&self.git(["--no-pager", "diff", "--stat"]).cwd(root))
     }
@@ -596,6 +685,11 @@ impl ShellGit {
     /// `git` that cannot run, or a work tree git refuses to answer for, is an error rather than
     /// a silent `false`, because the caller's fallback is the conservative one and must not be
     /// reached by accident.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `git` invocation fails; `false` is only git's own answer
+    /// (exit 128).
     pub fn is_work_tree(&self, root: &Path) -> Result<bool> {
         let command = self.git(["rev-parse", "--is-inside-work-tree"]).cwd(root);
         let output = self.run_raw(&command)?;
@@ -617,6 +711,10 @@ impl ShellGit {
     /// store, so the copy is still *of* that directory in a way a consumer's `git clone <url>`
     /// never is. A proof that runs in the clone is otherwise partly a proof about the bytes the
     /// tooling left lying next door.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the clone fails (an unreadable source, a non-empty `to`).
     pub fn clone_fresh(&self, from: &Path, to: &Path) -> Result<()> {
         self.run(
             &self
@@ -635,6 +733,10 @@ impl ShellGit {
     /// already committed by an earlier revision would go unreported, and `git ls-files` alone
     /// omits the new file nobody has staged yet. `-z` keeps a path with a space intact, and
     /// paths come back relative to the repository root — which `cwd` is.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git ls-files` fails or its output is not UTF-8.
     pub fn ls_publishable(&self, root: &Path) -> Result<Vec<String>> {
         let command = self
             .git([
@@ -808,6 +910,64 @@ impl GitProtocol for ShellGit {
         }
         let _ = branch; // the object store is per repository, not per branch
         Ok(Some(bytes))
+    }
+
+    fn commit_files(&self, commit: &FileCommit<'_>) -> Result<FileCommitted> {
+        let root = commit.work_tree;
+        // Create or reset the branch at the checkout's current HEAD — a re-proposal onto a
+        // version-derived name starts from the same main commit, never from the last attempt.
+        self.run(&self.git(["checkout", "-B"]).arg(commit.branch).cwd(root))?;
+        // Stage exactly the listed files; nothing else in the tree is ever staged.
+        self.add_files(root, commit.files)?;
+        // `git diff --cached --quiet` answers "are there staged changes" with its exit code:
+        // 0 means the files matched HEAD and there is nothing to propose.
+        let staged = self.run_raw(&self.git(["diff", "--cached", "--quiet"]).cwd(root))?;
+        match staged.status {
+            0 => {
+                return Ok(FileCommitted {
+                    commit: String::new(),
+                    changed: false,
+                    patch: Vec::new(),
+                });
+            }
+            1 => {}
+            status => {
+                return Err(Error::Command {
+                    command: "git diff --cached --quiet".to_string(),
+                    status,
+                    stderr: staged.stderr.trim().to_string(),
+                });
+            }
+        }
+        self.commit(root, commit.message)?;
+        let sha = self.run_text(&self.git(["rev-parse", "HEAD"]).cwd(root))?;
+        // The patch artifact is the commit's binary diff against its parent — raw bytes,
+        // because `--binary` output is not UTF-8.
+        let patch = self
+            .run(&self.git(["diff", "HEAD^", "HEAD", "--binary"]).cwd(root))?
+            .stdout;
+        Ok(FileCommitted {
+            commit: sha,
+            changed: true,
+            patch,
+        })
+    }
+
+    fn push_branch(&self, work_tree: &Path, remote: &str, branch: &str, force: bool) -> Result<()> {
+        let mut command = self.git(["push"]).cwd(work_tree);
+        if force {
+            command = command.arg("--force");
+        }
+        let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+        let command = command.arg(remote).arg(&refspec);
+        match self.run(&command) {
+            Err(Error::Command { stderr, .. }) => Err(Error::Rejected {
+                remote: remote.to_string(),
+                branch: branch.to_string(),
+                stderr,
+            }),
+            other => other.map(|_| ()),
+        }
     }
 }
 

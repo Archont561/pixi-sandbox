@@ -63,9 +63,8 @@ fn only_a_windows_drive_prefix_makes_a_files_manifest_entry_non_relative() {
     ];
     for (bad, because) in refused {
         let tampered = text.replace("man/man3/App::Cpan.3", bad);
-        let err = match FilesDoc::parse(tampered.as_bytes()) {
-            Ok(_) => panic!("{because}: {bad} must be refused"),
-            Err(err) => err,
+        let Err(err) = FilesDoc::parse(tampered.as_bytes()) else {
+            panic!("{because}: {bad} must be refused")
         };
         assert!(
             err.to_string().contains("must be relative"),
@@ -87,9 +86,8 @@ fn a_scan_time_rejection_names_the_scanned_file_not_the_manifest() {
     // shape a pack of a misbehaving tree would hit.
     fs::write(prefix.join("C:x"), "a file literally named C:x\n").unwrap();
     let staged = prefix.to_string_lossy().into_owned().into_bytes();
-    let err = match files_manifest::scan_prefix(&prefix, std::slice::from_ref(&staged)) {
-        Ok(_) => panic!("a drive-named file must be refused"),
-        Err(err) => err,
+    let Err(err) = files_manifest::scan_prefix(&prefix, std::slice::from_ref(&staged)) else {
+        panic!("a drive-named file must be refused")
     };
     let msg = err.to_string();
     assert!(msg.contains("scanned environment file"), "got: {msg}");
@@ -252,7 +250,7 @@ fn scanning_a_staged_prefix_produces_a_verifiable_list() {
         doc.excluded,
         RESTORE_MARKERS
             .iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect::<Vec<_>>()
     );
     assert_eq!(by_path.len(), 4, "markers excluded: {:?}", by_path.keys());

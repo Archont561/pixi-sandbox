@@ -47,6 +47,7 @@ pub enum LauncherKind {
 }
 
 impl LauncherKind {
+    #[must_use]
     pub fn current() -> Self {
         if cfg!(windows) {
             Self::Windows
@@ -102,6 +103,10 @@ pub struct UserTools<'a> {
 impl UserTools<'_> {
     /// Write the launchers and update the persistent PATH. Returns what changed; printing is
     /// the caller's job so `restore` keeps one voice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a launcher cannot be written or the profile cannot be updated.
     pub fn register(
         &self,
         kind: LauncherKind,
@@ -173,6 +178,7 @@ impl UserTools<'_> {
 }
 
 /// The single launcher file name for a tool on this launcher flavour.
+#[must_use]
 pub fn launcher_file_name(name: &str, kind: LauncherKind) -> String {
     match kind {
         LauncherKind::Posix => name.to_string(),
@@ -270,6 +276,10 @@ fn recorded_target(launcher: &str) -> Option<PathBuf> {
 /// chmod-or-keep helper in the crate — `commands/` reaches it through the promoted module —
 /// while `self_update::replace` deliberately keeps its own exact-0755 policy, because a
 /// staged self-update must land with the mode it was built with (task-37 AC#3).
+///
+/// # Errors
+///
+/// Returns an error if the file's permissions cannot be read or set.
 pub fn make_executable(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
@@ -289,6 +299,10 @@ pub fn make_executable(path: &Path) -> Result<()> {
 /// The managed PATH block for POSIX profiles. `case`-guarded so sourcing it twice does not
 /// duplicate the entry — the same idempotency `scripts/restore.sh` relies on for its own PATH
 /// work, spelled the portable way so bash, zsh, dash and busybox sh all agree.
+///
+/// # Errors
+///
+/// Returns an error if `bin_dir` is not valid UTF-8.
 pub fn path_block(bin_dir: &Path) -> Result<String> {
     let dir = bin_dir.to_str().ok_or_else(|| {
         anyhow::anyhow!(
@@ -323,6 +337,10 @@ pub fn path_block(bin_dir: &Path) -> Result<String> {
 /// blocks are removed first — however many there are, from whichever bin directory — and one
 /// fresh block is appended, so the edit is idempotent and a changed `--user-bin` retargets
 /// cleanly instead of stacking.
+///
+/// # Errors
+///
+/// Returns an error if the PATH block cannot be built or the profile cannot be written.
 pub fn update_profile_path(profile: &Path, bin_dir: &Path) -> Result<PathChange> {
     let block = path_block(bin_dir)?;
     let existing = fs::read_to_string(profile).unwrap_or_default();
@@ -413,6 +431,10 @@ const PIXI_SANDBOX_PATH_PRESENT: &str = "pixi-sandbox-user-path-present";
 /// `%USERPROFILE%\bin` must keep saying that. Writing the *expanded* form back — what the
 /// plain Get/SetEnvironmentVariable dance does — would bake every reference open, so when
 /// the raw value carries `%…%` the script refuses and says so instead of guessing.
+///
+/// # Errors
+///
+/// Returns an error if `bin_dir` is not valid UTF-8.
 #[cfg(any(windows, test))]
 pub fn powershell_user_path_script(bin_dir: &Path) -> Result<String> {
     let dir = bin_dir.to_str().ok_or_else(|| {
@@ -442,6 +464,7 @@ pub fn powershell_user_path_script(bin_dir: &Path) -> Result<String> {
 /// `~/.local/bin`; Windows gets its own `~\.pixi-sandbox\bin` because `~\.pixi\bin` belongs
 /// to `pixi global install` and its trampolines (D4) — colliding with it would be confusing
 /// by design, and the whole point is a recognisable, pixi-sandbox-owned location.
+#[must_use]
 pub fn default_bin_dir(home: &Path) -> PathBuf {
     if cfg!(windows) {
         home.join(".pixi-sandbox").join("bin")

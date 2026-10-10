@@ -439,11 +439,10 @@ mod evaluation {
     }
 
     fn answer(table: &[(String, Observation)], name: &str) -> Observation {
-        table
-            .iter()
-            .find(|(key, _)| key == name)
-            .map(|(_, observation)| observation.clone())
-            .unwrap_or_else(|| Observation::missing(format!("{name} is not present on this host")))
+        table.iter().find(|(key, _)| key == name).map_or_else(
+            || Observation::missing(format!("{name} is not present on this host")),
+            |(_, observation)| observation.clone(),
+        )
     }
 
     impl HostProbe for FakeProbe {

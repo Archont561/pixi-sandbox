@@ -20,11 +20,12 @@ use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::transport_budget::{self, BudgetReport};
 use pixi_sandbox_core::verify::{self, Report, RestoredReport};
 use serde_json::{Value, json};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-pub fn run(args: DoctorArgs) -> Result<()> {
+pub fn run(args: &DoctorArgs) -> Result<()> {
     crate::diagnostics::phase("load-manifest", "locating and parsing manifest.json");
     let path = locate(&args.branch_location);
     let manifest = Manifest::load(&path).with_context(|| format!("loading {}", path.display()))?;
@@ -38,28 +39,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
         None => None,
     };
 
-    // The restored-tree check trusts the manifest as its oracle, so it always verifies the
-    // transport first — an unchecked oracle would turn the check into theater.
-    let report = (args.verify || project.is_some()).then(|| {
-        crate::diagnostics::phase("verify-transport", "checking every declared transport byte");
-        verify::verify(&manifest, &args.branch_location, only)
-    });
-    let restored = project.as_deref().map(|project| {
-        crate::diagnostics::phase(
-            "verify-restored",
-            "checking restored files against the oracle",
-        );
-        (
-            project,
-            verify::verify_restored(
-                &manifest,
-                &args.branch_location,
-                project,
-                only,
-                args.work_dir.as_deref(),
-            ),
-        )
-    });
+    let (report, restored) = run_verifications(args, &manifest, only, project.as_deref());
 
     // The standalone probe (issue #81, AC#3). Hashes prove the embedded tool is the
     // declared file; only executing it — under the empty environment an airlock has —
@@ -71,115 +51,35 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     );
     let standalone = standalone_probe(&args.branch_location, &manifest, report.as_ref());
 
-    // Host requirements (issue #109, TASK-75). Probed only when the transport declares some,
-    // and only against a host of the transport's own family: a Linux libc floor says nothing
-    // about a macOS machine, and `evaluate` answers `not applicable` there without querying
-    // anything. The probes are read-only and never install, start or launch what they look for.
-    let host = manifest
-        .host_requirements
-        .as_ref()
-        .filter(|declared| !declared.is_empty())
-        .map(|declared| {
-            crate::diagnostics::phase(
-                "probe-host",
-                "classifying the transport's host requirements on this machine",
-            );
-            let platform_family = Platform::from_str(&manifest.platform)
-                .ok()
-                .map(Platform::host_family);
-            evaluate(declared, platform_family, &SystemHostProbe::new())
-        });
+    // Host requirements (issue #109, TASK-75) are probed by probe_host — read-only, and
+    // never on a host of the transport's wrong family.
+    let host = probe_host(&manifest);
 
-    let budget = match &args.budget_config {
-        Some(config) => {
-            crate::diagnostics::phase(
-                "check-budgets",
-                "checking transport size budgets before publish",
-            );
-            let config_path = support::absolute(config)?;
-            let config = SandboxConfig::load(&config_path).with_context(|| {
-                format!("loading sandbox budget config {}", config_path.display())
-            })?;
-            let branch_root = transport_root_from_manifest(&path);
-            let snapshot_bytes = repository_snapshot_bytes(&branch_root)?;
-            Some(transport_budget::check(
-                &manifest,
-                Some(snapshot_bytes),
-                config.budgets.to_transport_budgets()?,
-            ))
-        }
-        None => None,
-    };
+    let budget = check_budgets(args, &manifest, &path)?;
 
-    crate::diagnostics::phase(
-        "render-report",
-        "writing the requested human or JSON report",
-    );
-    let restored_section = restored
-        .as_ref()
-        .map(|(project, report)| (*project, report));
-    if args.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&as_json(
-                &path,
-                &manifest,
-                report.as_ref(),
-                restored_section,
-                standalone.as_ref(),
-                host.as_ref(),
-                budget.as_ref()
-            ))?
-        );
-    } else {
-        print_human(
-            &path,
-            &manifest,
-            report.as_ref(),
-            restored_section,
-            standalone.as_ref(),
-            host.as_ref(),
-            budget.as_ref(),
-        );
-    }
+    render_report(
+        args,
+        &path,
+        &manifest,
+        &ReportSections {
+            report: report.as_ref(),
+            restored: restored
+                .as_ref()
+                .map(|(project, report)| (*project, report)),
+            standalone: standalone.as_ref(),
+            host: host.as_ref(),
+            budget: budget.as_ref(),
+        },
+    )?;
 
-    if let Some(report) = &report {
-        if !report.ok() {
-            // Everything is already on stdout; the exit code is for scripts.
-            bail!("verify failed: {} failure(s)", report.failures.len());
-        }
-    }
-    if let Some((_, restored)) = &restored {
-        if !restored.ok() {
-            bail!(
-                "restored-tree verification failed: {} failure(s)",
-                restored.report.failures.len()
-            );
-        }
-    }
-    if let Some(StandaloneProbe::Refused { detail }) = &standalone {
-        bail!("standalone probe failed:\n{detail}");
-    }
-    if let Some(budget) = &budget {
-        if !budget.ok() {
-            bail!(
-                "transport budget exceeded: {} threshold(s)",
-                budget.violations.len()
-            );
-        }
-    }
-    if args.require_host_requirements {
-        if let Some(host) = &host {
-            if !host.ok() {
-                bail!(
-                    "host requirements not met: {} missing ({} unknown, never a failure)",
-                    host.missing(),
-                    host.unknown()
-                );
-            }
-        }
-    }
-    Ok(())
+    check_failures(
+        args,
+        report.as_ref(),
+        restored.as_ref(),
+        standalone.as_ref(),
+        budget.as_ref(),
+        host.as_ref(),
+    )
 }
 
 /// The probe's single outcome: skipped (with the honest reason), proven to run, or refused
@@ -199,6 +99,183 @@ enum StandaloneProbe {
 /// doctor always had) and only after the hash report is green; and a foreign-platform
 /// binary cannot be judged here, so cross-platform hosts skip — the skip is printed, never
 /// silent, because an airlock operator must know *who* still owes this proof.
+/// The two verifications: the transport itself, and the restored tree when
+/// `--verify-restored` names a project. The restored-tree check trusts the manifest as its
+/// oracle, so it always verifies the transport first — an unchecked oracle would turn the
+/// check into theater.
+fn run_verifications<'a>(
+    args: &DoctorArgs,
+    manifest: &Manifest,
+    only: Option<&[String]>,
+    project: Option<&'a Path>,
+) -> (Option<Report>, Option<(&'a Path, RestoredReport)>) {
+    let report = (args.verify || project.is_some()).then(|| {
+        crate::diagnostics::phase("verify-transport", "checking every declared transport byte");
+        verify::verify(manifest, &args.branch_location, only)
+    });
+    let restored = project.map(|project| {
+        crate::diagnostics::phase(
+            "verify-restored",
+            "checking restored files against the oracle",
+        );
+        (
+            project,
+            verify::verify_restored(
+                manifest,
+                &args.branch_location,
+                project,
+                only,
+                args.work_dir.as_deref(),
+            ),
+        )
+    });
+    (report, restored)
+}
+
+/// Host requirements (issue #109, TASK-75). Probed only when the transport declares some,
+/// and only against a host of the transport's own family: a Linux libc floor says nothing
+/// about a macOS machine, and `evaluate` answers `not applicable` there without querying
+/// anything. The probes are read-only and never install, start or launch what they look for.
+fn probe_host(manifest: &Manifest) -> Option<HostReport> {
+    manifest
+        .host_requirements
+        .as_ref()
+        .filter(|declared| !declared.is_empty())
+        .map(|declared| {
+            crate::diagnostics::phase(
+                "probe-host",
+                "classifying the transport's host requirements on this machine",
+            );
+            let platform_family = Platform::from_str(&manifest.platform)
+                .ok()
+                .map(Platform::host_family);
+            evaluate(declared, platform_family, &SystemHostProbe::new())
+        })
+}
+
+/// The transport-size budget check, when a budget config is named.
+fn check_budgets(
+    args: &DoctorArgs,
+    manifest: &Manifest,
+    path: &Path,
+) -> Result<Option<BudgetReport>> {
+    match &args.budget_config {
+        Some(config) => {
+            crate::diagnostics::phase(
+                "check-budgets",
+                "checking transport size budgets before publish",
+            );
+            let config_path = support::absolute(config)?;
+            let config = SandboxConfig::load(&config_path).with_context(|| {
+                format!("loading sandbox budget config {}", config_path.display())
+            })?;
+            let branch_root = transport_root_from_manifest(path);
+            let snapshot_bytes = repository_snapshot_bytes(&branch_root)?;
+            Ok(Some(transport_budget::check(
+                manifest,
+                Some(snapshot_bytes),
+                config.budgets.to_transport_budgets()?,
+            )))
+        }
+        None => Ok(None),
+    }
+}
+
+/// The report's optional sections, in the shape both renderers take.
+struct ReportSections<'a> {
+    report: Option<&'a Report>,
+    restored: Option<(&'a Path, &'a RestoredReport)>,
+    standalone: Option<&'a StandaloneProbe>,
+    host: Option<&'a HostReport>,
+    budget: Option<&'a BudgetReport>,
+}
+
+/// Print the requested report: human-readable by default, JSON with `--json`.
+fn render_report(
+    args: &DoctorArgs,
+    path: &Path,
+    manifest: &Manifest,
+    sections: &ReportSections<'_>,
+) -> Result<()> {
+    crate::diagnostics::phase(
+        "render-report",
+        "writing the requested human or JSON report",
+    );
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&as_json(
+                path,
+                manifest,
+                sections.report,
+                sections.restored,
+                sections.standalone,
+                sections.host,
+                sections.budget
+            ))?
+        );
+    } else {
+        print_human(
+            path,
+            manifest,
+            sections.report,
+            sections.restored,
+            sections.standalone,
+            sections.host,
+            sections.budget,
+        );
+    }
+    Ok(())
+}
+
+/// The exit-code contract: every failure mode bails after the report is on stdout.
+fn check_failures(
+    args: &DoctorArgs,
+    report: Option<&Report>,
+    restored: Option<&(&Path, RestoredReport)>,
+    standalone: Option<&StandaloneProbe>,
+    budget: Option<&BudgetReport>,
+    host: Option<&HostReport>,
+) -> Result<()> {
+    if let Some(report) = report {
+        if !report.ok() {
+            // Everything is already on stdout; the exit code is for scripts.
+            bail!("verify failed: {} failure(s)", report.failures.len());
+        }
+    }
+    if let Some((_, restored)) = restored {
+        if !restored.ok() {
+            bail!(
+                "restored-tree verification failed: {} failure(s)",
+                restored.report.failures.len()
+            );
+        }
+    }
+    if let Some(StandaloneProbe::Refused { detail }) = standalone {
+        bail!("standalone probe failed:\n{detail}");
+    }
+    if let Some(budget) = budget {
+        if !budget.ok() {
+            bail!(
+                "transport budget exceeded: {} threshold(s)",
+                budget.violations.len()
+            );
+        }
+    }
+    if args.require_host_requirements {
+        if let Some(host) = host {
+            if !host.ok() {
+                bail!(
+                    "host requirements not met: {} missing ({} unknown, never a failure)",
+                    host.missing(),
+                    host.unknown()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn standalone_probe(
     branch_location: &Path,
     manifest: &Manifest,
@@ -267,8 +344,7 @@ fn transport_root_from_manifest(manifest_path: &Path) -> PathBuf {
     manifest_path
         .parent()
         .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| manifest_path.to_path_buf())
+        .map_or_else(|| manifest_path.to_path_buf(), Path::to_path_buf)
 }
 
 fn repository_snapshot_bytes(root: &Path) -> Result<u64> {
@@ -315,6 +391,54 @@ fn print_human(
         manifest.platform, manifest.schema, manifest.created_at, commit
     );
 
+    print_manifest_summary(manifest);
+
+    // What the transport expects from the *host* is printed as declared data, never as a
+    // verdict about the machine this build runs on (issue #109, TASK-75).
+    if let Some(host) = host {
+        print_host_report(host);
+    }
+
+    let (envs, tools, vendor) = manifest.payload_split();
+    let total = manifest.payload_bytes();
+    let mut split = format!(
+        "envs {} MiB · tools {} MiB",
+        support::mib(envs),
+        support::mib(tools)
+    );
+    if manifest.vendor.is_some() {
+        let share = vendor.saturating_mul(100).checked_div(total).unwrap_or(0);
+        let _ = write!(
+            split,
+            " · vendor {} MiB, {share}% vendor",
+            support::mib(vendor)
+        );
+    }
+    println!("  payload {} MiB total ({split})", support::mib(total));
+
+    match report {
+        None => labelled(
+            "hint",
+            "pass --verify to check every sha256 (nothing is written)",
+        ),
+        Some(report) => print_verify_report(report),
+    }
+
+    if let Some(standalone) = standalone {
+        print_standalone(standalone);
+    }
+
+    if let Some(budget) = budget {
+        print_budget(budget);
+    }
+
+    if let Some((project, restored)) = restored {
+        print_restored(project, restored);
+    }
+}
+
+/// The manifest's own sections: environments, tools, vendor.
+fn print_manifest_summary(manifest: &Manifest) {
     for (name, env) in &manifest.envs {
         let fingerprint = env
             .pixi_environment_fingerprint
@@ -361,190 +485,171 @@ fn print_human(
             capitalise(&vendor.mode),
         );
     }
+}
 
-    // What the transport expects from the *host*, straight from the manifest (issue #109,
-    // TASK-75). Printed as declared data: this build reports it without probing the machine, so
-    // the line must not read as a verdict about the host it is running on.
-    if let Some(host) = host {
-        labelled(
-            "host",
-            &format!("declared requirements: {}", host.declared.summary()),
+/// What the transport expects from the *host*, straight from the manifest (issue #109,
+/// TASK-75). Printed as declared data: this build reports it without probing the machine, so
+/// the line must not read as a verdict about the host it is running on.
+fn print_host_report(host: &HostReport) {
+    labelled(
+        "host",
+        &format!("declared requirements: {}", host.declared.summary()),
+    );
+    labelled(
+        "conda",
+        "conda-provided libraries travel with the transport and are not probed here",
+    );
+    for finding in &host.findings {
+        let mut line = format!(
+            "{} {}: {} ({})",
+            finding.kind.as_str(),
+            finding.name,
+            finding.status,
+            finding.detail
         );
-        labelled(
-            "conda",
-            "conda-provided libraries travel with the transport and are not probed here",
-        );
-        for finding in &host.findings {
-            let mut line = format!(
-                "{} {}: {} ({})",
-                finding.kind.as_str(),
-                finding.name,
-                finding.status,
-                finding.detail
-            );
-            if let Some(remedy) = &finding.remedy {
-                line.push_str(" — ");
-                line.push_str(remedy);
-            }
-            println!("  {line}");
+        if let Some(remedy) = &finding.remedy {
+            line.push_str(" — ");
+            line.push_str(remedy);
         }
+        println!("  {line}");
+    }
+    labelled(
+        "host",
+        &format!(
+            "{} of {} satisfied · {} missing · {} unknown",
+            host.satisfied(),
+            host.findings.len(),
+            host.missing(),
+            host.unknown()
+        ),
+    );
+    if !host.applicable() {
         labelled(
             "host",
+            "not applicable on this host — nothing was probed (see the findings above)",
+        );
+    }
+}
+
+/// The `--verify` outcome: every failure, then the verdict.
+fn print_verify_report(report: &Report) {
+    for failure in &report.failures {
+        println!(
+            "  {}: {}: {}",
+            failure.path,
+            failure.kind.as_str(),
+            failure.detail
+        );
+    }
+    labelled(
+        "verify",
+        &format!(
+            "{} blob(s), {} MiB checked, {} failure(s)",
+            report.files,
+            support::mib(report.bytes),
+            report.failures.len()
+        ),
+    );
+    if report.ok() {
+        labelled("verify", "OK — every declared byte matches the manifest");
+    } else {
+        labelled("verify", "FAILED — do not restore from this branch");
+    }
+}
+
+/// The standalone probe outcome for the embedded tool.
+fn print_standalone(standalone: &StandaloneProbe) {
+    match standalone {
+        StandaloneProbe::Skipped(reason) => {
+            labelled("probe", &format!("skipped — {reason}"));
+        }
+        StandaloneProbe::Runs { version } => {
+            labelled(
+                "probe",
+                &format!(
+                    "tool pixi-sandbox v{version}: runs standalone (--version, empty environment)"
+                ),
+            );
+        }
+        StandaloneProbe::Refused { detail } => {
+            labelled(
+                "probe",
+                "FAILED — the embedded tool does not run standalone",
+            );
+            println!("  {detail}");
+        }
+    }
+}
+
+/// The transport budget verdict.
+fn print_budget(budget: &BudgetReport) {
+    if budget.ok() {
+        labelled(
+            "budget",
             &format!(
-                "{} of {} satisfied · {} missing · {} unknown",
-                host.satisfied(),
-                host.findings.len(),
-                host.missing(),
-                host.unknown()
+                "OK — blob {} MiB, transport {} MiB, push {} MiB, restore preflight {} MiB",
+                support::mib(budget.measurements.largest_blob_bytes),
+                support::mib(budget.measurements.transport_bytes),
+                budget
+                    .measurements
+                    .repository_push_bytes
+                    .map_or_else(|| "unknown".to_string(), support::mib),
+                support::mib(budget.measurements.restore_required_bytes),
             ),
         );
-        if !host.applicable() {
-            labelled(
-                "host",
-                "not applicable on this host — nothing was probed (see the findings above)",
-            );
-        }
-    }
-
-    let (envs, tools, vendor) = manifest.payload_split();
-    let total = manifest.payload_bytes();
-    let mut split = format!(
-        "envs {} MiB · tools {} MiB",
-        support::mib(envs),
-        support::mib(tools)
-    );
-    if manifest.vendor.is_some() {
-        let share = vendor.saturating_mul(100).checked_div(total).unwrap_or(0);
-        split.push_str(&format!(
-            " · vendor {} MiB, {share}% vendor",
-            support::mib(vendor)
-        ));
-    }
-    println!("  payload {} MiB total ({split})", support::mib(total),);
-
-    match report {
-        None => labelled(
-            "hint",
-            "pass --verify to check every sha256 (nothing is written)",
-        ),
-        Some(report) => {
-            for failure in &report.failures {
-                println!(
-                    "  {}: {}: {}",
-                    failure.path,
-                    failure.kind.as_str(),
-                    failure.detail
-                );
-            }
-            labelled(
-                "verify",
-                &format!(
-                    "{} blob(s), {} MiB checked, {} failure(s)",
-                    report.files,
-                    support::mib(report.bytes),
-                    report.failures.len()
-                ),
-            );
-            if report.ok() {
-                labelled("verify", "OK — every declared byte matches the manifest");
-            } else {
-                labelled("verify", "FAILED — do not restore from this branch");
-            }
-        }
-    }
-
-    if let Some(standalone) = standalone {
-        match standalone {
-            StandaloneProbe::Skipped(reason) => {
-                labelled("probe", &format!("skipped — {reason}"));
-            }
-            StandaloneProbe::Runs { version } => {
-                labelled(
-                    "probe",
-                    &format!(
-                        "tool pixi-sandbox v{version}: runs standalone (--version, empty environment)"
-                    ),
-                );
-            }
-            StandaloneProbe::Refused { detail } => {
-                labelled(
-                    "probe",
-                    "FAILED — the embedded tool does not run standalone",
-                );
-                println!("  {detail}");
-            }
-        }
-    }
-
-    if let Some(budget) = budget {
-        if budget.ok() {
-            labelled(
-                "budget",
-                &format!(
-                    "OK — blob {} MiB, transport {} MiB, push {} MiB, restore preflight {} MiB",
-                    support::mib(budget.measurements.largest_blob_bytes),
-                    support::mib(budget.measurements.transport_bytes),
-                    budget
-                        .measurements
-                        .repository_push_bytes
-                        .map(support::mib)
-                        .unwrap_or_else(|| "unknown".to_string()),
-                    support::mib(budget.measurements.restore_required_bytes),
-                ),
-            );
-        } else {
-            labelled(
-                "budget",
-                &format!("FAILED — {} threshold(s) exceeded", budget.violations.len()),
-            );
-            for violation in &budget.violations {
-                println!(
-                    "  {}: {} MiB > {} MiB — {}",
-                    violation.field,
-                    support::mib(violation.measured_bytes),
-                    support::mib(violation.limit_bytes),
-                    violation.remedy
-                );
-            }
-        }
-    }
-
-    if let Some((project, restored)) = restored {
-        labelled("restored", &project.display().to_string());
-        for name in &restored.verified {
+    } else {
+        labelled(
+            "budget",
+            &format!("FAILED — {} threshold(s) exceeded", budget.violations.len()),
+        );
+        for violation in &budget.violations {
             println!(
-                "  env {name}: checked against the manifest's file list — {} entry(ies), 0 failure(s)",
-                restored.report.files
+                "  {}: {} MiB > {} MiB — {}",
+                violation.field,
+                support::mib(violation.measured_bytes),
+                support::mib(violation.limit_bytes),
+                violation.remedy
             );
         }
-        for name in &restored.unverifiable {
-            println!(
-                "  env {name}: no per-file digests in this manifest (schema 1 predates the oracle) — content not verified"
-            );
-        }
-        for failure in &restored.report.failures {
-            println!(
-                "  {}: {}: {}",
-                failure.path,
-                failure.kind.as_str(),
-                failure.detail
-            );
-        }
-        if restored.ok() {
-            if restored.verified.is_empty() {
-                labelled(
-                    "restored",
-                    "nothing to verify — the selected envs predate the per-file oracle",
-                );
-            } else {
-                labelled("restored", "OK — the restored tree matches the manifest");
-            }
-        } else {
+    }
+}
+
+/// The restored-tree verification outcome.
+fn print_restored(project: &Path, restored: &RestoredReport) {
+    labelled("restored", &project.display().to_string());
+    for name in &restored.verified {
+        println!(
+            "  env {name}: checked against the manifest's file list — {} entry(ies), 0 failure(s)",
+            restored.report.files
+        );
+    }
+    for name in &restored.unverifiable {
+        println!(
+            "  env {name}: no per-file digests in this manifest (schema 1 predates the oracle) — content not verified"
+        );
+    }
+    for failure in &restored.report.failures {
+        println!(
+            "  {}: {}: {}",
+            failure.path,
+            failure.kind.as_str(),
+            failure.detail
+        );
+    }
+    if restored.ok() {
+        if restored.verified.is_empty() {
             labelled(
                 "restored",
-                "FAILED — the restored project is not the tree the manifest describes",
+                "nothing to verify — the selected envs predate the per-file oracle",
             );
+        } else {
+            labelled("restored", "OK — the restored tree matches the manifest");
         }
+    } else {
+        labelled(
+            "restored",
+            "FAILED — the restored project is not the tree the manifest describes",
+        );
     }
 }
 
@@ -557,7 +662,53 @@ fn as_json(
     host: Option<&HostReport>,
     budget: Option<&BudgetReport>,
 ) -> Value {
-    let envs: Vec<Value> = manifest
+    let (env_bytes, tool_bytes, vendor_bytes) = manifest.payload_split();
+    let mut out = json!({
+        "manifest": path.display().to_string(),
+        "schema": manifest.schema,
+        "platform": manifest.platform,
+        "created_at": manifest.created_at,
+        "commit": manifest.source.commit,
+        "envs": json_envs(manifest),
+        "tools": json_tools(manifest),
+        "vendor": manifest.vendor.as_ref().map(|v| json!({
+            "mode": v.mode,
+            "crates": v.crates,
+            "size_bytes": v.size_bytes,
+            "cargo_lock_sha256": v.cargo_lock_sha256,
+        })),
+        "payload_bytes": manifest.payload_bytes(),
+        "payload_bytes_by_kind": { "envs": env_bytes, "tools": tool_bytes, "vendor": vendor_bytes },
+    });
+
+    if let Some(report) = report {
+        out["verify"] = json_verify_section(report);
+    }
+
+    if let Some((project, restored)) = restored {
+        out["restored"] = json_restored_section(project, restored);
+    }
+
+    if let Some(host) = host {
+        // One object under the key the manifest spells: the declaration that travelled in the
+        // transport, what this host turned out to be, and the counts a CI job should branch on
+        // (`ok` is exactly `missing == 0`).
+        out["host_requirements"] = json_host_section(host);
+    }
+
+    if let Some(budget) = budget {
+        out["budget"] = serde_json::to_value(budget).expect("budget report serialises");
+    }
+
+    if let Some(standalone) = standalone {
+        out["standalone"] = json_standalone_section(standalone);
+    }
+    out
+}
+
+/// The environments section of the JSON report.
+fn json_envs(manifest: &Manifest) -> Vec<Value> {
+    manifest
         .envs
         .iter()
         .map(|(name, env)| {
@@ -571,9 +722,12 @@ fn as_json(
                 "file_entries": env.files.as_ref().map(|f| f.entries),
             })
         })
-        .collect();
+        .collect()
+}
 
-    let tools: Vec<Value> = manifest
+/// The tools section of the JSON report.
+fn json_tools(manifest: &Manifest) -> Vec<Value> {
+    manifest
         .tools
         .iter()
         .map(|(name, tool)| {
@@ -585,109 +739,88 @@ fn as_json(
                 "pinned_sha256": tool.pinned_sha256,
             })
         })
+        .collect()
+}
+
+/// The `--verify` section of the JSON report.
+fn json_verify_section(report: &Report) -> Value {
+    let failures: Vec<Value> = report
+        .failures
+        .iter()
+        .map(|f| json!({ "path": f.path, "kind": f.kind.as_str(), "detail": f.detail }))
         .collect();
+    json!({
+        "files": report.files,
+        "bytes": report.bytes,
+        "ok": report.ok(),
+        "failures": failures,
+    })
+}
 
-    let (env_bytes, tool_bytes, vendor_bytes) = manifest.payload_split();
-    let mut out = json!({
-        "manifest": path.display().to_string(),
-        "schema": manifest.schema,
-        "platform": manifest.platform,
-        "created_at": manifest.created_at,
-        "commit": manifest.source.commit,
-        "envs": envs,
-        "tools": tools,
-        "vendor": manifest.vendor.as_ref().map(|v| json!({
-            "mode": v.mode,
-            "crates": v.crates,
-            "size_bytes": v.size_bytes,
-            "cargo_lock_sha256": v.cargo_lock_sha256,
-        })),
-        "payload_bytes": manifest.payload_bytes(),
-        "payload_bytes_by_kind": { "envs": env_bytes, "tools": tool_bytes, "vendor": vendor_bytes },
-    });
+/// The restored-tree section of the JSON report.
+fn json_restored_section(project: &Path, restored: &RestoredReport) -> Value {
+    let failures: Vec<Value> = restored
+        .report
+        .failures
+        .iter()
+        .map(|f| json!({ "path": f.path, "kind": f.kind.as_str(), "detail": f.detail }))
+        .collect();
+    json!({
+        "project": project.display().to_string(),
+        "verified": restored.verified,
+        "unverifiable": restored.unverifiable,
+        "entries": restored.report.files,
+        "bytes": restored.report.bytes,
+        "ok": restored.ok(),
+        "failures": failures,
+    })
+}
 
-    if let Some(report) = report {
-        let failures: Vec<Value> = report
-            .failures
-            .iter()
-            .map(|f| json!({ "path": f.path, "kind": f.kind.as_str(), "detail": f.detail }))
-            .collect();
-        out["verify"] = json!({
-            "files": report.files,
-            "bytes": report.bytes,
-            "ok": report.ok(),
-            "failures": failures,
-        });
-    }
-
-    if let Some((project, restored)) = restored {
-        let failures: Vec<Value> = restored
-            .report
-            .failures
-            .iter()
-            .map(|f| json!({ "path": f.path, "kind": f.kind.as_str(), "detail": f.detail }))
-            .collect();
-        out["restored"] = json!({
-            "project": project.display().to_string(),
-            "verified": restored.verified,
-            "unverifiable": restored.unverifiable,
-            "entries": restored.report.files,
-            "bytes": restored.report.bytes,
-            "ok": restored.ok(),
-            "failures": failures,
-        });
-    }
-
-    if let Some(host) = host {
-        // One object under the key the manifest spells: the declaration that travelled in the
-        // transport, what this host turned out to be, and the counts a CI job should branch on
-        // (`ok` is exactly `missing == 0`).
-        let findings: Vec<Value> = host
-            .findings
-            .iter()
-            .map(|finding| {
-                let mut value = json!({
-                    "kind": finding.kind,
-                    "name": finding.name,
-                    "status": finding.status,
-                    "detail": finding.detail,
-                });
-                if let Some(remedy) = &finding.remedy {
-                    value["remedy"] = json!(remedy);
-                }
-                value
-            })
-            .collect();
-        out["host_requirements"] = json!({
-            "declared": host.declared,
-            "platform_family": host.platform_family,
-            "host_family": host.host_family,
-            "distro": host.distro,
-            "applicable": host.applicable(),
-            "ok": host.ok(),
-            "satisfied": host.satisfied(),
-            "missing": host.missing(),
-            "unknown": host.unknown(),
-            "findings": findings,
-        });
-    }
-
-    if let Some(budget) = budget {
-        out["budget"] = serde_json::to_value(budget).expect("budget report serialises");
-    }
-
-    if let Some(standalone) = standalone {
-        out["standalone"] = match standalone {
-            StandaloneProbe::Skipped(reason) => json!({ "status": "skipped", "reason": reason }),
-            StandaloneProbe::Runs { version } => {
-                json!({ "status": "ok", "tool": "pixi-sandbox", "version": version })
+/// The host-requirements section of the JSON report: the declaration that travelled in the
+/// transport, what this host turned out to be, and the counts a CI job should branch on
+/// (`ok` is exactly `missing == 0`).
+fn json_host_section(host: &HostReport) -> Value {
+    let findings: Vec<Value> = host
+        .findings
+        .iter()
+        .map(|finding| {
+            let mut value = json!({
+                "kind": finding.kind,
+                "name": finding.name,
+                "status": finding.status,
+                "detail": finding.detail,
+            });
+            if let Some(remedy) = &finding.remedy {
+                value["remedy"] = json!(remedy);
             }
-            StandaloneProbe::Refused { detail } => {
-                json!({ "status": "failed", "tool": "pixi-sandbox", "detail": detail })
-            }
-        };
+            value
+        })
+        .collect();
+    json!({
+        "declared": host.declared,
+        "platform_family": host.platform_family,
+        "host_family": host.host_family,
+        "distro": host.distro,
+        "applicable": host.applicable(),
+        "ok": host.ok(),
+        "satisfied": host.satisfied(),
+        "missing": host.missing(),
+        "unknown": host.unknown(),
+        "findings": findings,
+    })
+}
+
+/// The standalone-probe section of the JSON report.
+fn json_standalone_section(standalone: &StandaloneProbe) -> Value {
+    match standalone {
+        StandaloneProbe::Skipped(reason) => json!({ "status": "skipped", "reason": reason }),
+        StandaloneProbe::Runs { version } => {
+            json!({ "status": "ok", "tool": "pixi-sandbox", "version": version })
+        }
+        StandaloneProbe::Refused { detail } => {
+            json!({ "status": "failed", "tool": "pixi-sandbox", "detail": detail })
+        }
     }
-    out
 }
 
 fn labelled(label: &str, text: &str) {

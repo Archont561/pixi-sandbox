@@ -30,6 +30,7 @@ fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
 }
 
 /// Lowercase hex sha256 of a byte slice.
+#[must_use]
 pub fn sha256_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -37,6 +38,10 @@ pub fn sha256_bytes(bytes: &[u8]) -> String {
 }
 
 /// Lowercase hex sha256 of a file, streamed.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened or read.
 pub fn sha256_file(path: &Path) -> Result<String> {
     let file = File::open(path).map_err(|e| Error::io(path, e))?;
     let mut reader = BufReader::with_capacity(COPY_BUFFER, file);
@@ -53,11 +58,16 @@ pub fn sha256_file(path: &Path) -> Result<String> {
 }
 
 /// Name of the `index`-th split part of `rel_path` (0-based).
+#[must_use]
 pub fn part_path(rel_path: &str, index: usize) -> String {
     format!("{rel_path}.part{index:03}")
 }
 
 /// Verify that `path` matches an expected sha256 and size.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read, or its size or digest does not match.
 pub fn verify_file(path: &Path, expected_sha256: &str, expected_size: u64) -> Result<()> {
     let meta = fs::metadata(path).map_err(|e| Error::io(path, e))?;
     if meta.len() != expected_size {
@@ -82,6 +92,11 @@ pub fn verify_file(path: &Path, expected_sha256: &str, expected_size: u64) -> Re
 ///
 /// `root` is the directory the blob's `path` is relative to. When the file is split,
 /// the original is removed and the parts take its place.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or hashed, or a split part cannot be
+/// written.
 pub fn record_file(root: &Path, rel_path: &str, limit: u64) -> Result<Blob> {
     let abs = root.join(rel_path);
     let size = fs::metadata(&abs).map_err(|e| Error::io(&abs, e))?.len();
@@ -102,6 +117,10 @@ pub fn record_file(root: &Path, rel_path: &str, limit: u64) -> Result<Blob> {
 }
 
 /// Cut `abs` into `limit`-sized parts named `<rel_path>.partNNN` next to it.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or a part cannot be written.
 pub fn split_file(abs: &Path, rel_path: &str, limit: u64) -> Result<Vec<Part>> {
     let dir = abs.parent().unwrap_or_else(|| Path::new("."));
     let file = File::open(abs).map_err(|e| Error::io(abs, e))?;
@@ -121,7 +140,13 @@ pub fn split_file(abs: &Path, rel_path: &str, limit: u64) -> Result<Vec<Part>> {
         let mut hasher = Sha256::new();
 
         while written < limit {
-            let want = std::cmp::min(COPY_BUFFER as u64, limit - written) as usize;
+            // The remaining part budget, narrowed without truncation: try_from
+            // saturates and the min caps the read at the buffer, so `want` never
+            // exceeds buf.len() on any platform.
+            let want = std::cmp::min(
+                COPY_BUFFER,
+                usize::try_from(limit - written).unwrap_or(usize::MAX),
+            );
             let n = reader
                 .read(&mut buf[..want])
                 .map_err(|e| Error::io(abs, e))?;
@@ -173,6 +198,11 @@ pub fn split_file(abs: &Path, rel_path: &str, limit: u64) -> Result<Vec<Part>> {
 /// The join is staged in a sibling temp file and renamed into place only after the
 /// whole blob verifies, so a corrupt or truncated branch can never leave a
 /// half-written file behind (decision D7).
+///
+/// # Errors
+///
+/// Returns an error if a part is missing or fails verification, or the joined file
+/// cannot be written.
 pub fn join_parts(
     dst: &Path,
     parts_root: &Path,
@@ -216,8 +246,7 @@ fn replace_with(tmp: &Path, dst: &Path) -> Result<()> {
 fn temp_sibling(dst: &Path) -> PathBuf {
     let name = dst
         .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "blob".to_string());
+        .map_or_else(|| "blob".to_string(), |n| n.to_string_lossy().into_owned());
     dst.with_file_name(format!(".{name}.join{}", std::process::id()))
 }
 
@@ -278,6 +307,10 @@ fn assemble(
 /// Copy a blob (joining parts when needed) from `src_root` into `dst`, verifying it.
 ///
 /// This never writes into `src_root`: a fetched branch checkout is treated as read-only.
+///
+/// # Errors
+///
+/// Returns an error if the blob fails verification or the destination cannot be written.
 pub fn materialise(src_root: &Path, blob: &Blob, dst: &Path) -> Result<()> {
     if blob.parts.is_empty() {
         let src = src_root.join(&blob.path);
@@ -326,6 +359,11 @@ pub fn materialise(src_root: &Path, blob: &Blob, dst: &Path) -> Result<()> {
 /// For the small metadata blobs (an environment's `files.json`), not payload: a `.conda`
 /// archive has no business being held in memory, and the size guard below refuses to
 /// believe a manifest that claims one is.
+///
+/// # Errors
+///
+/// Returns an error if the blob is larger than the in-memory cap, fails verification, or
+/// cannot be read.
 pub fn read_blob(root: &Path, blob: &Blob) -> Result<Vec<u8>> {
     // A corrupted manifest may declare an absurd size; never pre-allocate on that number.
     const INLINE_CAP: u64 = 64 * 1024 * 1024;
@@ -402,6 +440,10 @@ pub fn read_blob(root: &Path, blob: &Blob) -> Result<Vec<u8>> {
 
 /// All files under `root` (recursively), relative paths, sorted — the set of shards
 /// a pack operation must record.
+///
+/// # Errors
+///
+/// Returns an error if the tree cannot be walked.
 pub fn files_under(root: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     for entry in walkdir::WalkDir::new(root).sort_by_file_name() {

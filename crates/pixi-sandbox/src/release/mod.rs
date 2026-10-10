@@ -27,15 +27,28 @@ pub const PIXI_SANDBOX_REPO: &str = "Archont561/pixi-sandbox";
 /// Where a release's bytes come from.
 pub trait ReleaseSource {
     /// Newest release tag for `owner/repo`, exactly as GitHub spells it (e.g. `v0.81.0`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the repository cannot be queried or carries no release.
     fn latest_tag(&self, repo: &str) -> Result<String>;
 
     /// Download one release asset by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the asset cannot be downloaded (a missing tag or asset, a failed
+    /// request).
     fn asset(&self, repo: &str, tag: &str, name: &str) -> Result<Asset>;
 
     /// Upstream-published checksums for a release, when the project publishes one.
     ///
     /// `None` means "this project ships no manifest", which is a weaker guarantee rather than a
     /// failure — recorded in the pin so a later reader can tell the two cases apart.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checksum manifest exists but cannot be read.
     fn published_checksums(
         &self,
         repo: &str,
@@ -48,6 +61,7 @@ pub struct Asset {
 }
 
 impl Asset {
+    #[must_use]
     pub fn sha256(&self) -> String {
         pixi_sandbox_core::shard::sha256_bytes(&self.bytes)
     }
@@ -57,6 +71,7 @@ impl Asset {
 ///
 /// pixi's `sha256.sum` is coreutils-shaped, but accepting both costs one branch and means a
 /// mirror that emits the other order is not silently treated as "no manifest".
+#[must_use]
 pub fn parse_sha256_manifest(body: &str) -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
     for line in body.lines() {
@@ -74,6 +89,7 @@ pub fn parse_sha256_manifest(body: &str) -> BTreeMap<String, String> {
     map
 }
 
+#[must_use]
 pub fn is_sha256(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|b| b.is_ascii_hexdigit())
 }

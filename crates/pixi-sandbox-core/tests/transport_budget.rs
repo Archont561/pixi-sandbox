@@ -1,7 +1,9 @@
 use pixi_sandbox_core::manifest::{
     Blob, Env, EnvFiles, Manifest, Source, ToolEntry, ToolInfo, Vendor,
 };
-use pixi_sandbox_core::transport_budget::{TransportBudgets, check, measure};
+use pixi_sandbox_core::transport_budget::{
+    TransportBudgets, bytes_to_mib, check, measure, mib_to_bytes,
+};
 use std::collections::BTreeMap;
 
 fn digest(byte: char) -> String {
@@ -135,5 +137,22 @@ fn budget_violations_name_the_threshold_and_the_partition_remedy() {
                 .contains("self-contained branch"),
         "{}",
         report.violations[1].remedy
+    );
+}
+
+#[test]
+fn mib_to_bytes_converts_exactly_and_saturates_at_the_bounds() {
+    // exact for human-scale values, fractional included
+    assert_eq!(mib_to_bytes(95.0), 95 * 1024 * 1024);
+    assert_eq!(mib_to_bytes(0.5), 512 * 1024);
+    // saturates instead of wrapping: a wrapped verdict would under-report a limit
+    assert_eq!(mib_to_bytes(-1.0), 0);
+    assert_eq!(mib_to_bytes(f64::NAN), 0);
+    assert_eq!(mib_to_bytes(f64::INFINITY), u64::MAX);
+    assert_eq!(mib_to_bytes(1e30), u64::MAX);
+    // round-trips through the display conversion (compared by bits: 95 MiB is exact)
+    assert_eq!(
+        bytes_to_mib(mib_to_bytes(95.0)).to_bits(),
+        95.0f64.to_bits()
     );
 }

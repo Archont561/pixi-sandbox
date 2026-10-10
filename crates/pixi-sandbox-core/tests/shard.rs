@@ -81,6 +81,23 @@ fn part_boundary_is_exact() {
 }
 
 #[test]
+fn a_part_bigger_than_the_copy_buffer_still_respects_the_limit() {
+    // Pins the read-size bound in split_file: a 2.5 MiB file with a 2 MiB part limit
+    // must produce exactly two parts of 2 MiB and 0.5 MiB — the 1 MiB copy buffer caps
+    // each read without changing the part sizes, and the parts join back to the source.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let mib = 1usize << 20;
+    let content = vec![7u8; 2 * mib + mib / 2];
+    write(&root.join("big.bin"), &content);
+    let blob = record_file(root, "big.bin", 2 * mib as u64).unwrap();
+    assert_eq!(blob.parts.len(), 2);
+    assert_eq!(blob.parts[0].size, 2 * mib as u64);
+    assert_eq!(blob.parts[1].size, mib as u64 / 2);
+    assert_eq!(read_blob(root, &blob).unwrap(), content);
+}
+
+#[test]
 fn join_refuses_a_corrupted_part() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

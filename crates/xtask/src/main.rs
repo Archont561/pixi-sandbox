@@ -60,7 +60,7 @@ enum Command {
     },
     /// Resolve the next release version and stamp it into the repository (no git actions).
     PrepareRelease {
-        /// auto | major | minor | patch | vX.Y.Z | X.Y.Z (default: $PIXI_SANDBOX_RELEASE or auto).
+        /// auto | major | minor | patch | vX.Y.Z | X.Y.Z (default: $`PIXI_SANDBOX_RELEASE` or auto).
         selector: Option<String>,
     },
     /// Copy the built release binary to its `pixi-sandbox-<target>[.exe]` asset name.

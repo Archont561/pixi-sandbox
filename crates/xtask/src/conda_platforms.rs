@@ -34,6 +34,7 @@ pub const SUPPORTED_PLATFORMS: [&str; Platform::ALL.len()] = {
 
 /// Validate the artifact root. Returns the per-platform ok lines for logging; every defect is
 /// a returned diagnostic rather than an early exit, so one run names every broken platform.
+#[must_use]
 pub fn validate(dir: &Path, platforms: &[&str]) -> (Vec<String>, Vec<String>) {
     let mut ok = Vec::new();
     let mut diagnostics = Vec::new();

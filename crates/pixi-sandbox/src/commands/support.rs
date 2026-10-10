@@ -191,6 +191,9 @@ pub(crate) fn relative_after(path: &str, prefix: &str) -> Result<PathBuf> {
 
 /// A small, dependency-free RFC 3339 UTC timestamp for the manifest's informational field.
 pub(crate) fn now_rfc3339() -> String {
+    // Seconds since the epoch fit i64 until the year 292 billion; the wrap the lint
+    // warns about is unreachable for any clock this code can read.
+    #[allow(clippy::cast_possible_wrap)]
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

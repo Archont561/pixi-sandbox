@@ -253,6 +253,8 @@ mod restored {
     }
 
     pub fn world(dir: &Path) -> World {
+        use std::os::unix::fs::PermissionsExt;
+
         // The staged prefix sits exactly where restore's default work dir puts it: verify
         // derives its candidate paths from project + env name + work dir alone (never from
         // files restore wrote — that would be a candidate-injection hole), so the world must
@@ -295,7 +297,6 @@ mod restored {
         fs::create_dir_all(staged.join("man/man3")).unwrap();
         fs::write(staged.join("man/man3/App::Cpan.3"), "doc stub\n").unwrap();
         std::os::unix::fs::symlink("thing.pc", staged.join("lib/link.pc")).unwrap();
-        use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(staged.join("bin/tool"), fs::Permissions::from_mode(0o755)).unwrap();
 
         // --- the oracle, scanned the way pack scans it (candidates = this side's paths)
@@ -318,7 +319,7 @@ mod restored {
             "tool": { "name": "pixi-sandbox", "version": "0.1.0" },
             "created_at": "2026-09-29T12:00:00Z",
             "platform": "linux-64",
-            "shard_limit_bytes": 99614720,
+            "shard_limit_bytes": 99_614_720,
             "source": {},
             "tools": {},
             "envs": { "dev": {
@@ -355,7 +356,7 @@ mod restored {
     }
 
     /// The relocation rule restore applies (text only, NUL-preserved binaries untouched),
-    /// then write_markers' two files.
+    /// then `write_markers`' two files.
     pub fn restore_like(staged: &Path, final_prefix: &Path) {
         let old = staged
             .canonicalize()
@@ -469,6 +470,8 @@ mod restored {
 
     #[test]
     fn every_mismatch_is_collected_not_just_the_first() {
+        use std::os::unix::fs::PermissionsExt;
+
         let dir = tempfile::tempdir().unwrap();
         let world = world(dir.path());
         fs::write(
@@ -478,7 +481,6 @@ mod restored {
         .unwrap();
         fs::remove_file(world.final_prefix.join("bin/tool")).unwrap();
         fs::write(world.final_prefix.join("lib/extra.txt"), "smuggled\n").unwrap();
-        use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(
             world.final_prefix.join("lib/binary.ld"),
             fs::Permissions::from_mode(0o755),
@@ -508,9 +510,10 @@ mod restored {
 
     #[test]
     fn a_lost_executable_bit_is_a_mode_failure() {
+        use std::os::unix::fs::PermissionsExt;
+
         let dir = tempfile::tempdir().unwrap();
         let world = world(dir.path());
-        use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(
             world.final_prefix.join("bin/tool"),
             fs::Permissions::from_mode(0o644),
@@ -689,9 +692,9 @@ fn elf(program_type: u32) -> Vec<u8> {
     bytes[4] = 2; // ELFCLASS64
     bytes[5] = 1; // ELFDATA2LSB
     bytes[6] = 1; // EV_CURRENT
-    bytes[32..40].copy_from_slice(&(PHDR as u64).to_le_bytes()); // e_phoff
-    bytes[52..54].copy_from_slice(&(PHDR as u16).to_le_bytes());
-    bytes[54..56].copy_from_slice(&(PHDR_SIZE as u16).to_le_bytes()); // e_phentsize
+    bytes[32..40].copy_from_slice(&u64::try_from(PHDR).unwrap().to_le_bytes()); // e_phoff
+    bytes[52..54].copy_from_slice(&u16::try_from(PHDR).unwrap().to_le_bytes());
+    bytes[54..56].copy_from_slice(&u16::try_from(PHDR_SIZE).unwrap().to_le_bytes()); // e_phentsize
     bytes[56..58].copy_from_slice(&1u16.to_le_bytes()); // e_phnum
     bytes[PHDR..PHDR + 4].copy_from_slice(&program_type.to_le_bytes());
     bytes
@@ -745,4 +748,13 @@ fn the_file_and_bytes_entry_points_agree() {
 
     assert_eq!(linkage_of(&dir.join("absent")), Linkage::Unknown);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn an_absurd_program_header_entry_size_is_unknown_not_a_wrong_verdict() {
+    // Pins the phentsize bound: a malformed header (entry size far beyond the real 56)
+    // must report Unknown rather than misread the table into a wrong linkage verdict.
+    let mut bytes = elf(3 /* PT_INTERP */);
+    bytes[54..56].copy_from_slice(&5000u16.to_le_bytes()); // e_phentsize
+    assert_eq!(linkage_of_bytes(&bytes), Linkage::Unknown);
 }

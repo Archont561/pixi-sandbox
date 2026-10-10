@@ -24,6 +24,11 @@ pub struct PackLayout {
 
 /// Resolve pack's paths and refuse missing locks, stale output, and unsafe selections.
 /// No directory is created by preflight.
+///
+/// # Errors
+///
+/// Returns an error if `repo_root` is not a directory, a required lockfile is missing, the
+/// output directory is stale, or a selection is unsafe.
 pub fn plan_layout(
     repo_root: &Path,
     output_dir: &Path,
@@ -62,10 +67,16 @@ fn shard_limit_bytes(mebibytes: f64) -> Result<u64> {
         bail!("--shard-limit-mib must be a positive finite number");
     }
     let bytes = mebibytes * 1024.0 * 1024.0;
-    if bytes > u64::MAX as f64 {
+    // 2^64 — the same value `u64::MAX as f64` rounds to — spelled as a literal so the
+    // bound check itself carries no cast.
+    if bytes > 18_446_744_073_709_551_616.0 {
         bail!("--shard-limit-mib is too large");
     }
-    Ok(bytes as u64)
+    // The guards above bound `bytes` to (0, 2^64): the f64->u64 cast saturates rather
+    // than wraps, so the limit can never silently truncate.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let bytes = bytes as u64;
+    Ok(bytes)
 }
 
 fn validate_env_names(envs: &[String]) -> Result<()> {
@@ -93,6 +104,11 @@ fn validate_env_names(envs: &[String]) -> Result<()> {
 /// config declares no table, or when nothing resolves for that platform's host family. That is
 /// the backward-compatible half of the contract: a project that declares nothing keeps packing
 /// the same bytes earlier releases packed.
+///
+/// # Errors
+///
+/// Returns an error if the config cannot be read or parsed, or names a platform the
+/// manifest does not carry.
 pub fn resolve_host_requirements(
     config: Option<&Path>,
     platform: &str,
@@ -116,6 +132,11 @@ pub fn resolve_host_requirements(
 /// pack directory it reads from, and the payload tree must stay exactly what pixi-pack
 /// produced. The scratch lives inside `out` (never `/tmp`, invariant 3) and is removed before
 /// returning, so a successful pack leaves no trace of it.
+///
+/// # Errors
+///
+/// Returns an error if the verification unpack cannot be created or run, or the oracle
+/// cannot be recorded.
 pub fn build_files_oracle(
     out: &Path,
     payload: &Path,
@@ -207,6 +228,11 @@ pub fn build_files_oracle(
     ))
 }
 
+/// Record every file under `root` (relative to `payload`) as transport blobs.
+///
+/// # Errors
+///
+/// Returns an error if the payload tree cannot be walked or a file cannot be recorded.
 pub fn record_tree(
     payload: &Path,
     root: &Path,
@@ -224,6 +250,11 @@ pub fn record_tree(
     Ok(blobs)
 }
 
+/// Total size of `paths` in bytes.
+///
+/// # Errors
+///
+/// Returns an error if any path's metadata cannot be read, or the total overflows u64.
 pub fn sum_files(paths: &[PathBuf]) -> Result<u64> {
     paths.iter().try_fold(0u64, |sum, path| {
         let size = fs::metadata(path)
@@ -234,6 +265,7 @@ pub fn sum_files(paths: &[PathBuf]) -> Result<u64> {
     })
 }
 
+#[must_use]
 pub fn fingerprint_of(root: &Path, env: &str) -> Option<String> {
     let marker = root
         .join(".pixi")
@@ -333,6 +365,10 @@ pub mod support {
             .env("TEMP", temporary);
     }
 
+    /// A MiB rendering for logs. The u64->f64 cast can lose the low bits of huge byte
+    /// counts; that is inherent to a display conversion and harmless here.
+    #[allow(clippy::cast_precision_loss)]
+    #[must_use]
     pub fn mib(bytes: u64) -> String {
         format!("{:.1}", bytes as f64 / (1024.0 * 1024.0))
     }

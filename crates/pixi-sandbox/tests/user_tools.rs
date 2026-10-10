@@ -473,7 +473,5 @@ fn the_generated_launcher_selects_the_policy_and_registers_user_tools() {
 
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
-    fs::metadata(path)
-        .map(|meta| meta.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
+    fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
 }

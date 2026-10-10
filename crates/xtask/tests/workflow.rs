@@ -48,7 +48,7 @@ fn a_missing_generated_file_names_the_expected_artifact() {
 /// task-66 follow-up: actionlint only checks the Bash inside `run:` blocks when a
 /// `shellcheck` executable is on PATH, and says nothing when it is absent. That silence is
 /// what let malformed generated quoting pass `pixi run lint` locally and fail on GitHub.
-/// This test fails if the development environment ever loses ShellCheck again.
+/// This test fails if the development environment ever loses `ShellCheck` again.
 #[test]
 fn actionlint_runs_shellcheck_on_workflow_bash() {
     let project = tempfile::tempdir().expect("temp project");

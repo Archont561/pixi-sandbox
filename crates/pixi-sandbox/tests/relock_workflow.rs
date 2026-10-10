@@ -251,8 +251,7 @@ fn rendered_cargo_guard_accepts_a_clean_lock_and_rejects_a_stale_one_without_wri
     fs::write(
         project.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"consumer\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ndependency = {{ path = {:?} }}\n",
-            dependency
+            "[package]\nname = \"consumer\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ndependency = {{ path = {dependency:?} }}\n"
         ),
     )
     .expect("stale consumer manifest");

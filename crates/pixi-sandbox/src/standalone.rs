@@ -67,6 +67,7 @@ pub struct CommandRunner {
 }
 
 impl CommandRunner {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             timeout: PROBE_TIMEOUT,
@@ -74,6 +75,7 @@ impl CommandRunner {
     }
 
     #[doc(hidden)] // test boundary: the suite needs a short fuse, not a 30 s sleep.
+    #[must_use]
     pub fn with_timeout(timeout: Duration) -> Self {
         Self { timeout }
     }
@@ -230,12 +232,14 @@ pub struct Refusal {
 }
 
 impl Refusal {
+    #[must_use]
     pub fn verdict(&self) -> &ProbeVerdict {
         &self.verdict
     }
 
     /// The full refusal text: what was tried, how it failed, why a hash-green transport can
     /// still be unrestorable, and the remedy that actually packs a runnable binary.
+    #[must_use]
     pub fn render(&self, exe: &Path) -> String {
         let detail = match &self.verdict {
             ProbeVerdict::Exited { output, .. } => {
@@ -278,6 +282,11 @@ fn indent_tail(output: &str, lines: usize) -> String {
 }
 
 /// Judge one execution: exit 0 is the whole contract.
+///
+/// # Errors
+///
+/// Returns the `Refusal` describing the failing verdict — a non-zero exit is a refusal,
+/// not a crash.
 pub fn probe(exe: &Path, anchor: &Path, runner: &impl ProbeRunner) -> Result<(), Refusal> {
     match runner.run_version(exe, anchor) {
         ProbeVerdict::Exited { success: true, .. } => Ok(()),
@@ -290,6 +299,7 @@ pub fn probe(exe: &Path, anchor: &Path, runner: &impl ProbeRunner) -> Result<(),
 /// refusal can name the exact shape instead of just the probe output. Everything the ladder
 /// calls runnable — standalone, a conda prefix binary, a restored transport tool — returns
 /// `None` and is judged by execution instead.
+#[must_use]
 pub fn pack_refusal_for_ownership(path: &Path) -> Option<String> {
     match crate::self_update::ownership::classify(path) {
         crate::self_update::ownership::Ownership::GlobalTrampoline => Some(format!(
@@ -316,6 +326,7 @@ pub fn pack_refusal_for_ownership(path: &Path) -> Option<String> {
 /// The pixi platform of the machine running this binary, when it is one the release matrix
 /// ships. The probe is only meaningful when the embedded bytes can execute here — a pack or
 /// doctor host that cannot run the target platform reports a skip, never a verdict.
+#[must_use]
 pub fn host_platform() -> Option<&'static str> {
     platform(std::env::consts::OS, std::env::consts::ARCH)
 }
@@ -328,6 +339,8 @@ pub fn host_platform() -> Option<&'static str> {
 /// mapping (task-55); kept as its own function so the `&'static str` boundary this module's
 /// callers and tests already depend on does not change.
 #[doc(hidden)] // test boundary: named rows, not API.
+#[must_use]
 pub fn platform(os: &str, arch: &str) -> Option<&'static str> {
-    pixi_sandbox_core::platform::Platform::from_os_arch(os, arch).map(|platform| platform.as_str())
+    pixi_sandbox_core::platform::Platform::from_os_arch(os, arch)
+        .map(pixi_sandbox_core::platform::Platform::as_str)
 }

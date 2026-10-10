@@ -1,7 +1,10 @@
 //! Contracts for the GitHub workflow emitted into consumer repositories.
 //!
 //! actionlint validates GitHub's full schema through xtask. These tests own the contracts it
-//! cannot evaluate: indentation-derived matrix shape and agreement with the planner's JSON keys.
+//! cannot evaluate: indentation-derived matrix shape, agreement with the planner's JSON
+//! keys, and — since TASK-76 — the shape of the workflow as the tool's entrypoint: every
+//! logic-bearing step is a single `pixi-sandbox <verb>` invocation, with no multi-line
+//! `run:` block and no PowerShell twin left in the render.
 
 use pixi_sandbox::generated::{GithubWorkflowOptions, parse_version_stamp, render_github_workflow};
 use pixi_sandbox_core::platform::Platform;
@@ -9,9 +12,6 @@ use pixi_sandbox_core::sandbox_config::plan_override;
 use rstest::rstest;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::process::Command;
-use tempfile::tempdir;
 
 const VERSION: &str = "9.8.7";
 const CONFIG_PATH: &str = "config/pixi-sandbox.toml";
@@ -139,27 +139,93 @@ fn generated_workflow_carries_a_parseable_version_stamp() {
     assert_eq!(parse_version_stamp(&workflow()), Some(VERSION));
 }
 
+/// TASK-76 AC#1/AC#3: the crisp end state — no literal `run: |` block survives, and no
+/// `shell: pwsh` exists anywhere. Every logic-bearing step is one command (a folded scalar
+/// or a one-liner), so the former Bash/PowerShell twins are gone and the render satisfies
+/// the workflow-shape rule (check 9) without any exemption.
 #[test]
-fn publish_lane_checks_size_budgets_from_the_reviewed_config_before_publishing() {
+fn the_render_carries_no_multiline_run_blocks_and_no_pwsh() {
     let workflow = workflow();
     assert!(
-        workflow.contains(
-            "record doctor \"$SELF_BIN\" doctor --branch-location \"$TRANSPORT\" --verify --budget-config config/pixi-sandbox.toml"
-        ),
-        "bash publisher must enforce budgets before publish: {workflow}"
+        !workflow.contains("run: |"),
+        "a literal run block survives:\n{workflow}"
     );
     assert!(
-        workflow.contains(
-            "Invoke-Phase \"doctor\" { & $env:SELF_BIN doctor --branch-location $transport --verify --budget-config config/pixi-sandbox.toml"
-        ),
-        "Windows publisher must enforce budgets before publish: {workflow}"
+        !workflow.contains("shell: pwsh"),
+        "a pwsh step survives:\n{workflow}"
+    );
+    assert!(!workflow.contains("shell: powershell"));
+}
+
+/// TASK-76 AC#7: non-comment embedded shell falls from 218 lines (inside 9 literal `run:`
+/// blocks in two dialects) to the single commands alone. Every remaining `run:` scalar is
+/// one command: the package install (the bootstrap chain), the `fetch-release` download (the
+/// bootstrap exception), and the single pixi-sandbox invocations.
+#[test]
+fn non_comment_shell_lines_fall_to_the_single_commands_alone() {
+    let workflow = workflow();
+    let mut shell_lines = 0;
+    let mut in_block = false;
+    let mut block_indent = 0;
+    for line in workflow.lines() {
+        let stripped = line.trim_start();
+        if let Some(rest) = stripped.strip_prefix("run:") {
+            let value = rest.trim();
+            if matches!(value, "|" | ">" | "|-" | ">-" | "|+" | ">+") {
+                in_block = true;
+                block_indent = line.len() - stripped.len();
+            } else {
+                in_block = false;
+                if !value.is_empty() && !value.starts_with('#') {
+                    shell_lines += 1;
+                }
+            }
+            continue;
+        }
+        if in_block {
+            let indent = line.len() - stripped.len();
+            if !stripped.is_empty() && indent > block_indent {
+                if !stripped.starts_with('#') {
+                    shell_lines += 1;
+                }
+                continue;
+            }
+            in_block = false;
+        }
+    }
+    // plan: install(4) + plan(1) · publish: install(4) + fetch-release(1) + pipeline(9) ·
+    // upgrade: install(4) + fetch-release(1) + self-update(2) + upgrade(9).
+    assert_eq!(
+        shell_lines, 35,
+        "every remaining shell line must be one command"
+    );
+}
+
+/// The publish lane enforces the reviewed size budgets before publishing. TASK-76: the
+/// enforcement moved from the render's shell into `pipeline`'s doctor phase (asserted with
+/// the exact argv in tests/pipeline.rs); what the render owns is that the step hands the
+/// reviewed config to the verb.
+#[test]
+fn publish_lane_passes_the_reviewed_config_to_the_pipeline_before_publishing() {
+    let workflow = workflow();
+    let pipeline_step = workflow
+        .split("      - name: Pack, verify, and publish\n")
+        .nth(1)
+        .expect("the pipeline step exists");
+    assert!(
+        pipeline_step.contains("--config config/pixi-sandbox.toml"),
+        "the pipeline step must receive the sandbox config: {pipeline_step}"
+    );
+    assert!(
+        !pipeline_step.contains("--budget-config"),
+        "budget enforcement is the verb's policy, not the render's: {pipeline_step}"
     );
 }
 
 /// task-47 AC#6-#8: the generated upgrade job, scheduled and manually dispatchable, never
 /// floats a production pin and never pushes to main directly.
 mod upgrade_job {
-    use super::{CONFIG_PATH, RELOCK_PATH, SCRIPT_PATH, WORKFLOW_PATH, workflow};
+    use super::workflow;
 
     #[test]
     fn the_workflow_gains_a_schedule_and_an_opt_in_dispatch_input() {
@@ -193,33 +259,53 @@ mod upgrade_job {
 
     /// The upgrade job never trusts a package manager's "latest" for anything that ends up in
     /// a committed file (decision-4 / D16): it bootstraps the exact pinned, checksum-verified
-    /// binary and only that binary's own `self-update` ever decides the new version.
+    /// binary — `fetch-release` verifies against the release's SHA256SUMS inside the tool —
+    /// and only that binary's own `self-update` ever decides the new version. The version
+    /// conditional is two `if:`-gated one-line steps, so the pinned binary never sees an
+    /// empty `--version`.
     #[test]
     fn the_upgrade_job_bootstraps_a_verified_binary_before_self_updating_it() {
         let workflow = workflow();
         assert!(
-            workflow.contains("Download currently pinned pixi-sandbox"),
+            workflow.contains("Fetch the pinned pixi-sandbox release"),
             "{workflow}"
         );
         assert!(
-            workflow.contains("sha256sum --check --status"),
+            workflow.contains(
+                "pixi-sandbox fetch-release --dest \"$PIXI_SANDBOX_BIN\" --version \"$PIXI_SANDBOX_VERSION\""
+            ),
             "{workflow}"
         );
         assert!(
-            workflow.contains("self-update --dest \"$BIN\""),
+            workflow.contains(
+                "- name: Self-update to the requested version\n        if: inputs.upgrade != ''"
+            ),
             "{workflow}"
         );
         assert!(
-            workflow.contains("self-update --dest \"$BIN\" --version \"$UPGRADE_VERSION\""),
+            workflow.contains(
+                "\"$PIXI_SANDBOX_BIN\" self-update --dest \"$PIXI_SANDBOX_BIN\" --version \"${{ inputs.upgrade }}\""
+            ),
             "a manual dispatch must pass the requested exact version through: {workflow}"
+        );
+        assert!(
+            workflow.contains(
+                "- name: Self-update to the latest release\n        if: inputs.upgrade == ''"
+            ),
+            "{workflow}"
+        );
+        assert!(
+            workflow
+                .contains("run: '\"$PIXI_SANDBOX_BIN\" self-update --dest \"$PIXI_SANDBOX_BIN\"'"),
+            "the weekly schedule takes the newest release: {workflow}"
         );
     }
 
-    /// `init --check` runs against the exact paths and branch this project was generated with
-    /// — never defaults that could silently diverge from a customised init invocation — and
-    /// only a positive drift finding triggers a real `init` run.
+    /// The upgrade step forwards the exact generation arguments (D16) — each flag once. The
+    /// check/regenerate split is the verb's phase, not the render's: no drift output and no
+    /// `if:`-gated regenerate step survives in the YAML.
     #[test]
-    fn drift_check_and_regeneration_use_the_exact_generation_arguments() {
+    fn the_upgrade_step_forwards_the_exact_generation_arguments() {
         let workflow = workflow();
         let upgrade_job = workflow
             .split("\n  upgrade:\n")
@@ -235,67 +321,90 @@ mod upgrade_job {
         ] {
             assert_eq!(
                 upgrade_job.matches(flag).count(),
-                2,
-                "expected `{flag}` in both the --check and the regenerate invocation: {upgrade_job}"
+                1,
+                "expected `{flag}` exactly once in the upgrade step: {upgrade_job}"
             );
         }
-        assert!(workflow.contains("\"$BIN\" init --check"), "{workflow}");
         assert!(
-            workflow.contains("if: steps.check.outputs.drift == 'true'"),
-            "{workflow}"
+            upgrade_job.contains("\"$PIXI_SANDBOX_BIN\" upgrade"),
+            "{upgrade_job}"
+        );
+        assert!(
+            !upgrade_job.contains("drift="),
+            "the render must not gate on a drift output: {upgrade_job}"
+        );
+        assert!(
+            !upgrade_job.contains("init --check"),
+            "the check is the verb's phase: {upgrade_job}"
         );
     }
 
-    /// Config is reviewed data (D16): the upgrade job's own commit never stages it, even when
-    /// `init` regenerated the other three files.
+    /// Config is reviewed data (D16): the upgrade step passes it to the verb, and no git
+    /// staging shell remains in the render — the commit stages exactly the three owned files
+    /// and never the config (asserted with `FakeGit` in tests/upgrade.rs).
     #[test]
-    fn the_regenerated_commit_never_stages_the_config() {
+    fn the_upgrade_commit_stages_only_the_owned_files_and_never_the_config() {
         let workflow = workflow();
-        let add_line = workflow
-            .lines()
-            .find(|line| line.trim_start().starts_with("git add "))
-            .expect("the upgrade job stages its regenerated files");
-        assert!(!add_line.contains(CONFIG_PATH), "{add_line}");
-        assert!(add_line.contains(WORKFLOW_PATH), "{add_line}");
-        assert!(add_line.contains(RELOCK_PATH), "{add_line}");
-        assert!(add_line.contains(SCRIPT_PATH), "{add_line}");
+        for shell in [
+            "git add",
+            "git commit",
+            "git push",
+            "git checkout",
+            "git config",
+        ] {
+            assert!(
+                !workflow.contains(shell),
+                "the render still carries `{shell}` shell: {workflow}"
+            );
+        }
+        let upgrade_job = workflow
+            .split("\n  upgrade:\n")
+            .nth(1)
+            .expect("the upgrade job exists");
+        assert!(
+            upgrade_job.contains("--config config/pixi-sandbox.toml"),
+            "{upgrade_job}"
+        );
     }
 
-    /// task-47 AC#8: because a `github.token` push starts no `on: push` workflow (task-44's
-    /// lesson, restated here for the upgrade lane), the job opens a reviewable pull request
-    /// against a side branch — never a direct push to `main` — and its own body spells out the
-    /// explicit dispatch an automated merge still requires.
+    /// The delivery is a pull request (task-44's lesson restated): the render carries no push
+    /// shell at all; the verb pushes a version-derived branch and opens the PR (the title and
+    /// body shape is asserted in tests/upgrade.rs).
     #[test]
     fn the_job_opens_a_pull_request_instead_of_pushing_main() {
         let workflow = workflow();
+        assert!(!workflow.contains("git push"), "{workflow}");
+        let upgrade_job = workflow
+            .split("\n  upgrade:\n")
+            .nth(1)
+            .expect("the upgrade job exists");
         assert!(
-            !workflow.contains("git push --force origin main"),
-            "{workflow}"
+            upgrade_job.contains("--repo \"${{ github.repository }}\""),
+            "{upgrade_job}"
         );
-        assert!(!workflow.contains("git push origin main"), "{workflow}");
-        assert!(workflow.contains("gh pr create"), "{workflow}");
-        assert!(workflow.contains("--base main"), "{workflow}");
         assert!(
-            workflow.contains("gh workflow run .github/workflows/publish-sandbox.yml --ref main"),
-            "the PR body must name the explicit post-merge dispatch: {workflow}"
+            upgrade_job.contains("--artifact-dir \"${{ runner.temp }}/pixi-sandbox-upgrade\""),
+            "{upgrade_job}"
         );
     }
 
-    /// The bot identity matches the one the relock workflow already established (task-39's
-    /// precedent): one recognisable automation identity across every generated bot commit.
+    /// The bot identity is the tool's, not the render's: `ShellGit` authors the upgrade commit
+    /// as `pixi-sandbox[bot]` — the same identity relock.yml's bot uses — asserted with a real
+    /// repository in the git crate's `tests/branch_commit.rs`. The render carries no
+    /// `git config user.*` shell.
     #[test]
     fn the_upgrade_commit_uses_the_same_bot_identity_as_relock() {
         let workflow = workflow();
-        assert!(workflow.contains("pixi-sandbox[bot]"), "{workflow}");
+        assert!(!workflow.contains("git config user."), "{workflow}");
         assert!(
-            workflow.contains("41898282+github-actions[bot]@users.noreply.github.com"),
-            "{workflow}"
+            !workflow.contains("pixi-sandbox[bot]"),
+            "the identity moved into the tool: {workflow}"
         );
     }
 
     /// A job-level `permissions:` block replaces the workflow-level one rather than adding to
     /// it (the trap `relock.yml` already documents) — `pull-requests: write` must be spelled
-    /// out explicitly on the upgrade job or `gh pr create` gets a 403.
+    /// out explicitly on the upgrade job or the pull request gets a 403.
     #[test]
     fn the_upgrade_job_grants_itself_pull_request_permission() {
         let workflow = workflow();
@@ -311,6 +420,9 @@ mod upgrade_job {
         assert!(permissions_block.contains("pull-requests: write"));
     }
 
+    /// The optional workflow-capable token: checkout uses it, and the upgrade step reads it
+    /// natively — `PIXI_SANDBOX_UPGRADE_TOKEN` for the availability verdict,
+    /// `GITHUB_TOKEN` for the pull-request API call.
     #[test]
     fn the_upgrade_job_uses_an_optional_workflow_capable_token() {
         let workflow = workflow();
@@ -323,86 +435,47 @@ mod upgrade_job {
             "checkout must use the same optional token as delivery: {workflow}"
         );
         assert!(
-            workflow
-                .contains("GH_TOKEN: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN || github.token }}"),
-            "gh must use the same optional token as delivery: {workflow}"
+            workflow.contains(
+                "GITHUB_TOKEN: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN || github.token }}"
+            ),
+            "the pull request must authenticate with the same optional token as delivery: {workflow}"
         );
     }
 
+    /// The patch artifact survives a refused delivery: the upgrade step names the artifact
+    /// directory, and the upload runs unconditionally (`if-no-files-found: ignore`).
     #[test]
     fn the_upgrade_job_preserves_a_patch_when_delivery_is_unavailable() {
         let workflow = workflow();
-        assert!(workflow.contains("git diff HEAD^ HEAD"), "{workflow}");
-        assert!(workflow.contains("GITHUB_STEP_SUMMARY"), "{workflow}");
-        assert!(workflow.contains("Workflows: write"), "{workflow}");
+        assert!(workflow.contains("--artifact-dir \"${{ runner.temp }}/pixi-sandbox-upgrade\""));
+        assert!(workflow.contains("name: pixi-sandbox-upgrade-artifacts"));
         assert!(
-            workflow.contains("pixi-sandbox-upgrade-artifacts"),
+            workflow.contains("path: ${{ runner.temp }}/pixi-sandbox-upgrade"),
             "{workflow}"
         );
         assert!(workflow.contains("actions/upload-artifact@"), "{workflow}");
         assert!(workflow.contains("if-no-files-found: ignore"), "{workflow}");
+        assert!(workflow.contains("retention-days: 14"), "{workflow}");
+        assert!(
+            workflow.contains("if: always()\n        uses: actions/upload-artifact@"),
+            "the artifact upload must not be gated on a drift output: {workflow}"
+        );
     }
 
+    /// A refused delivery never turns the scheduled lane red: the credential is an
+    /// environment variable the verb reads, and the refusal semantics (handoff summary,
+    /// `delivery_refused=1`, exit 0) are asserted in tests/upgrade.rs.
     #[test]
     fn delivery_refusal_does_not_turn_the_scheduled_lane_into_a_bare_failure() {
         let workflow = workflow();
-        assert!(workflow.contains("UPGRADE_TOKEN"), "{workflow}");
         assert!(
-            workflow.contains("git push --force origin \"$branch\""),
+            workflow
+                .contains("PIXI_SANDBOX_UPGRADE_TOKEN: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN }}"),
             "{workflow}"
         );
         assert!(
-            workflow.contains("delivery_refused=1") || workflow.contains("delivery refused"),
-            "{workflow}"
-        );
-    }
-
-    /// The handoff prose lives inside a double-quoted Bash argument. One escape is needed for
-    /// literal Markdown quotes and backticks; two close the argument and make ShellCheck reject
-    /// the generated workflow. Parse the exact rendered block rather than a copy of it.
-    #[test]
-    fn delivery_handoff_script_is_valid_bash() {
-        use std::fs;
-        use std::process::Command;
-        use tempfile::tempdir;
-
-        let workflow = workflow();
-        let delivery = workflow
-            .split("      - name: Prepare the upgrade patch\n")
-            .nth(1)
-            .expect("the delivery step exists");
-        let run = delivery
-            .split("        run: |\n")
-            .nth(1)
-            .and_then(|script| {
-                script
-                    .split("\n\n      - name: Upload upgrade patch")
-                    .next()
-            })
-            .expect("the delivery step has an isolated Bash block");
-        let script = run
-            .lines()
-            .map(|line| line.strip_prefix("          ").unwrap_or(line))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        assert!(script.contains(r#"\"$VERSION\""#), "{script}");
-        assert!(script.contains(r#"\`github.token\`"#), "{script}");
-        assert!(!script.contains(r#"\\\"$VERSION"#), "{script}");
-        assert!(!script.contains(r#"\\`github.token"#), "{script}");
-
-        let temp = tempdir().expect("temporary Bash script directory");
-        let path = temp.path().join("delivery.sh");
-        fs::write(&path, script).expect("write rendered delivery script");
-        let output = Command::new("bash")
-            .arg("-n")
-            .arg(&path)
-            .output()
-            .expect("bash is available on supported generated-workflow hosts");
-        assert!(
-            output.status.success(),
-            "Bash rejected the rendered delivery script:\n{}",
-            String::from_utf8_lossy(&output.stderr)
+            !workflow.contains("delivery_refused"),
+            "the refusal output is the verb's: {workflow}"
         );
     }
 }
@@ -441,11 +514,15 @@ fn generated_workflow_wires_plan_outputs_through_the_matrix() {
     );
 }
 
+/// TASK-76 AC#2: the pack-verify-publish wrapper, the upgrade sequence and the patch
+/// delivery are pixi-sandbox verbs now — the render invokes exactly these, and the
+/// behaviours behind them are covered by tests/pipeline.rs and tests/upgrade.rs.
 #[rstest]
 #[case("pixi-sandbox plan")]
-#[case("\"$SELF_BIN\" pack")]
-#[case("\"$SELF_BIN\" doctor")]
-#[case("\"$SELF_BIN\" publish")]
+#[case("fetch-release --dest \"$PIXI_SANDBOX_BIN\" --version \"$PIXI_SANDBOX_VERSION\"")]
+#[case("\"$PIXI_SANDBOX_BIN\" pipeline")]
+#[case("self-update --dest \"$PIXI_SANDBOX_BIN\"")]
+#[case("\"$PIXI_SANDBOX_BIN\" upgrade")]
 fn generated_workflow_invokes_the_expected_cli(#[case] command: &str) {
     let workflow = workflow();
     assert!(
@@ -454,77 +531,12 @@ fn generated_workflow_invokes_the_expected_cli(#[case] command: &str) {
     );
 }
 
-fn unix_publish_checksum_command() -> String {
-    workflow()
-        .lines()
-        .find(|line| {
-            line.contains("SHA256 verification failed") && line.contains("sha256sum --check")
-        })
-        .expect("the Unix publish bootstrap carries its checksum command")
-        .trim()
-        .to_string()
-}
-
-fn run_unix_publish_checksum(
-    asset_bytes: Option<&[u8]>,
-    expected_digest: &str,
-) -> std::process::Output {
-    let temp = tempdir().expect("temporary runner directory");
-    let asset = "pixi-sandbox-x86_64-unknown-linux-musl";
-    let path = temp.path().join(asset);
-    if let Some(bytes) = asset_bytes {
-        fs::write(&path, bytes).expect("write release asset fixture");
-    }
-    fs::write(
-        temp.path().join("SHA256SUMS"),
-        format!("{expected_digest}  {asset}\n"),
-    )
-    .expect("write checksum fixture");
-
-    Command::new("bash")
-        .arg("-c")
-        .arg(unix_publish_checksum_command())
-        .env("RUNNER_TEMP", temp.path())
-        .env("asset", asset)
-        .env("path", &path)
-        .output()
-        .expect("execute the generated Unix checksum command")
-}
-
+/// TASK-76: the release download moved into the binary. The render no longer spells out a
+/// URL, an asset name, or a checksum command: `fetch-release` resolves this runner's asset
+/// and verifies it against the release's SHA256SUMS inside the tool (tested against a fake
+/// release in `tests/self_update_fetch.rs`). The package install stays exact-pinned.
 #[test]
-fn unix_publish_bootstrap_accepts_the_downloaded_asset_at_its_runner_temp_path() {
-    // SHA256("released bytes") is an independent worked example, not computed by the code under test.
-    let output = run_unix_publish_checksum(
-        Some(b"released bytes"),
-        "2f9e0acbd320f87ceff2b9d259c99ec87830fc87d99bf914cef87394294a6682",
-    );
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-#[rstest]
-#[case::missing_asset(None)]
-#[case::mismatched_asset(Some(&b"tampered bytes"[..]))]
-fn unix_publish_bootstrap_fails_closed_and_names_checksum_verification(
-    #[case] asset_bytes: Option<&[u8]>,
-) {
-    let output = run_unix_publish_checksum(
-        asset_bytes,
-        "2f9e0acbd320f87ceff2b9d259c99ec87830fc87d99bf914cef87394294a6682",
-    );
-    assert!(!output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("SHA256 verification failed for pixi-sandbox-x86_64-unknown-linux-musl"),
-        "stdout: {stdout}"
-    );
-}
-
-#[test]
-fn generated_workflow_downloads_a_verified_release_binary_for_publishing() {
+fn generated_workflow_fetches_a_verified_release_binary_through_the_cli() {
     let workflow = workflow();
     assert!(
         !workflow.contains("uses: Archont561/pixi-sandbox"),
@@ -532,81 +544,76 @@ fn generated_workflow_downloads_a_verified_release_binary_for_publishing() {
     );
     assert!(workflow.contains("https://prefix.dev/archont561/archont561"));
     assert!(workflow.contains("\"pixi-sandbox==${PIXI_SANDBOX_VERSION}\""));
-    assert!(workflow.contains("Download released pixi-sandbox"));
-    assert!(workflow.contains("releases/download/v${PIXI_SANDBOX_VERSION}"));
-    assert!(workflow.contains("SHA256SUMS"));
-    assert!(workflow.contains("sha256sum --check --status"));
-    assert!(workflow.contains("Get-FileHash"));
+    assert!(
+        workflow.contains(
+            "pixi-sandbox fetch-release --dest \"$PIXI_SANDBOX_BIN\" --version \"$PIXI_SANDBOX_VERSION\""
+        ),
+        "{workflow}"
+    );
+    // The shell download is gone: no URL, no asset case statement, no checksum command.
+    // (Comments may name SHA256SUMS when explaining the bootstrap exception; shell may not.)
+    let shell = workflow
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for gone in [
+        "releases/download",
+        "sha256sum",
+        "Get-FileHash",
+        "SHA256SUMS",
+        "curl ",
+        "Invoke-WebRequest",
+    ] {
+        assert!(
+            !shell.contains(gone),
+            "the render still carries `{gone}` shell: {shell}"
+        );
+    }
     assert!(!workflow.contains("build-release-binary"));
     assert!(!workflow.contains("rustup target add"));
-    assert!(workflow.contains("--self-bin \"$SELF_BIN\""));
 }
 
 /// TASK-75 AC#2 through the template: the config that carries `[host_requirements]` reaches
-/// `pack`, not only `plan` and `doctor` — a consumer's transport would otherwise silently drop
-/// what the reviewed config declares. Both runner dialects are checked, because the pwsh leg
-/// builds its argument array separately and a one-legged fix would look green on Linux.
+/// the pipeline verb (which hands it to `pack`), not only `plan` — a consumer's transport
+/// would otherwise silently drop what the reviewed config declares. TASK-76: one pipeline
+/// step carries it, on every platform.
 #[test]
-fn generated_workflow_passes_the_config_to_pack_so_host_requirements_travel() {
+fn generated_workflow_passes_the_config_to_the_pipeline_so_host_requirements_travel() {
     let workflow = workflow();
-    for expected in [
-        &format!("--config {CONFIG_PATH} \\\n"),
-        &format!("'--config', '{CONFIG_PATH}'"),
-    ] {
-        assert!(
-            workflow.contains(expected),
-            "the pack step must receive the sandbox config ({expected}):\n{workflow}"
-        );
-    }
-    // One reviewed config path, named by every step that reads it: plan (1), pack and doctor in
-    // each runner dialect (4), and the upgrade lane's two invocations (2). The count is the
-    // intentional-change detector — a new step that reads config must be added here too.
+    assert!(
+        workflow.contains("--config config/pixi-sandbox.toml\n"),
+        "the pipeline step must receive the sandbox config:\n{workflow}"
+    );
+    // One reviewed config path, named by every step that reads it: plan (1), the pipeline
+    // step (1), and the upgrade step (1). The count is the intentional-change detector — a new
+    // step that reads config must be added here too.
     assert_eq!(
         workflow.matches(CONFIG_PATH).count(),
-        7,
-        "expected plan, both pack legs, both doctor legs and the upgrade lane to name the config"
+        3,
+        "expected plan, the pipeline step and the upgrade step to name the config"
     );
 }
 
-/// Issue #80: the release-download step named the *consumer's* repository, so any consumer
-/// publishing no GitHub releases of its own got a 404 before anything was packed. The
-/// download base must name this project's own repository — the one that actually publishes
-/// `pixi-sandbox-*` release assets and `SHA256SUMS` — in both the bash and the pwsh leg, and
-/// `GITHUB_REPOSITORY` must never appear in a release-download URL again. The constant is
-/// shared with `self_update::DEFAULT_REPO` so the template and the updater cannot drift apart.
+/// Issue #80, restated for TASK-76: the release download names the pixi-sandbox repository,
+/// never the consumer's. The URL moved into the binary: `fetch-release`'s `--repo` defaults
+/// to the same constant the renderer used to embed, so the two cannot drift apart.
 #[test]
-fn generated_workflow_downloads_release_assets_from_the_pixi_sandbox_repository_not_the_consumers()
-{
+fn generated_workflow_fetches_release_assets_from_the_pixi_sandbox_repository_not_the_consumers() {
     let workflow = workflow();
-    let expected_base = format!(
-        "$GITHUB_SERVER_URL/{}/releases/download/v${{PIXI_SANDBOX_VERSION}}",
-        pixi_sandbox::release::PIXI_SANDBOX_REPO
-    );
-    let expected_pwsh_base = format!(
-        "$env:GITHUB_SERVER_URL/{}/releases/download/v$env:PIXI_SANDBOX_VERSION",
-        pixi_sandbox::release::PIXI_SANDBOX_REPO
+    assert!(
+        !workflow.contains("releases/download"),
+        "the download URL moved into fetch-release:\n{workflow}"
     );
     assert!(
-        workflow.contains(&expected_base),
-        "bash leg must download from the pixi-sandbox repository:\n{workflow}"
-    );
-    assert!(
-        workflow.contains(&expected_pwsh_base),
-        "pwsh leg must download from the pixi-sandbox repository:\n{workflow}"
+        !workflow.contains("GITHUB_REPOSITORY"),
+        "no download URL may resolve against the consumer's own repository:\n{workflow}"
     );
     assert_eq!(
         pixi_sandbox::release::PIXI_SANDBOX_REPO,
         pixi_sandbox::self_update::DEFAULT_REPO,
-        "the renderer and self-update's default --repo must name the same repository"
+        "the tool's release-download default must name the pixi-sandbox repository"
     );
-    for (index, _) in workflow.match_indices("releases/download") {
-        let window_start = index.saturating_sub(80);
-        let window = &workflow[window_start..index];
-        assert!(
-            !window.contains("GITHUB_REPOSITORY"),
-            "a release-download URL must never resolve against the consumer's own repository:\n{workflow}"
-        );
-    }
 }
 
 #[test]
@@ -652,21 +659,18 @@ fn generated_workflow_only_reads_matrix_keys_the_plan_emits() {
     }
 }
 
-/// The embedded bash/PowerShell case/switch arms that pick a release asset name cannot call
-/// into `Platform` (task-55) at render time the way other call sites were migrated (task-58,
-/// task-59, task-60): they are literal text inside a workflow that a plain GitHub runner
-/// executes before any pixi-sandbox binary exists to ask. Keeping that text a hand-typed
-/// literal inside the render function is still a duplicate of `Platform::asset_name`, so this
-/// test is the structural guarantee a doc comment used to be: every platform's asset name in
-/// the rendered workflow must agree with `Platform`, for both the bash and the PowerShell
-/// branch.
+/// TASK-76: the render no longer embeds release asset names at all. The old case/switch
+/// arms duplicated `Platform::asset_name` as literal text a plain runner executed before any
+/// pixi-sandbox binary existed to ask; the download moved into `fetch-release`/`self-update`,
+/// which resolve the host asset in Rust (pinned by the self-update and git crates' own
+/// tests). The structural guarantee is therefore the *absence* of the literals.
 #[test]
-fn every_rendered_asset_name_agrees_with_platform() {
+fn the_render_embeds_no_release_asset_names() {
     let workflow = workflow();
     for platform in Platform::ALL {
         assert!(
-            workflow.contains(platform.asset_name()),
-            "rendered workflow is missing {}'s asset name {}",
+            !workflow.contains(platform.asset_name()),
+            "the render still embeds {}'s asset name {}",
             platform.as_str(),
             platform.asset_name()
         );
@@ -768,6 +772,9 @@ mod workflow_policy {
         assert!(!rendered.contains("runs-on: ubuntu-latest\n    timeout-minutes:"));
     }
 
+    /// TASK-76: the upgrade job gained a setup-pixi step (it installs the pinned CLI the
+    /// fetch-release bootstrap runs from), so the pin and cache policy now render on all
+    /// three setup-pixi steps.
     #[test]
     fn pixi_version_and_cache_render_on_every_setup_pixi_step() {
         let rendered = render_github_workflow(GithubWorkflowOptions {
@@ -777,8 +784,8 @@ mod workflow_policy {
         });
         let occurrences = rendered.matches("prefix-dev/setup-pixi@").count();
         assert_eq!(
-            occurrences, 2,
-            "expected exactly plan + publish setup-pixi steps"
+            occurrences, 3,
+            "expected plan + publish + upgrade setup-pixi steps"
         );
         assert_eq!(
             rendered.matches("pixi-version: \"0.81.0\"").count(),
@@ -838,8 +845,10 @@ mod workflow_policy {
     }
 }
 
-/// task-68 AC#1-#3, AC#5: the publish lane logs durable diagnostics, uploads them as a workflow
-/// artifact on always(), and formats an actionable step summary on failure.
+/// task-68 AC#1-#3, AC#5, restated for TASK-76: the publish lane's durable diagnostics. The
+/// log directory is the pipeline verb's argument, the upload step's path matches it, and the
+/// upload runs on `always()`. The outcome recording and the failure step summary are the
+/// verb's, asserted in tests/pipeline.rs.
 mod publish_diagnostics {
     use super::workflow;
 
@@ -866,27 +875,19 @@ mod publish_diagnostics {
     }
 
     #[test]
-    fn publish_lane_records_diagnostics_and_surfaces_step_summary_on_failure() {
+    fn publish_lane_records_diagnostics_and_uploads_them_on_always() {
         let workflow = workflow();
         assert!(
-            workflow.contains("LOG_DIR=\"$RUNNER_TEMP/pixi-sandbox-logs\""),
-            "missing LOG_DIR definition in:\n{workflow}"
+            workflow.contains("--log-dir \"${{ runner.temp }}/pixi-sandbox-logs\""),
+            "the pipeline step must name its log directory:\n{workflow}"
         );
         assert!(
-            workflow.contains("--log-file \"$LOG_DIR/pack.log\""),
-            "missing pack --log-file in:\n{workflow}"
+            workflow.contains("path: ${{ runner.temp }}/pixi-sandbox-logs"),
+            "the upload path must match the pipeline's log directory:\n{workflow}"
         );
         assert!(
-            workflow.contains("--log-file \"$LOG_DIR/doctor.log\""),
-            "missing doctor --log-file in:\n{workflow}"
-        );
-        assert!(
-            workflow.contains("--log-file \"$LOG_DIR/publish.log\""),
-            "missing publish --log-file in:\n{workflow}"
-        );
-        assert!(
-            workflow.contains("GITHUB_STEP_SUMMARY"),
-            "publish step must emit failure details to GITHUB_STEP_SUMMARY:\n{workflow}"
+            workflow.contains("if: always()\n        uses: actions/upload-artifact@"),
+            "the diagnostics upload must run on always():\n{workflow}"
         );
     }
 }

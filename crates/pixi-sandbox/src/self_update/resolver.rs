@@ -29,6 +29,7 @@ pub enum Selection {
 }
 
 impl Selection {
+    #[must_use]
     pub fn describe(self) -> &'static str {
         match self {
             Selection::Latest => "latest",
@@ -38,33 +39,34 @@ impl Selection {
 }
 
 /// Resolve `requested` (or latest) against `source`.
+///
+/// # Errors
+///
+/// Returns an error if the requested version does not parse or does not exist upstream.
 pub fn resolve(
     source: &dyn ReleaseSource,
     repo: &str,
     requested: Option<&str>,
 ) -> Result<Resolved> {
-    match requested {
-        Some(requested) => {
-            let version = normalise_version(requested)?;
-            Ok(Resolved {
-                tag: format!("v{version}"),
-                version,
-                selection: Selection::Pinned,
-            })
-        }
-        None => {
-            let tag = source
-                .latest_tag(repo)
-                .with_context(|| format!("resolving the latest pixi-sandbox release of {repo}"))?;
-            let version = normalise_version(&tag).with_context(|| {
-                format!("{repo}'s latest release tag {tag:?} is not a vX.Y.Z release")
-            })?;
-            Ok(Resolved {
-                tag,
-                version,
-                selection: Selection::Latest,
-            })
-        }
+    if let Some(requested) = requested {
+        let version = normalise_version(requested)?;
+        Ok(Resolved {
+            tag: format!("v{version}"),
+            version,
+            selection: Selection::Pinned,
+        })
+    } else {
+        let tag = source
+            .latest_tag(repo)
+            .with_context(|| format!("resolving the latest pixi-sandbox release of {repo}"))?;
+        let version = normalise_version(&tag).with_context(|| {
+            format!("{repo}'s latest release tag {tag:?} is not a vX.Y.Z release")
+        })?;
+        Ok(Resolved {
+            tag,
+            version,
+            selection: Selection::Latest,
+        })
     }
 }
 
@@ -72,6 +74,10 @@ pub fn resolve(
 ///
 /// Strict on purpose: a loose parser turns a typo into a 404 from the download step, where the
 /// error no longer says which input was wrong.
+///
+/// # Errors
+///
+/// Returns an error naming the malformed input when it is not `X.Y.Z` or `vX.Y.Z`.
 pub fn normalise_version(input: &str) -> Result<String> {
     let bare = input.strip_prefix('v').unwrap_or(input);
     let parts: Vec<&str> = bare.split('.').collect();

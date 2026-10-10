@@ -19,6 +19,27 @@ fn a_missing_pixi_lock_is_refused_before_anything_is_created(isolated_home: Temp
 }
 
 #[rstest]
+fn the_shard_limit_is_validated_and_never_truncates(isolated_home: TempDir) {
+    // Pins the shard-limit bound: non-positive, non-finite and over-range values are
+    // refused, and a valid MiB value converts exactly — a silent truncation here would
+    // change what pack enforces (TASK-77 AC#8).
+    let root = isolated_home.path();
+    std::fs::write(root.join("pixi.lock"), "").unwrap();
+    for (index, bad) in [-1.0, 0.0, f64::NAN, f64::INFINITY, 1e30]
+        .iter()
+        .enumerate()
+    {
+        let output = root.join(format!("out-{index}"));
+        assert!(
+            plan_layout(root, &output, &["default".into()], *bad).is_err(),
+            "{bad} must be refused"
+        );
+    }
+    let layout = plan_layout(root, &root.join("out"), &["default".into()], 95.0).unwrap();
+    assert_eq!(layout.shard_limit, 95 * 1024 * 1024);
+}
+
+#[rstest]
 fn an_existing_output_dir_is_refused(isolated_home: TempDir) {
     let root = isolated_home.path();
     std::fs::write(root.join("pixi.lock"), "").unwrap();

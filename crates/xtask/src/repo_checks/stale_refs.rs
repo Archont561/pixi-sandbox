@@ -52,7 +52,7 @@ fn walk_pruned(dir: &Path, extensions: &[&str]) -> Vec<PathBuf> {
         })
         .flatten()
         .filter(|e| e.file_type().is_file())
-        .map(|e| e.into_path())
+        .map(walkdir::DirEntry::into_path)
         .filter(|p| {
             p.extension()
                 .is_some_and(|x| extensions.iter().any(|want| x == *want))

@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use pixi_sandbox_core::manifest::Manifest;
 use pixi_sandbox_git::{GitProtocol, ShellGit, Snapshot};
 
-pub fn run(args: PublishArgs) -> Result<()> {
+pub fn run(args: &PublishArgs) -> Result<()> {
     // ShellGit changes cwd to the work tree while creating its temporary index. Keep the
     // transport absolute so GIT_DIR/GIT_INDEX_FILE never become relative to that new cwd.
     crate::diagnostics::phase("validate-transport", "checking the input directory");

@@ -16,7 +16,7 @@ use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
-pub fn run(args: RestoreArgs) -> Result<()> {
+pub fn run(args: &RestoreArgs) -> Result<()> {
     let branch = support::existing_dir(&args.branch_location, "--branch-location")?;
     let project = support::existing_dir(&args.output_path, "--output-path")?;
     let manifest_path = Manifest::path_in(&branch);
@@ -53,16 +53,7 @@ pub fn run(args: RestoreArgs) -> Result<()> {
 
     println!("materialise tools");
     let tools_dir = materialise_tools(&branch, &manifest, &project, args.force)?;
-    let unpacker = tools_dir.join(tool_file_name(&manifest, "pixi-unpack"));
-    let unpacker = if unpacker.is_file() {
-        unpacker
-    } else {
-        support::find_executable("pixi-unpack").ok_or_else(|| {
-            anyhow::anyhow!(
-                "the transport does not contain pixi-unpack and none is on PATH; cannot restore"
-            )
-        })?
-    };
+    let unpacker = resolve_unpacker(&tools_dir, &manifest)?;
 
     println!("restore environments");
     for environment in &environments {
@@ -77,16 +68,8 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         )?;
     }
 
-    let mut vendored = false;
-    let mut cargo_wiring = CargoWiring::NotVendored;
-    if let Some(vendor) = &manifest.vendor {
-        if !args.no_vendor {
-            println!("restore vendored cargo dependencies");
-            install_vendor(&branch, vendor, &project, &work, args.force)?;
-            cargo_wiring = configure_cargo_vendor(&project, &environments, args.cargo_config)?;
-            vendored = true;
-        }
-    }
+    let (vendored, cargo_wiring) =
+        restore_vendor(args, &manifest, &branch, &project, &work, &environments)?;
 
     remove_legacy_sandbox_env(&project)?;
 
@@ -128,6 +111,58 @@ pub fn run(args: RestoreArgs) -> Result<()> {
 
     println!("restore complete");
     println!("  pixi install --frozen --offline      # must be a no-op");
+    print_cargo_wiring(&cargo_wiring);
+    println!(
+        "  no .pixi/sandbox-env.sh is generated; use pixi as the only entrypoint (`pixi run ...`)"
+    );
+    if matches!(args.user_tools, UserToolsPolicy::Register) {
+        println!(
+            "  open a new shell (or put the managed user bin on PATH here) for pixi and pixi sandbox"
+        );
+    }
+    Ok(())
+}
+
+/// The unpacker to restore with: the manifest-verified copy the transport embeds, or a
+/// pixi-unpack on PATH when the transport carries none.
+fn resolve_unpacker(tools_dir: &Path, manifest: &Manifest) -> Result<PathBuf> {
+    let unpacker = tools_dir.join(tool_file_name(manifest, "pixi-unpack"));
+    if unpacker.is_file() {
+        Ok(unpacker)
+    } else {
+        support::find_executable("pixi-unpack").ok_or_else(|| {
+            anyhow::anyhow!(
+                "the transport does not contain pixi-unpack and none is on PATH; cannot restore"
+            )
+        })
+    }
+}
+
+/// Restore the vendored cargo dependencies and wire the project's cargo config to them.
+/// Returns whether anything was vendored and the wiring that was applied.
+fn restore_vendor(
+    args: &RestoreArgs,
+    manifest: &Manifest,
+    branch: &Path,
+    project: &Path,
+    work: &Path,
+    environments: &[String],
+) -> Result<(bool, CargoWiring)> {
+    let mut vendored = false;
+    let mut cargo_wiring = CargoWiring::NotVendored;
+    if let Some(vendor) = &manifest.vendor {
+        if !args.no_vendor {
+            println!("restore vendored cargo dependencies");
+            install_vendor(branch, vendor, project, work, args.force)?;
+            cargo_wiring = configure_cargo_vendor(project, environments, args.cargo_config)?;
+            vendored = true;
+        }
+    }
+    Ok((vendored, cargo_wiring))
+}
+
+/// The cargo-vendor wiring, in the restore's voice.
+fn print_cargo_wiring(cargo_wiring: &CargoWiring) {
     match cargo_wiring {
         CargoWiring::SandboxHome { cargo_home } => {
             println!(
@@ -148,15 +183,6 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         ),
         CargoWiring::NotVendored => {}
     }
-    println!(
-        "  no .pixi/sandbox-env.sh is generated; use pixi as the only entrypoint (`pixi run ...`)"
-    );
-    if matches!(args.user_tools, UserToolsPolicy::Register) {
-        println!(
-            "  open a new shell (or put the managed user bin on PATH here) for pixi and pixi sandbox"
-        );
-    }
-    Ok(())
 }
 
 /// Print the restored-tree verdict in the same voice `doctor --verify-restored` uses, and
@@ -272,9 +298,20 @@ fn register_user_tools(
             || "the restored project itself is complete, but registering user tools was refused",
         )?;
 
+    print_registration(&bin_dir, &launchers, &path, notice.as_deref());
+    Ok(())
+}
+
+/// Print what the registration did: the launchers, the PATH change, and the shell notice.
+fn print_registration(
+    bin_dir: &Path,
+    launchers: &[(String, LauncherChange)],
+    path: &PathChange,
+    notice: Option<&str>,
+) {
     println!("register user tools");
     let mut retargeted = false;
-    for (name, change) in &launchers {
+    for (name, change) in launchers {
         let launcher = bin_dir.join(user_tools::launcher_file_name(
             name,
             LauncherKind::current(),
@@ -301,13 +338,13 @@ fn register_user_tools(
             "  the most recently registered restore is now the user-level source of these tools"
         );
     }
-    match &path {
+    match path {
         PathChange::Added { profile } => {
             println!(
                 "  PATH: added {} to {}",
                 bin_dir.display(),
                 profile.display()
-            )
+            );
         }
         PathChange::Replaced { profile } => println!(
             "  PATH: {} updated in {} (the bin directory changed)",
@@ -319,16 +356,16 @@ fn register_user_tools(
                 "  PATH: {} already on PATH in {}",
                 bin_dir.display(),
                 profile.display()
-            )
+            );
         }
         PathChange::RegistryAdded => {
             println!(
                 "  PATH: {} added to the user PATH (registry)",
                 bin_dir.display()
-            )
+            );
         }
         PathChange::RegistryAlreadyPresent => {
-            println!("  PATH: {} already on the user PATH", bin_dir.display())
+            println!("  PATH: {} already on the user PATH", bin_dir.display());
         }
     }
     if let Some(notice) = notice {
@@ -339,7 +376,6 @@ fn register_user_tools(
          `export PATH=\"{}:$PATH\"` in this one",
         bin_dir.display()
     );
-    Ok(())
 }
 
 /// Remove this restore's scratch: the unpacker's TMPDIR, one materialised pack and one stage per
@@ -487,8 +523,10 @@ fn tool_file_name(manifest: &Manifest, name: &str) -> String {
         .and_then(|entry| entry.path.as_deref())
         .and_then(|relative| Path::new(relative).file_name())
         .and_then(|file| file.to_str())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| executable_filename(name, &manifest.platform))
+        .map_or_else(
+            || executable_filename(name, &manifest.platform),
+            ToOwned::to_owned,
+        )
 }
 
 fn install_environment(

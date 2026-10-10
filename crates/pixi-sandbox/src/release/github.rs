@@ -20,6 +20,7 @@ pub struct GitHubReleaseSource {
 }
 
 impl GitHubReleaseSource {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             token: std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty()),

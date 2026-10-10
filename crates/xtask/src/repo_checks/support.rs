@@ -14,15 +14,15 @@ pub(super) fn rel(root: &Path, path: &Path) -> String {
 }
 
 /// Every workflow file under `.github/workflows`, sorted for stable failure ordering. Shared
-/// by the checks that scan workflows for a textual pattern (mutable_refs, release_tags,
-/// workflow_shape); checks that read a handful of named files (channel_drift, relock) do not
+/// by the checks that scan workflows for a textual pattern (`mutable_refs`, `release_tags`,
+/// `workflow_shape`); checks that read a handful of named files (`channel_drift`, relock) do not
 /// need it.
 pub(super) fn workflow_files(root: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = walkdir::WalkDir::new(root.join(".github/workflows"))
         .into_iter()
         .flatten()
         .filter(|e| e.file_type().is_file())
-        .map(|e| e.into_path())
+        .map(walkdir::DirEntry::into_path)
         .filter(|p| p.extension().is_some_and(|x| x == "yml" || x == "yaml"))
         .collect();
     files.sort();
