@@ -53,16 +53,7 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
 
     println!("materialise tools");
     let tools_dir = materialise_tools(&branch, &manifest, &project, args.force)?;
-    let unpacker = tools_dir.join(tool_file_name(&manifest, "pixi-unpack"));
-    let unpacker = if unpacker.is_file() {
-        unpacker
-    } else {
-        support::find_executable("pixi-unpack").ok_or_else(|| {
-            anyhow::anyhow!(
-                "the transport does not contain pixi-unpack and none is on PATH; cannot restore"
-            )
-        })?
-    };
+    let unpacker = resolve_unpacker(&tools_dir, &manifest)?;
 
     println!("restore environments");
     for environment in &environments {
@@ -77,16 +68,8 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
         )?;
     }
 
-    let mut vendored = false;
-    let mut cargo_wiring = CargoWiring::NotVendored;
-    if let Some(vendor) = &manifest.vendor {
-        if !args.no_vendor {
-            println!("restore vendored cargo dependencies");
-            install_vendor(&branch, vendor, &project, &work, args.force)?;
-            cargo_wiring = configure_cargo_vendor(&project, &environments, args.cargo_config)?;
-            vendored = true;
-        }
-    }
+    let (vendored, cargo_wiring) =
+        restore_vendor(args, &manifest, &branch, &project, &work, &environments)?;
 
     remove_legacy_sandbox_env(&project)?;
 
@@ -128,6 +111,58 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
 
     println!("restore complete");
     println!("  pixi install --frozen --offline      # must be a no-op");
+    print_cargo_wiring(&cargo_wiring);
+    println!(
+        "  no .pixi/sandbox-env.sh is generated; use pixi as the only entrypoint (`pixi run ...`)"
+    );
+    if matches!(args.user_tools, UserToolsPolicy::Register) {
+        println!(
+            "  open a new shell (or put the managed user bin on PATH here) for pixi and pixi sandbox"
+        );
+    }
+    Ok(())
+}
+
+/// The unpacker to restore with: the manifest-verified copy the transport embeds, or a
+/// pixi-unpack on PATH when the transport carries none.
+fn resolve_unpacker(tools_dir: &Path, manifest: &Manifest) -> Result<PathBuf> {
+    let unpacker = tools_dir.join(tool_file_name(manifest, "pixi-unpack"));
+    if unpacker.is_file() {
+        Ok(unpacker)
+    } else {
+        support::find_executable("pixi-unpack").ok_or_else(|| {
+            anyhow::anyhow!(
+                "the transport does not contain pixi-unpack and none is on PATH; cannot restore"
+            )
+        })
+    }
+}
+
+/// Restore the vendored cargo dependencies and wire the project's cargo config to them.
+/// Returns whether anything was vendored and the wiring that was applied.
+fn restore_vendor(
+    args: &RestoreArgs,
+    manifest: &Manifest,
+    branch: &Path,
+    project: &Path,
+    work: &Path,
+    environments: &[String],
+) -> Result<(bool, CargoWiring)> {
+    let mut vendored = false;
+    let mut cargo_wiring = CargoWiring::NotVendored;
+    if let Some(vendor) = &manifest.vendor {
+        if !args.no_vendor {
+            println!("restore vendored cargo dependencies");
+            install_vendor(branch, vendor, project, work, args.force)?;
+            cargo_wiring = configure_cargo_vendor(project, environments, args.cargo_config)?;
+            vendored = true;
+        }
+    }
+    Ok((vendored, cargo_wiring))
+}
+
+/// The cargo-vendor wiring, in the restore's voice.
+fn print_cargo_wiring(cargo_wiring: &CargoWiring) {
     match cargo_wiring {
         CargoWiring::SandboxHome { cargo_home } => {
             println!(
@@ -148,15 +183,6 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
         ),
         CargoWiring::NotVendored => {}
     }
-    println!(
-        "  no .pixi/sandbox-env.sh is generated; use pixi as the only entrypoint (`pixi run ...`)"
-    );
-    if matches!(args.user_tools, UserToolsPolicy::Register) {
-        println!(
-            "  open a new shell (or put the managed user bin on PATH here) for pixi and pixi sandbox"
-        );
-    }
-    Ok(())
 }
 
 /// Print the restored-tree verdict in the same voice `doctor --verify-restored` uses, and
