@@ -176,77 +176,18 @@ fn refresh(
         let mut platforms = BTreeMap::new();
 
         for platform in tool.platforms.keys() {
-            let previous = &tool.platforms[platform];
-            let url = tool
-                .url_template
-                .replace("{version}", &version)
-                .replace("{target}", &previous.target);
-            // The release asset is the *file name* of the substituted URL, which the template
-            // builds as e.g. `pixi-x86_64-unknown-linux-musl`. Deriving it from the template
-            // rather than from `target` alone is what keeps the tool prefix in the name; using
-            // the target directly 404s against real GitHub.
-            let asset_name = asset_name_of(&url).with_context(|| {
-                format!("the url_template for {name} has no file name to download: {url}")
+            let pin = refresh_platform(&mut PlatformRefresh {
+                source,
+                report: &mut report,
+                name,
+                tool,
+                version: &version,
+                platform,
+                checksums: checksums.as_ref(),
+                repo,
+                tag: &tag,
             })?;
-            let asset = source
-                .asset(repo, &tag, asset_name)
-                .with_context(|| format!("downloading {name} {version} for {platform}"))?;
-            report.checked += 1;
-
-            let actual = asset.sha256();
-            let published = checksums.as_ref().and_then(|map| map.get(asset_name));
-            let note = match (checksums.as_ref(), published) {
-                (Some(_), Some(expected)) if expected != &actual => bail!(
-                    "integrity: {name} {version} for {platform} hashes to {actual}, but {repo} \
-                     publishes {expected} for {asset_name} in {PIXI_CHECKSUM_MANIFEST}. Refusing \
-                     to write the lock; the download or the upstream manifest is not trustworthy."
-                ),
-                (_, Some(_)) => {
-                    format!("cross-checked against {PIXI_CHECKSUM_MANIFEST} in {repo} {tag}")
-                }
-                // Measured 2026-09-29: pixi publishes `sha256.sum` covering only the archives
-                // (`pixi-x86_64-unknown-linux-musl.tar.gz`, `.zip`, `.msi`), while the catalogue
-                // pins the *bare* binary that is not listed. Saying "cross-checked" there would be
-                // a claim no one verified, so the weaker guarantee is written into the pin.
-                (Some(_), None) => format!(
-                    "{PIXI_CHECKSUM_MANIFEST} in {repo} {tag} does not list {asset_name} (it \
-                     covers archives); hash observed and linkage verified locally, not \
-                     cross-checked"
-                ),
-                (None, _) => format!(
-                    "no upstream checksum manifest; hash observed on {tag} and linkage verified \
-                     locally, not cross-checked"
-                ),
-            };
-
-            let linkage = linkage_of_bytes(&asset.bytes);
-            if previous.linkage == Linkage::Static.as_str() && linkage != Linkage::Static {
-                bail!(
-                    "integrity: {name} {version} for {platform} is a {} binary, but the pin \
-                     declares it static ({url}). A dynamic helper works on the build machine and \
-                     dies in the airlock (D4) — this is the failure the pin exists to prevent. \
-                     Refusing to write the lock.",
-                    linkage.as_str()
-                );
-            }
-
-            report.changed.push((
-                name.to_string(),
-                platform.clone(),
-                tool.version.clone(),
-                version.clone(),
-            ));
-            platforms.insert(
-                platform.clone(),
-                PlatformPin {
-                    target: previous.target.clone(),
-                    sha256: actual,
-                    // Write what was observed. A pin that can carry a stale `linkage` claim is a
-                    // pin that will lie to whoever reads it next.
-                    linkage: linkage.as_str().to_string(),
-                    note: Some(note),
-                },
-            );
+            platforms.insert(platform.clone(), pin);
         }
 
         updated.tools.insert(
@@ -263,6 +204,104 @@ fn refresh(
         updated.generated_at = Some(support::now_rfc3339());
     }
     Ok((updated, report))
+}
+
+/// What one platform refresh needs, bundled so the helper stays under the argument limit.
+struct PlatformRefresh<'a> {
+    source: &'a dyn ReleaseSource,
+    report: &'a mut Report,
+    name: &'a str,
+    tool: &'a Tool,
+    version: &'a str,
+    platform: &'a str,
+    checksums: Option<&'a BTreeMap<String, String>>,
+    repo: &'a str,
+    tag: &'a str,
+}
+
+/// Refresh one platform pin of a tool whose version changed: download the release asset,
+/// record its hash (cross-checked against the published manifest when it lists the asset),
+/// verify the linkage claim, and return the new pin.
+fn refresh_platform(ctx: &mut PlatformRefresh<'_>) -> Result<PlatformPin> {
+    let PlatformRefresh {
+        source,
+        report,
+        name,
+        tool,
+        version,
+        platform,
+        checksums,
+        repo,
+        tag,
+    } = ctx;
+    let previous = &tool.platforms[*platform];
+    let url = tool
+        .url_template
+        .replace("{version}", version)
+        .replace("{target}", &previous.target);
+    // The release asset is the *file name* of the substituted URL, which the template
+    // builds as e.g. `pixi-x86_64-unknown-linux-musl`. Deriving it from the template
+    // rather than from `target` alone is what keeps the tool prefix in the name; using
+    // the target directly 404s against real GitHub.
+    let asset_name = asset_name_of(&url).with_context(|| {
+        format!("the url_template for {name} has no file name to download: {url}")
+    })?;
+    let asset = source
+        .asset(repo, tag, asset_name)
+        .with_context(|| format!("downloading {name} {version} for {platform}"))?;
+    report.checked += 1;
+
+    let actual = asset.sha256();
+    let published = checksums.and_then(|map| map.get(asset_name));
+    let note = match (checksums, published) {
+        (Some(_), Some(expected)) if expected != &actual => bail!(
+            "integrity: {name} {version} for {platform} hashes to {actual}, but {repo} \
+             publishes {expected} for {asset_name} in {PIXI_CHECKSUM_MANIFEST}. Refusing \
+             to write the lock; the download or the upstream manifest is not trustworthy."
+        ),
+        (_, Some(_)) => {
+            format!("cross-checked against {PIXI_CHECKSUM_MANIFEST} in {repo} {tag}")
+        }
+        // Measured 2026-09-29: pixi publishes `sha256.sum` covering only the archives
+        // (`pixi-x86_64-unknown-linux-musl.tar.gz`, `.zip`, `.msi`), while the catalogue
+        // pins the *bare* binary that is not listed. Saying "cross-checked" there would be
+        // a claim no one verified, so the weaker guarantee is written into the pin.
+        (Some(_), None) => format!(
+            "{PIXI_CHECKSUM_MANIFEST} in {repo} {tag} does not list {asset_name} (it \
+             covers archives); hash observed and linkage verified locally, not \
+             cross-checked"
+        ),
+        (None, _) => format!(
+            "no upstream checksum manifest; hash observed on {tag} and linkage verified \
+             locally, not cross-checked"
+        ),
+    };
+
+    let linkage = linkage_of_bytes(&asset.bytes);
+    if previous.linkage == Linkage::Static.as_str() && linkage != Linkage::Static {
+        bail!(
+            "integrity: {name} {version} for {platform} is a {} binary, but the pin \
+             declares it static ({url}). A dynamic helper works on the build machine and \
+             dies in the airlock (D4) — this is the failure the pin exists to prevent. \
+             Refusing to write the lock.",
+            linkage.as_str()
+        );
+    }
+
+    report.changed.push((
+        name.to_string(),
+        platform.to_string(),
+        tool.version.clone(),
+        version.to_string(),
+    ));
+    Ok(PlatformPin {
+        target: previous.target.clone(),
+        sha256: actual,
+        // Write what was observed. A pin that can carry a stale `linkage` claim is a
+        // pin that will lie to whoever reads it next.
+        linkage: linkage.as_str().to_string(),
+        note: Some(note),
+    })
 }
 
 fn render(lock: &ToolsLock) -> Result<String> {
