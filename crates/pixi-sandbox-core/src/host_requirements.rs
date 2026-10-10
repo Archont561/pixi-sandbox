@@ -875,39 +875,7 @@ pub fn evaluate(
 
     let manager = distro.manager;
     if let Some(spec) = &declared.libc {
-        // A spec that reached here was validated at load; a parse failure would be a bug.
-        let floor = LibcFloor::parse(spec).ok();
-        let observed = probe.libc();
-        let (status, detail) = match (floor, observed.version) {
-            (Some(floor), Some(host)) if floor.is_met_by(host) => (
-                HostStatus::Satisfied,
-                format!("host reports {}; {}", host.version(), observed.detail),
-            ),
-            (Some(_), Some(host)) => (
-                HostStatus::Missing,
-                format!("host reports {}; {}", host.version(), observed.detail),
-            ),
-            _ => (
-                HostStatus::Unknown,
-                format!("no C runtime version could be read; {}", observed.detail),
-            ),
-        };
-        findings.push(HostFinding {
-            kind: RequirementKind::Libc,
-            name: spec.clone(),
-            status,
-            remedy: match status {
-                HostStatus::Missing => Some(format!(
-                    "the host C runtime cannot be installed per project — run this workload on a \
-                     host with glibc {spec} (or newer), for example a newer base image"
-                )),
-                HostStatus::Unknown => {
-                    Some("check the host C runtime directly with `ldd --version`".to_string())
-                }
-                _ => None,
-            },
-            detail,
-        });
+        findings.push(libc_finding(spec, probe));
     }
 
     for name in &declared.packages {
@@ -946,6 +914,75 @@ pub fn evaluate(
         .map(|(name, _)| name.as_str())
         .collect();
 
+    findings.extend(capability_findings(declared, probe, &available, manager));
+
+    for (name, observation) in headless {
+        let status = status_of(observation.outcome);
+        findings.push(HostFinding {
+            kind: RequirementKind::Headless,
+            name: name.clone(),
+            status,
+            remedy: package_remedy(&name, status, manager),
+            detail: observation.detail,
+        });
+    }
+
+    HostReport {
+        declared: declared.clone(),
+        platform_family,
+        host_family,
+        distro,
+        findings,
+    }
+}
+
+/// The declared libc floor as a finding: satisfied when the host reports a runtime that
+/// meets it, missing when it reports one that does not, unknown when none can be read.
+fn libc_finding(spec: &str, probe: &impl HostProbe) -> HostFinding {
+    // A spec that reached here was validated at load; a parse failure would be a bug.
+    let floor = LibcFloor::parse(spec).ok();
+    let observed = probe.libc();
+    let (status, detail) = match (floor, observed.version) {
+        (Some(floor), Some(host)) if floor.is_met_by(host) => (
+            HostStatus::Satisfied,
+            format!("host reports {}; {}", host.version(), observed.detail),
+        ),
+        (Some(_), Some(host)) => (
+            HostStatus::Missing,
+            format!("host reports {}; {}", host.version(), observed.detail),
+        ),
+        _ => (
+            HostStatus::Unknown,
+            format!("no C runtime version could be read; {}", observed.detail),
+        ),
+    };
+    HostFinding {
+        kind: RequirementKind::Libc,
+        name: spec.to_string(),
+        status,
+        remedy: match status {
+            HostStatus::Missing => Some(format!(
+                "the host C runtime cannot be installed per project — run this workload on a \
+                 host with glibc {spec} (or newer), for example a newer base image"
+            )),
+            HostStatus::Unknown => {
+                Some("check the host C runtime directly with `ldd --version`".to_string())
+            }
+            _ => None,
+        },
+        detail,
+    }
+}
+
+/// Each declared capability as a finding. `Display` is satisfied by a live display or by
+/// any available headless provider; `Gpu` is whatever the probe observed.
+fn capability_findings(
+    declared: &HostRequirementSet,
+    probe: &impl HostProbe,
+    available: &[&str],
+    manager: PackageManager,
+) -> Vec<HostFinding> {
+    let mut findings = Vec::new();
     for capability in &declared.capabilities {
         let (status, detail) = match capability {
             HostCapability::Display => {
@@ -990,25 +1027,7 @@ pub fn evaluate(
             detail,
         });
     }
-
-    for (name, observation) in headless {
-        let status = status_of(observation.outcome);
-        findings.push(HostFinding {
-            kind: RequirementKind::Headless,
-            name: name.clone(),
-            status,
-            remedy: package_remedy(&name, status, manager),
-            detail: observation.detail,
-        });
-    }
-
-    HostReport {
-        declared: declared.clone(),
-        platform_family,
-        host_family,
-        distro,
-        findings,
-    }
+    findings
 }
 
 /// Every declared requirement as `(kind, spelling)`, in the order [`HostRequirementSet`]
