@@ -252,7 +252,7 @@ fn scanning_a_staged_prefix_produces_a_verifiable_list() {
         doc.excluded,
         RESTORE_MARKERS
             .iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect::<Vec<_>>()
     );
     assert_eq!(by_path.len(), 4, "markers excluded: {:?}", by_path.keys());

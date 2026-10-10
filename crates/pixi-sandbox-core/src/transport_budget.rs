@@ -222,8 +222,7 @@ fn restore_required_bytes(manifest: &Manifest) -> u64 {
     let vendor = manifest
         .vendor
         .as_ref()
-        .map(|vendor| vendor.size_bytes.saturating_mul(2))
-        .unwrap_or(0);
+        .map_or(0, |vendor| vendor.size_bytes.saturating_mul(2));
     envs.saturating_add(vendor)
 }
 

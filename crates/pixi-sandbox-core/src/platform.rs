@@ -44,6 +44,7 @@ impl Platform {
     /// than this workspace's pinned toolchain stabilizes. [`Platform::os_arch`] is the const,
     /// reverse direction used where a `const` context needs it (e.g.
     /// `self_update::assets::SUPPORTED_HOSTS`).
+    #[must_use]
     pub fn from_os_arch(os: &str, arch: &str) -> Option<Platform> {
         match (os, arch) {
             ("linux", "x86_64") => Some(Platform::Linux64),
@@ -58,6 +59,7 @@ impl Platform {
     /// The reverse of [`Platform::from_os_arch`]: Rust's `(OS, ARCH)` spelling for this
     /// platform (`std::env::consts` values), as opposed to [`Platform::as_str`]'s Pixi
     /// spelling.
+    #[must_use]
     pub const fn os_arch(self) -> (&'static str, &'static str) {
         match self {
             Platform::Linux64 => ("linux", "x86_64"),
@@ -69,12 +71,14 @@ impl Platform {
     }
 
     /// The current host's platform, in the spelling every other method here expects.
+    #[must_use]
     pub fn current() -> Option<Platform> {
         Platform::from_os_arch(std::env::consts::OS, std::env::consts::ARCH)
     }
 
     /// The Pixi platform id: `linux-64`, `osx-arm64`, etc. — what `.pixi-sandbox.toml`,
     /// `manifest.json`, and `pixi` itself call this platform.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Platform::Linux64 => "linux-64",
@@ -87,6 +91,7 @@ impl Platform {
 
     /// The Rust target triple this platform's binaries are built for — matches the
     /// `release.yml` build matrix.
+    #[must_use]
     pub const fn target_triple(self) -> &'static str {
         match self {
             Platform::Linux64 => "x86_64-unknown-linux-musl",
@@ -103,6 +108,7 @@ impl Platform {
     /// `const fn`: callers that need the five names in a `const` table (e.g.
     /// `self_update::assets::SUPPORTED_HOSTS`) can build it from `Platform::ALL` instead of
     /// retyping the literals, which is the whole point of this type (task-55).
+    #[must_use]
     pub const fn asset_name(self) -> &'static str {
         match self {
             Platform::Linux64 => "pixi-sandbox-x86_64-unknown-linux-musl",
@@ -116,6 +122,7 @@ impl Platform {
     /// The default GitHub-hosted runner label for this platform, or `None` when no
     /// GitHub-hosted runner exists for it (today: `linux-aarch64`), which means a project
     /// publishing that platform must supply an explicit `runners.<platform>` override.
+    #[must_use]
     pub const fn gh_runner(self) -> Option<&'static str> {
         match self {
             Platform::Linux64 => Some("ubuntu-latest"),

@@ -46,6 +46,7 @@ pub enum Error {
 
 impl Error {
     /// `std::io::Error` + the path it happened on, in one call.
+    #[must_use]
     pub fn io(path: &Path, source: std::io::Error) -> Self {
         Error::Io {
             path: path.display().to_string(),
@@ -54,6 +55,7 @@ impl Error {
     }
 
     /// True for the errors that mean "this transport cannot be trusted".
+    #[must_use]
     pub fn is_integrity(&self) -> bool {
         matches!(
             self,

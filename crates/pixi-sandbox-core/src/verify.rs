@@ -20,6 +20,7 @@ use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 
 /// Where the manifest of a transport / extracted branch lives.
+#[must_use]
 pub fn manifest_path(branch_location: &Path) -> PathBuf {
     branch_location.join(MANIFEST_DIR).join(MANIFEST_FILE)
 }
@@ -39,6 +40,7 @@ pub enum Kind {
 }
 
 impl Kind {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Kind::Missing => "missing",
@@ -69,10 +71,12 @@ pub struct Report {
 }
 
 impl Report {
+    #[must_use]
     pub fn ok(&self) -> bool {
         self.failures.is_empty()
     }
 
+    #[must_use]
     pub fn mebibytes(&self) -> f64 {
         self.bytes as f64 / (1024.0 * 1024.0)
     }
@@ -83,6 +87,7 @@ impl Report {
 /// tools' integrity and linkage.
 ///
 /// Never writes anything, never needs the network.
+#[must_use]
 pub fn verify(manifest: &Manifest, branch_location: &Path, envs: Option<&[String]>) -> Report {
     let mut report = Report::default();
 
@@ -177,8 +182,7 @@ fn selected_envs<'a>(
     envs: Option<&[String]>,
 ) -> impl Iterator<Item = (&'a String, &'a crate::manifest::Env)> {
     manifest.envs.iter().filter(move |(name, _)| {
-        envs.map(|selected| selected.iter().any(|s| s == name.as_str()))
-            .unwrap_or(true)
+        envs.is_none_or(|selected| selected.iter().any(|s| s == name.as_str()))
     })
 }
 
@@ -197,6 +201,7 @@ pub struct RestoredReport {
 }
 
 impl RestoredReport {
+    #[must_use]
     pub fn ok(&self) -> bool {
         self.report.ok()
     }
@@ -210,6 +215,7 @@ impl RestoredReport {
 /// same restore-scratch paths the restore itself embedded.
 ///
 /// Collects every mismatch instead of stopping at the first, and writes nothing.
+#[must_use]
 pub fn verify_restored(
     manifest: &Manifest,
     branch_location: &Path,
@@ -314,9 +320,10 @@ fn verify_env_restored(
     if let Ok(canonical) = prefix.canonicalize() {
         push_candidate(&canonical);
     }
-    let work = work_dir
-        .map(|w| w.to_path_buf())
-        .unwrap_or_else(|| project.join(".pixi").join(".restore-work"));
+    let work = work_dir.map_or_else(
+        || project.join(".pixi").join(".restore-work"),
+        std::path::Path::to_path_buf,
+    );
     push_candidate(&work.join(format!("stage-{name}")).join(name));
     push_candidate(&work.join(format!("pack-{name}")));
 
@@ -330,7 +337,7 @@ fn verify_env_restored(
     for entry in &doc.files {
         report.files += 1;
         if let Some(path) = walked.files.get(&entry.p) {
-            report.bytes += std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            report.bytes += std::fs::metadata(path).map_or(0, |m| m.len());
             if let Some(expected) = &entry.h {
                 let raw = match std::fs::read(path) {
                     Ok(raw) => raw,
@@ -483,7 +490,7 @@ fn check_blob(env: &str, blob: &Blob, abs: &Path, report: &mut Report) {
     for part in &blob.parts {
         let name = Path::new(&part.path)
             .file_name()
-            .map(|n| n.to_owned())
+            .map(std::borrow::ToOwned::to_owned)
             .unwrap_or_default();
         let part_abs = parts_root.join(name);
         if !part_abs.exists() {
@@ -541,6 +548,7 @@ pub enum Linkage {
 }
 
 impl Linkage {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Linkage::Static => "static",
@@ -557,6 +565,7 @@ impl Linkage {
 /// A dynamically linked executable (including a PIE) has a `PT_INTERP` program header; a
 /// static one does not. For Mach-O and PE we return [`Linkage::System`]: they always link
 /// against the OS, and the airlock policy for them is a separate decision.
+#[must_use]
 pub fn linkage_of(path: &Path) -> Linkage {
     match std::fs::File::open(path) {
         // Streaming rather than reading the whole file: this runs over every tool in a
@@ -572,6 +581,7 @@ pub fn linkage_of(path: &Path) -> Linkage {
 /// before anything is written to disk under a name that claims to be a reviewed static build.
 /// One definition, two callers — a second copy of this logic could disagree with the one
 /// `verify` uses at restore time, which is the check that has to hold.
+#[must_use]
 pub fn linkage_of_bytes(bytes: &[u8]) -> Linkage {
     linkage_of_reader(std::io::Cursor::new(bytes))
 }
@@ -639,14 +649,14 @@ fn linkage_of_reader<R: Read + Seek>(mut reader: R) -> Linkage {
         }
         (
             read_u64(&head[32..40]),
-            read_u16(&head[54..56]) as u64,
-            read_u16(&head[56..58]) as u64,
+            u64::from(read_u16(&head[54..56])),
+            u64::from(read_u16(&head[56..58])),
         )
     } else {
         (
-            read_u32(&head[28..32]) as u64,
-            read_u16(&head[42..44]) as u64,
-            read_u16(&head[44..46]) as u64,
+            u64::from(read_u32(&head[28..32])),
+            u64::from(read_u16(&head[42..44])),
+            u64::from(read_u16(&head[44..46])),
         )
     };
 

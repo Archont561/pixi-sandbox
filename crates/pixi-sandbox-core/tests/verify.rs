@@ -355,7 +355,7 @@ mod restored {
     }
 
     /// The relocation rule restore applies (text only, NUL-preserved binaries untouched),
-    /// then write_markers' two files.
+    /// then `write_markers`' two files.
     pub fn restore_like(staged: &Path, final_prefix: &Path) {
         let old = staged
             .canonicalize()
