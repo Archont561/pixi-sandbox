@@ -16,7 +16,7 @@ use pixi_sandbox::self_update::{self, Request, replace::ReplaceStrategy};
 /// because the destination is not this binary.
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub fn run(args: FetchReleaseArgs) -> Result<()> {
+pub fn run(args: &FetchReleaseArgs) -> Result<()> {
     let (host_os, host_arch) = self_update::assets::current_host();
     let source = GitHubReleaseSource::new();
 

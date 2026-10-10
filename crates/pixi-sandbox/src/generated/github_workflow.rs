@@ -77,6 +77,10 @@ fn yaml_string(value: &str) -> String {
 /// recording), `self-update`, and `upgrade` (check → regenerate → commit → deliver). No
 /// multi-line `run:` block survives, and the former Bash/PowerShell twins are one step each:
 /// the workflow decides when, the tool decides how.
+// The template is the deliverable: one function per rendered workflow keeps the YAML
+// diffable against the golden fixture; reshaping it is TASK-76's call, not this task's
+// (TASK-77 AC#7).
+#[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn render_github_workflow(options: GithubWorkflowOptions<'_>) -> String {
     let template = r#"# __GENERATED_MARKER__

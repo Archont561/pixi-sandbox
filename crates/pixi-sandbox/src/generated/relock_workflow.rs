@@ -99,6 +99,10 @@ pub fn plan_vendors_cargo(config: &Path) -> bool {
 ///
 /// Panics if a workflow filename cannot be serialised to JSON (a bug, not an input:
 /// the filenames are strings).
+// The template is the deliverable: one function per rendered workflow keeps the YAML
+// diffable against the golden fixture; reshaping it is TASK-76's call, not this task's
+// (TASK-77 AC#7).
+#[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn render_relock_workflow(options: RelockWorkflowOptions<'_>) -> String {
     let template = r#"# __GENERATED_MARKER__

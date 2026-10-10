@@ -30,6 +30,9 @@ fn text_files_under(root: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+// One offline end-to-end proof reads as a single narrative; splitting it into steps would
+// make the proof harder to follow, not easier (TASK-77 AC#6).
+#[allow(clippy::too_many_lines)]
 #[test]
 fn fixture_doctor_publish_and_restore_is_the_complete_offline_proof() {
     let temp = tempfile::tempdir().unwrap();
@@ -318,6 +321,9 @@ fn a_real_packed_environment_restores_with_nothing_pointing_into_restore_scratch
 /// as it was. The verdicts themselves depend on the machine running this test, so the assertions
 /// are the host-independent ones: the report's *shape*, one finding per declared requirement,
 /// and the exit-code contract that makes report-only the default and enforcement opt-in.
+// Same as the other narrative proof: a single offline end-to-end check, kept whole on
+// purpose (TASK-77 AC#6).
+#[allow(clippy::too_many_lines)]
 #[test]
 fn doctor_classifies_the_host_requirements_the_transport_declares() {
     let temp = tempfile::tempdir().unwrap();
