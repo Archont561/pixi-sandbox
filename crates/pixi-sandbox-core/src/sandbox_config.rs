@@ -18,13 +18,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::str::FromStr;
 
-/// Bumped only for incompatible changes; readers refuse anything newer but keep accepting every
-/// older schema they understand for a deprecation window (task-47 AC#5 / decision D16), mirroring
-/// `manifest::SCHEMA_VERSION`'s policy exactly. Config is reviewed data and is never rewritten
-/// automatically to a newer schema — unlike a transport manifest, which this build itself wrote,
-/// a sandbox config is maintained by the consumer, so bumping it is their edit to make. No
-/// `config migrate` command exists while this constant is still `1`: there is only one schema
-/// shape to migrate *from*, so there is nothing for it to do yet.
+/// Bumped only for incompatible changes; readers refuse anything newer.
+///
+/// Older schemas stay readable for a deprecation window (task-47 AC#5 / decision D16),
+/// mirroring `manifest::SCHEMA_VERSION`'s policy exactly. Config is reviewed data and is
+/// never rewritten automatically to a newer schema — unlike a transport manifest, which
+/// this build itself wrote, a sandbox config is maintained by the consumer, so bumping it
+/// is their edit to make. No `config migrate` command exists while this constant is
+/// still `1`: there is only one schema shape to migrate *from*, so there is nothing for
+/// it to do yet.
 pub const CONFIG_SCHEMA: u32 = 1;
 
 /// True when this build can act on a config's schema (see [`CONFIG_SCHEMA`]).
@@ -105,9 +107,12 @@ pub struct Bundle {
     pub cargo_vendor: Option<bool>,
 }
 
-/// `[budgets]`: hard size thresholds enforced by the generated publisher before it pushes a
-/// transport. Missing fields keep the reviewed defaults; consumers may lower them for tighter
-/// repositories, but `max_blob_mib` cannot be raised above the packer's GitHub-safe shard limit.
+/// `[budgets]`: hard size thresholds enforced by the generated publisher before it pushes
+/// a transport.
+///
+/// Missing fields keep the reviewed defaults; consumers may lower them for tighter
+/// repositories, but `max_blob_mib` cannot be raised above the packer's GitHub-safe shard
+/// limit.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BudgetPolicy {
@@ -300,7 +305,9 @@ pub fn plan_override(
 }
 
 /// Derive an `on.push.paths:` allowlist from the transport inputs a publish actually reads
-/// (task-53 AC#3): the sandbox config itself, pixi's own manifest and lock (always present —
+/// (task-53 AC#3).
+///
+/// The inputs are the sandbox config itself, pixi's own manifest and lock (always present —
 /// every bundle is a Pixi environment), and the vendor-specific manifests a bundle's
 /// environments might add, included only when `repo_root` actually has one so an unrelated
 /// bundle's publisher does not gain an irrelevant trigger path.

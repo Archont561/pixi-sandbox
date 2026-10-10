@@ -15,14 +15,17 @@ pub const WORKFLOW_PATH: &str = ".github/workflows/publish-sandbox.yml";
 /// dispatch — the relock render's third dispatch target.
 const PUBLISHER_WORKFLOW: &str = "publish-sandbox.yml";
 
-/// Where this repository keeps its own render. Unlike the publisher — which no consumer-shaped
-/// rule lets us commit, because its template is multi-line shell by necessity — the relock
-/// render is house-shaped, so the repository runs the very artifact `init` hands consumers.
+/// Where this repository keeps its own render.
+///
+/// Unlike the publisher — which no consumer-shaped rule lets us commit, because its
+/// template is multi-line shell by necessity — the relock render is house-shaped, so the
+/// repository runs the very artifact `init` hands consumers.
 pub const RELOCK_PATH: &str = ".github/workflows/relock.yml";
 
-/// Render the relock workflow *for this repository*: the pixi pin from the embedded catalogue,
-/// the cargo half decided by the reviewed publish plan, and this repository's own CI workflow
-/// as the dispatch target.
+/// Render the relock workflow *for this repository*.
+///
+/// It takes the pixi pin from the embedded catalogue, the cargo half decided by the
+/// reviewed publish plan, and this repository's own CI workflow as the dispatch target.
 ///
 /// # Errors
 ///
@@ -70,9 +73,11 @@ pub fn render_relock(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Validate the exact workflow renderer used by `pixi-sandbox init` with GitHub's external
-/// workflow linter. Structural contracts that actionlint cannot evaluate live in the product
-/// crate's Rust tests; this adapter owns only temporary-project and process orchestration.
+/// Validate the exact workflow renderer used by `pixi-sandbox init` with GitHub's
+/// external workflow linter.
+///
+/// Structural contracts that actionlint cannot evaluate live in the product crate's Rust
+/// tests; this adapter owns only temporary-project and process orchestration.
 ///
 /// # Errors
 ///

@@ -21,15 +21,19 @@ use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Recognition marker for everything this module writes. A file carrying this line belongs to
-/// pixi-sandbox and may be rewritten (retargeted) by a later restore; anything else found
-/// where we want to write is the user's file and is refused unless `--force` says otherwise.
+/// Recognition marker for everything this module writes.
+///
+/// A file carrying this line belongs to pixi-sandbox and may be rewritten (retargeted) by
+/// a later restore; anything else found where we want to write is the user's file and is
+/// refused unless `--force` says otherwise.
 pub const MANAGED_MARKER: &str = "managed by pixi-sandbox";
 
-/// The tools worth a user-level launcher. `pixi` is the entry point; `pixi-sandbox` is how
-/// `pixi sandbox` resolves, because pixi discovers `pixi-<command>` binaries on `PATH` — so
-/// both must be registered for `pixi sandbox` to work. The unpacker is restore machinery, not
-/// a user command, and stays unregistered.
+/// The tools worth a user-level launcher.
+///
+/// `pixi` is the entry point; `pixi-sandbox` is how `pixi sandbox` resolves, because pixi
+/// discovers `pixi-<command>` binaries on `PATH` — so both must be registered for
+/// `pixi sandbox` to work. The unpacker is restore machinery, not a user command, and
+/// stays unregistered.
 pub const REGISTERED_TOOLS: [&str; 2] = ["pixi", "pixi-sandbox"];
 
 /// Profile markers for the managed PATH block. The block is replaced as a unit, which is what
@@ -37,9 +41,10 @@ pub const REGISTERED_TOOLS: [&str; 2] = ["pixi", "pixi-sandbox"];
 const PATH_BLOCK_BEGIN: &str = "# >>> pixi-sandbox user tools (managed block) >>>";
 const PATH_BLOCK_END: &str = "# <<< pixi-sandbox user tools (managed block) <<<";
 
-/// The launcher flavour for the host that will run it. Chosen from the restoring host at the
-/// single call site (`cfg!(windows)`), and a parameter everywhere else so both flavours are
-/// testable on every platform.
+/// The launcher flavour for the host that will run it.
+///
+/// Chosen from the restoring host at the single call site (`cfg!(windows)`), and a
+/// parameter everywhere else so both flavours are testable on every platform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LauncherKind {
     Posix,
@@ -88,9 +93,11 @@ pub enum PathChange {
     RegistryAlreadyPresent,
 }
 
-/// The registration service. Every root is explicit — this is the whole point of the design:
-/// the CLI resolves HOME/SHELL/`--user-bin` once, tests pass tempdirs, and the code below
-/// cannot accidentally reach the real user home.
+/// The registration service.
+///
+/// Every root is explicit — this is the whole point of the design: the CLI resolves
+/// HOME/SHELL/`--user-bin` once, tests pass tempdirs, and the code below cannot
+/// accidentally reach the real user home.
 pub struct UserTools<'a> {
     /// Per-user bin directory that receives the launchers, e.g. `~/.local/bin`.
     pub bin_dir: &'a Path,
@@ -271,11 +278,13 @@ fn recorded_target(launcher: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Make a copied tool executable on platforms with Unix permission bits. Windows executable
-/// assets retain their extension and need no chmod equivalent. This is the one
-/// chmod-or-keep helper in the crate — `commands/` reaches it through the promoted module —
-/// while `self_update::replace` deliberately keeps its own exact-0755 policy, because a
-/// staged self-update must land with the mode it was built with (task-37 AC#3).
+/// Make a copied tool executable on platforms with Unix permission bits. Windows
+/// executable assets retain their extension and need no chmod equivalent.
+///
+/// This is the one chmod-or-keep helper in the crate — `commands/` reaches it through the
+/// promoted module — while `self_update::replace` deliberately keeps its own exact-0755
+/// policy, because a staged self-update must land with the mode it was built with
+/// (task-37 AC#3).
 ///
 /// # Errors
 ///
@@ -296,9 +305,11 @@ pub fn make_executable(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The managed PATH block for POSIX profiles. `case`-guarded so sourcing it twice does not
-/// duplicate the entry — the same idempotency `scripts/restore.sh` relies on for its own PATH
-/// work, spelled the portable way so bash, zsh, dash and busybox sh all agree.
+/// The managed PATH block for POSIX profiles.
+///
+/// `case`-guarded so sourcing it twice does not duplicate the entry — the same
+/// idempotency `scripts/restore.sh` relies on for its own PATH work, spelled the portable
+/// way so bash, zsh, dash and busybox sh all agree.
 ///
 /// # Errors
 ///
@@ -333,10 +344,11 @@ pub fn path_block(bin_dir: &Path) -> Result<String> {
     ))
 }
 
-/// Add (or replace) the managed PATH block in a POSIX profile file. All existing managed
-/// blocks are removed first — however many there are, from whichever bin directory — and one
-/// fresh block is appended, so the edit is idempotent and a changed `--user-bin` retargets
-/// cleanly instead of stacking.
+/// Add (or replace) the managed PATH block in a POSIX profile file.
+///
+/// All existing managed blocks are removed first — however many there are, from whichever
+/// bin directory — and one fresh block is appended, so the edit is idempotent and a
+/// changed `--user-bin` retargets cleanly instead of stacking.
 ///
 /// # Errors
 ///
@@ -424,8 +436,10 @@ fn strip_path_blocks(text: &str) -> String {
 const PIXI_SANDBOX_PATH_PRESENT: &str = "pixi-sandbox-user-path-present";
 
 /// The PowerShell that adds the bin directory to the *user* PATH (HKCU\Environment), no
-/// administrator rights involved. Built as a pure function so its shape is testable on every
-/// platform even though it only ever runs on Windows.
+/// administrator rights involved.
+///
+/// Built as a pure function so its shape is testable on every platform even though it
+/// only ever runs on Windows.
 ///
 /// The raw value is read with `DoNotExpandEnvironmentNames` first: a user PATH that says
 /// `%USERPROFILE%\bin` must keep saying that. Writing the *expanded* form back — what the
@@ -460,10 +474,12 @@ pub fn powershell_user_path_script(bin_dir: &Path) -> Result<String> {
     ))
 }
 
-/// Where the per-user bin directory lives by default. POSIX uses the de-facto standard
-/// `~/.local/bin`; Windows gets its own `~\.pixi-sandbox\bin` because `~\.pixi\bin` belongs
-/// to `pixi global install` and its trampolines (D4) — colliding with it would be confusing
-/// by design, and the whole point is a recognisable, pixi-sandbox-owned location.
+/// Where the per-user bin directory lives by default.
+///
+/// POSIX uses the de-facto standard `~/.local/bin`; Windows gets its own
+/// `~\.pixi-sandbox\bin` because `~\.pixi\bin` belongs to `pixi global install` and its
+/// trampolines (D4) — colliding with it would be confusing by design, and the whole point
+/// is a recognisable, pixi-sandbox-owned location.
 #[must_use]
 pub fn default_bin_dir(home: &Path) -> PathBuf {
     if cfg!(windows) {
@@ -473,11 +489,13 @@ pub fn default_bin_dir(home: &Path) -> PathBuf {
     }
 }
 
-/// The profile file the detected shell actually reads, with a notice when the choice needs a
-/// human caveat (fish cannot source POSIX profiles; an undetectable shell falls back to the
-/// POSIX default). `bash` prefers `.bash_profile` when it exists because a login bash reads
-/// it *instead of* `.profile`; `zsh` uses `.zshrc` because that is the one file every
-/// interactive zsh reads, login or not.
+/// The profile file the detected shell actually reads, with a notice when the choice needs
+/// a human caveat (fish cannot source POSIX profiles; an undetectable shell falls back to
+/// the POSIX default).
+///
+/// `bash` prefers `.bash_profile` when it exists because a login bash reads it *instead
+/// of* `.profile`; `zsh` uses `.zshrc` because that is the one file every interactive zsh
+/// reads, login or not.
 pub fn detect_profile(home: &Path, shell: Option<&std::ffi::OsStr>) -> (PathBuf, Option<String>) {
     let basename = shell
         .map(Path::new)

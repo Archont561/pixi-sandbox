@@ -64,10 +64,12 @@ pub const RESTORE_MARKERS: [&str; 5] = [
     "etc/conda/activate.d/pixi-sandbox-cargo-home.bat",
 ];
 
-/// Files that may appear in a restored prefix without being in the list: pixi's own
-/// bookkeeping, written by the first `pixi install` into any prefix that lacks it (measured:
-/// `conda-meta/pixi`, `conda-meta/history`), plus the markers and activation hooks `restore`
-/// owns. Anything else extra is a failure — that is what rejects a hand-forged record.
+/// Files that may appear in a restored prefix without being in the list.
+///
+/// They are pixi's own bookkeeping, written by the first `pixi install` into any prefix
+/// that lacks it (measured: `conda-meta/pixi`, `conda-meta/history`), plus the markers and
+/// activation hooks `restore` owns. Anything else extra is a failure — that is what
+/// rejects a hand-forged record.
 pub const ALLOWED_EXTRAS: [&str; 7] = [
     "conda-meta/pixi",
     "conda-meta/history",

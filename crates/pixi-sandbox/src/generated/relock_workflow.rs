@@ -26,9 +26,11 @@ use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::tools_lock::ToolsLock;
 use std::path::Path;
 
-/// The identity automation commits carry: GitHub's bot convention is that the *name* holds the
-/// tool identity while the address is the github-actions app's noreply, which is what makes a
-/// commit render with the bot avatar instead of a broken-looking unknown author.
+/// The identity automation commits carry.
+///
+/// GitHub's bot convention is that the *name* holds the tool identity while the address
+/// is the github-actions app's noreply, which is what makes a commit render with the bot
+/// avatar instead of a broken-looking unknown author.
 pub const BOT_NAME: &str = "pixi-sandbox[bot]";
 /// Noreply address of the github-actions app, paired with [`BOT_NAME`].
 pub const BOT_EMAIL: &str = "41898282+github-actions[bot]@users.noreply.github.com";
@@ -66,9 +68,11 @@ pub struct RelockWorkflowOptions<'a> {
     pub publisher_workflow: &'a str,
 }
 
-/// The pixi pin compiled into this binary — the pixi a transport packed by it will carry, and
-/// therefore the only version the bot may solve with. Returns `None` only if the embedded
-/// catalogue stops declaring pixi at all, which the embedded-lock tests already forbid.
+/// The pixi pin compiled into this binary — the pixi a transport packed by it will carry,
+/// and therefore the only version the bot may solve with.
+///
+/// Returns `None` only if the embedded catalogue stops declaring pixi at all, which the
+/// embedded-lock tests already forbid.
 #[must_use]
 pub fn embedded_pixi_pin() -> Option<String> {
     ToolsLock::embedded()
@@ -78,10 +82,12 @@ pub fn embedded_pixi_pin() -> Option<String> {
         .map(|tool| tool.version.clone())
 }
 
-/// Whether `Cargo.lock` belongs in a project's relock lane, read off the same reviewed plan the
-/// publisher uses. A plan that is absent or unreadable falls back to `true`, matching the plan
-/// `init` writes for a new project: a spurious `cargo fetch` is a wasted minute, while a
-/// missing one leaves a contributor's Cargo.lock stale with no signal.
+/// Whether `Cargo.lock` belongs in a project's relock lane, read off the same reviewed
+/// plan the publisher uses.
+///
+/// A plan that is absent or unreadable falls back to `true`, matching the plan `init`
+/// writes for a new project: a spurious `cargo fetch` is a wasted minute, while a missing
+/// one leaves a contributor's Cargo.lock stale with no signal.
 #[must_use]
 pub fn plan_vendors_cargo(config: &Path) -> bool {
     SandboxConfig::load(config).map_or(true, |plan| {

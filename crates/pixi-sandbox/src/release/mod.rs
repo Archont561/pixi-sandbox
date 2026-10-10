@@ -17,11 +17,13 @@ pub use github::{GitHubReleaseSource, PIXI_CHECKSUM_MANIFEST};
 use anyhow::Result;
 use std::collections::BTreeMap;
 
-/// The repository that publishes pixi-sandbox's own release assets (standalone binaries and
-/// `SHA256SUMS`) — never the consumer's. `self_update::DEFAULT_REPO` re-exports this constant
-/// so the CLI's `--repo` default and the generated workflow's release-download URL cannot name
-/// two different repositories (issue #80: the generated workflow once resolved the download
-/// against `$GITHUB_REPOSITORY`, the *consumer's* repository, which publishes no such assets).
+/// The repository that publishes pixi-sandbox's own release assets (standalone binaries
+/// and `SHA256SUMS`) — never the consumer's.
+///
+/// `self_update::DEFAULT_REPO` re-exports this constant so the CLI's `--repo` default and
+/// the generated workflow's release-download URL cannot name two different repositories
+/// (issue #80: the generated workflow once resolved the download against
+/// `$GITHUB_REPOSITORY`, the *consumer's* repository, which publishes no such assets).
 pub const PIXI_SANDBOX_REPO: &str = "Archont561/pixi-sandbox";
 
 /// Where a release's bytes come from.

@@ -39,9 +39,10 @@ const OUTPUT_CAP: usize = 16 * 1024;
 /// How often the probe polls the child while waiting.
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
 
-/// What one probe execution observed. The runner reports; [`probe`] judges — keeping the
-/// two apart is what lets tests script every outcome through a fake runner without ever
-/// spawning a process (the `ReleaseSource` precedent).
+/// What one probe execution observed. The runner reports; [`probe`] judges.
+///
+/// Keeping the two apart is what lets tests script every outcome through a fake runner
+/// without ever spawning a process (the `ReleaseSource` precedent).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProbeVerdict {
     /// The candidate started and exited. `output` is combined, capped stdout/stderr.
@@ -294,11 +295,13 @@ pub fn probe(exe: &Path, anchor: &Path, runner: &impl ProbeRunner) -> Result<(),
     }
 }
 
-/// The structural pre-check pack runs *before* embedding: the candidates whose brokenness
-/// is already known from path provenance alone (the task-47 ownership ladder), so their
-/// refusal can name the exact shape instead of just the probe output. Everything the ladder
-/// calls runnable — standalone, a conda prefix binary, a restored transport tool — returns
-/// `None` and is judged by execution instead.
+/// The structural pre-check pack runs *before* embedding: the candidates whose
+/// brokenness is already known from path provenance alone (the task-47 ownership
+/// ladder).
+///
+/// Their refusal can name the exact shape instead of just the probe output. Everything
+/// the ladder calls runnable — standalone, a conda prefix binary, a restored transport
+/// tool — returns `None` and is judged by execution instead.
 #[must_use]
 pub fn pack_refusal_for_ownership(path: &Path) -> Option<String> {
     match crate::self_update::ownership::classify(path) {
@@ -323,8 +326,10 @@ pub fn pack_refusal_for_ownership(path: &Path) -> Option<String> {
     }
 }
 
-/// The pixi platform of the machine running this binary, when it is one the release matrix
-/// ships. The probe is only meaningful when the embedded bytes can execute here — a pack or
+/// The pixi platform of the machine running this binary, when it is one the release
+/// matrix ships.
+///
+/// The probe is only meaningful when the embedded bytes can execute here — a pack or
 /// doctor host that cannot run the target platform reports a skip, never a verdict.
 #[must_use]
 pub fn host_platform() -> Option<&'static str> {

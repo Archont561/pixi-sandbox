@@ -12,24 +12,28 @@ pub const GENERATED_MARKER: &str =
 pub const MARKER_WINDOW: usize = 3;
 
 /// Key of the machine-readable version-stamp line every generated file carries beside
-/// [`GENERATED_MARKER`] (task-47 AC#3 / decision D16): `# pixi-sandbox-version: X.Y.Z`. Kept as
-/// its own line rather than folded into the marker prose so a tool can parse it without a
-/// human-prose regex, and as a line comment so every rendered format (YAML, POSIX `sh`, pwsh)
-/// accepts it identically.
+/// [`GENERATED_MARKER`] (task-47 AC#3 / decision D16): `# pixi-sandbox-version: X.Y.Z`.
+///
+/// Kept as its own line rather than folded into the marker prose so a tool can parse it
+/// without a human-prose regex, and as a line comment so every rendered format (YAML,
+/// POSIX `sh`, pwsh) accepts it identically.
 pub const VERSION_STAMP_KEY: &str = "pixi-sandbox-version";
 
 /// Render the version-stamp line's text, bare — like [`GENERATED_MARKER`], every template
-/// supplies its own comment-syntax prefix (`# `) rather than this helper assuming one, so one
-/// rendering convention covers YAML, POSIX `sh`, and pwsh alike.
+/// supplies its own comment-syntax prefix (`# `) rather than this helper assuming one.
+///
+/// One rendering convention covers YAML, POSIX `sh`, and pwsh alike.
 #[must_use]
 pub fn version_stamp_line(version: &str) -> String {
     format!("{VERSION_STAMP_KEY}: {version}")
 }
 
-/// Read the version a generated file was stamped with, scanning the same leading-line window
-/// the ownership marker lives in. `None` means no stamp was found — either the file predates
-/// AC#3 (an earlier pixi-sandbox release) or it is not a pixi-sandbox-generated file at all;
-/// both are reported as drift findings by `init --check` rather than treated as a parse error.
+/// Read the version a generated file was stamped with, scanning the same leading-line
+/// window the ownership marker lives in.
+///
+/// `None` means no stamp was found — either the file predates AC#3 (an earlier
+/// pixi-sandbox release) or it is not a pixi-sandbox-generated file at all; both are
+/// reported as drift findings by `init --check` rather than treated as a parse error.
 #[must_use]
 pub fn parse_version_stamp(content: &str) -> Option<&str> {
     let prefix = format!("{VERSION_STAMP_KEY}: ");

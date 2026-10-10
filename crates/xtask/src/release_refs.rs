@@ -157,11 +157,13 @@ pub fn scan(root: &Path) -> Result<Vec<String>> {
     Ok(findings)
 }
 
-/// Move every reference to OUR release in the README family to `new_tag`; returns how many
-/// files changed. Destination-only, deliberately: by the time this runs the tree already
-/// declares the NEW version (the manifests are stamped first), so an "old tag" guard argument
-/// cannot be checked against anything and is not taken. Whatever the docs said, they now say
-/// the declared release — which is the same thing `scan` asserts afterwards.
+/// Move every reference to OUR release in the README family to `new_tag`; returns how
+/// many files changed.
+///
+/// Destination-only, deliberately: by the time this runs the tree already declares the
+/// NEW version (the manifests are stamped first), so an "old tag" guard argument cannot
+/// be checked against anything and is not taken. Whatever the docs said, they now say the
+/// declared release — which is the same thing `scan` asserts afterwards.
 ///
 /// Rewrites are byte-faithful outside the approved lines: content is carried through
 /// `split_inclusive`, so line endings and a missing trailing newline survive untouched (the
