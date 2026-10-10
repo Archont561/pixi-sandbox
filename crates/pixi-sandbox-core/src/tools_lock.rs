@@ -30,6 +30,7 @@ pub const EMBEDDED_SOURCE: &str = "embedded tools lock";
 /// Tool identity remains extension-free in manifests (`pixi`, `pixi-unpack`), while Windows
 /// transport paths preserve `.exe` so PowerShell/cmd users and `PATH` resolution can execute
 /// them naturally.
+#[must_use]
 pub fn executable_filename(tool: &str, platform: &str) -> String {
     if platform.starts_with("win-") && !tool.to_ascii_lowercase().ends_with(".exe") {
         format!("{tool}.exe")
@@ -75,11 +76,21 @@ pub struct PlatformPin {
 
 impl ToolsLock {
     /// Load the reviewed catalogue compiled into this binary.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the compiled-in catalogue is missing or malformed (a build
+    /// defect, not an operator input).
     pub fn embedded() -> Result<Self> {
         Self::parse(EMBEDDED_SOURCE, EMBEDDED_JSON.as_bytes())
     }
 
     /// Load a deliberate external override.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or fails validation (an unknown
+    /// platform, a missing pin, or a malformed entry).
     pub fn load(path: &Path) -> Result<Self> {
         let bytes = std::fs::read(path).map_err(|e| Error::io(path, e))?;
         Self::parse(&path.display().to_string(), &bytes)
@@ -101,6 +112,7 @@ impl ToolsLock {
     }
 
     /// The pin for a tool on a platform, if this catalogue has one.
+    #[must_use]
     pub fn pin(&self, tool: &str, platform: &str) -> Option<&PlatformPin> {
         self.tools.get(tool)?.platforms.get(platform)
     }
@@ -109,6 +121,7 @@ impl ToolsLock {
     ///
     /// Returns `None` when either the tool or the platform is not pinned — callers must treat
     /// that as "cannot proceed", never as "fall back to whatever is on PATH".
+    #[must_use]
     pub fn url(&self, tool: &str, platform: &str) -> Option<String> {
         let entry = self.tools.get(tool)?;
         let pin = entry.platforms.get(platform)?;
@@ -126,6 +139,7 @@ impl ToolsLock {
     }
 
     /// Platforms pinned for a tool, in a stable order.
+    #[must_use]
     pub fn platforms_of(&self, tool: &str) -> Vec<&str> {
         self.tools
             .get(tool)
