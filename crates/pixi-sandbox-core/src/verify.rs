@@ -76,6 +76,9 @@ impl Report {
         self.failures.is_empty()
     }
 
+    /// The verified byte count in MiB, for human-readable reports. The u64->f64 cast
+    /// can lose the low bits of huge counts; that is inherent to a display conversion.
+    #[allow(clippy::cast_precision_loss)]
     #[must_use]
     pub fn mebibytes(&self) -> f64 {
         self.bytes as f64 / (1024.0 * 1024.0)
@@ -665,11 +668,18 @@ fn linkage_of_reader<R: Read + Seek>(mut reader: R) -> Linkage {
         // No program headers at all: a relocatable object, not an executable.
         return Linkage::Unknown;
     }
+    // A real program header entry is 32 or 56 bytes; anything larger is a malformed
+    // file. Bounding it keeps the narrowing below honest — a wrapped entry size would
+    // misread the table and could report the wrong linkage.
+    if phentsize > 4096 {
+        return Linkage::Unknown;
+    }
 
     if reader.seek(SeekFrom::Start(phoff)).is_err() {
         return Linkage::Unknown;
     }
-    let mut entry = vec![0u8; phentsize as usize];
+    let entry_len = usize::try_from(phentsize).unwrap_or(usize::MAX);
+    let mut entry = vec![0u8; entry_len];
     for _ in 0..phnum.min(64) {
         if reader.read_exact(&mut entry).is_err() {
             return Linkage::Unknown;

@@ -692,9 +692,9 @@ fn elf(program_type: u32) -> Vec<u8> {
     bytes[4] = 2; // ELFCLASS64
     bytes[5] = 1; // ELFDATA2LSB
     bytes[6] = 1; // EV_CURRENT
-    bytes[32..40].copy_from_slice(&(PHDR as u64).to_le_bytes()); // e_phoff
-    bytes[52..54].copy_from_slice(&(PHDR as u16).to_le_bytes());
-    bytes[54..56].copy_from_slice(&(PHDR_SIZE as u16).to_le_bytes()); // e_phentsize
+    bytes[32..40].copy_from_slice(&u64::try_from(PHDR).unwrap().to_le_bytes()); // e_phoff
+    bytes[52..54].copy_from_slice(&u16::try_from(PHDR).unwrap().to_le_bytes());
+    bytes[54..56].copy_from_slice(&u16::try_from(PHDR_SIZE).unwrap().to_le_bytes()); // e_phentsize
     bytes[56..58].copy_from_slice(&1u16.to_le_bytes()); // e_phnum
     bytes[PHDR..PHDR + 4].copy_from_slice(&program_type.to_le_bytes());
     bytes
@@ -748,4 +748,13 @@ fn the_file_and_bytes_entry_points_agree() {
 
     assert_eq!(linkage_of(&dir.join("absent")), Linkage::Unknown);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn an_absurd_program_header_entry_size_is_unknown_not_a_wrong_verdict() {
+    // Pins the phentsize bound: a malformed header (entry size far beyond the real 56)
+    // must report Unknown rather than misread the table into a wrong linkage verdict.
+    let mut bytes = elf(3 /* PT_INTERP */);
+    bytes[54..56].copy_from_slice(&5000u16.to_le_bytes()); // e_phentsize
+    assert_eq!(linkage_of_bytes(&bytes), Linkage::Unknown);
 }

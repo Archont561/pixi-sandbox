@@ -140,7 +140,13 @@ pub fn split_file(abs: &Path, rel_path: &str, limit: u64) -> Result<Vec<Part>> {
         let mut hasher = Sha256::new();
 
         while written < limit {
-            let want = std::cmp::min(COPY_BUFFER as u64, limit - written) as usize;
+            // The remaining part budget, narrowed without truncation: try_from
+            // saturates and the min caps the read at the buffer, so `want` never
+            // exceeds buf.len() on any platform.
+            let want = std::cmp::min(
+                COPY_BUFFER,
+                usize::try_from(limit - written).unwrap_or(usize::MAX),
+            );
             let n = reader
                 .read(&mut buf[..want])
                 .map_err(|e| Error::io(abs, e))?;
