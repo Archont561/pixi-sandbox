@@ -600,7 +600,7 @@ pub fn run() -> Result<()> {
     // restore command, rather than guessing an output directory and writing into the checkout.
     if std::env::args_os().nth(1).is_none() {
         if let Some(branch) = inferred_branch_location() {
-            commands::doctor(DoctorArgs {
+            commands::doctor(&DoctorArgs {
                 diagnostics: DiagnosticsArgs::default(),
                 branch_location: branch.clone(),
                 verify: true,
@@ -640,15 +640,15 @@ pub fn run() -> Result<()> {
     let diagnostics = diagnostics_for(&cli.command)?;
     let result = match cli.command {
         Command::Pack(args) => commands::pack(args),
-        Command::Publish(args) => commands::publish(args),
-        Command::Restore(args) => commands::restore(args),
-        Command::Unpack(args) => commands::unpack(args),
-        Command::Doctor(args) => commands::doctor(args),
-        Command::Init(args) => commands::init(args),
-        Command::Plan(args) => commands::plan(args),
+        Command::Publish(args) => commands::publish(&args),
+        Command::Restore(args) => commands::restore(&args),
+        Command::Unpack(args) => commands::unpack(&args),
+        Command::Doctor(args) => commands::doctor(&args),
+        Command::Init(args) => commands::init(&args),
+        Command::Plan(args) => commands::plan(&args),
         Command::Tools(args) => commands::tools(args),
         Command::SelfUpdate(args) => commands::self_update(args),
-        Command::FetchRelease(args) => commands::fetch_release(args),
+        Command::FetchRelease(args) => commands::fetch_release(&args),
         Command::Pipeline(args) => commands::pipeline(args),
         Command::Upgrade(args) => commands::upgrade(args),
     };

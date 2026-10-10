@@ -30,7 +30,9 @@ fn every_supported_host_maps_to_its_published_asset_name() {
 fn only_the_windows_asset_carries_the_exe_suffix() {
     for (os, _, name) in SUPPORTED_HOSTS {
         assert_eq!(
-            name.ends_with(".exe"),
+            std::path::Path::new(name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("exe")),
             os == "windows",
             "{name} has the wrong suffix for {os}"
         );

@@ -298,11 +298,12 @@ fn a_read_only_directory_is_actually_read_only() -> bool {
 #[cfg(unix)]
 #[test]
 fn a_windows_swap_that_cannot_move_the_old_binary_aside_reports_both_paths() {
+    use std::os::unix::fs::PermissionsExt;
+
     if !a_read_only_directory_is_actually_read_only() {
         eprintln!("skipped: this host does not enforce directory permissions");
         return;
     }
-    use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().expect("tempdir");
     let locked = dir.path().join("locked");
     fs::create_dir(&locked).expect("mkdir");

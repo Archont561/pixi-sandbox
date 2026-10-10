@@ -16,7 +16,7 @@ use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
-pub fn run(args: RestoreArgs) -> Result<()> {
+pub fn run(args: &RestoreArgs) -> Result<()> {
     let branch = support::existing_dir(&args.branch_location, "--branch-location")?;
     let project = support::existing_dir(&args.output_path, "--output-path")?;
     let manifest_path = Manifest::path_in(&branch);

@@ -203,7 +203,7 @@ pub fn run(
     write_artifact(spec, &committed)?;
 
     // 4. Deliver.
-    deliver(spec, git, pulls, &branch)
+    Ok(deliver(spec, git, pulls, &branch))
 }
 
 /// The `init` invocation's arguments — the exact generation arguments, forwarded verbatim
@@ -272,18 +272,18 @@ fn deliver(
     git: &dyn GitProtocol,
     pulls: &dyn PullRequestSource,
     branch: &str,
-) -> Result<Outcome> {
+) -> Outcome {
     if spec.upgrade_token.is_none() {
-        return Ok(refuse(spec, "PIXI_SANDBOX_UPGRADE_TOKEN is not configured"));
+        return refuse(spec, "PIXI_SANDBOX_UPGRADE_TOKEN is not configured");
     }
     if git
         .push_branch(&spec.repo_root, "origin", branch, true)
         .is_err()
     {
-        return Ok(refuse(
+        return refuse(
             spec,
             "the configured token was refused while pushing workflow files; it needs Workflows: write",
-        ));
+        );
     }
 
     let title = format!(
@@ -298,11 +298,11 @@ fn deliver(
     );
     let token = spec.github_token.as_deref().unwrap_or_default();
     match pulls.create(&spec.repo, branch, &spec.base, &title, &body, token) {
-        Ok(pull) => Ok(Outcome::Delivered { url: pull.url }),
-        Err(_) => Ok(refuse(
+        Ok(pull) => Outcome::Delivered { url: pull.url },
+        Err(_) => refuse(
             spec,
             "the branch was pushed but the pull request could not be opened",
-        )),
+        ),
     }
 }
 

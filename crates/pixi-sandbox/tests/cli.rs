@@ -41,7 +41,6 @@ fn bare_remote(dir: &Path) -> String {
 
 /// Recursive `(path, size)` listing — how "nothing changed" is asserted on a plain directory.
 fn tree_snapshot(dir: &Path) -> Vec<(String, u64)> {
-    let mut out = Vec::new();
     fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, u64)>) {
         for entry in fs::read_dir(dir).unwrap().flatten() {
             let path = entry.path();
@@ -59,6 +58,7 @@ fn tree_snapshot(dir: &Path) -> Vec<(String, u64)> {
             }
         }
     }
+    let mut out = Vec::new();
     walk(dir, dir, &mut out);
     out.sort();
     out

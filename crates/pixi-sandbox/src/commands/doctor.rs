@@ -20,11 +20,12 @@ use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::transport_budget::{self, BudgetReport};
 use pixi_sandbox_core::verify::{self, Report, RestoredReport};
 use serde_json::{Value, json};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-pub fn run(args: DoctorArgs) -> Result<()> {
+pub fn run(args: &DoctorArgs) -> Result<()> {
     crate::diagnostics::phase("load-manifest", "locating and parsing manifest.json");
     let path = locate(&args.branch_location);
     let manifest = Manifest::load(&path).with_context(|| format!("loading {}", path.display()))?;
@@ -414,10 +415,11 @@ fn print_human(
     );
     if manifest.vendor.is_some() {
         let share = vendor.saturating_mul(100).checked_div(total).unwrap_or(0);
-        split.push_str(&format!(
+        let _ = write!(
+            split,
             " · vendor {} MiB, {share}% vendor",
             support::mib(vendor)
-        ));
+        );
     }
     println!("  payload {} MiB total ({split})", support::mib(total));
 

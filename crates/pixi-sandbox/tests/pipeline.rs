@@ -9,6 +9,7 @@ use anyhow::Result;
 use pixi_sandbox::pipeline::{self, PhaseCommand, PhaseRunner, Spec};
 use rstest::{fixture, rstest};
 use std::collections::VecDeque;
+use std::fmt::Write as _;
 use std::io::Write;
 
 /// A scripted child-process boundary: every call returns the next scripted outcome and
@@ -265,9 +266,9 @@ fn a_successful_run_records_every_phase_outcome_in_the_pipeline_log(ctx: Ctx) {
         ("doctor", "verifying\n"),
         ("publish", "published\n"),
     ] {
-        expected.push_str(&format!("command=pipeline phase={phase} event=start\n"));
+        let _ = writeln!(expected, "command=pipeline phase={phase} event=start");
         expected.push_str(output);
-        expected.push_str(&format!("command=pipeline phase={phase} result=success\n"));
+        let _ = writeln!(expected, "command=pipeline phase={phase} result=success");
     }
     assert_eq!(log, expected);
     // Every phase ran, in order.
@@ -332,7 +333,10 @@ fn a_failed_phase_stops_the_pipeline_and_reports_it(ctx: Ctx) {
 
 #[rstest]
 fn the_failure_summary_carries_only_the_last_50_log_lines(ctx: Ctx) {
-    let sixty: String = (1..=60).map(|n| format!("line {n}\n")).collect();
+    let mut sixty = String::new();
+    for n in 1..=60 {
+        let _ = writeln!(sixty, "line {n}");
+    }
     let mut runner = FakeRunner::default().script(&[(0, ""), (0, ""), (1, &sixty)]);
 
     let failure = pipeline::run(&ctx.spec, &mut runner).unwrap_err();

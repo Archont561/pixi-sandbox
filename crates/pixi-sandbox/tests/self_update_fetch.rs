@@ -14,6 +14,7 @@ use pixi_sandbox::self_update::{self, Request, SUMS_ASSET};
 use rstest::rstest;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 const LINUX_ASSET: &str = "pixi-sandbox-x86_64-unknown-linux-musl";
@@ -42,15 +43,14 @@ impl FakeRelease {
     }
 
     fn with_sums(self, tag: &str, entries: &[(&str, &[u8])]) -> Self {
-        let body: String = entries
-            .iter()
-            .map(|(name, bytes)| {
-                format!(
-                    "{}  {name}\n",
-                    pixi_sandbox_core::shard::sha256_bytes(bytes)
-                )
-            })
-            .collect();
+        let mut body = String::new();
+        for (name, bytes) in entries {
+            let _ = writeln!(
+                body,
+                "{}  {name}",
+                pixi_sandbox_core::shard::sha256_bytes(bytes)
+            );
+        }
         self.with_asset(tag, SUMS_ASSET, body.as_bytes())
     }
 

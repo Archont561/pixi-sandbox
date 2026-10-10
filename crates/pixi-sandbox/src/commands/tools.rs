@@ -15,7 +15,7 @@ use std::path::Path;
 pub fn run(args: ToolsArgs) -> Result<()> {
     match args.command {
         ToolsCommand::List { tools_lock } => list(tools_lock.as_deref()),
-        ToolsCommand::Update(args) => update::run(args),
+        ToolsCommand::Update(args) => update::run(&args),
     }
 }
 

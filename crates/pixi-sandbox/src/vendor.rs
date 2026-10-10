@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::manifest::{MANIFEST_DIR, Vendor};
 use pixi_sandbox_core::shard;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -83,10 +84,10 @@ fn reject_duplicate_crate_sources(cargo_lock: &Path) -> Result<()> {
     let detail = duplicates
         .iter()
         .map(|((name, version), sources)| {
-            let list = sources
-                .iter()
-                .map(|source| format!("\n      - {source}"))
-                .collect::<String>();
+            let mut list = String::new();
+            for source in sources {
+                let _ = write!(list, "\n      - {source}");
+            }
             format!(
                 "    {name} {version} is reachable from {} sources:{list}",
                 sources.len()

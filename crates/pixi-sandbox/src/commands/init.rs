@@ -203,13 +203,13 @@ fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
     })
 }
 
-pub fn run(args: InitArgs) -> Result<()> {
+pub fn run(args: &InitArgs) -> Result<()> {
     let root = support::existing_dir(&args.project_root, "--project-root")?;
     if args.check {
-        return check(&root, &args);
+        return check(&root, args);
     }
     ensure_pixi_project(&root)?;
-    let targets = render_targets(&root, &args)?;
+    let targets = render_targets(&root, args)?;
     for (path, _) in [&targets.workflow, &targets.relock, &targets.script] {
         ensure_replaceable(path, args.force)?;
     }
@@ -801,12 +801,12 @@ mod tests {
         #[test]
         fn a_freshly_initialised_tree_passes_check_and_check_writes_nothing() {
             let project = project();
-            run(args(project.path())).unwrap();
+            run(&args(project.path())).unwrap();
 
             let before =
                 fs::read_to_string(project.path().join(".github/workflows/publish-sandbox.yml"))
                     .unwrap();
-            run(checked(project.path())).unwrap();
+            run(&checked(project.path())).unwrap();
             let after =
                 fs::read_to_string(project.path().join(".github/workflows/publish-sandbox.yml"))
                     .unwrap();
@@ -818,12 +818,12 @@ mod tests {
         #[test]
         fn a_hand_edited_owned_file_is_reported_as_drifted_not_silently_fixed() {
             let project = project();
-            run(args(project.path())).unwrap();
+            run(&args(project.path())).unwrap();
             let workflow = project.path().join(".github/workflows/publish-sandbox.yml");
             let marked = fs::read_to_string(&workflow).unwrap();
             fs::write(&workflow, format!("{marked}# a stale local edit\n")).unwrap();
 
-            let error = run(checked(project.path())).unwrap_err().to_string();
+            let error = run(&checked(project.path())).unwrap_err().to_string();
             assert!(error.contains("finding"), "{error}");
 
             let untouched = fs::read_to_string(&workflow).unwrap();
@@ -847,7 +847,7 @@ mod tests {
                 classify(&workflow, "irrelevant fresh render").unwrap(),
                 Drift::Foreign
             );
-            let error = run(checked(project.path())).unwrap_err().to_string();
+            let error = run(&checked(project.path())).unwrap_err().to_string();
             assert!(error.contains("finding"), "{error}");
         }
 
@@ -857,7 +857,7 @@ mod tests {
         #[test]
         fn a_missing_owned_file_is_its_own_finding() {
             let project = project();
-            let error = run(checked(project.path())).unwrap_err().to_string();
+            let error = run(&checked(project.path())).unwrap_err().to_string();
             assert!(error.contains("finding"), "{error}");
         }
 
@@ -865,19 +865,19 @@ mod tests {
         #[test]
         fn init_never_rewrites_an_existing_config_in_either_mode() {
             let project = project();
-            run(args(project.path())).unwrap();
+            run(&args(project.path())).unwrap();
             let config = project.path().join("pixi-sandbox.toml");
             fs::write(&config, "schema = 1\nbranch_prefix = \"custom\"\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n").unwrap();
             let before = fs::read_to_string(&config).unwrap();
 
-            run(args(project.path())).unwrap();
+            run(&args(project.path())).unwrap();
             assert_eq!(
                 fs::read_to_string(&config).unwrap(),
                 before,
                 "init must not rewrite it"
             );
 
-            let _ = run(checked(project.path()));
+            let _ = run(&checked(project.path()));
             assert_eq!(
                 fs::read_to_string(&config).unwrap(),
                 before,

@@ -16,6 +16,7 @@
 //! invocation works locally.
 
 use anyhow::{Context, Result};
+use std::fmt::Write as _;
 use std::fs::OpenOptions;
 use std::io::{Read, Write, stdout};
 use std::path::{Path, PathBuf};
@@ -155,7 +156,7 @@ fn tee(stream: &mut dyn Read, mut sink: impl Write, log: &Mutex<&mut (dyn Write 
     let mut buffer = [0u8; 8192];
     loop {
         match stream.read(&mut buffer) {
-            Ok(0) => break,
+            Ok(0) | Err(_) => break,
             Ok(count) => {
                 let chunk = &buffer[..count];
                 let _ = sink.write_all(chunk);
@@ -164,7 +165,6 @@ fn tee(stream: &mut dyn Read, mut sink: impl Write, log: &Mutex<&mut (dyn Write 
                     let _ = log.write_all(chunk);
                 }
             }
-            Err(_) => break,
         }
     }
 }
@@ -345,14 +345,13 @@ fn failure(spec: &Spec, phase: &str, code: i32, log_path: &Path) -> Failure {
         "### ❌ pixi-sandbox publish failed on {}\n\n",
         spec.platform
     );
-    summary.push_str(&format!(
-        "- **Failed phase**: `{phase}` (exit code {code})\n"
-    ));
-    summary.push_str(&format!("- **Branch**: `{}`\n", spec.branch));
-    summary.push_str(&format!(
+    let _ = writeln!(summary, "- **Failed phase**: `{phase}` (exit code {code})");
+    let _ = writeln!(summary, "- **Branch**: `{}`", spec.branch);
+    let _ = write!(
+        summary,
         "- **Diagnostic log**: uploaded as workflow artifact `publish-diagnostics-{}`\n\n",
         spec.platform
-    ));
+    );
     let excerpt = last_lines(log_path, 50);
     if !excerpt.is_empty() {
         summary.push_str("<details><summary>Diagnostic log excerpt (last 50 lines)</summary>\n\n");

@@ -14,12 +14,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub fn run(args: UnpackArgs) -> Result<()> {
+pub fn run(args: &UnpackArgs) -> Result<()> {
     let input = support::existing_dir(&args.input_dir, "--input-dir")?;
     let output = support::absolute(&args.output_dir)?;
     let resolved = match find_transport(&input) {
-        Some(branch) => resolve_transport(&args, branch)?,
-        None => resolve_bare_pack(&args, input)?,
+        Some(branch) => resolve_transport(args, branch)?,
+        None => resolve_bare_pack(args, input)?,
     };
 
     if args.verify_only {
