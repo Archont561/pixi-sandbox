@@ -3,7 +3,6 @@
 use super::Failure;
 use super::support::rel;
 use crate::util::lines_without_opt_out;
-use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 // stale-ref-allowed — the check must spell the forbidden words out to forbid them.
@@ -17,10 +16,7 @@ const STALE_WORDS: [&str; 3] = ["python", "prototype", "knowledge/research"];
 /// Generated trees are pruned rather than left to gitignore: `crates/pixi-sandbox/.pixi/bld`
 /// holds a vendored third-party registry the moment anyone runs `pixi run package` locally,
 /// and this scan has to be as blind to it as git is.
-pub(super) fn stale_implementation_references(
-    root: &Path,
-    failures: &mut Vec<Failure>,
-) -> Result<()> {
+pub(super) fn stale_implementation_references(root: &Path, failures: &mut Vec<Failure>) {
     let mut hits = Vec::new();
     for file in walk_pruned(&root.join("crates"), &["rs", "md"]) {
         let Ok(text) = crate::util::read(&file) else {
@@ -40,7 +36,6 @@ pub(super) fn stale_implementation_references(
             "point the text at .knowledge/design.md instead, or mark the line stale-ref-allowed",
         ));
     }
-    Ok(())
 }
 
 fn walk_pruned(dir: &Path, extensions: &[&str]) -> Vec<PathBuf> {

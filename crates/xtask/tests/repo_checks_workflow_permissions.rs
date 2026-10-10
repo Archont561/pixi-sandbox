@@ -4,6 +4,7 @@
 mod support;
 
 use proptest::prelude::*;
+use std::fmt::Write as _;
 use std::fs;
 use support::{headlines, valid_fixture};
 use xtask::repo_checks::workflow_permissions::{LEVELS, SCOPES};
@@ -32,10 +33,11 @@ fn the_workflows_scope_fires_check_11_at_either_level() {
 #[test]
 fn every_real_scope_and_shorthand_passes_check_11() {
     for level in LEVELS {
-        let block: String = SCOPES
-            .iter()
-            .map(|scope| format!("  {scope}: {level}\n"))
-            .collect();
+        let mut block = String::new();
+        for scope in SCOPES {
+            // A String sink cannot fail, so the fmt::Result carries no information.
+            let _ = writeln!(block, "  {scope}: {level}");
+        }
         assert!(
             !fires(&format!("permissions:\n{block}")),
             "the documented scopes must pass at {level}"

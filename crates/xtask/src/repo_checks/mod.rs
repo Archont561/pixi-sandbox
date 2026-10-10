@@ -92,17 +92,21 @@ type Check = fn(&Path, &mut Vec<Failure>) -> Result<()>;
 /// collects every failure in one pass, so a red run names every problem at once instead of
 /// stopping at the first one.
 const CHECKS: &[Check] = &[
-    stale_refs::stale_implementation_references, // 1
-    badges::platform_claims,                     // 2
-    conda_manifest::version_references,          // 3
-    mutable_refs::action_pins,                   // 4
-    channel_drift::canonical_channel_install,    // 5
-    release_tags::workflow_literal_tags,         // 6
-    bash32::bash32_surface,                      // 8
-    workflow_shape::workflow_shape,              // 9
-    relock::generated_relock_is_current,         // 10
-    workflow_permissions::workflow_permissions,  // 11
-    agents_md::agents_md_matches_tree,           // 12
+    |root, failures| {
+        // Infallible by construction: its reads skip what they cannot open.
+        stale_refs::stale_implementation_references(root, failures);
+        Ok(())
+    }, // 1
+    badges::platform_claims,                    // 2
+    conda_manifest::version_references,         // 3
+    mutable_refs::action_pins,                  // 4
+    channel_drift::canonical_channel_install,   // 5
+    release_tags::workflow_literal_tags,        // 6
+    bash32::bash32_surface,                     // 8
+    workflow_shape::workflow_shape,             // 9
+    relock::generated_relock_is_current,        // 10
+    workflow_permissions::workflow_permissions, // 11
+    agents_md::agents_md_matches_tree,          // 12
 ];
 
 /// Run every check, returning all failures in one pass so a red run names every problem.
