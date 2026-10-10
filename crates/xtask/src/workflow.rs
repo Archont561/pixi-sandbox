@@ -179,11 +179,27 @@ pub fn lint_generated_workflow(actionlint: &Path) -> Result<()> {
     // The second generated artifact, linted the same way. Its content for *this* repository is
     // additionally byte-checked by `check-repository`; here it is the consumer render that
     // matters, including the conda-only shape no consumer of this repository exercises.
+    lint_relock_renders(actionlint, project.path())?;
+
+    eprintln!(
+        "generated workflows: actionlint clean (publisher + relock; Rust tests cover matrix shape, plan keys and step shape)"
+    );
+    Ok(())
+}
+
+/// Lint both relock renders the way the publisher is linted: the repository's own render, and the
+/// conda-only consumer shape that no consumer of this repository exercises.
+///
+/// # Errors
+///
+/// Fails when the embedded tools lock declares no pixi pin, when a render cannot be written, or when
+/// `actionlint` reports a problem in either workflow.
+fn lint_relock_renders(actionlint: &Path, project: &Path) -> Result<()> {
     for (relative, cargo) in [
         (RELOCK_PATH, true),
         (".github/workflows/relock-nocargo.yml", false),
     ] {
-        let path = project.path().join(relative);
+        let path = project.join(relative);
         let rendered = render_relock_workflow(RelockWorkflowOptions {
             cli_version: env!("CARGO_PKG_VERSION"),
             pixi_version: &embedded_pixi_pin()
@@ -195,12 +211,8 @@ pub fn lint_generated_workflow(actionlint: &Path) -> Result<()> {
         });
         fs::write(&path, rendered)
             .with_context(|| format!("writing generated workflow {}", path.display()))?;
-        run_actionlint(actionlint, project.path(), Path::new(relative))?;
+        run_actionlint(actionlint, project, Path::new(relative))?;
     }
-
-    eprintln!(
-        "generated workflows: actionlint clean (publisher + relock; Rust tests cover matrix shape, plan keys and step shape)"
-    );
     Ok(())
 }
 
