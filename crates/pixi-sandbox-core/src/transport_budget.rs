@@ -20,8 +20,10 @@ pub const DEFAULT_MAX_BLOB_MIB: f64 = 95.0;
 /// should split environment sets before GitHub push/repository limits become the incident.
 pub const DEFAULT_MAX_TRANSPORT_MIB: f64 = 2048.0;
 /// The publisher stages exactly this many file bytes into the orphan snapshot before Git
-/// compression; keep the same default as `max_transport_mib` so root docs/manifest overhead does
-/// not silently turn a green transport into a giant push.
+/// compression.
+///
+/// Keep the same default as `max_transport_mib` so root docs/manifest overhead does not
+/// silently turn a green transport into a giant push.
 pub const DEFAULT_MAX_REPOSITORY_PUSH_MIB: f64 = 2048.0;
 /// Restore preflight asks for packed + unpacked env bytes plus two vendor copies. Eight GiB is a
 /// conservative default for a developer/CI airlock while still catching runaway bundles.
@@ -229,11 +231,12 @@ fn restore_required_bytes(manifest: &Manifest) -> u64 {
     envs.saturating_add(vendor)
 }
 
-/// MiB (possibly fractional) to bytes. Budget inputs are human-edited, so the
-/// conversion saturates instead of wrapping: Rust's f64->u64 `as` cast saturates
-/// (NaN and negatives become 0, anything above `u64::MAX` becomes `u64::MAX`) — a
-/// silent wrap would under-report a limit. The bounds are pinned by
-/// `mib_to_bytes_converts_exactly_and_saturates_at_the_bounds`.
+/// MiB (possibly fractional) to bytes.
+///
+/// Budget inputs are human-edited, so the conversion saturates instead of wrapping:
+/// Rust's f64->u64 `as` cast saturates (NaN and negatives become 0, anything above
+/// `u64::MAX` becomes `u64::MAX`) — a silent wrap would under-report a limit. The bounds
+/// are pinned by `mib_to_bytes_converts_exactly_and_saturates_at_the_bounds`.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[must_use]
 pub fn mib_to_bytes(value: f64) -> u64 {

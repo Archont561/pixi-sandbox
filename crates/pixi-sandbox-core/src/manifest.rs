@@ -15,9 +15,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Bumped only for incompatible changes; readers refuse anything newer. Schema 2 added
-/// `envs.<name>.files` (the per-file oracle for a restored prefix, D13); a schema-1
-/// transport simply has no oracle and `doctor --verify-restored` says so instead of guessing.
+/// Bumped only for incompatible changes; readers refuse anything newer.
+///
+/// Schema 2 added `envs.<name>.files` (the per-file oracle for a restored prefix, D13);
+/// a schema-1 transport simply has no oracle and `doctor --verify-restored` says so
+/// instead of guessing.
 pub const SCHEMA_VERSION: u32 = 2;
 
 /// Directory that holds the payload inside a transport / on a branch.
@@ -109,9 +111,11 @@ pub struct Env {
     pub files: Option<EnvFiles>,
 }
 
-/// The per-file oracle for one environment: `envs/<name>/files.json`, recorded as a blob so
-/// it gets the same verify-before-write treatment as the payload itself (see
-/// `files_manifest` for what the digests mean and what they deliberately do not cover).
+/// The per-file oracle for one environment: `envs/<name>/files.json`.
+///
+/// It is recorded as a blob so it gets the same verify-before-write treatment as the
+/// payload itself (see `files_manifest` for what the digests mean and what they
+/// deliberately do not cover).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvFiles {
     /// The list itself, shipped inside the transport.
