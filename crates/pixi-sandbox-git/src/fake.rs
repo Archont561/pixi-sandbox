@@ -78,14 +78,28 @@ impl FakeGit {
 
     /// Make the next push fail (a protected branch, a revoked token, …). The remote is left
     /// unchanged — a rejected push must not look like a successful one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the state lock is poisoned (a thread panicked while holding it).
     pub fn fail_next_push(&self, reason: &str) {
         self.state.lock().expect("fake git lock").fail_push = Some(reason.to_string());
     }
 
+    /// The recorded operations, oldest first.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the state lock is poisoned (a thread panicked while holding it).
     pub fn ops(&self) -> Vec<Op> {
         self.state.lock().expect("fake git lock").log.clone()
     }
 
+    /// The commit the remote would serve for this branch, if it has one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the state lock is poisoned (a thread panicked while holding it).
     pub fn tip(&self, remote: &str, branch: &str) -> Option<String> {
         self.state
             .lock()
@@ -98,6 +112,10 @@ impl FakeGit {
     /// The commits the remote would serve for this branch, newest first. One after a default
     /// publish — the orphan-branch contract (design.md §2) — and at most `keep` after a
     /// rotating one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the state lock is poisoned (a thread panicked while holding it).
     pub fn history(&self, remote: &str, branch: &str) -> Vec<String> {
         self.state
             .lock()
@@ -108,6 +126,11 @@ impl FakeGit {
             .unwrap_or_default()
     }
 
+    /// The files the remote would serve for this branch, if it has one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the state lock is poisoned (a thread panicked while holding it).
     pub fn files(&self, remote: &str, branch: &str) -> Option<BTreeMap<String, Vec<u8>>> {
         self.state
             .lock()
@@ -118,6 +141,10 @@ impl FakeGit {
     }
 
     /// How often a push was attempted (successful or not) — asserts one push per publish.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the state lock is poisoned (a thread panicked while holding it).
     pub fn pushes(&self) -> usize {
         self.state
             .lock()
@@ -131,6 +158,10 @@ impl FakeGit {
     /// Script the result of the next `commit_files` call — the no-change answer
     /// (`changed == false`) is a case the upgrade lane must handle, and the mock cannot
     /// diff a real work tree to discover it on its own.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the state lock is poisoned (a thread panicked while holding it).
     pub fn script_commit(&self, result: FileCommitted) {
         self.state.lock().expect("fake git lock").commit_result = Some(result);
     }

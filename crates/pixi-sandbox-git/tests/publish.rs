@@ -485,11 +485,10 @@ fn a_rotating_publish_fetches_metadata_only_and_a_default_one_does_not_fetch_at_
 fn the_shell_implementation_never_writes_into_the_transport(
     bare_remote: (tempfile::TempDir, String),
 ) {
-    let (_tmp, _remote) = bare_remote;
+    let (_tmp, remote) = bare_remote;
     let transport = snapshot(&[("payload.txt", b"payload")]);
     let before = snapshot_files(transport.path()).unwrap();
 
-    let remote = _remote.clone();
     ShellGit::new()
         .publish(&Snapshot {
             dir: transport.path(),

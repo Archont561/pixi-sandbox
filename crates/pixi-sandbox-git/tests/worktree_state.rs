@@ -18,16 +18,16 @@ fn run_git(args: &[&str], cwd: &Path) {
         "-c",
         "user.email=test@example.invalid",
     ];
-    let mut argv: Vec<&str> = identity.to_vec();
-    argv.extend_from_slice(args);
+    let mut full_argv: Vec<&str> = identity.to_vec();
+    full_argv.extend_from_slice(args);
     let out = StdCommand::new("git")
-        .args(&argv)
+        .args(&full_argv)
         .current_dir(cwd)
         .output()
         .expect("git runs");
     assert!(
         out.status.success(),
-        "git {argv:?} failed: {}",
+        "git {full_argv:?} failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 }
