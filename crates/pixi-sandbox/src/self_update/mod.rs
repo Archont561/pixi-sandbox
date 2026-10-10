@@ -29,9 +29,11 @@ use ownership::Ownership;
 use replace::{ReplaceStrategy, Replacement};
 use resolver::Resolved;
 
-/// The release that publishes pixi-sandbox's standalone binaries. Re-exported from
-/// `release::PIXI_SANDBOX_REPO` so this default and the generated workflow's release-download
-/// URL are the same constant, not two literals that can drift apart (issue #80).
+/// The release that publishes pixi-sandbox's standalone binaries.
+///
+/// Re-exported from `release::PIXI_SANDBOX_REPO` so this default and the generated
+/// workflow's release-download URL are the same constant, not two literals that can drift
+/// apart (issue #80).
 pub const DEFAULT_REPO: &str = crate::release::PIXI_SANDBOX_REPO;
 
 /// The checksum manifest `xtask release-checksums` writes for every release.
@@ -148,9 +150,10 @@ pub fn apply(source: &dyn ReleaseSource, request: &Request<'_>, plan: Plan) -> R
 }
 
 /// Fetch the pinned standalone release asset for this host and install it at
-/// `request.destination`, checksum-verified — the bootstrap download the generated
-/// workflows run before any pixi-sandbox binary of their own exists on the runner
-/// (TASK-76).
+/// `request.destination`, checksum-verified.
+///
+/// This is the bootstrap download the generated workflows run before any pixi-sandbox
+/// binary of their own exists on the runner (TASK-76).
 ///
 /// Unlike [`run`] there is no up-to-date shortcut: the destination is not the running
 /// binary, so the running binary's version says nothing about what the destination holds.

@@ -45,9 +45,10 @@ pub struct PhaseCommand {
     pub env: Vec<(String, String)>,
 }
 
-/// Everything `pipeline` needs, with every ambient input resolved by the caller — the same
-/// rule `self_update::Request` follows (D10): tests pass tempdirs and explicit programs, so
-/// no code path can reach a developer's real binary, PATH or HOME.
+/// Everything `pipeline` needs, with every ambient input resolved by the caller.
+///
+/// The same rule `self_update::Request` follows (D10): tests pass tempdirs and explicit
+/// programs, so no code path can reach a developer's real binary, PATH or HOME.
 #[derive(Debug, Clone)]
 pub struct Spec {
     /// Comma-separated environment list, passed to `pack --envs` verbatim (the plan
@@ -101,8 +102,10 @@ pub struct Failure {
 }
 
 /// A child-process boundary: run one phase, forwarding its output live to this process's
-/// stdout/stderr while appending the same bytes to the pipeline log. Faking this is how the
-/// orchestration is tested without a runner, a network, or a real pixi (D10).
+/// stdout/stderr while appending the same bytes to the pipeline log.
+///
+/// Faking this is how the orchestration is tested without a runner, a network, or a real
+/// pixi (D10).
 pub trait PhaseRunner: std::fmt::Debug {
     /// Run `command`; return the child's exit code. An `Err` means the child could not be
     /// started at all — the shell's answer to that was exit 127, so the caller maps it there.
@@ -170,8 +173,10 @@ fn tee(stream: &mut dyn Read, mut sink: impl Write, log: &Mutex<&mut (dyn Write 
 }
 
 /// The phases a run executes, in order: install (once per environment), pack, doctor,
-/// publish. The argument assembly is the policy — the exact flags the generated workflow's
-/// shell used to spell out in two dialects.
+/// publish.
+///
+/// The argument assembly is the policy — the exact flags the generated workflow's shell
+/// used to spell out in two dialects.
 #[must_use]
 pub fn plan(spec: &Spec) -> Vec<PhaseCommand> {
     let mut phases = Vec::new();
@@ -278,9 +283,11 @@ pub fn plan(spec: &Spec) -> Vec<PhaseCommand> {
     phases
 }
 
-/// Run the whole pipeline. `Ok(())` when every phase succeeded; `Err(Failure)` naming the
-/// phase that failed, with the annotation and summary already produced (and the summary
-/// appended to `$GITHUB_STEP_SUMMARY` when the runner provides it).
+/// Run the whole pipeline.
+///
+/// `Ok(())` when every phase succeeded; `Err(Failure)` naming the phase that failed, with
+/// the annotation and summary already produced (and the summary appended to
+/// `$GITHUB_STEP_SUMMARY` when the runner provides it).
 ///
 /// # Errors
 ///

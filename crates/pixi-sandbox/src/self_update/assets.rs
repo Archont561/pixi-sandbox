@@ -11,9 +11,11 @@
 use anyhow::{Result, bail};
 use pixi_sandbox_core::platform::Platform;
 
-/// `(os, arch, asset name)`. The `.exe` suffix is part of the published name on Windows. Built
-/// from `Platform::ALL` in a `const` block rather than listed by hand, so this table cannot
-/// drift from `Platform`'s own asset names — the thing a doc comment used to merely promise.
+/// `(os, arch, asset name)`. The `.exe` suffix is part of the published name on Windows.
+///
+/// Built from `Platform::ALL` in a `const` block rather than listed by hand, so this table
+/// cannot drift from `Platform`'s own asset names — the thing a doc comment used to merely
+/// promise.
 pub const SUPPORTED_HOSTS: [(&str, &str, &str); Platform::ALL.len()] = {
     let mut hosts = [("", "", ""); Platform::ALL.len()];
     let mut index = 0;

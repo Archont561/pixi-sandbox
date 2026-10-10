@@ -36,10 +36,11 @@ use pixi_sandbox_git::{FileCommit, GitProtocol};
 
 use crate::pipeline::{PhaseCommand, PhaseRunner};
 
-/// Where pull requests are created — the delivery half of the upgrade lane. A trait for
-/// the same reason git goes through `GitProtocol` (D9): the decision flow is tested against
-/// a fake, and the real HTTP lives in `github.rs`, alone, because it is the one piece no
-/// offline test can exercise.
+/// Where pull requests are created — the delivery half of the upgrade lane.
+///
+/// A trait for the same reason git goes through `GitProtocol` (D9): the decision flow is
+/// tested against a fake, and the real HTTP lives in `github.rs`, alone, because it is
+/// the one piece no offline test can exercise.
 pub trait PullRequestSource {
     /// Open a pull request from `head` onto `base` in `repo` (`owner/name`); `token`
     /// authenticates the call.
@@ -67,9 +68,10 @@ pub struct PullRequest {
     pub number: u64,
 }
 
-/// Everything `upgrade` needs, with every ambient input resolved by the caller (D10): the
-/// tests pass tempdirs, a fake runner, `FakeGit` and a fake pull-request source, so no code
-/// path can reach a developer's real repository, token or HOME.
+/// Everything `upgrade` needs, with every ambient input resolved by the caller (D10).
+///
+/// The tests pass tempdirs, a fake runner, `FakeGit` and a fake pull-request source, so
+/// no code path can reach a developer's real repository, token or HOME.
 #[derive(Debug, Clone)]
 pub struct Spec {
     /// The running (updated) binary — the one that spawns `init --check` / `init`.
@@ -137,9 +139,11 @@ pub struct Refusal {
     pub output_line: String,
 }
 
-/// Run the upgrade lane. `Ok(Outcome)` covers every delivery verdict; `Err` is reserved
-/// for hard failures (the regeneration failing, the commit failing, the artifact not
-/// writable) — the cases where the shell's `set -e` also stopped the step.
+/// Run the upgrade lane.
+///
+/// `Ok(Outcome)` covers every delivery verdict; `Err` is reserved for hard failures (the
+/// regeneration failing, the commit failing, the artifact not writable) — the cases where
+/// the shell's `set -e` also stopped the step.
 ///
 /// # Errors
 ///
