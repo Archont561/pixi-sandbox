@@ -1995,3 +1995,55 @@ recorded as D20; the gate is red between the policy commit and the per-crate fix
 **Not implemented:** TASK-76 AC#8 (release + consumer run), TASK-77 itself, TASK-78,
 external maintainer/consumer proofs. No push, PR, merge, release or dispatch made — the
 owner's sanction covers local implementation only.
+
+### 2026-10-10 (second session) — TASK-77 checkpoint: core/git/pixi-sandbox pedantic-clean, PR merged, xtask remainder handed off
+
+**Environment rollback, second time:** the turn-end patchset rollback wiped `.pixi/`,
+`~/.local`, the fetched refs AND the local commit chain — the clone came back shallow
+at the base commit with every file change uncommitted. `bash scripts/restore.sh`
+(~60 s, offline) plus the explicit sandbox-ref fetch brought the environment back;
+the commit history was rebuilt from the surviving tree with the same
+per-crate/per-function slicing (the original SHAs are unrecoverable). Two
+reconstruction notes: the git crate's sweep fixes are folded into the TASK-76 commit
+(its only src files were touched by both tasks), and `self_update/mod.rs` moved into
+the TASK-76 commit (it carries TASK-76's `fetch_release`). Re-baselined: 924/1.
+
+**TASK-77 progress (branch `arena/00dbb795-pixi-sandbox`, pushed; PR created and merged
+with a regular merge, not squash):** policy D20 (pedantic = warn workspace-wide,
+`literal_string_with_formatting_args` allowed with reason) plus per-crate
+`clippy --fix` sweeps; then per crate — pixi-sandbox-core pedantic-clean (22
+`# Errors` sections, the audited judgement items, the AC#8 casts resolved with
+pinning tests, two extractions), pixi-sandbox-git pedantic-clean (24 `# Errors`,
+10 `# Panics`, `#[must_use]` builders, format_collect, two test judgement items) and
+pixi-sandbox pedantic-clean (42 doc sections, all mechanical findings, the pack casts
+with a pinning test, eight extractions one per commit, four scoped allows with
+reasons). Suite 924/1 → **928/1** (35 git / 212 core / 525 pixi-sandbox / 156 xtask);
+per-crate `clippy -D warnings` green on core, git and pixi-sandbox; fmt, taplo,
+actionlint, check-repository, lint-generated-workflow and plan all green. Rendered
+workflows unchanged (the golden tests prove it). AC#1, #2, #5, #7, #8 met; #3, #4,
+#6 partial; #9, #10 pending.
+
+**Remaining for the next session (all of it xtask plus closure):**
+
+1. xtask's 48 pedantic findings: 38 missing_errors_doc (airlock ×11, commit_release,
+   conda_platforms, prepare_release, release_assets ×3, release_refs ×3,
+   repo_checks/mod ×2, smoke, starter ×7, util ×2, version ×2, workflow ×3),
+   4 format_collect (prepare_release.rs:244, tests/repo_checks_agents_md.rs:13/34,
+   tests/repo_checks_workflow_permissions.rs:35), unnecessary_wraps
+   (repo_checks/stale_refs.rs:20), missing_panics_doc (util.rs:32 version_tag_re),
+   similar_names (tests/support/mod.rs:88), case_sensitive
+   (tests/release_assets.rs:69), and too_many_lines on workflow.rs:68
+   lint_generated_workflow (extract) and main.rs:302 run_args (allow in place with a
+   reason, AC#6).
+2. AC#9: migrate the 413-line inline test module in commands/tools/update.rs to
+   tests/tools_update.rs (logic promoted through lib.rs; the LEGACY inline-test list
+   in tests/fixtures.rs has 5 entries and only this one migrates), no test lost.
+3. Final gates: fmt, full `pixi run --frozen lint` at ZERO warnings on all four
+   crates (xtask is the only red one now), the full test suite, check-repository,
+   lint-generated-workflow, convco over the whole range, rendered-workflow
+   byte-identity (the golden tests already cover it).
+4. Close task-77 (AC checkboxes + DOD) and record the final evidence here.
+
+**Not implemented:** TASK-76 AC#8 (release + consumer run on a released binary —
+carried), TASK-77's xtask remainder and AC#9 (above), TASK-78+ backlog. The lint
+gate is red on xtask between this merge and the next session's xtask commit.
