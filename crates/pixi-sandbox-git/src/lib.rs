@@ -136,9 +136,11 @@ pub struct Published {
     pub commands: Vec<String>,
 }
 
-/// One reviewed-file commit on a branch of the *consumer's own* checkout (TASK-76's upgrade
-/// lane): reset `branch` to the working tree's current HEAD, stage exactly `files`, and
-/// commit them. The commit is authored by the implementation's configured identity — the
+/// One reviewed-file commit on a branch of the *consumer's own* checkout (TASK-76's
+/// upgrade lane).
+///
+/// Resets `branch` to the working tree's current HEAD, stages exactly `files`, and commits
+/// them. The commit is authored by the implementation's configured identity — the
 /// automation bot, never the invoking user's git config. Does not push.
 #[derive(Debug, Clone)]
 pub struct FileCommit<'a> {
