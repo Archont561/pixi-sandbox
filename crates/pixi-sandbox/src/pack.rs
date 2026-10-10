@@ -67,10 +67,16 @@ fn shard_limit_bytes(mebibytes: f64) -> Result<u64> {
         bail!("--shard-limit-mib must be a positive finite number");
     }
     let bytes = mebibytes * 1024.0 * 1024.0;
-    if bytes > u64::MAX as f64 {
+    // 2^64 — the same value `u64::MAX as f64` rounds to — spelled as a literal so the
+    // bound check itself carries no cast.
+    if bytes > 18_446_744_073_709_551_616.0 {
         bail!("--shard-limit-mib is too large");
     }
-    Ok(bytes as u64)
+    // The guards above bound `bytes` to (0, 2^64): the f64->u64 cast saturates rather
+    // than wraps, so the limit can never silently truncate.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let bytes = bytes as u64;
+    Ok(bytes)
 }
 
 fn validate_env_names(envs: &[String]) -> Result<()> {
@@ -359,6 +365,9 @@ pub mod support {
             .env("TEMP", temporary);
     }
 
+    /// A MiB rendering for logs. The u64->f64 cast can lose the low bits of huge byte
+    /// counts; that is inherent to a display conversion and harmless here.
+    #[allow(clippy::cast_precision_loss)]
     #[must_use]
     pub fn mib(bytes: u64) -> String {
         format!("{:.1}", bytes as f64 / (1024.0 * 1024.0))
