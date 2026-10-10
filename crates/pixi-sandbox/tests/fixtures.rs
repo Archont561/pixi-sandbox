@@ -359,10 +359,9 @@ fn shared_test_helpers_are_defined_once_and_exposed_as_fixtures() {
 #[test]
 fn production_sources_carry_no_inline_test_modules() {
     // Pre-rule modules awaiting the same split. Shrink this list; do not extend it.
-    const LEGACY: [&str; 5] = [
+    const LEGACY: [&str; 4] = [
         "commands/init.rs",
         "commands/restore.rs",
-        "commands/tools/update.rs",
         "generated/relock_workflow.rs",
         "user_tools.rs",
     ];
