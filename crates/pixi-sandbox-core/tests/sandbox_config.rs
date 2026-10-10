@@ -105,6 +105,9 @@ platforms = ["linux-64"]
     );
 }
 
+// The defaults are copied verbatim out of the reviewed constants, so these comparisons are
+// exact by construction; a tolerance would only hide a defaulting regression.
+#[allow(clippy::float_cmp)]
 #[test]
 fn budget_defaults_are_reviewed_and_can_be_overridden() {
     let defaulted = config(

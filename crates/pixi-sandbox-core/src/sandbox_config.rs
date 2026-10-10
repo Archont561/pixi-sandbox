@@ -720,7 +720,9 @@ pub fn is_safe_git_ref(value: &str) -> bool {
             && component != ".."
             && !component.starts_with('.')
             && !component.ends_with('.')
-            && !component.ends_with(".lock")
+            && !Path::new(component)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("lock"))
     })
 }
 

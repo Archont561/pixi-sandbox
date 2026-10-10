@@ -354,7 +354,11 @@ pub fn is_restore_marker(rel: &str) -> bool {
 /// files — both differ per host by construction, so only presence is checkable. Presence is
 /// still exact, which is what catching a forged record requires.
 fn is_presence_only(rel: &str) -> bool {
-    (rel.starts_with("conda-meta/") && rel.ends_with(".json")) || rel == "conda-meta/history"
+    (rel.starts_with("conda-meta/")
+        && Path::new(rel)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json")))
+        || rel == "conda-meta/history"
 }
 
 /// Scan a staged prefix into a [`FilesDoc`] plus the tree's size in bytes (the honest

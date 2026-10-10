@@ -253,6 +253,8 @@ mod restored {
     }
 
     pub fn world(dir: &Path) -> World {
+        use std::os::unix::fs::PermissionsExt;
+
         // The staged prefix sits exactly where restore's default work dir puts it: verify
         // derives its candidate paths from project + env name + work dir alone (never from
         // files restore wrote — that would be a candidate-injection hole), so the world must
@@ -295,7 +297,6 @@ mod restored {
         fs::create_dir_all(staged.join("man/man3")).unwrap();
         fs::write(staged.join("man/man3/App::Cpan.3"), "doc stub\n").unwrap();
         std::os::unix::fs::symlink("thing.pc", staged.join("lib/link.pc")).unwrap();
-        use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(staged.join("bin/tool"), fs::Permissions::from_mode(0o755)).unwrap();
 
         // --- the oracle, scanned the way pack scans it (candidates = this side's paths)
@@ -318,7 +319,7 @@ mod restored {
             "tool": { "name": "pixi-sandbox", "version": "0.1.0" },
             "created_at": "2026-09-29T12:00:00Z",
             "platform": "linux-64",
-            "shard_limit_bytes": 99614720,
+            "shard_limit_bytes": 99_614_720,
             "source": {},
             "tools": {},
             "envs": { "dev": {
@@ -469,6 +470,8 @@ mod restored {
 
     #[test]
     fn every_mismatch_is_collected_not_just_the_first() {
+        use std::os::unix::fs::PermissionsExt;
+
         let dir = tempfile::tempdir().unwrap();
         let world = world(dir.path());
         fs::write(
@@ -478,7 +481,6 @@ mod restored {
         .unwrap();
         fs::remove_file(world.final_prefix.join("bin/tool")).unwrap();
         fs::write(world.final_prefix.join("lib/extra.txt"), "smuggled\n").unwrap();
-        use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(
             world.final_prefix.join("lib/binary.ld"),
             fs::Permissions::from_mode(0o755),
@@ -508,9 +510,10 @@ mod restored {
 
     #[test]
     fn a_lost_executable_bit_is_a_mode_failure() {
+        use std::os::unix::fs::PermissionsExt;
+
         let dir = tempfile::tempdir().unwrap();
         let world = world(dir.path());
-        use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(
             world.final_prefix.join("bin/tool"),
             fs::Permissions::from_mode(0o644),

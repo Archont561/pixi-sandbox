@@ -172,7 +172,12 @@ proptest! {
     fn platform_as_str_and_from_str_agree(platform in any_platform()) {
         prop_assert_eq!(platform.as_str().parse::<Platform>().unwrap(), platform);
         prop_assert!(platform.asset_name().starts_with("pixi-sandbox-"));
-        prop_assert_eq!(platform.asset_name().ends_with(".exe"), platform == Platform::Win64);
+        prop_assert_eq!(
+            std::path::Path::new(platform.asset_name())
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("exe")),
+            platform == Platform::Win64
+        );
     }
 }
 

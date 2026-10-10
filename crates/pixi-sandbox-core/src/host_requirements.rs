@@ -1081,12 +1081,15 @@ fn curated_package(name: &str, manager: PackageManager) -> Option<&'static str> 
         ("xvfb" | "xvfb-run" | "xorg-x11-server-xvfb", PackageManager::Pacman) => {
             "xorg-server-xvfb"
         }
-        ("dbus" | "dbus-daemon" | "dbus-broker", PackageManager::Apt) => "dbus",
+        ("dbus" | "dbus-daemon" | "dbus-broker", PackageManager::Apt | PackageManager::Pacman) => {
+            "dbus"
+        }
         ("dbus" | "dbus-daemon" | "dbus-broker", PackageManager::Dnf) => "dbus-daemon",
-        ("dbus" | "dbus-daemon" | "dbus-broker", PackageManager::Pacman) => "dbus",
         ("libgtk-3" | "gtk3" | "libgtk-3-0" | "gtk3-devel", PackageManager::Apt) => "libgtk-3-0",
-        ("libgtk-3" | "gtk3" | "libgtk-3-0" | "gtk3-devel", PackageManager::Dnf) => "gtk3",
-        ("libgtk-3" | "gtk3" | "libgtk-3-0" | "gtk3-devel", PackageManager::Pacman) => "gtk3",
+        (
+            "libgtk-3" | "gtk3" | "libgtk-3-0" | "gtk3-devel",
+            PackageManager::Dnf | PackageManager::Pacman,
+        ) => "gtk3",
         (
             "webkit2gtk" | "libwebkit2gtk" | "libwebkit2gtk-4.1-0" | "webkit2gtk4.1",
             PackageManager::Apt,

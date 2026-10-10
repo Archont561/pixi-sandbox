@@ -477,7 +477,7 @@ fn check_blob(env: &str, blob: &Blob, abs: &Path, report: &mut Report) {
             return;
         }
         if let Err(e) = shard::verify_file(abs, &blob.sha256, blob.size) {
-            report.failures.push(from_error(env, &blob.path, e));
+            report.failures.push(from_error(env, &blob.path, &e));
         }
         return;
     }
@@ -503,7 +503,7 @@ fn check_blob(env: &str, blob: &Blob, abs: &Path, report: &mut Report) {
         }
         total += part.size;
         if let Err(e) = shard::verify_file(&part_abs, &part.sha256, part.size) {
-            report.failures.push(from_error(env, &part.path, e));
+            report.failures.push(from_error(env, &part.path, &e));
         }
     }
     if total != blob.size && !report.failures.iter().any(|f| f.path == blob.path) {
@@ -518,11 +518,10 @@ fn check_blob(env: &str, blob: &Blob, abs: &Path, report: &mut Report) {
     }
 }
 
-fn from_error(env: &str, path: &str, e: crate::error::Error) -> Check {
-    let kind = match &e {
+fn from_error(env: &str, path: &str, e: &crate::error::Error) -> Check {
+    let kind = match e {
         crate::error::Error::MissingPart(_) => Kind::MissingPart,
         crate::error::Error::SizeMismatch { .. } => Kind::SizeMismatch,
-        crate::error::Error::Integrity { .. } => Kind::Integrity,
         crate::error::Error::Io { .. } => Kind::Missing,
         _ => Kind::Integrity,
     };
@@ -587,10 +586,19 @@ pub fn linkage_of_bytes(bytes: &[u8]) -> Linkage {
 }
 
 fn linkage_of_reader<R: Read + Seek>(mut reader: R) -> Linkage {
+    use std::io::SeekFrom;
+
+    // Mach-O (both endiannesses, 32/64 bit) and PE (`MZ`).
+    const MACHO: [[u8; 4]; 4] = [
+        [0xfe, 0xed, 0xfa, 0xce],
+        [0xce, 0xfa, 0xed, 0xfe],
+        [0xfe, 0xed, 0xfa, 0xcf],
+        [0xcf, 0xfa, 0xed, 0xfe],
+    ];
+
     let mut head = [0u8; 64];
-    let n = match reader.read(&mut head) {
-        Ok(n) => n,
-        Err(_) => return Linkage::Unknown,
+    let Ok(n) = reader.read(&mut head) else {
+        return Linkage::Unknown;
     };
     if n < 20 {
         return Linkage::Unknown;
@@ -601,13 +609,6 @@ fn linkage_of_reader<R: Read + Seek>(mut reader: R) -> Linkage {
         return Linkage::Script;
     }
 
-    // Mach-O (both endiannesses, 32/64 bit) and PE (`MZ`).
-    const MACHO: [[u8; 4]; 4] = [
-        [0xfe, 0xed, 0xfa, 0xce],
-        [0xce, 0xfa, 0xed, 0xfe],
-        [0xfe, 0xed, 0xfa, 0xcf],
-        [0xcf, 0xfa, 0xed, 0xfe],
-    ];
     if MACHO.contains(&[head[0], head[1], head[2], head[3]]) || &head[..2] == b"MZ" {
         return Linkage::System;
     }
@@ -665,7 +666,6 @@ fn linkage_of_reader<R: Read + Seek>(mut reader: R) -> Linkage {
         return Linkage::Unknown;
     }
 
-    use std::io::SeekFrom;
     if reader.seek(SeekFrom::Start(phoff)).is_err() {
         return Linkage::Unknown;
     }
