@@ -2173,3 +2173,36 @@ changed line in the range is a `///` doc comment, and
 | `git diff 8d9e3b4..HEAD -- crates/pixi-sandbox/tests/fixtures/generated/` | empty |
 
 With AC#4 and the per-commit clause of AC#10 evidenced above, TASK-77 is set to Done.
+
+**Prompt to start the next session with:**
+
+> Restore only if the tree or `.pixi/` is missing (`bash scripts/restore.sh`, ~60 s,
+> offline and idempotent; then `export PATH="$HOME/.local/bin:$PATH"` and fetch
+> `origin +refs/heads/sandbox/developer-linux-64:refs/remotes/origin/sandbox/developer-linux-64`).
+> Baseline through Pixi from the repo root — expect **928 passing / 1 skipped** (35 git /
+> 212 core / 525 pixi-sandbox / 156 xtask). Pixi only (`pixi run --frozen …`), cargo
+> `--offline`, never two pixi commands in parallel, never source `.pixi/sandbox-env.sh`.
+>
+> TASK-77 is Done and merged in PR #131, based on main after the PR #130 merge
+> (`8d9e3b41`): pedantic clippy is clean on all four crates, all 52
+> `too_long_first_doc_paragraph` findings are rewritten (none allowed), nursery stays off
+> per D20 — do not reopen it. Read `CONTEXT.md` § Session scratchpad, **2026-10-10
+> (fourth session)** for the closure evidence, the per-commit test table and the gates.
+>
+> Open candidates — propose before starting: **TASK-76 AC#8** is the only open AC left in
+> a task, but it needs a real consumer repository to run the refactored publisher end to
+> end **on a released binary**, and the latest release (v0.6.0, `8298edce`) predates the
+> refactored lane — so it starts with a fresh release plus a consumer run, both
+> owner-sanctioned actions. **TASK-74** (starter template) needs the owner-operated
+> GitHub App delivery model of TASK-73. **TASK-85 AC#6** waits on the owner's dry-run
+> starter dispatch. **TASK-78** is To Do, but AC#1 wants a reviewed D-number decision
+> before any code, and `pixi-build` is still preview. Carried from the 2026-10-09
+> integration entry: backlog CLI quoting guidance, verify/publish reconciliation, and
+> TASK-66's Castellan drift PR.
+>
+> House rules: `AGENTS.md` (invariant 10: anything you do not implement goes in
+> `CONTEXT.md` § Session scratchpad, not into the files it speculates about), session
+> procedure in `.agents/skills/session/`; conventional commits, one crate or concern per
+> commit, `pixi run --frozen test` ≥654 at every commit. Do not push, open a pull
+> request, merge, release or dispatch without my explicit go-ahead — propose the slice
+> and stop.
