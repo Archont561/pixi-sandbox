@@ -214,179 +214,16 @@ impl PackPlan {
         );
         let mut envs = BTreeMap::new();
         for name in &self.args.envs {
-            let target = self.payload.join("envs").join(name).join("pack");
-            let parent = target
-                .parent()
-                .expect("pack target always has an env parent");
-            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-
-            let mut command = Command::new(&tools.packer);
-            command
-                .current_dir(&self.root)
-                .arg(&self.root)
-                .arg("-e")
-                .arg(name)
-                .arg("-p")
-                .arg(&self.args.platform)
-                .arg("-o")
-                .arg(&target)
-                .arg("--directory-only");
-            support::run(&mut command).with_context(|| format!("pixi-pack environment {name}"))?;
-
-            let files = shard::files_under(&target)
-                .with_context(|| format!("reading pixi-pack output for environment {name}"))?;
-            if files.is_empty() {
-                bail!("pixi-pack produced no files for environment {name}");
-            }
-            let packed_size = sum_files(&files)?;
-
-            // The oracle: unpack the pack once more (a copy — pixi-unpack writes a cache into
-            // the pack dir it reads from) and record every file of the tree the airlock will
-            // actually get. This is also the honest `unpacked_size_bytes`: measured on the
-            // unpacked tree, not parsed from a version-dependent log line.
-            let (oracle, unpacked_size) = build_files_oracle(
-                &self.out,
-                &self.payload,
-                name,
-                &target,
-                &tools.unpacker,
-                self.shard_limit,
-            )
-            .with_context(|| format!("building the per-file oracle for environment {name}"))?;
-            println!(
-                "  {name}: {} files · {} MiB packed · {} MiB unpacked · {} file entries recorded",
-                files.len(),
-                support::mib(packed_size),
-                support::mib(unpacked_size),
-                oracle.entries
-            );
-
-            envs.insert(
-                name.clone(),
-                Env {
-                    platform: self.args.platform.clone(),
-                    pack_path: format!("{MANIFEST_DIR}/envs/{name}/pack"),
-                    packed_size_bytes: packed_size,
-                    unpacked_size_bytes: unpacked_size,
-                    pixi_environment_fingerprint: fingerprint_of(&self.root, name),
-                    blobs: Vec::new(),
-                    files: Some(oracle),
-                },
-            );
+            self.pack_environment(tools, name, &mut envs)?;
         }
 
         println!("embed tools");
         let mut entries = BTreeMap::new();
         for name in ["pixi", "pixi-unpack"] {
-            let source = if let Some(lock) = &tools.lock {
-                let fetched = fetch_tool(
-                    lock,
-                    name,
-                    &self.args.platform,
-                    tools
-                        .cache
-                        .as_deref()
-                        .expect("a fetched tool always has a cache"),
-                )?;
-                ToolSource {
-                    path: fetched.path,
-                    version: fetched.version,
-                    url: Some(fetched.url),
-                    pinned_sha256: Some(fetched.sha256),
-                }
-            } else {
-                let path = support::find_executable(name).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "{name} is not on PATH (pass --fetch-tools to use embedded pins)"
-                    )
-                })?;
-                ToolSource {
-                    version: reported_version(&path)?,
-                    path,
-                    url: None,
-                    pinned_sha256: None,
-                }
-            };
-            let entry = embed_tool(
-                &self.payload,
-                &self.args.platform,
-                name,
-                &source,
-                self.shard_limit,
-            )?;
-            println!(
-                "  {name} {} · {} · {} MiB",
-                entry.version,
-                entry.linkage,
-                support::mib(entry.size_bytes)
-            );
-            entries.insert(name.to_string(), entry);
+            self.embed_helper_tool(tools, name, &mut entries)?;
         }
 
-        if let Some(self_bin) = &self.args.self_bin {
-            let source = support::absolute(self_bin)?;
-            if !source.is_file() {
-                bail!("--self-bin is not a file: {}", source.display());
-            }
-            // Structural fast-path (issue #81): the shapes whose brokenness path provenance
-            // already decides — a `pixi global` trampoline, a managed launcher script — are
-            // refused before anything is copied, with the remedy that packs a runnable binary.
-            if let Some(refusal) = pixi_sandbox::standalone::pack_refusal_for_ownership(&source) {
-                bail!("{refusal}");
-            }
-            let entry = embed_tool(
-                &self.payload,
-                &self.args.platform,
-                "pixi-sandbox",
-                &ToolSource {
-                    path: source,
-                    version: TOOL_VERSION.to_string(),
-                    url: None,
-                    pinned_sha256: None,
-                },
-                self.shard_limit,
-            )?;
-            println!(
-                "  pixi-sandbox {} · {} · {} MiB",
-                entry.version,
-                entry.linkage,
-                support::mib(entry.size_bytes)
-            );
-
-            // The behavioural oracle: execute exactly the bytes that will ship, under an empty
-            // environment. A self-bin's content is not pinned into the manifest (only its size
-            // is), and a static trampoline passes the linkage check — so neither declared check
-            // can see a launcher that dies without its global prefix; only running it can.
-            // Cross-platform packs skip with a reason: probing foreign bytes would be a lie,
-            // and doctor on the target host is the same guard there.
-            if pixi_sandbox::standalone::host_platform() == Some(self.args.platform.as_str()) {
-                let Some(relative) = entry.path.clone() else {
-                    bail!("embedded pixi-sandbox recorded no tool path");
-                };
-                let embedded_path = self.payload.join(relative);
-                let anchor = self.out.join(".pixi-sandbox-standalone-probe");
-                let outcome = fs::create_dir_all(anchor.join("tmp"))
-                    .with_context(|| format!("creating {}", anchor.display()))
-                    .and_then(|()| {
-                        pixi_sandbox::standalone::probe(
-                            &embedded_path,
-                            &anchor,
-                            &pixi_sandbox::standalone::CommandRunner::new(),
-                        )
-                        .map_err(|refusal| anyhow::anyhow!(refusal.render(&embedded_path)))
-                    });
-                support::remove_path(&anchor)?;
-                outcome?;
-                println!("  self-bin: runs standalone (--version, empty environment)");
-            } else {
-                println!(
-                    "  self-bin: standalone probe skipped — packing {} on a {} host; doctor --verify on the target host is the guard",
-                    self.args.platform,
-                    pixi_sandbox::standalone::host_platform().unwrap_or("unsupported"),
-                );
-            }
-            entries.insert("pixi-sandbox".to_string(), entry);
-        }
+        self.embed_self_bin(&mut entries)?;
 
         let (vendor, vendor_info) = if self.args.cargo_vendor {
             println!("vendor cargo dependencies");
@@ -409,6 +246,197 @@ impl PackPlan {
             vendor,
             vendor_info,
         })
+    }
+
+    /// Pack one environment: run pixi-pack, then build the per-file oracle on the tree the
+    /// airlock will actually get (a copy — pixi-unpack writes a cache into the pack dir it
+    /// reads from). The oracle is also the honest `unpacked_size_bytes`: measured on the
+    /// unpacked tree, not parsed from a version-dependent log line.
+    fn pack_environment(
+        &self,
+        tools: &ResolvedTools,
+        name: &str,
+        envs: &mut BTreeMap<String, Env>,
+    ) -> Result<()> {
+        let target = self.payload.join("envs").join(name).join("pack");
+        let parent = target
+            .parent()
+            .expect("pack target always has an env parent");
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+
+        let mut command = Command::new(&tools.packer);
+        command
+            .current_dir(&self.root)
+            .arg(&self.root)
+            .arg("-e")
+            .arg(name)
+            .arg("-p")
+            .arg(&self.args.platform)
+            .arg("-o")
+            .arg(&target)
+            .arg("--directory-only");
+        support::run(&mut command).with_context(|| format!("pixi-pack environment {name}"))?;
+
+        let files = shard::files_under(&target)
+            .with_context(|| format!("reading pixi-pack output for environment {name}"))?;
+        if files.is_empty() {
+            bail!("pixi-pack produced no files for environment {name}");
+        }
+        let packed_size = sum_files(&files)?;
+
+        let (oracle, unpacked_size) = build_files_oracle(
+            &self.out,
+            &self.payload,
+            name,
+            &target,
+            &tools.unpacker,
+            self.shard_limit,
+        )
+        .with_context(|| format!("building the per-file oracle for environment {name}"))?;
+        println!(
+            "  {name}: {} files · {} MiB packed · {} MiB unpacked · {} file entries recorded",
+            files.len(),
+            support::mib(packed_size),
+            support::mib(unpacked_size),
+            oracle.entries
+        );
+
+        envs.insert(
+            name.to_string(),
+            Env {
+                platform: self.args.platform.clone(),
+                pack_path: format!("{MANIFEST_DIR}/envs/{name}/pack"),
+                packed_size_bytes: packed_size,
+                unpacked_size_bytes: unpacked_size,
+                pixi_environment_fingerprint: fingerprint_of(&self.root, name),
+                blobs: Vec::new(),
+                files: Some(oracle),
+            },
+        );
+        Ok(())
+    }
+
+    /// Embed one helper tool (`pixi`, `pixi-unpack`): fetched from the embedded pins when
+    /// `--fetch-tools` is set, taken from PATH otherwise.
+    fn embed_helper_tool(
+        &self,
+        tools: &ResolvedTools,
+        name: &str,
+        entries: &mut BTreeMap<String, ToolEntry>,
+    ) -> Result<()> {
+        let source = if let Some(lock) = &tools.lock {
+            let fetched = fetch_tool(
+                lock,
+                name,
+                &self.args.platform,
+                tools
+                    .cache
+                    .as_deref()
+                    .expect("a fetched tool always has a cache"),
+            )?;
+            ToolSource {
+                path: fetched.path,
+                version: fetched.version,
+                url: Some(fetched.url),
+                pinned_sha256: Some(fetched.sha256),
+            }
+        } else {
+            let path = support::find_executable(name).ok_or_else(|| {
+                anyhow::anyhow!("{name} is not on PATH (pass --fetch-tools to use embedded pins)")
+            })?;
+            ToolSource {
+                version: reported_version(&path)?,
+                path,
+                url: None,
+                pinned_sha256: None,
+            }
+        };
+        let entry = embed_tool(
+            &self.payload,
+            &self.args.platform,
+            name,
+            &source,
+            self.shard_limit,
+        )?;
+        println!(
+            "  {name} {} · {} · {} MiB",
+            entry.version,
+            entry.linkage,
+            support::mib(entry.size_bytes)
+        );
+        entries.insert(name.to_string(), entry);
+        Ok(())
+    }
+
+    /// Embed the CLI binary itself (`--self-bin`) and probe it standalone on a matching host.
+    /// No `--self-bin` means no-op.
+    fn embed_self_bin(&self, entries: &mut BTreeMap<String, ToolEntry>) -> Result<()> {
+        let Some(self_bin) = &self.args.self_bin else {
+            return Ok(());
+        };
+        let source = support::absolute(self_bin)?;
+        if !source.is_file() {
+            bail!("--self-bin is not a file: {}", source.display());
+        }
+        // Structural fast-path (issue #81): the shapes whose brokenness path provenance
+        // already decides — a `pixi global` trampoline, a managed launcher script — are
+        // refused before anything is copied, with the remedy that packs a runnable binary.
+        if let Some(refusal) = pixi_sandbox::standalone::pack_refusal_for_ownership(&source) {
+            bail!("{refusal}");
+        }
+        let entry = embed_tool(
+            &self.payload,
+            &self.args.platform,
+            "pixi-sandbox",
+            &ToolSource {
+                path: source,
+                version: TOOL_VERSION.to_string(),
+                url: None,
+                pinned_sha256: None,
+            },
+            self.shard_limit,
+        )?;
+        println!(
+            "  pixi-sandbox {} · {} · {} MiB",
+            entry.version,
+            entry.linkage,
+            support::mib(entry.size_bytes)
+        );
+
+        // The behavioural oracle: execute exactly the bytes that will ship, under an empty
+        // environment. A self-bin's content is not pinned into the manifest (only its size
+        // is), and a static trampoline passes the linkage check — so neither declared check
+        // can see a launcher that dies without its global prefix; only running it can.
+        // Cross-platform packs skip with a reason: probing foreign bytes would be a lie,
+        // and doctor on the target host is the same guard there.
+        if pixi_sandbox::standalone::host_platform() == Some(self.args.platform.as_str()) {
+            let Some(relative) = entry.path.clone() else {
+                bail!("embedded pixi-sandbox recorded no tool path");
+            };
+            let embedded_path = self.payload.join(relative);
+            let anchor = self.out.join(".pixi-sandbox-standalone-probe");
+            let outcome = fs::create_dir_all(anchor.join("tmp"))
+                .with_context(|| format!("creating {}", anchor.display()))
+                .and_then(|()| {
+                    pixi_sandbox::standalone::probe(
+                        &embedded_path,
+                        &anchor,
+                        &pixi_sandbox::standalone::CommandRunner::new(),
+                    )
+                    .map_err(|refusal| anyhow::anyhow!(refusal.render(&embedded_path)))
+                });
+            support::remove_path(&anchor)?;
+            outcome?;
+            println!("  self-bin: runs standalone (--version, empty environment)");
+        } else {
+            println!(
+                "  self-bin: standalone probe skipped — packing {} on a {} host; doctor --verify on the target host is the guard",
+                self.args.platform,
+                pixi_sandbox::standalone::host_platform().unwrap_or("unsupported"),
+            );
+        }
+        entries.insert("pixi-sandbox".to_string(), entry);
+        Ok(())
     }
 
     /// Shard oversized blobs, assemble and validate the manifest, write it (and the branch
