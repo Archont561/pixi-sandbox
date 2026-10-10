@@ -148,9 +148,12 @@ fn standalone_binaries(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(binaries)
 }
 
-/// Write `SHA256SUMS` over the standalone release binaries in `dir`, then verify the written
-/// file covers every one of them — the completeness check the shell did with `grep`, kept as
-/// a real second pass over the bytes on disk so a bug in the writer cannot pass unnoticed.
+/// Write `SHA256SUMS` over the standalone release binaries in `dir`, then verify the
+/// written file covers every one of them — the completeness check the shell did with
+/// `grep`.
+///
+/// It is kept as a real second pass over the bytes on disk so a bug in the writer cannot
+/// pass unnoticed.
 ///
 /// # Errors
 ///
@@ -188,9 +191,10 @@ pub fn release_checksums(dir: &Path) -> Result<PathBuf> {
     Ok(sums)
 }
 
-/// Assert every binary has a line in `SHA256SUMS` (`<digest>  <name>`, two spaces), and that
-/// the file holds no stale extra lines. Separate from the writer so a fixture can prove the
-/// check fires on a tampered file.
+/// Assert every binary has a line in `SHA256SUMS` (`<digest>  <name>`, two spaces), and
+/// that the file holds no stale extra lines.
+///
+/// Separate from the writer so a fixture can prove the check fires on a tampered file.
 ///
 /// # Errors
 ///

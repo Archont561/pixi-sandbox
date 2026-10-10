@@ -93,8 +93,10 @@ pub fn append_line(target: &Path, line: &str) {
 }
 
 /// Append `key=value` to `$GITHUB_OUTPUT`, so a workflow consumes the value as
-/// `steps.<id>.outputs.<key>` (task-36 AC#4). No-op when the variable is absent: the command
-/// keeps its stdout form, which is what a local run reads.
+/// `steps.<id>.outputs.<key>` (task-36 AC#4).
+///
+/// No-op when the variable is absent: the command keeps its stdout form, which is what a
+/// local run reads.
 pub fn github_output(key: &str, value: &str) {
     if let Some(target) = std::env::var_os("GITHUB_OUTPUT") {
         append_line(Path::new(&target), &format!("{key}={value}"));

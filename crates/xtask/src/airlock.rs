@@ -79,9 +79,10 @@ pub fn plan_argv(
 }
 
 /// Validate the plan JSON and return it unchanged: `matrix=` must carry the whole object,
-/// because the workflow reads `fromJSON(...).include` — only `.include` is a matrix, and
-/// Actions would read every other key (the scalar `schema`) as a dimension that must be an
-/// array, silently yielding zero jobs.
+/// because the workflow reads `fromJSON(...).include`.
+///
+/// Only `.include` is a matrix, and Actions would read every other key (the scalar
+/// `schema`) as a dimension that must be an array, silently yielding zero jobs.
 ///
 /// # Errors
 ///
@@ -242,9 +243,10 @@ pub fn resolve_release_tag(root: &Path, repo: &str, override_tag: &str) -> Resul
 // airlock-self-bin
 // ---------------------------------------------------------------------------
 
-/// The release asset name for a Pixi platform id. Delegates to
-/// [`pixi_sandbox_core::platform::Platform`] (task-55/task-59) instead of restating the five
-/// names xtask also stages and checksums (`release_assets.rs`).
+/// The release asset name for a Pixi platform id.
+///
+/// Delegates to [`pixi_sandbox_core::platform::Platform`] (task-55/task-59) instead of
+/// restating the five names xtask also stages and checksums (`release_assets.rs`).
 ///
 /// # Errors
 ///
@@ -335,8 +337,10 @@ pub fn split_envs(envs: &str) -> Result<Vec<String>> {
 }
 
 /// Resolve `bin` against a PATH value (not the process PATH — a parameter, so it is
-/// testable). The airlock proof packs with the *released* binary the job installed, and the
-/// shell this replaces found it with `command -v pixi-sandbox`.
+/// testable).
+///
+/// The airlock proof packs with the *released* binary the job installed, and the shell
+/// this replaces found it with `command -v pixi-sandbox`.
 #[must_use]
 pub fn resolve_on_path(bin: &str, path_value: &std::ffi::OsStr) -> Option<PathBuf> {
     for dir in std::env::split_paths(path_value) {
@@ -532,10 +536,13 @@ pub fn airlock_fetch(remote: &str, branch: &str, host_dir: &Path, worktree: &Pat
 // deny-egress
 // ---------------------------------------------------------------------------
 
-/// The egress-denial wrapper for a command: `sudo unshare -n` on Linux (a private network
-/// namespace — no route, no DNS, nothing to fall back to), `sudo sandbox-exec` with the
-/// outbound-denied profile on macOS, and a loud error anywhere else, because a proof that
-/// silently ran with the network reachable would be a green build that proves nothing.
+/// The egress-denial wrapper for a command: `sudo unshare -n` on Linux, `sudo
+/// sandbox-exec` with the outbound-denied profile on macOS, and a loud error anywhere
+/// else.
+///
+/// Linux's private network namespace has no route and no DNS, nothing to fall back to.
+/// The loud error exists because a proof that silently ran with the network reachable
+/// would be a green build that proves nothing.
 ///
 /// # Errors
 ///

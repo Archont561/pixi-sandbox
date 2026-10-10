@@ -18,10 +18,12 @@ use pixi_sandbox_core::platform::Platform;
 use std::fmt::Write as _;
 use std::path::Path;
 
-/// The release platform set, matching the `release.yml` build matrix. The checker itself takes
-/// the list as an argument so a fixture (or a future platform change) never has to edit the
-/// validation logic. Built from `Platform::ALL` (task-55/task-59) instead of its own literal
-/// list, so a platform added to `Platform` shows up here for free.
+/// The release platform set, matching the `release.yml` build matrix.
+///
+/// The checker itself takes the list as an argument so a fixture (or a future platform
+/// change) never has to edit the validation logic. Built from `Platform::ALL`
+/// (task-55/task-59) instead of its own literal list, so a platform added to `Platform`
+/// shows up here for free.
 pub const SUPPORTED_PLATFORMS: [&str; Platform::ALL.len()] = {
     let mut platforms = [""; Platform::ALL.len()];
     let mut index = 0;
