@@ -15,6 +15,17 @@ license = "MIT"
 repository = "https://github.com/Archont561/pixi-sandbox"
 authors = ["Archont561"]
 
+# The lint gate is pedantic, inherited by every crate (decision D20): the policy lives here
+# once so no crate can drift, and the per-crate lint scripts' `-D warnings` makes the level
+# binding. Nursery stays off (D20). The one workspace-wide exception is deliberate and
+# reasoned: every `literal_string_with_formatting_args` hit in this workspace is an
+# intentional placeholder template (`.replace("{version}", …)`) or a shell parameter
+# expansion asserted inside a Rust string literal (`${PREFIX:-sandbox}`) — "fixing" them
+# would corrupt the very string being asserted (doc-12 Finding 6).
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+literal_string_with_formatting_args = "allow"
+
 [workspace.dependencies]
 # library + CLI
 anyhow = "1"
