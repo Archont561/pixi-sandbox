@@ -8,6 +8,7 @@
 pub mod airlock;
 pub mod commit_release;
 pub mod conda_platforms;
+pub mod consumer_proof;
 pub mod prepare_release;
 pub mod release_assets;
 pub mod release_refs;
