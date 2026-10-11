@@ -2672,3 +2672,57 @@ new was filed this session.
 > pixi commands in parallel, conventional commits, one concern per commit, `pixi run --frozen
 > test` ≥986 at every commit. Do not push, open a pull request, merge, release or dispatch
 > without my explicit go-ahead.
+
+### 2026-10-11 — v0.6.2 workflow watch and evidence follow-up
+
+**Scope.** Watched the existing release chain; did not dispatch, publish, push, or open a PR.
+Fast-forwarded the session branch to `d0fc39ad35d8833b69a937079272db1ce0b9504a`
+(`chore(release): v0.6.2`). No production implementation changed.
+
+**Remote evidence.** All runs completed successfully: auto-release `38163213333`, release
+`38163288233` (five platform builds/package smoke tests, pre-publish consumer lifecycle proof,
+prefix.dev and GitHub publication), CI `38163288846`, push docs `38163288827`, sandbox publish
+`38163288796`, released-asset consumer proof `38163986987`, starter `38163988956`, and dispatched
+docs `38163991484`. Run URLs use
+`https://github.com/Archont561/pixi-sandbox/actions/runs/<run-id>`.
+The published transport manifest names source `d0fc39a` and static tool `0.6.2`.
+
+**Task evidence, not blanket closure.** TASK-89 AC#3 is now proven by release job
+`114542089359`; all four ACs are checked and the task is Done. TASK-76 was already Done with
+its own AC#8 evidence, so it was not reopened or edited. TASK-74 AC#1 is now proven: GitHub
+reports a public template, and starter tag `pixi-sandbox-v0.6.2` resolves to commit
+`1655285c27f162f24be33428fb1c1f791bd2e063` with all ten required files, rather than README alone.
+The starter job also passed regeneration, lint, fresh-clone dev and verification, but those
+positive steps do not prove every compound acceptance criterion. TASK-74 stays In Progress,
+including its owner-operated App and template-derived publisher/restore proof requirements.
+TASK-85 has the successful real publication recorded, but AC#6 explicitly requires a
+**non-publishing v0.6.0 dry run**; the v0.6.2 publish cannot substitute for it.
+
+**Evidence limits.** Raw Actions log downloads redirect to an egress-blocked host. Conclusions
+above use GitHub API job/step results and the published starter tree/files, not an invented log
+inspection. No new workflow was dispatched to obtain stronger evidence.
+
+**Environment.** The restore preceding release completion registered pixi `0.81.0` and
+pixi-sandbox `0.6.1`; it remains usable on the release tree. Re-baseline at `d0fc39a`:
+**986 passing / 1 skipped** (42 git / 222 core / 526 pixi-sandbox / 196 xtask). A new restore
+from the now-published transport would register pixi-sandbox `0.6.2` instead.
+
+**Next scope, not implemented.** TASK-78's packaging-shape decision remains the next engineering
+candidate; no decision was made or code started here. TASK-73 needs owner GitHub App setup;
+TASK-85 AC#6 needs the specifically requested maintainer dry run; TASK-93 AC#4 needs its
+connected-host wheel round trip.
+
+**Next session opening prompt:**
+
+> Load the session skill and restore only if needed. Expect 986 passing / 1 skipped.
+> v0.6.2 is published and all its release/starter/docs follow-ups passed; do not cut it again.
+> Read CONTEXT.md's 2026-10-11 “v0.6.2 workflow watch and evidence follow-up” entry.
+> TASK-89 is closed with real release-run evidence; TASK-74 AC#1 is checked, but its remaining
+> compound criteria and TASK-85's exact non-publishing dry-run criterion are still open.
+> The next engineering proposal is TASK-78's packaging-shape decision, before implementation.
+> Check branch/remote state first; the evidence commits are local until explicitly approved
+> for push. Propose the slice and stop. Do not push, open a PR, merge, release, or dispatch
+> without explicit go-ahead. Pixi only, frozen tasks, Cargo offline, and one Pixi command at a time.
+
+Validation for this evidence follow-up: `pixi run --frozen fmt` passed;
+`pixi run --frozen lint` passed all 11 gates; release-tree tests remain 986/1.
