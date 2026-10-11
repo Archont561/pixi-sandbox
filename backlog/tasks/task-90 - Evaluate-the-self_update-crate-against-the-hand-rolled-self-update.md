@@ -1,9 +1,10 @@
 ---
 id: TASK-90
 title: Evaluate the self_update crate against the hand-rolled self-update
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-11 11:51'
+updated_date: '2026-10-11 15:05'
 labels:
   - spike
   - self-update
@@ -84,24 +85,55 @@ the crate's contents. Say what was read and from where.
 ## Acceptance Criteria
 
 <!-- AC:BEGIN -->
-- [ ] #1 `backlog/docs/spikes/self-update/doc-14 - Self-Update-Crate-Evaluation.md` exists, states one outcome — adopt, adopt-partially (which halves), or reject — and records that no dependency was added to any `Cargo.toml` or `Cargo.lock` in this task.
-- [ ] #2 The `windows_swap` corpse question is answered from the crate's published sources or docs, naming the file and line (or doc URL); the two behaviours are addressed separately — replacing a running image, and reaping stale `.old-*` siblings — and anything not resolvable offline is labelled unverified with the missing proof named.
-- [ ] #3 Both must-survive properties are settled in writing: the refusal ladder (`ownership::classify`) runs before any download byte moves, and `ReplaceStrategy` stays an explicit parameter with its 24 tests and the Windows `replace-running-image` job intact — or the spike says exactly what is lost and why that is acceptable.
-- [ ] #4 The test-surface mapping is recorded per file: which of the 94 tests in `tests/self_update*.rs` (1,710 lines) get re-pointed at the crate's `ReleaseSource`/`.http_client(Arc<dyn HttpClient>)` seams, which are replaced by crate behaviour, and which are dropped — each dropped one with its reason, so the count moving is explained rather than discovered.
-- [ ] #5 The dependency-surface delta is recorded exactly (feature set, crates gained, crates that stay out) together with the airlock limitation: adoption cannot be built or tested here, so the decision must carry the connected-host step (a lockfile refresh and one real build) before any migration task starts.
-- [ ] #6 The outcome is recorded where a decision belongs — a `backlog/decisions/decision-<next>` file when the answer is to adopt or reject outright, or an explicit deferral in doc-14 with the trigger that reopens it — and no production code or dependency is migrated in this task.
+- [x] #1 `backlog/docs/spikes/self-update/doc-14 - Self-Update-Crate-Evaluation.md` exists, states one outcome — adopt, adopt-partially (which halves), or reject — and records that no dependency was added to any `Cargo.toml` or `Cargo.lock` in this task.
+- [x] #2 The `windows_swap` corpse question is answered from the crate's published sources or docs, naming the file and line (or doc URL); the two behaviours are addressed separately — replacing a running image, and reaping stale `.old-*` siblings — and anything not resolvable offline is labelled unverified with the missing proof named.
+- [x] #3 Both must-survive properties are settled in writing: the refusal ladder (`ownership::classify`) runs before any download byte moves, and `ReplaceStrategy` stays an explicit parameter with its 24 tests and the Windows `replace-running-image` job intact — or the spike says exactly what is lost and why that is acceptable.
+- [x] #4 The test-surface mapping is recorded per file: which of the 94 tests in `tests/self_update*.rs` (1,710 lines) get re-pointed at the crate's `ReleaseSource`/`.http_client(Arc<dyn HttpClient>)` seams, which are replaced by crate behaviour, and which are dropped — each dropped one with its reason, so the count moving is explained rather than discovered.
+- [x] #5 The dependency-surface delta is recorded exactly (feature set, crates gained, crates that stay out) together with the airlock limitation: adoption cannot be built or tested here, so the decision must carry the connected-host step (a lockfile refresh and one real build) before any migration task starts.
+- [x] #6 The outcome is recorded where a decision belongs — a `backlog/decisions/decision-<next>` file when the answer is to adopt or reject outright, or an explicit deferral in doc-14 with the trigger that reopens it — and no production code or dependency is migrated in this task.
 <!-- AC:END -->
 
 ## Definition of Done
 
 <!-- DOD:BEGIN -->
-- [ ] #1 pixi run --frozen fmt
-- [ ] #2 pixi run --frozen lint
-- [ ] #3 pixi run --frozen test
+- [x] #1 pixi run --frozen fmt
+- [x] #2 pixi run --frozen lint
+- [x] #3 pixi run --frozen test
 <!-- DOD:END -->
 
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
 created: 2026-10-11 11:51
+
+## 2026-10-11 15:05 — spike complete
+
+**Verdict: adopt partially** — the crate's release-lookup + transport + checksum parse
+(`backends::github` / `Download` / `Checksum`), keep ours for `ownership.rs`, `replace.rs` and
+the `mod.rs` orchestration. `update()` is not called (it would surrender both must-survive
+properties). Recorded as `decision-5`; analysis and per-file test mapping in `doc-14`.
+
+Evidence, all on a connected host (crates.io reachable; the workspace builds with the crate in
+the graph — `cargo tree -p pixi-sandbox -i self_update` → `self_update v1.3.0 └── pixi-sandbox`):
+
+- **AC#2** from the vendored sources: `self-replace` `windows.rs:282–292` (`self_replace`),
+  `RELOCATED_SUFFIX`/`TEMP_SUFFIX` at `windows.rs:30–31`, `self_delete_on_init`/`DeleteFileW`
+  at `windows.rs:127`/`:165`; no stale-corpse sweep, stated at `lib.rs:105–115` ("not
+  recommended to run automatic cleanup on startup", `lib.rs:111–112`). Opposite of our
+  `replace.rs` `windows_swap` + `sweep_displaced` (`replace.rs:161`, invoked `:80`).
+- **AC#3** crate hooks run post-download (`update.rs:1607` archive, `:1786` binary);
+  `install_binary` (`update.rs:1781`) picks `self_replace` (`:1793`) vs `Move` (`:1796`) on
+  `dest == current_exe`, neither parameterisable → keep our replace.
+- **AC#4** 94 tests counted by `--list`: `self_update` 24 (re-point), `assets` 4 (keep),
+  `checksums` 5 (drop→crate), `fetch` 6 (re-point), `ownership` 12 (keep), `replace` 24 (keep),
+  `resolver` 19 (drop/re-point). 70 kept/re-pointed, 24 dropped-and-replaced-by-the-dependency.
+- **AC#5** enabled features exactly `checksums`+`github`+`rustls`+`ureq`; gained
+  `self-replace 1.5.0` (+`fastrand`, Windows `windows-sys`) and `urlencoding 2.1.3`; `reqwest`/
+  `hyper` locked but not built (`cargo tree -i` prints nothing). MSRV 1.88 is already owed by
+  `rstest-bdd 0.6.0`, so adoption adds no incremental MSRV cost (TASK-92).
+- **AC#6** outcome in `decision-5`; nothing added to `Cargo.toml`/`Cargo.lock` (the
+  `self_update` declaration predates this task).
+
+Follow-ups: TASK-92 (rust-version 1.88) is now required; a migration task is not filed — it must
+start on the connected host (lockfile refresh + one real build + one real round trip).
 <!-- COMMENTS:END -->
