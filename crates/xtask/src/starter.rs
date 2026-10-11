@@ -887,6 +887,18 @@ pub fn publish_refusals(
     refusals
 }
 
+/// The message a published starter snapshot carries.
+///
+/// Every publication replaces main with a parentless commit (D22), so the snapshot *is* the
+/// repository's initial commit; a `chore: regenerate` subject described an append that no longer
+/// happens. The body keeps the release-to-source-commit link, which is the snapshot's only
+/// provenance — nothing else in the starter repository records which release generated it.
+#[doc(hidden)] // test boundary (tests/starter.rs)
+#[must_use]
+pub fn snapshot_message(tag: &str, source_commit: &str) -> String {
+    format!("Initial commit\n\npixi-sandbox {tag}\nSource commit: {source_commit}")
+}
+
 /// Commit and push one validated starter revision.
 ///
 /// Replaces main with one parentless commit, preserving immutable release tags. The branch
@@ -976,9 +988,7 @@ pub fn publish(
         remote,
         branch,
         &immutable,
-        &format!(
-            "chore: regenerate starter for pixi-sandbox {tag}\n\nSource commit: {source_commit}"
-        ),
+        &snapshot_message(tag, source_commit),
     )?;
     crate::util::github_summary(&format!(
         "## Starter published\n\n- release `{tag}`\n- source commit `{source_commit}`\n- starter tag `{immutable}`\n"
