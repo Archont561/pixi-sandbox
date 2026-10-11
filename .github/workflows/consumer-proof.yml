@@ -85,7 +85,7 @@ jobs:
           HOME="$RUNNER_TEMP/consumer-home" "$RUNNER_TEMP/consumer/pixi-sandbox" init --force
           cmp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.first.yml"
           cp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.yml"
-          grep -F 'Archont561/pixi-sandbox/releases/download' .github/workflows/publish-sandbox.yml
+          grep -F 'fetch-release --dest' .github/workflows/publish-sandbox.yml
           grep -F 'SHA256SUMS' .github/workflows/publish-sandbox.yml
 
       - name: Prove pack, publish, fetch, and offline restore lifecycle

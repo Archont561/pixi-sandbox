@@ -44,7 +44,11 @@ pub fn valid_fixture() -> tempfile::TempDir {
     );
     write(
         "crates/pixi-sandbox/src/generated/github_workflow.rs",
-        "https://prefix.dev/archont561/archont561\npixi global install pixi-sandbox\n",
+        "https://prefix.dev/archont561/archont561\npixi global install pixi-sandbox\npixi-sandbox fetch-release --dest \"$PIXI_SANDBOX_BIN\"\n# verifies it against the release's SHA256SUMS\n",
+    );
+    write(
+        ".github/workflows/consumer-proof.yml",
+        "name: consumer proof\njobs:\n  consumer-proof:\n    steps:\n      - run: grep -F 'fetch-release --dest' .github/workflows/publish-sandbox.yml\n",
     );
     write(
         ".github/workflows/ci.yml",
