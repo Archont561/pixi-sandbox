@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-08 18:40'
-updated_date: '2026-10-11 15:12'
+updated_date: '2026-10-11 18:36'
 labels:
   - starter
   - workflow
@@ -137,10 +137,13 @@ sees `starter` active (`376873092`), but the dispatch is refused the same way:
 `could not create workflow dispatch event: HTTP 403: Resource not accessible by integration`.
 The blocker is token capability, not connectivity: reaching GitHub works, dispatching a
 workflow does not. AC#6 needs a maintainer with `actions:write`, exactly as above.
+
+2026-10-11 — additional positive-path evidence: v0.6.2 starter run https://github.com/Archont561/pixi-sandbox/actions/runs/38163988956 passed the dispatch guard, fresh-clone development task, assembled-tree verification, and actual publication. The published tree is complete at starter commit 1655285c27f162f24be33428fb1c1f791bd2e063 (tag pixi-sandbox-v0.6.2). This confirms the repaired lane works on a real runner, but does NOT satisfy AC#6: that criterion explicitly asks for a non-publishing dry-run dispatch for v0.6.0/source 8298edce13049ab01a7bc9d3e09c9daf8d14fc08. No dispatch was attempted during this evidence follow-up; AC#6 remains unchecked and the task remains In Progress.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
 <!-- SECTION:SUMMARY:BEGIN -->
 The starter lane now judges the revision instead of the directory: the verifier asks git what would
 be committed, so the runtime state the lane's own steps install no longer blocks a publishable
@@ -151,3 +154,4 @@ now fails in its own first job with both commits named and the remedy stated. AC
 locally; AC#6 (one successful dry-run dispatch on a real runner) waits for a maintainer's click, so
 the task stays In Progress.
 <!-- SECTION:SUMMARY:END -->
+<!-- SECTION:FINAL_SUMMARY:END -->
