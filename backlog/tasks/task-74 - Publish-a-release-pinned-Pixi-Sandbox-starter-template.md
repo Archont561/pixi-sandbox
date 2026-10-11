@@ -4,7 +4,7 @@ title: Publish a release-pinned Pixi Sandbox starter template
 status: In Progress
 assignee: []
 created_date: '2026-10-05'
-updated_date: '2026-10-11 11:20'
+updated_date: '2026-10-11 18:36'
 labels:
   - onboarding
   - template
@@ -50,7 +50,7 @@ they can start. The detailed release, ownership, validation, and rollback contra
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A canonical public `pixi-sandbox` starter repository is marked as a GitHub template and contains a language-neutral Pixi development scaffold, locked environment, `pixi-sandbox.toml`, generated consumer publisher, `.gitignore`, and a concise clone/use-template quickstart; it contains no credentials, prebuilt transport, or ignored runtime directories.
+- [x] #1 A canonical public `pixi-sandbox` starter repository is marked as a GitHub template and contains a language-neutral Pixi development scaffold, locked environment, `pixi-sandbox.toml`, generated consumer publisher, `.gitignore`, and a concise clone/use-template quickstart; it contains no credentials, prebuilt transport, or ignored runtime directories.
 - [ ] #2 A repository created from the template needs no manual Pixi Sandbox initialization or connected-host setup: on a clean checkout, the documented Pixi development command succeeds, and a push to the default branch can execute the included publisher with explicitly scoped repository `GITHUB_TOKEN` permissions and no Archont561-owned secret.
 - [x] #3 A template-update workflow starts only after `release.yml` has successfully published the exact prefix.dev package set, GitHub Release, standalone assets, and `SHA256SUMS`; it receives an explicit tag/immutable commit hand-off rather than depending on a `release.published` event suppressed by `GITHUB_TOKEN`.
 - [x] #4 Before changing the template, the receiver independently verifies that the requested semver tag is a published `Archont561/pixi-sandbox` release, resolves to the handed-off commit, and contains the required release assets/checksum manifest; malformed, missing, unpublished, or mismatched input fails closed.
@@ -110,4 +110,6 @@ Publish now stages `ls-files --cached --others --exclude-standard` — the revis
 AC#1 also grew two things the owner asked for: the launcher moved to `scripts/restore.sh` (via `init --script-path`, which already existed and creates the parent directory, so no core change was needed), and a devcontainer pinned to the pixi image the release pins, whose setup installs `git`, `gh` and `pixi-sandbox` from the canonical `archont561/archont561` channel and no compiler toolchain. `REQUIRED_FILES` is now ten entries and names the launcher for the first time — until now a starter could publish without one and pass.
 
 Still unproven, and not provable from here: the starter repository still holds only `README.md`. AC#1/#2/#6/#9/#10 remain open because the corrected lane has not run once, and running it needs two owner actions first — delete the tag `pixi-sandbox-v0.6.1` (it names an empty tree and `publish_refusals` refuses an existing tag), and confirm `PIXI_SANDBOX_STARTER_TOKEN` carries `Workflows: write` on the starter repository, since the push now carries `.github/workflows/*` into another repository (AC#7's concern, and issue #101's exact shape).
+
+2026-10-11 — v0.6.2 starter publication is now proven, superseding the README-only repository observation above. Run https://github.com/Archont561/pixi-sandbox/actions/runs/38163988956 passed dispatch validation and the complete starter job (114542760526): released-binary checksum verification, generation, locking, byte-identical regeneration, actionlint, fresh-clone development task, assembled-tree verification, publication, and evidence upload. The GitHub API confirms Archont561/pixi-sandbox-starter is public and is_template=true. Immutable tag pixi-sandbox-v0.6.2 resolves through annotated tag 7f24bfa0977441cea7c7e8c042614c2bba8d2248 to commit 1655285c27f162f24be33428fb1c1f791bd2e063. Its recursive tree contains all ten required files, including both workflows, pixi.toml, pixi.lock, pixi-sandbox.toml, .gitignore, README, scripts/restore.sh, and both devcontainer files; no runtime directories or transport are tracked. README names release v0.6.2 and source d0fc39ad35d8833b69a937079272db1ce0b9504a and documents use-template, clone, pixi run dev, and push. AC#1 is now checked. Remaining compound criteria are not closed merely because this run is green: no template-derived publisher/restore proof was established (#2/#9), no owner-operated App credential proof (#7), no failure-path evidence (#8), and no complete cross-link/documentation review (#10). Regeneration and lint evidence supports #5/#6, but their full version-resolution and safety contracts remain unchecked in this evidence-only review. TASK-73 is still open. Raw workflow log downloads were egress-blocked; evidence here is job/step conclusions plus the published Git tree and files.
 <!-- SECTION:NOTES:END -->
