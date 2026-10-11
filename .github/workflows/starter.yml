@@ -9,9 +9,9 @@ name: starter
 #
 # Every step below is a pinned `uses:` or a one-line task (task-36). The scaffolding,
 # verification and publication logic is tested Rust in `crates/xtask/src/starter.rs`, not
-# shell: `consumer-proof.yml` proves the same recipe but spends ~60 lines of `run:` blocks
-# behind `multiline-run-allowed` opt-outs to do it, and per-platform shell is where the v0.3.6
-# release died.
+# shell, and per-platform shell is where the v0.3.6 release died. The release lane's consumer
+# proof is built the same way now (TASK-89, `crates/xtask/src/consumer_proof.rs`); it used to
+# carry ~60 lines of `run:` block behind opt-outs, which is the debt this lane avoided.
 #
 # Two shapes here are deliberate, both learned the expensive way (task-85). The dispatch check is
 # a job of its own, so a `source-commit` the tag does not name costs the lane nothing: it fails

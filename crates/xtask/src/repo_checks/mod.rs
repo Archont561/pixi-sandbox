@@ -45,11 +45,14 @@
 //!     `crates/pixi-sandbox/src/lib.rs`. The document is what an agent reads as instruction,
 //!     and D10 forbids the one thing that would otherwise catch the drift — a test that
 //!     reads this repository.
-//! 13. doc-13 §1.2 — the consumer proof greps a publisher another crate renders, so every
-//!     `grep -F` it aims at a generated file must match a string the generator's source still
-//!     contains. At v0.6.1 the proof kept grepping for a download URL that TASK-76 had moved
-//!     into `fetch-release`, and whose absence the generator's own tests assert; the release
-//!     published and the proof went red afterwards (run 38130260877).
+//! 13. doc-13 §1.2 — the consumer proof asserts properties of a publisher another crate
+//!     renders, so every assertion must match a string the generator's source still contains.
+//!     At v0.6.1 the proof kept grepping for a download URL that TASK-76 had moved into
+//!     `fetch-release`, and whose absence the generator's own tests assert; the release
+//!     published and the proof went red afterwards (run 38130260877). The assertions now live
+//!     in `PUBLISHER_ASSERTIONS` in `xtask::consumer_proof` (TASK-89's port), and both that
+//!     module and any `grep -F` left in a workflow are scanned; a proof that asserts nothing is
+//!     a finding, because that is the shape this check passed vacuously over in between.
 
 pub mod agents_md;
 mod badges;

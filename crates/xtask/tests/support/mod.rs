@@ -46,9 +46,17 @@ pub fn valid_fixture() -> tempfile::TempDir {
         "crates/pixi-sandbox/src/generated/github_workflow.rs",
         "https://prefix.dev/archont561/archont561\npixi global install pixi-sandbox\npixi-sandbox fetch-release --dest \"$PIXI_SANDBOX_BIN\"\n# verifies it against the release's SHA256SUMS\n",
     );
+    // The asset-boundary smoke, as it has stood since doc-13 §2 moved the lifecycle half into
+    // `release.yml`: no `grep -F` of a generated publisher. TASK-89 ported those assertions
+    // into `PUBLISHER_ASSERTIONS` below, so a fixture that kept a grep here would let check 13
+    // look satisfied by the workflow while the module half went unpoliced.
     write(
         ".github/workflows/consumer-proof.yml",
-        "name: consumer proof\njobs:\n  consumer-proof:\n    steps:\n      - run: grep -F 'fetch-release --dest' .github/workflows/publish-sandbox.yml\n",
+        "name: consumer proof\njobs:\n  consumer-proof:\n    steps:\n      - run: pixi run -e package xtask consumer-proof-asset -- --tag \"$RELEASE_TAG\"\n",
+    );
+    write(
+        "crates/xtask/src/consumer_proof.rs",
+        "pub const PUBLISHER_ASSERTIONS: [&str; 1] = [\"fetch-release --dest\"];\n",
     );
     write(
         ".github/workflows/ci.yml",

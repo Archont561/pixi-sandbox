@@ -6,11 +6,12 @@
 //! generate — the Pixi project itself, the ignore file and the README — plus the validation
 //! that the assembled tree really is pinned to one release.
 //!
-//! Why Rust and not the workflow: `consumer-proof.yml` already proves this recipe works, but
-//! it spends ~60 lines of `run:` shell carrying `# multiline-run-allowed:` opt-outs to do it.
-//! The repository's rule is that a workflow step is an action or a one-line task (task-36), so
-//! the starter lane keeps its logic here where it is typed, unit-tested against tempdirs, and
-//! shared by every runner instead of duplicated per shell dialect.
+//! Why Rust and not the workflow: the repository's rule is that a workflow step is an action
+//! or a one-line task (task-36), so the starter lane keeps its logic here where it is typed,
+//! unit-tested against tempdirs, and shared by every runner instead of duplicated per shell
+//! dialect. The release lane's consumer proof proved the same recipe in ~60 lines of `run:`
+//! shell behind `# multiline-run-allowed:` opt-outs until TASK-89 ported it the same way; this
+//! module is the pattern that port copied (see [`crate::consumer_proof`]).
 
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
@@ -76,8 +77,8 @@ pub fn version_of(tag: &str) -> &str {
 /// Pixi/Sandbox scaffold and one documented development task, not a framework starter. The
 /// single dependency is not decoration — a dependency-free environment solves to no
 /// platform-specific lock entry at all, and `pixi-pack` then fails with "platform not found in
-/// lockfile: linux-64". `consumer-proof.yml` hit exactly that and picked `ripgrep` for the same
-/// reason; keeping the same choice keeps the two lanes comparable.
+/// lockfile: linux-64". The consumer proof's fixture hit exactly that and picked `ripgrep` for
+/// the same reason ([`crate::consumer_proof`]); keeping the choice keeps the lanes comparable.
 #[must_use]
 pub fn render_pixi_toml(name: &str) -> String {
     format!(

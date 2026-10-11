@@ -11,8 +11,8 @@
 //! drive against tempdir fixtures, never against this checkout (D10).
 
 use xtask::{
-    airlock, commit_release, conda_platforms, prepare_release, release_assets, release_refs,
-    repo_checks, smoke, starter, util, version, workflow,
+    airlock, commit_release, conda_platforms, consumer_proof, prepare_release, release_assets,
+    release_refs, repo_checks, smoke, starter, util, version, workflow,
 };
 
 use anyhow::Result;
@@ -285,6 +285,81 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Write the clean consumer fixture and an empty evidence directory (consumer proof).
+    ConsumerProofFixture {
+        /// Consumer project directory; wiped and recreated.
+        #[arg(long)]
+        consumer: PathBuf,
+        /// Evidence directory the run uploads; wiped and recreated.
+        #[arg(long)]
+        evidence: PathBuf,
+        /// Release label recorded in the fixture's README.
+        #[arg(long)]
+        label: String,
+    },
+    /// Install the built binary as the consumer's own CLI (consumer proof).
+    ConsumerProofAdopt {
+        /// Binary the build uploaded.
+        #[arg(long)]
+        artifact: PathBuf,
+        /// Path inside the consumer fixture to install it at.
+        #[arg(long)]
+        dest: PathBuf,
+    },
+    /// Record the consumer CLI's own version and help as evidence (consumer proof).
+    ConsumerProofVersion {
+        /// Consumer CLI to interrogate.
+        #[arg(long)]
+        binary: PathBuf,
+        /// Isolated HOME the version check runs under.
+        #[arg(long)]
+        home: PathBuf,
+        /// Evidence directory.
+        #[arg(long)]
+        evidence: PathBuf,
+    },
+    /// Generate the consumer publisher twice and prove the renders agree (consumer proof).
+    ConsumerProofInit {
+        /// Consumer CLI that generates the publisher.
+        #[arg(long)]
+        binary: PathBuf,
+        /// Consumer project directory.
+        #[arg(long)]
+        consumer: PathBuf,
+        /// Isolated HOME the generation runs under.
+        #[arg(long)]
+        home: PathBuf,
+        /// Evidence directory.
+        #[arg(long)]
+        evidence: PathBuf,
+    },
+    /// Run the pack, publish, fetch and offline restore lifecycle (consumer proof).
+    ConsumerProofLifecycle {
+        /// Consumer project directory, already fixtured and locked.
+        #[arg(long)]
+        consumer: PathBuf,
+        /// Directory `pack` writes the transport to.
+        #[arg(long)]
+        transport: PathBuf,
+        /// Throwaway bare remote the transport is published to.
+        #[arg(long)]
+        remote: PathBuf,
+        /// Fresh clone of that remote, which the restore runs from.
+        #[arg(long)]
+        checkout: PathBuf,
+        /// Directory the transport is restored into.
+        #[arg(long)]
+        restored: PathBuf,
+        /// Isolated HOME every step runs under.
+        #[arg(long)]
+        home: PathBuf,
+        /// Evidence directory.
+        #[arg(long)]
+        evidence: PathBuf,
+        /// Platform the transport is packed for.
+        #[arg(long, default_value = "linux-64")]
+        platform: String,
+    },
     /// Turn a prepared tree into the release commit, tag, and pushes (auto-release's half).
     CommitRelease {
         /// Release tag to cut, `vX.Y.Z`. Positional, so the workflow's one-liner carries no
@@ -420,6 +495,44 @@ fn run_args(args: Args) -> Result<()> {
             println!("{tag}");
             Ok(())
         }
+        Command::ConsumerProofFixture {
+            consumer,
+            evidence,
+            label,
+        } => consumer_proof::fixture(&consumer, &evidence, &label),
+        Command::ConsumerProofAdopt { artifact, dest } => consumer_proof::adopt(&artifact, &dest),
+        Command::ConsumerProofVersion {
+            binary,
+            home,
+            evidence,
+        } => consumer_proof::record_version(&binary, &home, &evidence),
+        Command::ConsumerProofInit {
+            binary,
+            consumer,
+            home,
+            evidence,
+        } => consumer_proof::render_publisher(&binary, &consumer, &home, &evidence),
+        Command::ConsumerProofLifecycle {
+            consumer,
+            transport,
+            remote,
+            checkout,
+            restored,
+            home,
+            evidence,
+            platform,
+        } => consumer_proof::lifecycle(
+            &consumer_proof::LifecyclePaths {
+                consumer,
+                transport,
+                remote,
+                checkout,
+                restored,
+                home,
+                evidence,
+            },
+            &platform,
+        ),
         Command::CommitRelease {
             tag,
             dry_run,
