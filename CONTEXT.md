@@ -2479,3 +2479,105 @@ heard of the devcontainer.
 > House rules: `AGENTS.md` (invariant 10), session procedure in `.agents/skills/session/`;
 > conventional commits, one concern per commit, `pixi run --frozen test` ≥952 at every commit.
 > Do not push, open a pull request, merge, release or dispatch without my explicit go-ahead.
+
+### 2026-10-11 (eighth session) — TASK-89 landed; check 13 had been comparing nothing
+
+**Branch note:** session fixed to `arena/d2b714cc-pixi-sandbox`, based on main at `00ef66e4`.
+The clone arrived shallow again (`git rev-list --count HEAD` → 1), fixed with
+`git fetch --deepen=300 origin main`; the transport was force-fetched before the restore, which
+came back clean (21 044 blobs / 976.1 MiB verified, 0 failures; 5 520 manifest entries) naming
+commit `00ef66e` and tool `v0.6.1`. Baseline **952 passing / 1 skipped**, ended at
+**982 passing / 1 skipped** (42 git / 219 core / 525 pixi-sandbox / 196 xtask), `lint` 11/11.
+Merged as PR #136 → `36651855`; post-merge `ci`, `docs` and `publish sandbox` all green, and the
+repacked transport now names `3665185` (tool still `0.6.1` — a merge does not cut a release).
+
+**What landed (six commits, one concern each).** Three new `ShellGit` primitives
+(`init_bare`, `init_repo_branch`, `checkout_detached`) because invariant 8 keeps the proof's git
+journey in `pixi-sandbox-git` and those three existed nowhere else; `GitProtocol::fetch_into`
+was deliberately *not* reused, since it materialises with plumbing and no work tree and a proof
+built on it would prove this crate rather than a consumer's `git`. Then
+`crates/xtask/src/consumer_proof.rs` with five `consumer-proof-*` subcommands, the `release.yml`
+job rewritten to one line per step with the pinned checkout/setup-pixi pair, check 13 re-pointed,
+and the two places that described the consumer proof as embedded shell corrected.
+`grep -c multiline-run-allowed .github/workflows/release.yml` → **0**; the workflow markers that
+remain are `consumer-proof.yml` (1, the asset-boundary smoke) and `publish-sandbox.yml` (4,
+deliberately source-built).
+
+**The finding worth keeping: check 13 was passing vacuously.** It read
+`.github/workflows/consumer-proof.yml`, but doc-13's slice 5 moved the publisher greps into
+`release.yml`, which the check does not read. `asserted_literals` therefore returned an empty
+list, every filter over an empty list passed, and the check reported clean while comparing
+nothing — with green fixtures throughout, because `tests/support/mod.rs` injected a `grep -F` of
+its own. The tests exercised the check; the repository never did. That is the second time this
+check has been the only thing keeping a proof and a generator in step, and the first time it had
+silently stopped looking. It now reads `PUBLISHER_ASSERTIONS` in `consumer_proof.rs` *and* still
+reads the workflow, and — because the shipped failure was not a wrong assertion but *no*
+assertion — a module declaring none is a finding in its own right. Without that guard it would
+go vacuous again the next time the assertions move.
+
+**Two mutation checks exposed tests that passed while proving nothing**, and both were fixed
+rather than left: dropping `--detach` was invisible because `git checkout FETCH_HEAD` already
+detaches when the revision is not the current branch; and `Isolation::Empty` → `Ambient` was
+invisible because both apply the same `PATH` override. Sixteen neutralised behaviours in total,
+each caught by a named test; the evidence is in the task file.
+
+**Not implemented, deliberately.**
+* **TASK-89 AC#3** is the one open criterion: a full proof run on a release cut *after* this
+  merge. `auto-release.yml` is `workflow_dispatch` only — its own header says a
+  `push: branches: [main]` trigger would have to be added to automate it — so nothing cuts a
+  release on a merge, and the owner dispatches it.
+* **No check catches a test writing outside its tempdir.** This session committed
+  `crates/xtask/.github/workflows/publish-sandbox.yml` before catching it by reading
+  `git status`: a stand-in CLI fixture had no `case` guard, so it wrote its publisher for
+  `--help` too, which runs with an inherited working directory. Worth a task — the same class of
+  mistake is invisible until someone happens to look.
+* **`cargo doc` warns that `repo_checks` links to private `CHECKS`.** Pre-existing on main, not
+  touched here; a repo-wide intra-doc sweep is its own task, not a rider on this one.
+* **`codecov/patch` fails on this kind of change by construction**, and is not a required check:
+  the lifecycle's `pixi lock` needs prefix.dev, so `commit_the_consumer` and
+  `prove_the_transport` cannot execute in CI either. A red patch-coverage on a port whose
+  execution is the release-run proof is expected, not a regression.
+
+**Owner actions still open, unchanged and none of them engineering:** delete the starter tag
+`pixi-sandbox-v0.6.1` (verified still present and still naming a one-file tree, `README.md`),
+confirm `PIXI_SANDBOX_STARTER_TOKEN` carries `Workflows: write`, then re-dispatch the starter
+lane. Until a release exists, **TASK-76 AC#8, TASK-85 AC#6 and TASK-88 AC#8 stay unchecked**.
+
+**Prompt to start the next session with:**
+
+> Restore the sandbox and baseline the suite — expect **982 passing / 1 skipped** (42 git /
+> 219 core / 525 pixi-sandbox / 196 xtask) and `pixi run --frozen lint` 11/11. The transport
+> (`sandbox/developer-linux-64`) names commit `3665185` and tool `0.6.1` — a merge repacks it,
+> it does not cut a release. If `git rev-list --count HEAD` returns 1 the clone is shallow:
+> `git fetch --deepen=300 origin main`. If you restore, force-sync the transport refspec first
+> (`git fetch origin "+refs/heads/sandbox/developer-linux-64:refs/remotes/origin/sandbox/developer-linux-64"`);
+> restore.sh prefers the local tracking ref and the publisher force-pushes that branch.
+>
+> **First, one look at the release state: `gh release list --limit 3` and
+> `gh run list --workflow release.yml --limit 5`.** If a release newer than **v0.6.1**
+> (2026-10-11T09:58:15Z) exists, TASK-89 AC#3 is finally closable — read that release's
+> `consumer-proof` job in its `release.yml` run, confirm it reached the same verdict as the shell
+> recipe it replaced, paste the run link into the task file as evidence, check AC#3, set the task
+> `Done` and close it in house format. While you are in that run, check the same release closed
+> **TASK-76 AC#8**. If no newer release exists, leave both open and say so: `auto-release.yml` is
+> `workflow_dispatch` only, so a release is an owner dispatch, not something a merge triggers —
+> ask for it rather than waiting on it.
+>
+> TASK-89 landed in PR #136 (`36651855`) at 3 of 4: the consumer proof is `xtask
+> consumer-proof-*` subcommands over `crates/xtask/src/consumer_proof.rs`, `release.yml` carries
+> no `multiline-run-allowed` marker, and check 13 was re-pointed after it turned out to have been
+> comparing nothing since doc-13 moved the assertions out of the file it reads. Read
+> `CONTEXT.md` § Session scratchpad — the 2026-10-11 (eighth session) entry lists what is open.
+>
+> Next engineering, if the release is not the day's work: **TASK-90** (medium spike, no
+> dependencies) is the only unstarted item that unblocks others — **TASK-91 and TASK-92 both
+> depend on it**. Its subject is live: `self_update 1.3` is still declared (`Cargo.toml:57`,
+> `crates/pixi-sandbox/Cargo.toml:39`) and still unused, and `rust-version` is still `1.85`
+> (`Cargo.toml:13`) for TASK-92. **TASK-78** stays unstarted — its shape is contested and AC#1's
+> D-number is unmet. **TASK-73** blocks on an owner GitHub App install.
+>
+> House rules are in `AGENTS.md` (invariant 10), the session procedure and its templates in
+> `.agents/skills/session/`; Pixi only (`pixi run --frozen …`), cargo `--offline`, never two pixi
+> commands in parallel, conventional commits, one concern per commit, `pixi run --frozen test`
+> ≥982 at every commit. Do not push, open a pull request, merge, release or dispatch without my
+> explicit go-ahead.
