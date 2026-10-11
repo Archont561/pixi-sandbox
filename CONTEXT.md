@@ -2581,3 +2581,94 @@ lane. Until a release exists, **TASK-76 AC#8, TASK-85 AC#6 and TASK-88 AC#8 stay
 > commands in parallel, conventional commits, one concern per commit, `pixi run --frozen test`
 > ≥982 at every commit. Do not push, open a pull request, merge, release or dispatch without my
 > explicit go-ahead.
+
+### 2026-10-11 (ninth session) — TASK-92 landed; the MSRV debt was nineteen sites, not six
+
+**Branch note:** session fixed to `arena/931c2b4f-pixi-sandbox`, based on main at `245e481f`
+(the PR #138 merge, whose post-merge `ci`, `docs` and `publish sandbox` runs are all green and
+whose repack names `source.commit: 245e481`). The clone arrived shallow; `git fetch --unshallow`
+fixed it (333 commits). The restore came back clean (21 044 blobs / 976.1 MiB, 0 failures;
+5 520 manifest entries) but from the *stale local* transport ref — packed from `3665185`,
+predating two merges. That only means old, not wrong: the packed tree's `pixi.lock` hashes to
+`7ab9bb32…`, byte-identical to what the origin repack's manifest declares as `lock_sha256`
+(that field hashes **pixi.lock**, not Cargo.lock — an hour was nearly spent re-deriving vendor
+drift that did not exist). Baseline **986 passing / 1 skipped**, `lint` 11/11, toolchain
+rustc 1.98.1, user tools registered. The newest release is still **v0.6.1**: the `auto-release`
+dispatch of 2026-10-11 ~14:30 (run 38145891697) succeeded **in dry-run** — "prepared v0.6.2 but
+not committing, tagging, or releasing" — so v0.6.2 is staged, one real dispatch away, and until
+it exists the release-shaped proofs (TASK-76 AC#8, TASK-89 AC#3) stay open.
+
+**What landed (PR #139, TASK-92).** `rust-version` 1.85 → 1.88 — the highest MSRV among normal
+dependencies, owed by `self_update 1.3` (decision-5 adopted it as the release transport) and
+`rstest-bdd 0.6.0` alike. The README badge *and* `docs/src/components/Badges.astro:15` moved
+with it (the docs site carries the identical shield; the task's AC#1 "no other file
+contradicts" clause decided that, not taste), and the `self_update` comment in `Cargo.toml`
+was reworded from narrating the pre-verdict future ("Lifting `rust-version` is TASK-92 …")
+to recording what now is. Suite unchanged at 986/1; the named invalid-input tests pass 13/13
+as a focused set; every collapsed error string is byte-identical.
+
+**The finding worth keeping: an MSRV chore enumerated by a `-p` probe under-counts its own
+scope.** The task description listed six `collapsible_if` sites in `pixi-sandbox-core` because
+its probe stopped compiling there — with core red, nothing downstream gets linted, so the
+dependents' debt was invisible. Collapsing the six let the workspace build proceed, and the
+same lint surfaced thirteen more sites: `tool_fetch.rs:67`, `upgrade/mod.rs:329/334`,
+`commands/doctor.rs:240/246/257/265` (one a three-level nest), `commands/restore.rs:153`,
+`diagnostics.rs:110`, `tests/e2e.rs:25`, `tests/actions.rs:28`,
+`pixi-sandbox-core/tests/verify.rs:381`, `xtask/repo_checks/agents_md.rs:37`. Nineteen total,
+all the same class, all required by the task's own `--workspace --all-targets` AC. The lesson
+generalises: for any lint debt an MSRV lift switches on, let the *workspace gate* define the
+list, never a per-crate enumeration.
+
+**Two process notes.** Three parallel `edit` calls to one file raced and only one landed — the
+freshly-enabled workspace clippy gate caught it on the next run, and same-file edits are
+sequential from now on. And an `edit_file` match that silently spans re-wrapped comment lines
+can report success while changing nothing: `git diff` is the only honest receipt, and the
+comment rewrite had to be redone in two smaller pieces. Neither reached a commit; both were
+caught by gates this task turned on.
+
+**Not implemented, deliberately.** **TASK-78** (high, 0/10) is the only unblocked feature left
+and starts as a decision, not code: AC#1 needs a D-numbered shape decision (new pixi-sandbox
+verb vs. xtask subcommand vs. documented rattler-build recipe pattern), the pixi-build preview
+status named, and the relock consequence confirmed before any implementation. Owner actions
+remain the release lane's bottleneck: cutting v0.6.2 (dispatch is prepared in dry-run) starts
+the run that carries TASK-89 AC#3 and TASK-76 AC#8; TASK-85 AC#6 still needs a maintainer
+`actions:write` click on the starter dry-run; TASK-93 AC#4 needs a connected-host
+`pixi-pack` → `pixi-unpack` wheel round trip; TASK-73 waits on the owner GitHub App. Nothing
+new was filed this session.
+
+**Prompt to start the next session with:**
+
+> Restore the sandbox and baseline the suite — expect **986 passing / 1 skipped** (42 git /
+> 222 core / 526 pixi-sandbox / 196 xtask) and `pixi run --frozen lint` 11/11. The transport
+> (`sandbox/developer-linux-64`) names the PR #139 squash commit and tool `0.6.1` — a merge
+> repacks it, it does not cut a release. If the clone is shallow: `git fetch --unshallow
+> origin main`. `lock_sha256` in the transport manifest hashes **pixi.lock**; don't spend an
+> hour on vendor drift that isn't there. The workspace `rust-version` is now **1.88** (TASK-92
+> landed); the toolchain in the restored env is rustc 1.98.1.
+>
+> **First, one look at the release state: `gh release list --limit 3`.** If a release newer
+> than **v0.6.1** (2026-10-11T09:58:15Z) exists — v0.6.2 was already prepared in dry-run as
+> of 2026-10-11, run 38145891697, so this is plausible — read that release's `consumer-proof`
+> job in its `release.yml` run: it closes **TASK-89 AC#3** and checks **TASK-76 AC#8** in the
+> same run. Paste run links as evidence, close the task files in house format. If no newer
+> release exists, leave both open: `auto-release.yml` is `workflow_dispatch` only, so ask for
+> the dispatch rather than waiting on it.
+>
+> TASK-92 landed in PR #139 at 4 of 4: MSRV 1.88 declared, badges agree, nineteen
+> `collapsible_if` sites collapsed (the six listed in the task file plus thirteen the
+> workspace gate found), error strings byte-identical, suite count unchanged. Read
+> `CONTEXT.md` § Session scratchpad — the 2026-10-11 (ninth session) entry lists what is open.
+>
+> Next engineering: **TASK-78** (high, feature, no dependencies) — but its AC#1 comes before
+> any code: a D-numbered decision in `.knowledge/decisions.md` recording the shape (new
+> pixi-sandbox verb, xtask subcommand, or documented rattler-build recipe pattern), the
+> upstream preview status of pixi-build, the rattler-build dependency, and the no-new-crate-
+> without-a-relock rule. Propose the decision doc first; the other nine ACs are engineering
+> that follows it. **TASK-73** stays blocked on owner GitHub App setup; **TASK-85 AC#6** and
+> **TASK-93 AC#4** stay proof-only (maintainer click; connected host).
+>
+> House rules are in `AGENTS.md` (invariant 10), the session procedure and its templates in
+> `.agents/skills/session/`; Pixi only (`pixi run --frozen …`), cargo `--offline`, never two
+> pixi commands in parallel, conventional commits, one concern per commit, `pixi run --frozen
+> test` ≥986 at every commit. Do not push, open a pull request, merge, release or dispatch
+> without my explicit go-ahead.
