@@ -654,6 +654,56 @@ impl ShellGit {
         self.run(&self.git(["init", "-q"]).cwd(root)).map(|_| ())
     }
 
+    /// Initialise a work tree at `root` whose unborn `HEAD` names `branch`.
+    ///
+    /// [`init_repo`](Self::init_repo) deliberately leaves the branch to the ambient
+    /// `init.defaultBranch`, which is right for the airlock host and wrong for a fixture: a
+    /// hosted runner and a developer's machine may disagree, and a proof that assembles a
+    /// consumer repository has to build the same tree on both (TASK-89).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git init` fails (an unreadable parent, an existing repository).
+    pub fn init_repo_branch(&self, root: &Path, branch: &str) -> Result<()> {
+        self.run(
+            &self
+                .git(["init", "-q", "--initial-branch"])
+                .arg(branch)
+                .cwd(root),
+        )
+        .map(|_| ())
+    }
+
+    /// Initialise a *bare* repository at `dir` — a remote to publish into, with no work tree
+    /// to desynchronise from it.
+    ///
+    /// This is the shape the consumer proof's remote has to be: the proof publishes a
+    /// transport branch and then clones it back, and a non-bare remote would answer that clone
+    /// from a checked-out branch of its own instead of from the ref the publish wrote.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git init` fails (an unreadable parent, an existing repository).
+    pub fn init_bare(&self, dir: &Path) -> Result<()> {
+        self.run(&self.git(["init", "-q", "--bare"]).arg(path(dir)))
+            .map(|_| ())
+    }
+
+    /// Detach `HEAD` at `rev` in the work tree at `root` and materialise that revision.
+    ///
+    /// The consumer's journey is `clone` an empty remote, `fetch` the transport branch, then
+    /// check out what the fetch brought — detached, because a clone of an empty repository has
+    /// no branch to be on and the proof must not invent one. `rev` is any revision git
+    /// resolves, which in that journey is `FETCH_HEAD`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checkout fails (an unresolvable revision, a dirty work tree).
+    pub fn checkout_detached(&self, root: &Path, rev: &str) -> Result<()> {
+        self.run(&self.git(["checkout", "-q", "--detach"]).arg(rev).cwd(root))
+            .map(|_| ())
+    }
+
     /// Register `url` under `name` in the repository at `root`.
     ///
     /// # Errors
