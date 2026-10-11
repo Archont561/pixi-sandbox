@@ -25,12 +25,12 @@ fn parse_checksums(content: &str) -> HashMap<String, String> {
             }
         }
         // BSD format: "SHA256 (<file>) = <sha256>"
-        if let Some(rest) = line.strip_prefix("SHA256 (") {
-            if let Some((filename, sha)) = rest.split_once(") = ") {
-                let sha = sha.trim();
-                if sha.len() == 64 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
-                    map.insert(filename.to_string(), sha.to_ascii_lowercase());
-                }
+        if let Some(rest) = line.strip_prefix("SHA256 (")
+            && let Some((filename, sha)) = rest.split_once(") = ")
+        {
+            let sha = sha.trim();
+            if sha.len() == 64 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                map.insert(filename.to_string(), sha.to_ascii_lowercase());
             }
         }
     }

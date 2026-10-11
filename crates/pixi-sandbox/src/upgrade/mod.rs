@@ -326,15 +326,15 @@ fn refuse(spec: &Spec, reason: &str) -> Outcome {
     );
     let output_line = "delivery_refused=1".to_string();
 
-    if let Some(path) = &spec.step_summary {
-        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = std::io::Write::write_all(&mut file, summary.as_bytes());
-        }
+    if let Some(path) = &spec.step_summary
+        && let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path)
+    {
+        let _ = std::io::Write::write_all(&mut file, summary.as_bytes());
     }
-    if let Some(path) = &spec.output {
-        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(file, "{output_line}");
-        }
+    if let Some(path) = &spec.output
+        && let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path)
+    {
+        let _ = writeln!(file, "{output_line}");
     }
 
     Outcome::Refused(Refusal {

@@ -630,41 +630,39 @@ fn validate_workflow_policy(workflow: &WorkflowPolicy) -> Result<()> {
             validate_workflow_path(path)?;
         }
     }
-    if let Some(concurrency) = &workflow.concurrency {
-        if concurrency.group.trim().is_empty()
+    if let Some(concurrency) = &workflow.concurrency
+        && (concurrency.group.trim().is_empty()
             || concurrency.group != concurrency.group.trim()
-            || concurrency.group.chars().any(char::is_control)
-        {
-            return Err(Error::Invalid(
-                "workflow.concurrency.group must be a non-empty label without leading/trailing \
-                 whitespace or control characters"
-                    .to_string(),
-            ));
-        }
+            || concurrency.group.chars().any(char::is_control))
+    {
+        return Err(Error::Invalid(
+            "workflow.concurrency.group must be a non-empty label without leading/trailing \
+             whitespace or control characters"
+                .to_string(),
+        ));
     }
     if let Some(timeouts) = &workflow.timeouts {
         for (field, value) in [("plan", timeouts.plan), ("publish", timeouts.publish)] {
-            if let Some(minutes) = value {
-                if minutes == 0 || minutes > MAX_TIMEOUT_MINUTES {
-                    return Err(Error::Invalid(format!(
-                        "workflow.timeouts.{field} must be between 1 and {MAX_TIMEOUT_MINUTES} \
-                         minutes, got {minutes}"
-                    )));
-                }
+            if let Some(minutes) = value
+                && (minutes == 0 || minutes > MAX_TIMEOUT_MINUTES)
+            {
+                return Err(Error::Invalid(format!(
+                    "workflow.timeouts.{field} must be between 1 and {MAX_TIMEOUT_MINUTES} \
+                     minutes, got {minutes}"
+                )));
             }
         }
     }
-    if let Some(version) = &workflow.pixi_version {
-        if version.trim().is_empty()
+    if let Some(version) = &workflow.pixi_version
+        && (version.trim().is_empty()
             || version != version.trim()
-            || version.chars().any(|c| c.is_control() || c.is_whitespace())
-        {
-            return Err(Error::Invalid(
-                "workflow.pixi_version must be a non-empty version with no whitespace or \
-                 control characters"
-                    .to_string(),
-            ));
-        }
+            || version.chars().any(|c| c.is_control() || c.is_whitespace()))
+    {
+        return Err(Error::Invalid(
+            "workflow.pixi_version must be a non-empty version with no whitespace or \
+             control characters"
+                .to_string(),
+        ));
     }
     Ok(())
 }

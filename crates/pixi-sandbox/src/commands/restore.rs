@@ -150,13 +150,13 @@ fn restore_vendor(
 ) -> Result<(bool, CargoWiring)> {
     let mut vendored = false;
     let mut cargo_wiring = CargoWiring::NotVendored;
-    if let Some(vendor) = &manifest.vendor {
-        if !args.no_vendor {
-            println!("restore vendored cargo dependencies");
-            install_vendor(branch, vendor, project, work, args.force)?;
-            cargo_wiring = configure_cargo_vendor(project, environments, args.cargo_config)?;
-            vendored = true;
-        }
+    if let Some(vendor) = &manifest.vendor
+        && !args.no_vendor
+    {
+        println!("restore vendored cargo dependencies");
+        install_vendor(branch, vendor, project, work, args.force)?;
+        cargo_wiring = configure_cargo_vendor(project, environments, args.cargo_config)?;
+        vendored = true;
     }
     Ok((vendored, cargo_wiring))
 }
