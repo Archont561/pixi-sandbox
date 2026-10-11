@@ -6,13 +6,9 @@
 //! `tools update` was the first consumer; `self-update` (decision-4) is the second, and a
 //! second near-identical trait would have meant two fakes drifting apart.
 //!
-//! The real HTTP implementation lives in `github.rs`, alone, because it is the one piece here
-//! that cannot be exercised offline — isolating it keeps that gap to a single named file
-//! instead of spreading it through the logic that *is* testable.
-
-mod github;
-
-pub use github::{GitHubReleaseSource, PIXI_CHECKSUM_MANIFEST};
+//! The real HTTP implementation lives in [`crate::github`], alongside the upgrade adapter:
+//! both are the only pieces that cannot be exercised offline, so isolating them keeps that
+//! gap out of the trait and verification logic this module exposes.
 
 use anyhow::Result;
 use std::collections::BTreeMap;
@@ -25,6 +21,9 @@ use std::collections::BTreeMap;
 /// (issue #80: the generated workflow once resolved the download against
 /// `$GITHUB_REPOSITORY`, the *consumer's* repository, which publishes no such assets).
 pub const PIXI_SANDBOX_REPO: &str = "Archont561/pixi-sandbox";
+
+/// Release asset name for a project that publishes `<name>.sha256` next to each asset.
+pub const PIXI_CHECKSUM_MANIFEST: &str = "sha256.sum";
 
 /// Where a release's bytes come from.
 pub trait ReleaseSource {

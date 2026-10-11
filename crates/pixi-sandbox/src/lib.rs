@@ -6,6 +6,7 @@
 
 pub mod branch_docs;
 pub mod generated;
+pub mod github;
 pub mod host_probe;
 pub mod pack;
 pub mod pipeline;

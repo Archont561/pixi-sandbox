@@ -418,6 +418,46 @@ fn production_sources_carry_no_inline_test_modules() {
 /// below survives only for the `LEGACY` modules that have not been split yet; new modules take
 /// the `tests/` route (see `production_sources_carry_no_inline_test_modules`). `main.rs`
 /// is wiring only and deliberately excluded.
+/// The real GitHub adapter is deliberately the only coverage-excluded production file: its
+/// socket boundary has no meaningful offline execution route, while `release` and `upgrade`
+/// keep their traits and decisions coverage-counted. Keep the path specific so a future
+/// `github.rs` elsewhere cannot silently disappear from the number.
+#[test]
+fn coverage_excludes_only_the_socket_adapter() {
+    const SOCKET_ADAPTER_EXCLUSION: &str = r"'pixi-sandbox/src/github\.rs$'";
+
+    let package = crate_dir()
+        .parent()
+        .expect("pixi-sandbox crate has a crates/ parent")
+        .join("package.json");
+    let text = std::fs::read_to_string(&package).expect("crates package manifest is readable");
+    let package_json: serde_json::Value =
+        serde_json::from_str(&text).expect("crates package manifest is valid JSON");
+    let coverage = package_json["scripts"]["coverage"]
+        .as_str()
+        .expect("crates package manifest declares a coverage script");
+    assert_eq!(
+        coverage.matches("--ignore-filename-regex ").count(),
+        1,
+        "{} must have one precise coverage exclusion: {coverage}",
+        package.display()
+    );
+    let (_, exclusion) = coverage
+        .rsplit_once("--ignore-filename-regex ")
+        .expect("coverage script has the filename-exclusion flag");
+    assert_eq!(
+        exclusion,
+        SOCKET_ADAPTER_EXCLUSION,
+        "{} must exclude only the real GitHub socket adapter",
+        package.display()
+    );
+    assert!(
+        !coverage.contains("release/github") && !coverage.contains("upgrade/github"),
+        "{} must not keep exclusions for adapters that no longer exist: {coverage}",
+        package.display()
+    );
+}
+
 #[test]
 fn coverage_guard_requires_a_test_route_for_every_production_module() {
     let crate_root = crate_dir();

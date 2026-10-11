@@ -10,8 +10,9 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 use crate::cli::UpgradeArgs;
+use pixi_sandbox::github::GitHubPullRequestSource;
 use pixi_sandbox::pipeline::ProcessRunner;
-use pixi_sandbox::upgrade::{self, GitHubPullRequestSource, Outcome};
+use pixi_sandbox::upgrade::{self, Outcome};
 use pixi_sandbox_git::ShellGit;
 
 /// The version this binary was built as — the upgrade target. The workflow's upgrade step

@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 use crate::cli::SelfUpdateArgs;
-use pixi_sandbox::release::GitHubReleaseSource;
+use pixi_sandbox::github::GitHubReleaseSource;
 use pixi_sandbox::self_update::{self, Request, replace::ReplaceStrategy};
 
 /// The version this binary was built as — what a self-update is updating *from*.
