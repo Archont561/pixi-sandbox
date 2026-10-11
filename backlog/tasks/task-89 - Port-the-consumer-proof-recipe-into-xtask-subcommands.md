@@ -2,7 +2,7 @@
 id: TASK-89
 title: Port the consumer proof recipe into xtask subcommands
 status: In Progress
-updated_date: '2026-10-11 13:30'
+updated_date: '2026-10-11 15:10'
 assignee: []
 created_date: '2026-10-11 11:20'
 labels:
@@ -170,4 +170,34 @@ declares no assertions at all, since an empty list is the failure mode that actu
 
 AC#3 needs a release cut after this merges, and the proof run over it. Not checked on a
 rehearsal.
+
+2026-10-11 15:10 — **supporting evidence on a connected host; AC#3 still open.** The ported
+recipe's five subcommands were run end to end for the first time on this machine, including
+`consumer-proof-lifecycle`, which the notes above record as the one step an airlocked host
+cannot execute (`pixi lock`/`install` against prefix.dev). All five exited 0 with the released
+**v0.6.1** binary adopted as the consumer CLI:
+
+```
+consumer-proof-fixture   --consumer …/consumer --evidence …/evidence --label v0.6.1
+consumer-proof-adopt     --artifact …/pixi-sandbox-x86_64-unknown-linux-musl --dest …/consumer/pixi-sandbox
+consumer-proof-version   --binary …/consumer/pixi-sandbox --home …/consumer-home --evidence …/evidence
+consumer-proof-init      --binary …/consumer/pixi-sandbox --consumer …/consumer --home …/consumer-home --evidence …/evidence
+consumer-proof-lifecycle --consumer …/consumer --transport …/transport --remote …/consumer-proof.git \
+                         --checkout …/fresh-checkout --restored …/restored --home …/consumer-home \
+                         --evidence …/evidence --platform linux-64
+```
+
+Observed: the two `init --force` renders are byte-identical (`cmp` → identical, both 9164 bytes);
+packed transport 10 blobs / 12 files, payload 98.8 MiB, `verify 11 blob(s) … 0 failure(s)`,
+published 14 files to the throwaway remote at commit `e9e524e00947` on
+`sandbox/consumer-proof-linux-64`; the offline restore ran from the packed binary under the empty
+environment (`PATH=/usr/bin:/bin`) and reported `29 entry(ies), 0 failure(s)` for the restored
+tree; the restored `pixi --version` printed `0.81.0`. All ten `EVIDENCE_FILES` were written, so
+the evidence-set guard is satisfied by a real run, not only a fixture.
+
+This is the same lifecycle TASK-76 AC#8 proved against v0.6.1 by a different route; it confirms
+the *ported* recipe reproduces the shell recipe's verdict. It is **not** AC#3: AC#3 asks for a
+proof run over a release cut *after* this port merged (with a run link), and no such release
+exists — the newest tag is v0.6.1, whose own consumer proof ran the shell recipe this port
+replaces. AC#3 stays unchecked for that reason, not for lack of a connected host.
 <!-- COMMENTS:END -->
