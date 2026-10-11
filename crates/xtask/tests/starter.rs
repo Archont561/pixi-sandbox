@@ -707,3 +707,47 @@ fn a_devcontainer_that_skips_the_canonical_channel_is_not_a_publishable_starter(
         "{findings:?}"
     );
 }
+
+#[test]
+fn scaffolding_replaces_stale_cargo_policy_for_the_language_neutral_starter() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("pixi-sandbox.toml"), "schema = 1\ncargo_vendor = true\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n").unwrap();
+    scaffold(
+        dir.path(),
+        "starter",
+        TAG,
+        COMMIT,
+        SOURCE,
+        STARTER,
+        PIXI_VERSION,
+    )
+    .unwrap();
+    let config = pixi_sandbox_core::sandbox_config::SandboxConfig::load(
+        &dir.path().join("pixi-sandbox.toml"),
+    )
+    .unwrap();
+    assert!(!config.cargo_vendor);
+    assert_eq!(config.bundles.len(), 1);
+    assert_eq!(config.bundles[0].platforms, ["linux-64"]);
+    assert!(!dir.path().join("Cargo.toml").exists());
+}
+
+#[test]
+fn starter_verification_refuses_an_unusable_cargo_policy() {
+    for config in [
+        "schema = 1\ncargo_vendor = true\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n",
+        "schema = 1\ncargo_vendor = false\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\ncargo_vendor = true\n",
+        "not valid TOML",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        starter_tree(dir.path(), "1.2.3");
+        std::fs::write(dir.path().join("pixi-sandbox.toml"), config).unwrap();
+        let findings = verify(dir.path(), TAG).unwrap();
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.contains("starter publish plan")),
+            "{config}: {findings:?}"
+        );
+    }
+}

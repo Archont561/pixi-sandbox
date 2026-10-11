@@ -182,7 +182,13 @@ fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
         cli_version: CLI_VERSION,
         pixi_version: &embedded_pixi_pin()
             .context("the embedded tools lock declares no pixi pin")?,
-        cargo: plan_vendors_cargo(&config),
+        // Match the config seeded below on the very first render. A missing lockfile
+        // in a Rust project is still a pack error, not a reason to silently omit crates.
+        cargo: if config.exists() {
+            plan_vendors_cargo(&config)
+        } else {
+            root.join("Cargo.toml").is_file()
+        },
         relock_workflow: &relock_reference.to_string_lossy(),
         ci_workflow: &args.relock_ci_workflow,
         // The relock bot's third dispatch has to name the publisher this run is generating,
@@ -217,7 +223,10 @@ pub fn run(args: &InitArgs) -> Result<()> {
     let launcher_kind = LauncherShell::current();
     write(&targets.workflow.0, &targets.workflow.1)?;
     if !targets.config.exists() {
-        write(&targets.config, &default_config(current_platform()?))?;
+        write(
+            &targets.config,
+            &default_config(current_platform()?, root.join("Cargo.toml").is_file()),
+        )?;
     }
     write(&targets.relock.0, &targets.relock.1)?;
     write(&targets.script.0, &targets.script.1)?;
@@ -436,9 +445,9 @@ fn current_platform() -> Result<&'static str> {
         })
 }
 
-fn default_config(platform: &str) -> String {
+fn default_config(platform: &str, cargo_vendor: bool) -> String {
     format!(
-        "schema = 1\nbranch_prefix = \"sandbox\"\ncargo_vendor = true\n\n[budgets]\nmax_blob_mib = 95\nmax_transport_mib = 2048\nmax_repository_push_mib = 2048\nmax_restore_required_mib = 8192\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"{platform}\"]\n"
+        "schema = 1\nbranch_prefix = \"sandbox\"\ncargo_vendor = {cargo_vendor}\n\n[budgets]\nmax_blob_mib = 95\nmax_transport_mib = 2048\nmax_repository_push_mib = 2048\nmax_restore_required_mib = 8192\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"{platform}\"]\n"
     )
 }
 

@@ -19,10 +19,11 @@ use std::path::{Path, PathBuf};
 /// Files the starter owns that `pixi-sandbox init` does not write.
 ///
 /// `init` owns the publisher, the relock workflow and the restore launcher, and writes a
-/// default `pixi-sandbox.toml` once. Everything below is the Pixi project that gives those
-/// files something to pack.
-pub const SCAFFOLD_FILES: [&str; 5] = [
+/// default config only when absent. The starter owns its explicit non-Cargo publish plan
+/// so even an older released CLI cannot seed Rust-specific defaults into this template.
+pub const SCAFFOLD_FILES: [&str; 6] = [
     "pixi.toml",
+    "pixi-sandbox.toml",
     ".gitignore",
     "README.md",
     ".devcontainer/devcontainer.json",
@@ -253,7 +254,7 @@ pub fn render_readme(
     )
 }
 
-/// Write the three scaffold files into `out`.
+/// Write the scaffold-owned files into `out`.
 ///
 /// Idempotent by construction: every byte is derived from the arguments, so a second call with
 /// the same inputs produces the same tree. That is what makes the publication contract's
@@ -284,6 +285,7 @@ pub fn scaffold(
     // Keyed by SCAFFOLD_FILES so the published set and the written set cannot drift apart.
     let contents = [
         render_pixi_toml(name),
+        "schema = 1\nbranch_prefix = \"sandbox\"\ncargo_vendor = false\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n".to_string(),
         render_gitignore(),
         render_readme(tag, source_commit, source_repo, starter_repo),
         render_devcontainer_json(pixi_version),
@@ -372,6 +374,23 @@ pub fn verify(dir: &Path, tag: &str) -> Result<Vec<String>> {
             findings.push(format!(
                 "{forbidden} must not be committed to the starter (runtime state or credential)"
             ));
+        }
+    }
+
+    // The starter has no Cargo project: a green dev task cannot prove its pack policy works.
+    let config_path = dir.join("pixi-sandbox.toml");
+    if config_path.exists() {
+        match pixi_sandbox_core::sandbox_config::SandboxConfig::load(&config_path) {
+            Ok(config) => {
+                if config
+                    .bundles
+                    .iter()
+                    .any(|bundle| bundle.cargo_vendor.unwrap_or(config.cargo_vendor))
+                {
+                    findings.push("starter publish plan must disable Cargo vendoring: the language-neutral starter has no Cargo.lock".to_string());
+                }
+            }
+            Err(error) => findings.push(format!("invalid starter publish plan: {error}")),
         }
     }
 
