@@ -242,11 +242,14 @@ pub fn canonical_file_sha256(rel: &str, bytes: &[u8], candidates: &[Vec<u8>]) ->
     sha256_bytes(&hashed)
 }
 
-/// Is this the install metadata uv writes into every `.dist-info` it installs, holding a
-/// wall-clock timestamp and the paths it resolved through?
+/// Is this the install metadata uv writes into every `.dist-info` it installs and rewrites
+/// on every install: its cache record (a wall-clock timestamp) or the wheel URL it resolved
+/// through (`direct_url.json`)?
 #[must_use]
 pub fn is_uv_install_metadata(rel: &str) -> bool {
-    is_under_dist_info(rel, UV_CACHE_JSON)
+    UV_INSTALL_METADATA
+        .iter()
+        .any(|name| is_under_dist_info(rel, name))
 }
 
 /// Is this a wheel's own `RECORD` — the CSV listing the package's installed files with
@@ -256,8 +259,11 @@ pub fn is_dist_info_record(rel: &str) -> bool {
     is_under_dist_info(rel, "RECORD")
 }
 
-/// The file name uv writes for that metadata.
-const UV_CACHE_JSON: &str = "uv_cache.json";
+/// The files uv writes as its own install metadata. Both are functions of *when and where*
+/// the install ran — the cache record's timestamp and the wheel URL `direct_url.json`
+/// records — so both are presence-only and both have their `RECORD` row collapsed. One list,
+/// so the presence rule and the `RECORD`-row rule can never drift apart.
+const UV_INSTALL_METADATA: [&str; 2] = ["uv_cache.json", "direct_url.json"];
 
 /// Is `rel` a file called `name` sitting directly in a `*.dist-info` directory? The
 /// directory qualifier is load-bearing: a file that merely shares the name elsewhere in
@@ -269,11 +275,11 @@ fn is_under_dist_info(rel: &str, name: &str) -> bool {
 
 /// May `rel` appear in a restored prefix without being in the oracle's list?
 ///
-/// The bookkeeping files pixi and restore own, plus uv's install metadata (issue #128):
-/// uv only writes `uv_cache.json` for the installs it routes through its cache, so a
-/// transport packed by an older tool — or from a different uv — can legitimately produce
-/// one that was never listed. Anything else extra is still a failure, which is what
-/// rejects a hand-forged record.
+/// The bookkeeping files pixi and restore own, plus uv's install metadata (issue #128): uv
+/// writes `uv_cache.json` only for installs it routes through its cache, and
+/// `direct_url.json` when it reinstalls a wheel. A transport packed by an older tool — or
+/// from a different uv — can legitimately produce either file without it being listed.
+/// Anything else extra is still a failure, which is what rejects a hand-forged record.
 #[must_use]
 pub fn is_allowed_extra(rel: &str) -> bool {
     ALLOWED_EXTRAS.contains(&rel) || is_uv_install_metadata(rel)
@@ -313,7 +319,10 @@ fn collapse_regenerated_row(line: &[u8]) -> Vec<u8> {
     let field_len = body.iter().position(|b| *b == b',').unwrap_or(body.len());
     let field = &body[..field_len];
     let name = field.rsplit(|b| *b == b'/').next().unwrap_or(field);
-    if name != UV_CACHE_JSON.as_bytes() {
+    if !UV_INSTALL_METADATA
+        .iter()
+        .any(|metadata| metadata.as_bytes() == name)
+    {
         return line.to_vec();
     }
     let mut out = Vec::with_capacity(line.len());
@@ -460,9 +469,9 @@ pub fn is_restore_marker(rel: &str) -> bool {
 /// Presence-only entries: conda package records and conda's history, plus uv's own install
 /// metadata. A conda record's content embeds the install-time scratch paths *and*
 /// `sha256_in_prefix` digests of the relocated files — both differ per host by
-/// construction — and uv's `uv_cache.json` is a wall-clock timestamp (issue #128), so only
-/// presence is checkable for any of them. Presence is still exact, which is what catching a
-/// forged record requires.
+/// construction — and uv's `uv_cache.json`/`direct_url.json` are a wall-clock timestamp and
+/// the resolved wheel path (issue #128), so only presence is checkable for any of them.
+/// Presence is still exact, which is what catching a forged record requires.
 fn is_presence_only(rel: &str) -> bool {
     (rel.starts_with("conda-meta/")
         && Path::new(rel)

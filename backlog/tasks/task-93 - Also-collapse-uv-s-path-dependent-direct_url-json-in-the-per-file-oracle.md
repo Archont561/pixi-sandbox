@@ -1,9 +1,10 @@
 ---
 id: TASK-93
 title: Also collapse uv's path-dependent direct_url.json in the per-file oracle
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-11 14:45'
+updated_date: '2026-10-11 15:57'
 labels:
   - bug
   - verification
@@ -47,17 +48,17 @@ This is the gap TASK-88 AC#8 exists to catch. It was carried open; this task is 
 ## Acceptance Criteria
 
 <!-- AC:BEGIN -->
-- [ ] #1 `*.dist-info/direct_url.json` is treated exactly as `uv_cache.json` is: presence-only in `scan_prefix` (so a missing/forged install stays caught) and its `RECORD` row collapsed to `@pixi-sandbox-regenerated@` before hashing, through the same shared canonical entry point — not a second rule.
-- [ ] #2 A `*.dist-info/direct_url.json` outside a `.dist-info` directory, or a file merely named `direct_url.json`, keeps its content digest.
-- [ ] #3 A regression test models a wheel reinstalled with a *different* `direct_url.json` path and asserts a clean verdict at the `verify_restored` seam; tampering with the package payload the wheel shipped is still caught.
+- [x] #1 `*.dist-info/direct_url.json` is treated exactly as `uv_cache.json` is: presence-only in `scan_prefix` (so a missing/forged install stays caught) and its `RECORD` row collapsed to `@pixi-sandbox-regenerated@` before hashing, through the same shared canonical entry point — not a second rule.
+- [x] #2 A `*.dist-info/direct_url.json` outside a `.dist-info` directory, or a file merely named `direct_url.json`, keeps its content digest.
+- [x] #3 A regression test models a wheel reinstalled with a *different* `direct_url.json` path and asserts a clean verdict at the `verify_restored` seam; tampering with the package payload the wheel shipped is still caught.
 - [ ] #4 The fix is exercised against a real `pixi-pack` → `pixi-unpack` round trip of a pypi wheel on a connected host and the restored tree verifies with 0 failures. Recorded as evidence in this file.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 pixi run --frozen fmt
-- [ ] #2 pixi run --frozen lint
-- [ ] #3 pixi run --frozen test
+- [x] #1 pixi run --frozen fmt
+- [x] #2 pixi run --frozen lint
+- [x] #3 pixi run --frozen test
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -65,4 +66,26 @@ This is the gap TASK-88 AC#8 exists to catch. It was carried open; this task is 
 <!-- SECTION:NOTES:BEGIN -->
 Found during the TASK-88 AC#8 verification session. Evidence, commands and the RECORD diff that
 isolates this file are recorded in TASK-88's notes.
+
+### 2026-10-11 — local implementation
+
+`UV_INSTALL_METADATA` is now the single list of uv-regenerated files:
+`uv_cache.json` and `direct_url.json`. `scan_prefix` consequently records both as
+presence-only, `is_allowed_extra` accepts either when an older or different uv did not list it,
+and the `canonical_file_sha256` path shared by pack and verify collapses the matching `RECORD`
+rows. All other `RECORD` rows remain digested.
+
+AC#2 is held by a same-basename-outside-`.dist-info` digest test. AC#3 adds a `verify_restored`
+fixture whose pack-time and restore-time `direct_url.json` values name different local wheels;
+the existing package-payload-tampering complement still reports an integrity failure.
+
+TDD evidence: each new behavioural probe failed with the production extension neutralised, then
+passed with it restored — `a_regenerated_direct_url_row_does_not_change_a_record_digest`,
+`direct_url_json_is_recorded_without_a_digest`, and
+`a_uv_reinstalled_pypi_environment_matches_the_oracle`. D21 now records the two-file rule and
+its limits. No `files.json` schema change was needed.
+
+**AC#4 remains open.** This airlocked host cannot run the required real `pixi-pack` →
+`pixi-unpack` pypi-wheel round trip because it cannot resolve against `prefix.dev`. The local
+fixture proves the seam but is not substituted for connected-host evidence.
 <!-- SECTION:NOTES:END -->

@@ -297,8 +297,13 @@ mod restored {
         fs::create_dir_all(staged.join("man/man3")).unwrap();
         fs::write(staged.join("man/man3/App::Cpan.3"), "doc stub\n").unwrap();
         // issue #128: a pypi dependency, which the transport carries as a *wheel* and so
-        // uv reinstalls at restore time — the two files below come back regenerated.
-        super::uv_installed_dist_info(&staged.join(super::SITE_PACKAGES), 1_791_622_638, "AAAA");
+        // uv reinstalls at restore time — the three files below come back regenerated.
+        super::uv_installed_dist_info(
+            &staged.join(super::SITE_PACKAGES),
+            1_791_622_638,
+            "AAAA",
+            &format!("{{\"url\":\"file://{staged_text}/pypi/typer-0.27.3-py3-none-any.whl\"}}"),
+        );
         std::os::unix::fs::symlink("thing.pc", staged.join("lib/link.pc")).unwrap();
         fs::set_permissions(staged.join("bin/tool"), fs::Permissions::from_mode(0o755)).unwrap();
 
@@ -772,11 +777,18 @@ fn an_absurd_program_header_entry_size_is_unknown_not_a_wrong_verdict() {
 #[cfg(unix)]
 const SITE_PACKAGES: &str = "lib/python3.12/site-packages"; // stale-ref-allowed
 
-/// The shape uv leaves behind for one installed wheel. The caller passes the two things
+/// The shape uv leaves behind for one installed wheel. The caller passes the three things
 /// that differ between the pack-time install and the restore-time one: the wall-clock
-/// second, and the `uv_cache.json` row of the package's own `RECORD`.
+/// second, the `uv_cache.json` row of the package's own `RECORD`, and the `direct_url.json`
+/// bytes (uv records the local wheel path it installed from, so the two installs disagree —
+/// issue #128). `direct_url` is written verbatim and its digest goes into the `RECORD` row.
 #[cfg(unix)]
-fn uv_installed_dist_info(site_packages: &Path, secs_since_epoch: u64, uv_cache_hash: &str) {
+fn uv_installed_dist_info(
+    site_packages: &Path,
+    secs_since_epoch: u64,
+    uv_cache_hash: &str,
+    direct_url: &str,
+) {
     let dist_info = site_packages.join("typer-0.27.3.dist-info");
     fs::create_dir_all(&dist_info).unwrap();
     fs::write(
@@ -786,10 +798,13 @@ fn uv_installed_dist_info(site_packages: &Path, secs_since_epoch: u64, uv_cache_
         ),
     )
     .unwrap();
+    fs::write(dist_info.join("direct_url.json"), direct_url).unwrap();
+    let direct_url_hash = pixi_sandbox_core::shard::sha256_bytes(direct_url.as_bytes());
     fs::write(
         dist_info.join("RECORD"),
         format!(
             "typer/__init__.py,sha256=AAAA,10\nuv_cache.json,sha256={uv_cache_hash},88\n\
+             direct_url.json,sha256={direct_url_hash},88\n\
              typer-0.27.3.dist-info/INSTALLER,,\n"
         ),
     )
@@ -808,18 +823,20 @@ fn uv_installed_dist_info(site_packages: &Path, secs_since_epoch: u64, uv_cache_
 fn a_uv_reinstalled_pypi_environment_matches_the_oracle() {
     // The whole of #128: pack scans a prefix uv installed, restore reinstalls the same
     // wheel with a fresh timestamp, and the final tree check must still pass. Before the
-    // fix those two files were reported as content mismatches and `restore` exited
+    // fix those three files were reported as content mismatches and `restore` exited
     // non-zero — which also skipped user-tool registration, so the documented next
     // command then failed with `pixi: command not found`.
     let temp = tempfile::tempdir().unwrap();
     let world = restored::world(temp.path());
 
-    // What `pixi-unpack` does when it reinstalls the wheel it carried: a different
-    // second, and therefore a different hash in the RECORD row.
+    // What `pixi-unpack` does when it reinstalls the wheel it carried: a different second,
+    // and — because uv records the local wheel path — a different `direct_url.json` whose
+    // bytes (and therefore whose `RECORD` row) differ from the pack-time install.
     uv_installed_dist_info(
         &world.final_prefix.join(SITE_PACKAGES),
         1_799_999_999,
         "ZZZZ",
+        "{\"url\":\"file:///home/user/.cache/uv/sdists-v6/typer-0.27.3-py3-none-any.whl\"}",
     );
 
     let report = verify_restored(

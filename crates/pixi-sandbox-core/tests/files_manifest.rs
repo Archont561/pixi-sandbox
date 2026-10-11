@@ -301,12 +301,12 @@ fn the_list_path_is_inside_the_environment_directory() {
 // ---------------------------------------------------------------------------
 //
 // `pixi-pack` transports a pypi dependency as the *wheel*, so `pixi-unpack` reinstalls it
-// with uv at restore time rather than unpacking bytes. Two files that come back are a
-// function of when and where that install ran, not of the transport:
+// with uv at restore time rather than unpacking bytes. Three entries then differ by install
+// location or time, not by transported content:
 //
 //   * `*.dist-info/uv_cache.json` — every field is install-time state, the timestamp first
-//   * `*.dist-info/RECORD`       — the package's own file list, whose `uv_cache.json` row
-//     carries that file's hash and size
+//   * `*.dist-info/direct_url.json` — the local wheel URL uv resolved at this install
+//   * `*.dist-info/RECORD` — the package's own file list, whose rows hash those two files
 //
 // Recording digests for them makes `restore`'s final tree check fail for every project
 // with a pypi dependency, and a non-zero restore skips user-tool registration. Presence is
@@ -402,13 +402,74 @@ fn uv_install_metadata_outside_a_dist_info_is_ordinary_content() {
     );
 }
 
+/// A `RECORD` for a wheel install, carrying the row uv writes for `direct_url.json` — the
+/// wheel URL it installed from, whose bytes (and row hash) differ per install.
+fn record_with_direct_url(direct_url_hash: &str, direct_url_size: u32) -> Vec<u8> {
+    format!(
+        "typer/__init__.py,sha256=AAAA,10\n\
+         uv_cache.json,sha256=AAAA,88\n\
+         direct_url.json,sha256={direct_url_hash},{direct_url_size}\n\
+         typer-0.27.3.dist-info/INSTALLER,,\n"
+    )
+    .into_bytes()
+}
+
+#[test]
+fn a_regenerated_direct_url_row_does_not_change_a_record_digest() {
+    let rel = dist_info("RECORD");
+    let packed = canonical_file_sha256(&rel, &record_with_direct_url("AAAA", 88), &[]);
+    let restored = canonical_file_sha256(&rel, &record_with_direct_url("BBBB", 137), &[]);
+    assert_eq!(
+        packed, restored,
+        "a RECORD's direct_url.json row is rewritten by uv; the rest of the file is not"
+    );
+}
+
+#[test]
+fn direct_url_json_is_recorded_without_a_digest() {
+    let temp = tempfile::tempdir().unwrap();
+    let prefix = temp.path().join("env");
+    fs::create_dir_all(prefix.join(SITE_PACKAGES)).unwrap();
+    fs::write(
+        prefix.join(dist_info("RECORD")),
+        record_with_direct_url("AAAA", 88),
+    )
+    .unwrap();
+    fs::write(
+        prefix.join(dist_info("direct_url.json")),
+        r#"{"url":"file:///stage/pypi/typer-0.27.3-py3-none-any.whl"}"#,
+    )
+    .unwrap();
+
+    let staged = prefix.to_string_lossy().into_owned().into_bytes();
+    let (doc, _) = files_manifest::scan_prefix(&prefix, std::slice::from_ref(&staged)).unwrap();
+    let by_path: std::collections::BTreeMap<&str, &FileEntry> =
+        doc.files.iter().map(|e| (e.p.as_str(), e)).collect();
+    assert!(
+        by_path[dist_info("direct_url.json").as_str()].h.is_none(),
+        "direct_url.json is regenerated per install and must be presence-only"
+    );
+    // The rest of the dist-info keeps its full content check.
+    assert!(by_path[dist_info("RECORD").as_str()].h.is_some());
+}
+
+#[test]
+fn direct_url_outside_a_dist_info_is_ordinary_content() {
+    assert_ne!(
+        canonical_file_sha256("share/direct_url.json", b"{}", &[]),
+        canonical_file_sha256("share/direct_url.json", br#"{"a":1}"#, &[]),
+        "a file outside a .dist-info keeps its content digest"
+    );
+}
+
 #[test]
 fn uv_install_metadata_may_appear_without_being_listed() {
-    // uv only writes `uv_cache.json` for the installs it routes through its cache, so a
-    // transport packed by an older tool — or from a different uv — can legitimately produce
-    // one that was never listed. That must not become an "unlisted file" failure, while a
-    // forged conda record still must.
+    // uv writes `uv_cache.json` only for cached installs and `direct_url.json` while it
+    // reinstalls a wheel, so a transport packed by an older tool — or from a different uv —
+    // can legitimately produce either file without listing it. That must not become an
+    // "unlisted file" failure, while a forged conda record still must.
     assert!(is_allowed_extra(&dist_info("uv_cache.json")));
+    assert!(is_allowed_extra(&dist_info("direct_url.json")));
     assert!(!is_allowed_extra(&dist_info("RECORD")));
     assert!(!is_allowed_extra("conda-meta/hand-forged.json"));
 }
