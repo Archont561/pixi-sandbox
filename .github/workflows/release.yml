@@ -128,9 +128,123 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Proof before publish (doc-13 §2). Everything here runs against the build's own artifact,
+  # so it needs no release to exist: a consumer downloads the exact bytes this tag will publish,
+  # lets that binary generate a publisher, and proves the pack → publish → fetch → offline
+  # restore lifecycle. What it cannot cover is the asset boundary — `releases/download/<tag>`
+  # and the published SHA256SUMS do not exist yet — and that boundary keeps its own job in
+  # consumer-proof.yml, dispatched after the release below.
+  #
+  # Job-level `permissions:` *replaces* the workflow-level block, so `contents: read` is the
+  # whole grant here; this job is deliberately not in `environment: release`.
+  consumer-proof:
+    name: consumer proof (linux-64, built artifact)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      PROOF_LABEL: ${{ inputs.version || github.ref_name }}
+    steps:
+      - name: Prepare clean consumer fixture
+        shell: bash
+        # multiline-run-allowed: consumer fixture setup is intentionally isolated from repo tasks
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/consumer" "$RUNNER_TEMP/evidence"
+          mkdir -p "$RUNNER_TEMP/consumer/.github/workflows" "$RUNNER_TEMP/evidence" "$RUNNER_TEMP/consumer/.pixi"
+          cat > "$RUNNER_TEMP/consumer/pixi.toml" <<'EOF'
+          [workspace]
+          name = "consumer-proof"
+          channels = ["https://prefix.dev/conda-forge"]
+          platforms = ["linux-64"]
+
+          [dependencies]
+          # A dependency-free environment solves to no platform-specific lock entry at all
+          # (pixi omits per-platform data when there is nothing to record), so pixi-pack later
+          # fails with "platform not found in lockfile: linux-64" and an empty candidate list.
+          # One small, fast-to-fetch package (same choice as tests/fixtures/demo-project) is
+          # enough to make the environment real without slowing the proof down.
+          ripgrep = "*"
+          EOF
+          printf '%s\n' "consumer fixture: $PROOF_LABEL" > "$RUNNER_TEMP/consumer/README.md"
+
+      - name: Download the built binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binary-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/binary
+
+      - name: Adopt the built binary as the consumer's CLI
+        run: install -m 0755 "$RUNNER_TEMP/binary/pixi-sandbox-x86_64-unknown-linux-musl" "$RUNNER_TEMP/consumer/pixi-sandbox"
+
+      - name: Record the binary's own version
+        shell: bash
+        # multiline-run-allowed: two evidence writes, the first under an empty environment
+        run: |
+          env -i HOME="$RUNNER_TEMP/consumer-home" PATH=/usr/bin:/bin "$RUNNER_TEMP/consumer/pixi-sandbox" --version | tee "$RUNNER_TEMP/evidence/version.txt"
+          "$RUNNER_TEMP/consumer/pixi-sandbox" --help > "$RUNNER_TEMP/evidence/help.txt"
+
+      - name: Render and regenerate consumer workflow
+        shell: bash
+        # multiline-run-allowed: the proof must exercise the released CLI in a clean consumer
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/consumer"
+          HOME="$RUNNER_TEMP/consumer-home" "$RUNNER_TEMP/consumer/pixi-sandbox" init --force
+          cp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.first.yml"
+          HOME="$RUNNER_TEMP/consumer-home" "$RUNNER_TEMP/consumer/pixi-sandbox" init --force
+          cmp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.first.yml"
+          cp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.yml"
+          grep -F 'fetch-release --dest' .github/workflows/publish-sandbox.yml
+          grep -F 'SHA256SUMS' .github/workflows/publish-sandbox.yml
+
+      - name: Prove pack, publish, fetch, and offline restore lifecycle
+        shell: bash
+        # multiline-run-allowed: released-binary consumer lifecycle is the proof subject
+        run: |
+          set -euo pipefail
+          consumer="$RUNNER_TEMP/consumer"
+          transport="$RUNNER_TEMP/transport"
+          remote="$RUNNER_TEMP/consumer-proof.git"
+          checkout="$RUNNER_TEMP/fresh-checkout"
+          restored="$RUNNER_TEMP/restored"
+          isolated_home="$RUNNER_TEMP/consumer-home"
+          cd "$consumer"
+          git init --initial-branch=main
+          git config user.name consumer-proof
+          git config user.email consumer-proof@example.invalid
+          HOME="$isolated_home" pixi lock
+          git add README.md pixi.toml pixi.lock pixi-sandbox.toml restore.sh .github/workflows
+          git commit -m 'test: consumer fixture'
+          HOME="$isolated_home" pixi install --frozen
+          HOME="$isolated_home" ./pixi-sandbox pack --repo-root . --envs default --output-dir "$transport" --platform linux-64 --fetch-tools --self-bin ./pixi-sandbox | tee "$RUNNER_TEMP/evidence/pack.log"
+          ./pixi-sandbox doctor --branch-location "$transport" --verify | tee "$RUNNER_TEMP/evidence/doctor.log"
+          git init --bare "$remote"
+          ./pixi-sandbox publish --input-dir "$transport" --branch-name sandbox/consumer-proof-linux-64 --remote "$remote" | tee "$RUNNER_TEMP/evidence/publish.log"
+          git clone "$remote" "$checkout"
+          git -C "$checkout" fetch origin sandbox/consumer-proof-linux-64
+          git -C "$checkout" checkout --detach FETCH_HEAD
+          # restore requires --output-path to already exist (support::existing_dir) — the
+          # e2e fixture tests mkdir it first for the same reason.
+          mkdir -p "$restored"
+          env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$checkout/.pixi-sandbox/tools/linux-64/pixi-sandbox" restore --branch-location "$checkout" --output-path "$restored" --user-tools skip | tee "$RUNNER_TEMP/evidence/restore.log"
+          env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$restored/.pixi/tools/linux-64/pixi" --version | tee "$RUNNER_TEMP/evidence/restored-pixi-version.txt"
+          cp "$transport/.pixi-sandbox/manifest.json" "$RUNNER_TEMP/evidence/manifest.json"
+
+      - name: Upload consumer proof evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: consumer-proof-${ env.PROOF_LABEL }
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: ignore
+          retention-days: 14
+
   release:
     name: publish prefix.dev and GitHub Release
-    needs: build
+    needs: [build, consumer-proof]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: release
@@ -224,9 +338,10 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
 
-      # A release created with GITHUB_TOKEN does not emit a follow-on `release: published`
-      # workflow run. Dispatch the consumer proof explicitly so every release is tested at the
-      # downloaded-asset boundary; workflow_dispatch is not subject to recursion suppression.
+      # The full consumer proof already gated this release above. What is left to prove is the
+      # asset boundary itself, which only exists now that the release does. A release created
+      # with GITHUB_TOKEN emits no follow-on `release: published` run, so dispatch the smoke
+      # explicitly; workflow_dispatch is not subject to recursion suppression.
       - name: Trigger consumer proof for the released version
         shell: bash
         env:

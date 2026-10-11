@@ -1,5 +1,22 @@
 name: consumer proof
 
+# The asset-boundary smoke, and only that.
+#
+# Everything else the consumer proof used to prove — that a released binary generates a
+# consumer publisher, regenerates it byte-identically, and survives the pack → publish → fetch →
+# offline restore lifecycle — now runs *before* the release, inside `release.yml`, against the
+# build's own artifact (doc-13 §2). That half needs no release to exist, so it can gate the
+# publish instead of reporting on it afterwards.
+#
+# What cannot move is the boundary itself: `releases/download/<tag>` and the published
+# `SHA256SUMS` do not exist until the release does. This job is the one place that proves a
+# consumer can download and checksum-verify what a release actually published. It therefore
+# cannot gate its own release; a red run here is the next release's blocker.
+#
+# `release.yml` dispatches this explicitly after publishing, because a release created with
+# GITHUB_TOKEN emits no `release: published` event. The `on: release` trigger stays for a
+# release cut by hand.
+
 on:
   release:
     types: [published]
@@ -7,7 +24,7 @@ on:
     inputs:
       release-tag:
         description: Release tag to prove, for example v0.5.2
-        required: false
+        required: true
         type: string
 
 permissions:
@@ -19,52 +36,21 @@ concurrency:
 
 jobs:
   consumer-proof:
-    name: consumer proof (linux-64)
+    name: consumer proof (asset boundary)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release-tag }}
       RELEASE_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
-        with:
-          run-install: false
-          cache: false
-
-      - name: Prepare clean consumer fixture
-        shell: bash
-        # multiline-run-allowed: consumer fixture setup is intentionally isolated from repo tasks
-        run: |
-          set -euo pipefail
-          test -n "$RELEASE_TAG"
-          case "$RELEASE_TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::release-tag must be a semver tag"; exit 2 ;; esac
-          rm -rf "$RUNNER_TEMP/consumer" "$RUNNER_TEMP/evidence"
-          mkdir -p "$RUNNER_TEMP/consumer/.github/workflows" "$RUNNER_TEMP/evidence" "$RUNNER_TEMP/consumer/.pixi"
-          cat > "$RUNNER_TEMP/consumer/pixi.toml" <<'EOF'
-          [workspace]
-          name = "consumer-proof"
-          channels = ["https://prefix.dev/conda-forge"]
-          platforms = ["linux-64"]
-
-          [dependencies]
-          # A dependency-free environment solves to no platform-specific lock entry at all
-          # (pixi omits per-platform data when there is nothing to record), so pixi-pack later
-          # fails with "platform not found in lockfile: linux-64" and an empty candidate list.
-          # One small, fast-to-fetch package (same choice as tests/fixtures/demo-project) is
-          # enough to make the environment real without slowing the proof down.
-          ripgrep = "*"
-          EOF
-          printf '%s\n' "consumer fixture: $RELEASE_TAG" > "$RUNNER_TEMP/consumer/README.md"
-
       - name: Download and verify standalone release asset
         shell: bash
         # multiline-run-allowed: this is the release-boundary proof, not repository automation
         run: |
           set -euo pipefail
+          test -n "$RELEASE_TAG"
+          case "$RELEASE_TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::release-tag must be a semver tag"; exit 2 ;; esac
+          mkdir -p "$RUNNER_TEMP/consumer" "$RUNNER_TEMP/evidence" "$RUNNER_TEMP/consumer-home"
           base="${GITHUB_SERVER_URL}/${RELEASE_REPO}/releases/download/${RELEASE_TAG}"
           asset=pixi-sandbox-x86_64-unknown-linux-musl
           curl --fail --location --silent --show-error "$base/$asset" --output "$RUNNER_TEMP/consumer/pixi-sandbox"
@@ -73,54 +59,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/consumer/pixi-sandbox"
           env -i HOME="$RUNNER_TEMP/consumer-home" PATH=/usr/bin:/bin "$RUNNER_TEMP/consumer/pixi-sandbox" --version | tee "$RUNNER_TEMP/evidence/version.txt"
           "$RUNNER_TEMP/consumer/pixi-sandbox" --help > "$RUNNER_TEMP/evidence/help.txt"
-
-      - name: Render and regenerate consumer workflow
-        shell: bash
-        # multiline-run-allowed: the proof must exercise the released CLI in a clean consumer
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/consumer"
-          HOME="$RUNNER_TEMP/consumer-home" "$RUNNER_TEMP/consumer/pixi-sandbox" init --force
-          cp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.first.yml"
-          HOME="$RUNNER_TEMP/consumer-home" "$RUNNER_TEMP/consumer/pixi-sandbox" init --force
-          cmp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.first.yml"
-          cp .github/workflows/publish-sandbox.yml "$RUNNER_TEMP/evidence/publish-sandbox.yml"
-          grep -F 'fetch-release --dest' .github/workflows/publish-sandbox.yml
-          grep -F 'SHA256SUMS' .github/workflows/publish-sandbox.yml
-
-      - name: Prove pack, publish, fetch, and offline restore lifecycle
-        shell: bash
-        # multiline-run-allowed: released-binary consumer lifecycle is the proof subject
-        run: |
-          set -euo pipefail
-          consumer="$RUNNER_TEMP/consumer"
-          transport="$RUNNER_TEMP/transport"
-          remote="$RUNNER_TEMP/consumer-proof.git"
-          checkout="$RUNNER_TEMP/fresh-checkout"
-          restored="$RUNNER_TEMP/restored"
-          isolated_home="$RUNNER_TEMP/consumer-home"
-          cd "$consumer"
-          git init --initial-branch=main
-          git config user.name consumer-proof
-          git config user.email consumer-proof@example.invalid
-          HOME="$isolated_home" pixi lock
-          git add README.md pixi.toml pixi.lock pixi-sandbox.toml restore.sh .github/workflows
-          git commit -m 'test: consumer fixture'
-          HOME="$isolated_home" pixi install --frozen
-          HOME="$isolated_home" ./pixi-sandbox pack --repo-root . --envs default --output-dir "$transport" --platform linux-64 --fetch-tools --self-bin ./pixi-sandbox | tee "$RUNNER_TEMP/evidence/pack.log"
-          ./pixi-sandbox doctor --branch-location "$transport" --verify | tee "$RUNNER_TEMP/evidence/doctor.log"
-          git init --bare "$remote"
-          ./pixi-sandbox publish --input-dir "$transport" --branch-name sandbox/consumer-proof-linux-64 --remote "$remote" | tee "$RUNNER_TEMP/evidence/publish.log"
-          git clone "$remote" "$checkout"
-          git -C "$checkout" fetch origin sandbox/consumer-proof-linux-64
-          git -C "$checkout" checkout --detach FETCH_HEAD
-          # restore requires --output-path to already exist (support::existing_dir) — the
-          # e2e fixture tests mkdir it first for the same reason.
-          mkdir -p "$restored"
-          env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$checkout/.pixi-sandbox/tools/linux-64/pixi-sandbox" restore --branch-location "$checkout" --output-path "$restored" --user-tools skip | tee "$RUNNER_TEMP/evidence/restore.log"
-          env -i HOME="$isolated_home" PATH=/usr/bin:/bin "$restored/.pixi/tools/linux-64/pixi" --version | tee "$RUNNER_TEMP/evidence/restored-pixi-version.txt"
-          cp "$transport/.pixi-sandbox/manifest.json" "$RUNNER_TEMP/evidence/manifest.json"
-          cp "$consumer/SHA256SUMS" "$RUNNER_TEMP/evidence/SHA256SUMS"
+          cp "$RUNNER_TEMP/consumer/SHA256SUMS" "$RUNNER_TEMP/evidence/SHA256SUMS"
 
       - name: Upload consumer proof evidence
         if: always()
