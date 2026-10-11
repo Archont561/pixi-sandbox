@@ -536,3 +536,61 @@ fn publishing_to_a_fork_or_over_an_existing_revision_is_refused() {
         .is_empty()
     );
 }
+
+/// The v0.6.1 regression (doc-13 §1.1). A starter repository whose only tracked file is the
+/// README, published by a lane that asked `git status --untracked-files=no` what to stage,
+/// produced a one-file revision — behind a green run and an immutable tag. The revision is
+/// judged here by asking the remote what it holds, not by looking at the working tree the lane
+/// had already written.
+#[test]
+fn publishing_over_a_readme_only_starter_commits_the_whole_template() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    // The refusal ladder compares the remote against the canonical `owner/repo` slug, so the
+    // fixture's bare repository is nested under the owner the way a URL path is.
+    std::fs::create_dir_all(root.join("Archont561")).expect("owner dir");
+    let owner = root.join("Archont561");
+    let remote = owner.join("pixi-sandbox-starter.git");
+    let remote_str = remote.to_str().expect("utf8 remote");
+
+    run_git(
+        &owner,
+        &["init", "--bare", "-q", "pixi-sandbox-starter.git"],
+    );
+    run_git(&remote, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+
+    // Seeded the way the real starter was: one commit, README and nothing else.
+    let seed = root.join("seed");
+    std::fs::create_dir_all(&seed).expect("seed dir");
+    run_git(&seed, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(seed.join("README.md"), "# starter\n").expect("seed readme");
+    commit_all(&seed, "Initial commit");
+    run_git(&seed, &["remote", "add", "origin", remote_str]);
+    run_git(&seed, &["push", "-q", "origin", "main"]);
+
+    // The clone already has `origin`, which is the shape the lane checks out.
+    run_git(root, &["clone", "-q", remote_str, "starter"]);
+    let clone = root.join("starter");
+    starter_tree(&clone, "1.2.3");
+    support::runtime_state(&clone);
+
+    publish(&clone, remote_str, STARTER, TAG, "main", COMMIT, false).expect("publish");
+
+    run_git(root, &["clone", "-q", remote_str, "verify"]);
+    let verify = root.join("verify");
+    let committed = run_git(&verify, &["ls-files"]);
+    for required in REQUIRED_FILES {
+        assert!(
+            committed.lines().any(|line| line == required),
+            "the published revision is missing {required}; it holds:\n{committed}"
+        );
+    }
+    assert!(
+        !committed.contains(".pixi/"),
+        "runtime state reached the starter:\n{committed}"
+    );
+    assert!(
+        run_git(&verify, &["tag"]).contains("pixi-sandbox-v1.2.3"),
+        "the immutable evidence tag is missing"
+    );
+}

@@ -721,8 +721,7 @@ fn keep_executable_bit(_from: &Path, _to: &Path) -> Result<()> {
 /// Is there anything to publish, and may we publish it here?
 ///
 /// Separated from the git calls so the refusal rules can be tested directly. Returns the
-/// files to stage; an empty list means the verified tag reproduced the current revision
-/// exactly, which the publication contract requires to be a success, not a no-op failure.
+/// reasons not to publish; an empty list means the lane may proceed.
 #[doc(hidden)] // test boundary (tests/starter.rs)
 #[must_use]
 pub fn publish_refusals(
@@ -779,20 +778,59 @@ pub fn publish(
         bail!("refusing to publish the starter; the previous revision is unchanged");
     }
 
-    let changed = git.worktree_status_files(root)?;
-    if changed.is_empty() {
+    // What the next commit would contain is not "what changed": the starter starts life with
+    // only a README tracked, so every generated file is untracked, and a status query scoped to
+    // tracked entries answers "one file" over a ten-file template. That is exactly the v0.6.1
+    // starter, which published a README-only revision behind a green run and an immutable tag
+    // (doc-13 §1.1). `ls-files --cached --others --exclude-standard` is the revision instead:
+    // tracked plus untracked, minus whatever the starter's own `.gitignore` excludes.
+    let revision = git.ls_publishable(root)?;
+
+    let missing: Vec<&str> = REQUIRED_FILES
+        .iter()
+        .filter(|required| !revision.iter().any(|path| path == *required))
+        .copied()
+        .collect();
+    if !missing.is_empty() {
+        for required in &missing {
+            eprintln!("::error::the starter revision would not contain {required}");
+        }
+        bail!(
+            "refusing to publish a starter revision missing {} required file(s); the previous revision is unchanged",
+            missing.len()
+        );
+    }
+    let forbidden: Vec<&str> = FORBIDDEN_PATHS
+        .iter()
+        .filter(|forbidden| {
+            let prefix = format!("{forbidden}/");
+            revision
+                .iter()
+                .any(|path| path == *forbidden || path.starts_with(&prefix))
+        })
+        .copied()
+        .collect();
+    if !forbidden.is_empty() {
+        for path in &forbidden {
+            eprintln!("::error::{path} would be committed to the starter");
+        }
+        bail!("refusing to publish runtime state or credentials to the starter");
+    }
+
+    git.add_files(root, &revision)?;
+    let staged = git.staged_files(root)?;
+    if staged.is_empty() {
         println!("starter is already at {tag}; nothing to publish (idempotent re-run)");
         return Ok(());
     }
-    println!("publishing {} file(s) for {tag}", changed.len());
+    println!("publishing {} file(s) for {tag}", staged.len());
     if dry_run {
         println!("dry run: not committing or pushing");
-        for file in &changed {
+        for file in &staged {
             println!("  would publish {file}");
         }
         return Ok(());
     }
-    git.add_files(root, &changed)?;
     git.commit(
         root,
         &format!(
