@@ -52,6 +52,12 @@ enum Command {
         #[arg(default_value = "dist/conda")]
         dir: PathBuf,
     },
+    /// Fail the release unless every supported platform contributed one standalone binary.
+    CheckReleaseBinaries {
+        /// Directory the binary artifacts were downloaded into.
+        #[arg(default_value = "dist")]
+        dir: PathBuf,
+    },
     /// Install the just-built conda package(s) and run the packaged binary on this machine.
     SmokeCondaPackage {
         /// Directory the `package` task wrote the `.conda` file(s) into.
@@ -393,6 +399,9 @@ fn run_args(args: Args) -> Result<()> {
             dry_run,
         ),
         Command::CheckCondaPlatforms { dir } => conda_platforms::check(&root.join(dir)),
+        Command::CheckReleaseBinaries { dir } => {
+            release_assets::check_binaries(&root.join(dir), &release_assets::expected_binaries())
+        }
         Command::SmokeCondaPackage { out_dir } => {
             smoke::smoke_conda_package(&root, &root.join(out_dir))
         }

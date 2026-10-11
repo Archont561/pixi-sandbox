@@ -183,6 +183,13 @@ jobs:
       - name: Require one Conda package per platform
         run: pixi run -e package xtask check-conda-platforms dist/conda
 
+      # The binary twin of the check above. `release-checksums` hashes whatever it finds and
+      # refuses only an empty directory, so without this a release missing one platform would
+      # publish a green SHA256SUMS covering four binaries — which is exactly where v0.6.1 sat
+      # when its osx-64 leg failed to upload its artifact (doc-13 §1.3).
+      - name: Require one standalone binary per platform
+        run: pixi run -e package xtask check-release-binaries dist
+
       # SHA256SUMS covers every standalone binary (the `.conda` packages have their own
       # prefix.dev/GitHub Release integrity path), and the xtask re-reads the written file to
       # prove every binary has a line — the completeness check the shell did with grep.
