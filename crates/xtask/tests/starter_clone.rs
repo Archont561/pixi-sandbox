@@ -51,7 +51,7 @@ fn the_clone_carries_the_publishable_tree_and_none_of_the_runtime_state() {
         "pixi-sandbox.toml",
         ".gitignore",
         "README.md",
-        "restore.sh",
+        "scripts/restore.sh",
         ".github/workflows/publish-sandbox.yml",
     ] {
         assert!(
@@ -113,17 +113,20 @@ fn an_executable_launcher_keeps_its_bit_across_the_clone() {
     std::fs::create_dir_all(&dir).expect("mkdir");
     assembled_starter(&dir);
     std::fs::set_permissions(
-        dir.join("restore.sh"),
+        dir.join("scripts/restore.sh"),
         std::fs::Permissions::from_mode(0o755),
     )
     .expect("chmod");
 
     let clone = clone_publishable(&dir, &root.path().join("clone")).expect("assemble a clone");
-    let mode = std::fs::metadata(clone.join("restore.sh"))
+    let mode = std::fs::metadata(clone.join("scripts/restore.sh"))
         .expect("metadata")
         .permissions()
         .mode();
-    assert!(mode & 0o111 != 0, "restore.sh lost its bit: {mode:#o}");
+    assert!(
+        mode & 0o111 != 0,
+        "scripts/restore.sh lost its bit: {mode:#o}"
+    );
 }
 
 /// A clone is not a launderer: runtime state that no ignore rule covers is carried *and* refused,
