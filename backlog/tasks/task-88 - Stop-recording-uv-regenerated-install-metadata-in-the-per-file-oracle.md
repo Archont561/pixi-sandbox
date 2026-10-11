@@ -73,8 +73,9 @@ transport to lean on.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-AC#1–#7 are implemented and locally proven; AC#8 is the one this machine cannot close and is
-carried deliberately.
+AC#1–#7 are implemented and locally proven; AC#8 was attempted against a real round trip on a
+connected host and the fix was found incomplete there — see the AC#8 note at the end, and
+**TASK-93**. It is carried deliberately.
 
 **The shape.** `files_manifest::canonical_file_sha256(rel, bytes, candidates)` is the new
 shared entry point. It is path-aware in exactly one way: a `*.dist-info/RECORD` has its
@@ -112,13 +113,37 @@ rather than restating the implementation.
 The `restored::world()` fixture now carries a uv-installed wheel, so every pre-existing
 restored-tree test exercises a prefix with pypi content rather than a conda-only one.
 
-**AC#8 is NOT met and is carried.** The connected proof needs a real `pixi-pack` →
-`pixi-unpack` round trip of a wheel. This machine cannot produce one: `pixi lock` fails
-against `https://prefix.dev/conda-forge/linux-64/repodata_shards.msgpack.zst` with
-`tls handshake eof`, and an airlocked consumer cannot relock at all. The fixture is honest
-about uv's file layout and the seam is the real `verify_restored`, but a fixture is not a
-wheel. The proof should be run against a re-packed `qgis-rust` transport — the repository in
-the report — once a release carrying this fix exists.
+**AC#8 is NOT met. Attempted on a connected host (2026-10-11) and it FAILS — the fix does
+not hold on real tooling.** The connected proof was produced: a throwaway project
+(`python 3.12.*` + pypi `six`, a pure-python wheel) was `init` → `pack` → `restore`d with the
+**released v0.6.1 static-musl binary** (sha256 `905ec63f9192bcd836f55c4ff4b37879a2e8454a68b94c7761a4cbc771088c6c`, verified). `restore` exits non-zero with
+`the restored project does not match the manifest (1 failure(s))` on
+`lib/python3.12/site-packages/six-1.17.0.dist-info/RECORD`. So the earlier "this machine cannot
+produce one" no longer describes a connected host — and the real round trip is exactly what
+exposes the gap below.
+
+**The gap: uv writes a third regenerated file the fix does not model —
+`*.dist-info/direct_url.json`.** Reconstructing the pack-side verification unpack and diffing
+its `RECORD` against the restored one leaves **exactly two** rows out:
+`direct_url.json` and `uv_cache.json`. The `uv_cache.json` row is the one the fix collapses;
+the `direct_url.json` row is not, and it differs because uv records the *local wheel path*
+(`file://…/pypi/six-1.17.0-py2.py3-none-any.whl`, 111 bytes at pack-verify vs 134 at restore) and
+`RECORD` hashes that file. The file's own entry verifies (the path is canonicalised away) but its
+`RECORD` row carries the hash of the un-canonicalised bytes, so the digest can never agree across
+sides. `direct_url.json` appears for **every** wheel `pixi-unpack` installs (it always installs
+from a local wheel), so this is not `six`-specific: issue #128 is **not** fixed for any packed
+transport containing a pypi wheel.
+
+**Scope check.** `grep -rn direct_url crates/pixi-sandbox-core/src` is empty, and
+`git diff v0.6.1 origin/main -- crates/pixi-sandbox-core/src/files_manifest.rs` is **empty** —
+main is byte-identical to the release, so the defect is present on current `main` too. AC#8 is
+carried open; the follow-up is filed as **TASK-93**, which proposes treating
+`*.dist-info/direct_url.json` exactly as `uv_cache.json` is treated (presence-only in
+`scan_prefix`, row-collapsed in a `RECORD`) and is the change that would actually close this AC.
+
+The fixture remains honest about uv's file layout, but it only models `uv_cache.json` + the
+`RECORD` row that hashes it. A fixture is not a wheel: it now also needs `direct_url.json` in the
+shape uv really writes, which is precisely what this AC exists to catch.
 
 **Left undone, deliberately.** Issue #128's third suggestion — registering user tools even when
 the final tree check fails — is **not** implemented here. It is a separate, deliberate
