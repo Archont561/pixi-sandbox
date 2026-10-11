@@ -2726,3 +2726,43 @@ connected-host wheel round trip.
 
 Validation for this evidence follow-up: `pixi run --frozen fmt` passed;
 `pixi run --frozen lint` passed all 11 gates; release-tree tests remain 986/1.
+
+### 2026-10-11 — README refresh and starter pack failure (TASK-94)
+
+The README now follows the concise bun-test-utils structure: badges, introduction, starter-first
+quickstart, capabilities with guide links, lifecycle, platform distinctions, repository layout,
+development, contributing, license. It explicitly distinguishes release binary targets from the
+workspace badge and removes the stale claim that macOS is routinely published. The starter is
+linked prominently, but the v0.6.2 Cargo-policy workaround and missing successful publisher proof
+are disclosed rather than advertising an unproven path.
+
+The user's starter run `38164114312`, job `114543021308`, failed in pack, after fetching the
+pinned CLI. Published starter tag `pixi-sandbox-v0.6.2` contains no Cargo project/lock but enables
+Cargo vendoring. A local pack preflight using its published pixi.lock reproduces
+`--cargo-vendor needs a Cargo.lock`. Raw job logs are egress-blocked; phase annotations, tree
+inspection, and local reproduction support the diagnosis, not a claim to have read remote stderr.
+This is why TASK-74's template-derived publisher/restore criteria were left open even when
+starter generation passed: generation is not publication proof.
+
+User confirmed the fix seams before tests: black-box init CLI and public starter scaffold/verify.
+TASK-94 adds six passing tests/cases (suite 986/1 → **992/1**), first observed failures at each
+changed behavior, preserves existing consumer config, seeds non-Rust projects without vendoring,
+and makes the language-neutral starter own its explicit non-Cargo plan. Its verifier now rejects
+unusable Cargo policy. Root/bundle overrides and invalid config are covered; schema defaults
+remain unchanged. Refactor review retained the small local changes rather than introducing a new
+abstraction or rewriting reviewed consumer data.
+
+**Not yet implemented remotely.** No push, PR, release, starter edit, or workflow dispatch was
+performed. TASK-94 AC#4 stays open until a corrected published starter's own publisher succeeds.
+A rerun of the existing failed revision alone will not change its config. Do not move or overwrite
+the immutable v0.6.2 starter tag. A new corrected revision and an explicitly sanctioned publisher
+run are still needed; full template-derived offline restore proof remains TASK-74 work.
+
+**Next session opening prompt:**
+
+> Load the session skill. Expect 992 passing / 1 skipped (42 git / 222 core / 530 CLI / 198 xtask).
+> Read the 2026-10-11 README refresh / TASK-94 entry in CONTEXT.md. The init/starter Cargo-policy
+> fix and README refresh are local, not released. TASK-94's local criteria pass; its real starter
+> publisher proof is open. Do not rerun the unchanged v0.6.2 starter or overwrite its immutable
+> tag. Propose landing the local commits and obtaining a corrected starter publisher/restore
+> proof; push, PR, merge, release, and dispatch still require explicit go-ahead.
