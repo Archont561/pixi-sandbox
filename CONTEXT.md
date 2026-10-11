@@ -2766,3 +2766,44 @@ run are still needed; full template-derived offline restore proof remains TASK-7
 > publisher proof is open. Do not rerun the unchanged v0.6.2 starter or overwrite its immutable
 > tag. Propose landing the local commits and obtaining a corrected starter publisher/restore
 > proof; push, PR, merge, release, and dispatch still require explicit go-ahead.
+
+### 2026-10-11 — single-commit starter main (TASK-95 / D22)
+
+The owner requested replacing starter main on every update and confirmed preserving immutable
+release tags. Implemented in the publisher, not applied to the live repository. Each successful
+publication creates a parentless commit from the validated staged tree and atomically pushes
+main plus its new annotated release tag. The explicit lease names the checked-out HEAD; a
+concurrent main update is refused rather than overwritten. Dry run no longer stages files.
+Unchanged trees still receive a new snapshot/tag for a new release; existing tags remain refused.
+Only main is eligible, and the canonical remote check now rejects substring lookalikes.
+
+Workflow checkout explicitly selects main; all releases share a publication concurrency group.
+D22, doc-10, TASK-74 AC#7 and the generated starter README record the owner-approved history
+policy. Retaining old tags means **one commit in main ancestry**, not one commit in all refs or
+a promise that old objects vanish from GitHub storage.
+
+Evidence: initial red counted two commits on published main; green counts one. The fixture also
+proves dry-run index/remote safety, full template content, unchanged-tree publication for a new
+release, old-tag retention and new-tag/main agreement. Four Git adapter cases refuse remote
+movement, tag conflict, protected main and unsupported atomic push without changing remote refs.
+Mutation checks caught removal of both the explicit lease and atomic flag. Refactor review kept
+Git plumbing inside its adapter, with no new shell recipe or unchecked force fallback.
+Gates: fmt passed, lint 11/11, **996 tests passing / 1 skipped** (46 git / 222 core / 530 CLI /
+198 xtask), up from 992/1. TASK-95 local ACs #1–#4 are checked; #5 remains remote-proof-only.
+
+No push, PR, workflow dispatch, live starter history rewrite, tag deletion or branch-protection
+change was made. Rollout still needs the local commits landed and a connected publication whose
+credential may force-update starter main. A protected main fails closed; do not bypass that by
+removing the lease or splitting the push. TASK-94's corrected-starter publisher proof also remains
+open. These are deployment/evidence boundaries, not claims that the live starter is already fixed.
+
+**Next session opening prompt:**
+
+> Load the session skill; baseline 996 passing / 1 skipped. Read the 2026-10-11 TASK-94 and
+> TASK-95 entries. Local commits now include the README refresh, non-Cargo starter fix, and
+> leased single-commit-main publisher. D22 is decided: preserve old release tags, never replace
+> them; replace only canonical starter main with one root commit, atomically with its new tag.
+> TASK-94 and TASK-95 remain In Progress only for real connected publisher evidence. Propose
+> the landing/rollout slice and stop: push, PR, merge, release, dispatch, and live starter changes
+> still require explicit go-ahead. The owner must allow the publishing credential to force-update
+> starter main; no branch protections have been modified here.
