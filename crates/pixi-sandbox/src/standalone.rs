@@ -53,7 +53,7 @@ pub enum ProbeVerdict {
     TimedOut,
 }
 
-/// Runs the probe's single execution. Injection point (D9's shape): the real runner is
+/// Runs the probe's single execution. Injection point (ADR-9's shape): the real runner is
 /// [`CommandRunner`]; tests drive [`probe`] with a scripted fake.
 pub trait ProbeRunner {
     /// Run `<exe> --version` with an empty environment anchored at `anchor` (its HOME,

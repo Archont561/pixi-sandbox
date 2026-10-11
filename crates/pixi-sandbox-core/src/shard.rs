@@ -1,6 +1,6 @@
 //! Content sharding.
 //!
-//! Transport rule (measured, see `.knowledge/design.md` §3):
+//! Transport rule (measured, see `backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md` §3):
 //! * shards are **whole files** — git content-addresses them, so unchanged files
 //!   are deduplicated across envs *and* across publishes for free;
 //! * only a single file larger than the shard limit is cut into `.partNNN`
@@ -197,7 +197,7 @@ pub fn split_file(abs: &Path, rel_path: &str, limit: u64) -> Result<Vec<Part>> {
 ///
 /// The join is staged in a sibling temp file and renamed into place only after the
 /// whole blob verifies, so a corrupt or truncated branch can never leave a
-/// half-written file behind (decision D7).
+/// half-written file behind (decision ADR-7).
 ///
 /// # Errors
 ///
@@ -324,7 +324,7 @@ pub fn materialise(src_root: &Path, blob: &Blob, dst: &Path) -> Result<()> {
             fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         }
         // Staged in a sibling and renamed, exactly like `join_parts` — an unsplit blob deserves
-        // the same all-or-nothing guarantee (D7), and there is a second reason the split path
+        // the same all-or-nothing guarantee (ADR-7), and there is a second reason the split path
         // never had to state: `fs::copy` opens the *destination* for writing, which Linux
         // refuses with ETXTBSY ("Text file busy") when that destination is a binary currently
         // being executed. `restore` materialising over a live `.pixi/tools/<platform>/pixi` —

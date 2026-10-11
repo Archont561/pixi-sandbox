@@ -26,7 +26,7 @@ ordinal: 46000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Task-43 moved pack provenance inside the Git boundary, but `prepare-release` still runs one
 bare `git status --porcelain` subprocess (prepare_release.rs `write_touched_report`) — the
-last production git call outside `pixi-sandbox-git` (invariant 8 / D9). Move it behind a
+last production git call outside `pixi-sandbox-git` (invariant 8 / ADR-9). Move it behind a
 `ShellGit` primitive built on the existing Runner command model, make the report path an
 explicit argument so the report becomes tempdir-fixture testable (it had none: the path was
 read from the environment inside the function), and state invariant 8's test-fixture carve-out

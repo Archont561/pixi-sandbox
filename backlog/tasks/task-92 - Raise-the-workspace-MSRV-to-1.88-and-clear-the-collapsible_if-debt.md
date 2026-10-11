@@ -41,7 +41,7 @@ and switches on its MSRV-gated lints, and `collapsible_if` then fires on six sit
 - `sandbox_config.rs:657` — the `pixi_version` validation
 
 Each is the let-chain form the 2024 edition and Rust 1.88 admit (`if let … && … {}`), and clippy
-prints the exact collapse for every one. The sites sit in the D13 per-file oracle, the manifest
+prints the exact collapse for every one. The sites sit in the ADR-13 per-file oracle, the manifest
 reader and the sandbox-config validator — load-bearing modules — which is exactly why AGENTS.md
 forbids folding the cleanup into the dependency change that exposed it.
 
@@ -70,7 +70,7 @@ leaving it dangling.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Carried out after TASK-90's adopt verdict (decision-5: `self_update` supplies the release
+Carried out after TASK-90's adopt verdict (ADR-27: `self_update` supplies the release
 transport, our `ownership`/`replace` stay), which is what makes the bump warranted.
 
 **AC#1.** `Cargo.toml:13` is `rust-version = "1.88"` — the highest MSRV among normal dependencies
@@ -79,7 +79,7 @@ the description did not name also had to agree: the docs-site badge
 `docs/src/components/Badges.astro:15` carried the identical `Rust-1.85%2B` shield and now reads
 1.88 alongside `README.md:7`, and the `self_update` comment block in `Cargo.toml` still narrated
 the *pre-verdict* state ("Lifting `rust-version` is TASK-92 … A reject verdict removes the line")
-— reworded to record decision-5 and this lift. A `grep` over tracked sources finds no `1.85`
+— reworded to record ADR-27 and this lift. A `grep` over tracked sources finds no `1.85`
 left: the remaining hits are history (`CONTEXT.md`, spike docs, this task's own description) and
 third-party vendored metadata, none of which states the workspace's MSRV. The `rstest-bdd`
 comment (`Cargo.toml:68`, "MSRV 1.88, below the workspace toolchain") was re-checked and stays
@@ -136,7 +136,7 @@ task turned on.
 
 <!-- SECTION:SUMMARY:BEGIN -->
 The workspace declares the MSRV it actually needs. `rust-version` is 1.88 — the highest among
-normal dependencies, owed by `self_update 1.3` (adopted as decision-5) and `rstest-bdd 0.6.0`
+normal dependencies, owed by `self_update 1.3` (adopted as ADR-27) and `rstest-bdd 0.6.0`
 alike — and the README and docs badges say the same. The MSRV lift switched clippy's
 `collapsible_if` on, and the debt it flagged is cleared in full: nineteen nested-`if` pairs across
 ten files collapsed into let-chains, every error text byte-identical, suite count unchanged at

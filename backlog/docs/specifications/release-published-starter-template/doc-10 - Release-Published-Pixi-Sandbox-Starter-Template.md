@@ -88,7 +88,7 @@ credentials.
 
 The automation may update only the canonical starter repository; it must never push to template
 derivatives, forks, or repositories created by users. Each successful update replaces only the
-canonical starter's `main` with one parentless commit (D22, owner-approved 2026-10-11). Immutable
+canonical starter's `main` with one parentless commit (ADR-22, owner-approved 2026-10-11). Immutable
 release tags retain previous snapshots; one commit on main does not mean one commit in all refs.
 
 The replacement uses `--force-with-lease=refs/heads/main:<checked-out-SHA>`, never an unguarded

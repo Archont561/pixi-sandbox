@@ -124,7 +124,7 @@ pub fn resolve_host_requirements(
         .filter(|set| !set.is_empty()))
 }
 
-/// Build the per-file oracle for one environment (D13).
+/// Build the per-file oracle for one environment (ADR-13).
 ///
 /// The unpack uses the pinned unpacker — exactly what `restore` will do on the airlock —
 /// and records the tree it produces, with every prefix-path spelling canonicalised away

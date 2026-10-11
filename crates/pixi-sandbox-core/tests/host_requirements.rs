@@ -2,7 +2,7 @@
 //!
 //! Every case writes its config into a tempdir and loads it through the real
 //! [`SandboxConfig::load`] path: the loader, not this test, decides what a config may say, and
-//! nothing here reads the host or this checkout (D10).
+//! nothing here reads the host or this checkout (ADR-10).
 
 use pixi_sandbox_core::host_requirements::{
     HostCapability, HostRequirementSet, HostRequirements, LibcFloor,

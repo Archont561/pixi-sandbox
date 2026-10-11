@@ -5,7 +5,7 @@
 //! sentences this file was written against; each one is bound below by `#[scenario]`, which
 //! emits the rstest test itself, so the names nextest reports did not move. Steps drive the
 //! binary black-box through the `tests/support` fixture builders and never point at this
-//! repository or a real HOME (D10).
+//! repository or a real HOME (ADR-10).
 
 mod support;
 

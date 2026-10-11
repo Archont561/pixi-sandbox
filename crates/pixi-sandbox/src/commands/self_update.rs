@@ -2,7 +2,7 @@
 //!
 //! Every environment read lives here (the running executable, the host triple, the compiled-in
 //! version), so `crate::self_update` itself stays a pure function of its `Request` and the
-//! tests never reach a developer's real binary (D10).
+//! tests never reach a developer's real binary (ADR-10).
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;

@@ -1,4 +1,4 @@
-//! Pinned helper fetching and verification (D4); embedding never changes the selected bytes.
+//! Pinned helper fetching and verification (ADR-4); embedding never changes the selected bytes.
 
 use crate::pack::support;
 use crate::user_tools::make_executable;
@@ -74,7 +74,9 @@ pub fn embed_tool(
 
     let linkage = verify::linkage_of(&destination);
     if linkage == Linkage::Dynamic {
-        bail!("{name} is dynamically linked — ship the static release asset instead (decision D4)");
+        bail!(
+            "{name} is dynamically linked — ship the static release asset instead (decision ADR-4)"
+        );
     }
     Ok(ToolEntry {
         version: source.version.clone(),

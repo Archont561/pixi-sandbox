@@ -12,7 +12,7 @@ labels:
 dependencies: []
 references:
   - .pixi-sandbox.toml
-  - .knowledge/decisions.md
+  - backlog/docs/adr/README.md
 priority: high
 ordinal: 1000
 ---
@@ -20,7 +20,7 @@ ordinal: 1000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-pixi.toml declares osx-arm64 but .pixi-sandbox.toml bundles only linux-64, so macOS developers get no sandbox branch. Decision D11 gates a new platform on a native-runner airlock proof: macOS is reasoned about but not yet verified.
+pixi.toml declares osx-arm64 but .pixi-sandbox.toml bundles only linux-64, so macOS developers get no sandbox branch. Decision ADR-11 gates a new platform on a native-runner airlock proof: macOS is reasoned about but not yet verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -33,7 +33,7 @@ pixi.toml declares osx-arm64 but .pixi-sandbox.toml bundles only linux-64, so ma
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Declaring osx-arm64 in .pixi-sandbox.toml is itself the trigger: the pull_request run of airlock.yml plans from that file and fans the matrix onto the native runner, so the PR that adds the platform is the D11 proof. Add the platform, confirm the plan names macos-14 and that the repo-consistency badge check stays green offline, open the PR, then read the macos-14 job. AC1 is the verdict of that job, egress-denied tier plus the D13 restored-tree check. AC2 is the config edit with lint-sandbox-plan green. AC3 follows on merge, since publish-sandbox.yml plans from the same file and will publish sandbox/developer-osx-arm64 by itself. The README platform row now says proof in flight; flip it to proven only if the job is green.
+Declaring osx-arm64 in .pixi-sandbox.toml is itself the trigger: the pull_request run of airlock.yml plans from that file and fans the matrix onto the native runner, so the PR that adds the platform is the ADR-11 proof. Add the platform, confirm the plan names macos-14 and that the repo-consistency badge check stays green offline, open the PR, then read the macos-14 job. AC1 is the verdict of that job, egress-denied tier plus the ADR-13 restored-tree check. AC2 is the config edit with lint-sandbox-plan green. AC3 follows on merge, since publish-sandbox.yml plans from the same file and will publish sandbox/developer-osx-arm64 by itself. The README platform row now says proof in flight; flip it to proven only if the job is green.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -53,11 +53,11 @@ Fourth run 36585905417: green on both platforms with Tier A executed. airlock os
 
 Fifth run 36586594920 exposed a flake in the gate itself, not in macOS: airlock osx-arm64 passed again with Tier A, but airlock linux-64 failed Tier B with an identical file list, 5363 files on both sides, and du drifting 2023048 to 2023052 KiB, one 4 KiB block. The no-op check compared files and on-disk size for exact equality, so pixi rewriting its own bookkeeping across a block boundary reported a healthy transport as broken. Replaced the count with an exact comparison of the sorted file list, which is the load-bearing half since anything fetched arrives as new files, and gave the size a 64 KiB budget that is always printed. Verified against the real restored transport in the sandbox: a new file injected between the two installs is caught, 200 KiB of growth with an unchanged file list is caught, and an untouched run passes with 0 KiB drift.
 
-Merged as 2d26683. ci green on the merge commit, then publish-sandbox planned both targets from the same .pixi-sandbox.toml and both jobs succeeded: developer linux-64 and developer osx-arm64. sandbox/developer-osx-arm64 now exists on origin at 90c17f7, sandbox snapshot 2026-09-29T15:57:04Z, default, osx-arm64, vendored crates, schema 2. Inspected through the API rather than cloned, the branch root carries only AGENTS.md and README.md plus .pixi-sandbox with envs, tools/osx-arm64 only, vendor, and a 2.08 MB manifest. Schema 2 means the published transport does carry the per-file oracle: the packer is built from source by the publish workflow, so only the airlock proof, which starts from the released v0.3.0 binary by design, reports the D13 notice. AC3 checked, task done.
+Merged as 2d26683. ci green on the merge commit, then publish-sandbox planned both targets from the same .pixi-sandbox.toml and both jobs succeeded: developer linux-64 and developer osx-arm64. sandbox/developer-osx-arm64 now exists on origin at 90c17f7, sandbox snapshot 2026-09-29T15:57:04Z, default, osx-arm64, vendored crates, schema 2. Inspected through the API rather than cloned, the branch root carries only AGENTS.md and README.md plus .pixi-sandbox with envs, tools/osx-arm64 only, vendor, and a 2.08 MB manifest. Schema 2 means the published transport does carry the per-file oracle: the packer is built from source by the publish workflow, so only the airlock proof, which starts from the released v0.3.0 binary by design, reports the ADR-13 notice. AC3 checked, task done.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-osx-arm64 is proven and published. The PR that declared the platform was itself the D11 proof: airlock.yml plans from .pixi-sandbox.toml and fans the matrix onto macos-14, where the transport was packed, published, fetched, byte-verified, restored and gated with egress denied via sandbox-exec. Getting there required four fixes that a linux-only, Tier-A-skipping CI had been hiding: an empty array expanded under set -u, fatal on the bash 3.2 macOS runners ship; a rate-limited releases API failing silently through a pipefail pipeline; BLOCK_NETWORK inverted, so the authoritative egress-denied tier had never run on any trigger that fires; and a no-op gate that failed on one 4 KiB block of allocator noise. Merged as 2d26683, and publish-sandbox created sandbox/developer-osx-arm64 at 90c17f7, schema 2, alongside the linux-64 branch.
+osx-arm64 is proven and published. The PR that declared the platform was itself the ADR-11 proof: airlock.yml plans from .pixi-sandbox.toml and fans the matrix onto macos-14, where the transport was packed, published, fetched, byte-verified, restored and gated with egress denied via sandbox-exec. Getting there required four fixes that a linux-only, Tier-A-skipping CI had been hiding: an empty array expanded under set -u, fatal on the bash 3.2 macOS runners ship; a rate-limited releases API failing silently through a pipefail pipeline; BLOCK_NETWORK inverted, so the authoritative egress-denied tier had never run on any trigger that fires; and a no-op gate that failed on one 4 KiB block of allocator noise. Merged as 2d26683, and publish-sandbox created sandbox/developer-osx-arm64 at 90c17f7, schema 2, alongside the linux-64 branch.
 <!-- SECTION:FINAL_SUMMARY:END -->

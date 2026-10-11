@@ -2,7 +2,7 @@
 //!
 //! This is the only home for the filesystem, process, fixture-payload, and temporary-git setup
 //! that more than one integration test needs. Every path starts under a test-owned tempdir and
-//! every project payload comes from `tests/fixtures`, never the repository checkout (D10).
+//! every project payload comes from `tests/fixtures`, never the repository checkout (ADR-10).
 //!
 //! ## API convention
 //!
@@ -32,7 +32,7 @@ pub fn bin() -> Command {
     Command::cargo_bin("pixi-sandbox").expect("binary builds")
 }
 
-/// An owned home and temporary directory for any restore or launcher test (D10).
+/// An owned home and temporary directory for any restore or launcher test (ADR-10).
 #[fixture]
 pub fn isolated_home() -> tempfile::TempDir {
     tempfile::tempdir().expect("isolated test home")

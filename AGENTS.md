@@ -30,8 +30,8 @@ own format.
 ## What this project is
 
 `pixi-sandbox` packs pixi environments into a git orphan branch and restores them on machines
-with no network. The design is settled and measured: **read `.knowledge/design.md` before
-proposing a different one**, and `.knowledge/decisions.md` for the short form. The recorded
+with no network. The design is settled and measured: **read `backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md` before
+proposing a different one**, and `backlog/docs/adr/README.md` for the short form. The recorded
 decisions are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
 
 ## Repo map
@@ -41,25 +41,25 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
 | `crates/pixi-sandbox-core/src/manifest.rs` | **wire format** — `manifest.json` shape and `SCHEMA_VERSION`. Changing it needs a schema bump + fixture update in `tests/manifest.rs` |
 | `crates/pixi-sandbox-core/src/shard.rs` | the only two file operations: `record_file` (split if oversized) and `materialise`/`join_parts` (verify, then write) |
 | `crates/pixi-sandbox-core/src/tools_lock.rs` | compiles the canonical helper-tool pins into the binary; `--tools-lock` is an explicit override |
-| `crates/pixi-sandbox-core/src/verify.rs` | collects *all* failures instead of stopping at the first — an airlock operator wants the full list; `verify_restored` is the restored-tree half (D13) |
-| `crates/pixi-sandbox-core/src/files_manifest.rs` | the per-file oracle (D13): `scan_prefix` records the unpacked prefix at pack time, canonicalising either side's path spellings to a sentinel so relocation cannot defeat the digests |
+| `crates/pixi-sandbox-core/src/verify.rs` | collects *all* failures instead of stopping at the first — an airlock operator wants the full list; `verify_restored` is the restored-tree half (ADR-13) |
+| `crates/pixi-sandbox-core/src/files_manifest.rs` | the per-file oracle (ADR-13): `scan_prefix` records the unpacked prefix at pack time, canonicalising either side's path spellings to a sentinel so relocation cannot defeat the digests |
 | `crates/pixi-sandbox/src/commands/*` | `init`, `pack`, `publish`, `restore`, `unpack`, `doctor`, `plan`, `tools list`, and `self-update` — pure Rust, no Python. Thin wiring: these resolve the ambient inputs (HOME, host triple, the running executable) and call into the library, so the logic stays testable from `tests/` |
 | `crates/pixi-sandbox/src/branch_docs.rs` | pure README/AGENTS rendering from a transport manifest, with a separate writer; generated workflow templates remain under `generated/` |
 | `crates/pixi-sandbox/src/tools_update.rs` | the `tools update` core: refresh every pin against its upstream, cross-check and linkage-verify each asset, render and atomically write the candidate lock; the CLI wrapper in `commands/tools/update.rs` only supplies the clock and the GitHub source |
 | `crates/pixi-sandbox/src/tool_fetch.rs` | pin selection, verified helper caches and embedding; downloads inject a byte stream while the library keeps checksum/version/linkage policy |
 | `crates/pixi-sandbox/src/vendor.rs` | cargo lockfile collision policy and loose/per-crate-tar vendoring; external toolchain paths are explicit at the test boundary |
-| `crates/pixi-sandbox/src/pack.rs` | pack preflight and the per-file oracle (D13), with shared process/filesystem primitives re-exported by `commands/support.rs` instead of duplicated |
+| `crates/pixi-sandbox/src/pack.rs` | pack preflight and the per-file oracle (ADR-13), with shared process/filesystem primitives re-exported by `commands/support.rs` instead of duplicated |
 | `crates/pixi-sandbox/src/lib.rs` | what `tests/` and `xtask` can reach: `branch_docs`, `generated`, `host_probe`, `pack`, `pipeline`, `release`, `self_update`, `standalone`, `tool_fetch`, `tools_update`, `upgrade`, `user_tools`, `vendor`. A module that needs tests is promoted here — the binary target's own modules (`cli.rs`, `commands/`) are only coverable black-box |
-| `crates/pixi-sandbox/src/release/mod.rs` + `crates/pixi-sandbox/src/upgrade/mod.rs` | the `ReleaseSource` and `PullRequestSource` traits every network-touching command injects (D9's shape, applied to HTTP); release also owns `Asset` and `parse_sha256_manifest`. Their decisions stay coverage-counted and fakeable from tests. |
+| `crates/pixi-sandbox/src/release/mod.rs` + `crates/pixi-sandbox/src/upgrade/mod.rs` | the `ReleaseSource` and `PullRequestSource` traits every network-touching command injects (ADR-9's shape, applied to HTTP); release also owns `Asset` and `parse_sha256_manifest`. Their decisions stay coverage-counted and fakeable from tests. |
 | `crates/pixi-sandbox/src/github.rs` | both real HTTP adapters — `GitHubReleaseSource` and `GitHubPullRequestSource` — plus their shared GitHub request headers. This is deliberately the only socket-touching file and `pixi run coverage` excludes its exact filename; keep it thin, anything with a decision belongs in the trait modules. A second consumer (such as xtask) or a third GitHub API call is the trigger to revisit extracting a crate. |
-| `crates/pixi-sandbox/src/self_update/*` | the updater's trust boundary (decision-4), in enforcement order: `resolver` (latest vs exact), `assets` (the canonical host→asset map, mirroring `xtask/src/release_assets.rs`), `checksums` (`SHA256SUMS`), `ownership` (the refusal ladder — a Pixi-managed binary is never overwritten), `replace` (stage beside the destination, then swap; see task-37 AC#3 for why Unix renames over a running binary) |
+| `crates/pixi-sandbox/src/self_update/*` | the updater's trust boundary (ADR-26), in enforcement order: `resolver` (latest vs exact), `assets` (the canonical host→asset map, mirroring `xtask/src/release_assets.rs`), `checksums` (`SHA256SUMS`), `ownership` (the refusal ladder — a Pixi-managed binary is never overwritten), `replace` (stage beside the destination, then swap; see task-37 AC#3 for why Unix renames over a running binary) |
 | `crates/pixi-sandbox-git` | **all** git access: `GitProtocol` + `ShellGit` (real git, with a swappable `Runner`) + `FakeGit` (in-memory mock). Never run `git` from anywhere else |
 | `.github/workflows/relock.yml` | **generated, not written**: the committed render of `generated/relock_workflow.rs`, the lockfile bot `pixi-sandbox init` also hands consumers. `check-repository` (check 10) fails when it drifts from a fresh render, so it is edited through the template and `pixi run --frozen xtask render-relock`, never by hand. Unlike the publisher template it is house-shaped — one-line steps throughout — which is what makes committing it possible |
-| `crates/pixi-sandbox/tests/fixtures/` | the fixture project and the synthetic transport. **Tests must not point at this repository** — see `.knowledge/decisions.md` D10 |
+| `crates/pixi-sandbox/tests/fixtures/` | the fixture project and the synthetic transport. **Tests must not point at this repository** — see `backlog/docs/adr/README.md` ADR-10 |
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical embedded helper-tool pins; edit as reviewed data and keep the embedded-lock tests green |
 | `.pixi-sandbox.toml` | explicit project publish bundles / native runners consumed by `pixi-sandbox plan` and the reusable release workflow |
 | `feature.utils.actionlint` + `feature.utils.shellcheck` | runs `actionlint` from conda directly when validating workflows in the `default` environment; ShellCheck sits beside it because actionlint silently skips the Bash inside `run:` blocks when no `shellcheck` executable is on PATH |
-| `crates/xtask` | typed repository automation invoked by Pixi tasks — every repo-targeting job that used to be a shell script: `check-repository` (the D10-exempt repo lints; opt out with `stale-ref-allowed` on or above the line), `prepare-release` + `check-release-refs` + `version`, `smoke-conda-package` (the `package-smoke` task on every `release.yml` build leg), `check-conda-platforms` (all five platforms contributed exactly one package; reads `dist/conda/conda-<platform>/`, which is why those artifacts are downloaded *unmerged*), and `lint-generated-workflow`, plus `stage-release-binary` and `release-checksums` (the release matrix's asset staging and SHA256SUMS — the `*unknown-*` glob this replaced had silently checksummed only the two musl binaries of five), and `commit-release` (auto-release's commit/tag/push half: stage exactly what `.release-touched` reports, refuse unaccounted modifications, refuse an existing remote tag, then commit, tag and push — git through `pixi-sandbox-git`, D9). The airlock workflow's machinery lives there too: `airlock-matrix` (plan JSON validated, `matrix=` written to `GITHUB_OUTPUT`), `resolve-release-tag` (override → declared-but-published → newest-published, each branch an incident), `airlock-pack` (frozen env installs + the released-binary pack), `airlock-fetch` (the developer-shaped fetch, D9), and `deny-egress` (`sudo unshare -n` / `sudo sandbox-exec`, loud on unknown OS). One Rust runtime on every runner — the v0.3.6 release died on macOS's Bash 3.2 over a single bashism — and every policy is tested against tempdir fixtures, never this checkout |
+| `crates/xtask` | typed repository automation invoked by Pixi tasks — every repo-targeting job that used to be a shell script: `check-repository` (the ADR-10-exempt repo lints; opt out with `stale-ref-allowed` on or above the line), `prepare-release` + `check-release-refs` + `version`, `smoke-conda-package` (the `package-smoke` task on every `release.yml` build leg), `check-conda-platforms` (all five platforms contributed exactly one package; reads `dist/conda/conda-<platform>/`, which is why those artifacts are downloaded *unmerged*), and `lint-generated-workflow`, plus `stage-release-binary` and `release-checksums` (the release matrix's asset staging and SHA256SUMS — the `*unknown-*` glob this replaced had silently checksummed only the two musl binaries of five), and `commit-release` (auto-release's commit/tag/push half: stage exactly what `.release-touched` reports, refuse unaccounted modifications, refuse an existing remote tag, then commit, tag and push — git through `pixi-sandbox-git`, ADR-9). The airlock workflow's machinery lives there too: `airlock-matrix` (plan JSON validated, `matrix=` written to `GITHUB_OUTPUT`), `resolve-release-tag` (override → declared-but-published → newest-published, each branch an incident), `airlock-pack` (frozen env installs + the released-binary pack), `airlock-fetch` (the developer-shaped fetch, ADR-9), and `deny-egress` (`sudo unshare -n` / `sudo sandbox-exec`, loud on unknown OS). One Rust runtime on every runner — the v0.3.6 release died on macOS's Bash 3.2 over a single bashism — and every policy is tested against tempdir fixtures, never this checkout |
 | `scripts/restore.sh` | one-liner offline reconstruction from orphan branch; derives the branch from `.pixi-sandbox.toml` for the host platform. Also selects the task-33 user-tool policy explicitly (`PIXI_SANDBOX_USER_TOOLS`, exported before the restore): a verified restore registers `pixi` + `pixi-sandbox` launchers in the user's home by default, `skip` opts out for CI. The policy travels as an environment variable, never a flag — the binary this script drives comes from the packed branch and may predate `--user-tools` (the airlock workflow proved that skew), while an unknown variable is simply ignored. It never sources `.pixi/sandbox-env.sh`; restored/project commands go through pixi (`pixi run ...`) or the manifest-owned pixi path when registration is skipped. This is the only shell left under `scripts/`, and `check-repository` holds it to the Bash 3.2 surface |
 | `package.json` + `bun.lock` | the root bun workspace — `docs` is a member, so `docs-install` runs at the root and package scripts target it with `bun --filter=pixi-sandbox-docs` — plus the repo-wide `backlog.md` / `skills` / `@biomejs/biome` devDependencies (`pixi run --frozen bunx backlog`, `pixi run --frozen bunx skills`, `lint-docs`) |
 
@@ -77,19 +77,19 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
 6. **Do not commit generated weight**: `.pixi/`, `target/`, `vendor/`, `node_modules/`, `.pixi-sandbox/`, `docs/dist/`.
 7. **A dynamically linked tool is a bug**, not a warning to ignore (`verify.rs` flags it).
 8. **Git only through `GitProtocol`** — never a bare `Command::new("git")` in production code
-   outside `pixi-sandbox-git` (D9). Tests use `FakeGit` to exercise the consumers of the
+   outside `pixi-sandbox-git` (ADR-9). Tests use `FakeGit` to exercise the consumers of the
    protocol, while `#[cfg(test)]` fixture builders (`tests/support`, commit-release,
    airlock, prepare-release) may run real `git` to construct the world under test — an
    oracle must not share code with the thing it judges; `--dry-run` uses a runner, not a
    second code path.
-9. **Tests target the fixtures, never this repository** (D10): `tests/fixtures/demo-project`
+9. **Tests target the fixtures, never this repository** (ADR-10): `tests/fixtures/demo-project`
    for project-level work, `tests/fixtures/transport` for payload-level work. Two tests enforce it.
 10. **Anything you did not implement goes in `CONTEXT.md` § Session scratchpad** — suggestions,
     drafts, alternatives considered, "we should probably…", measurements worth keeping. Under a
-    dated heading, newest last. Never into `AGENTS.md`, `README.md`, `.knowledge/`, a
+    dated heading, newest last. Never into `AGENTS.md`, `README.md`, `backlog/docs/`, a
     `backlog/docs/` spec or a code comment: those state what *is*, and a proposal mixed into
     them reads as a decision nobody made. A scratchpad entry graduates only by becoming a
-    backlog task, a decision in `.knowledge/decisions.md`, or a deletion.
+    backlog task, a decision in `backlog/docs/adr/README.md`, or a deletion.
 11. **Pixi is the sole environment entrypoint.** Do not source `.pixi/sandbox-env.sh` (restore no
     longer generates it) and do not run bare `cargo`, `rustc`, `bun`, `turbo`, `taplo`, `convco`,
     etc. Repository verbs go through `pixi run --frozen <task>`; `test`, `lint`, `fmt`, `coverage`
@@ -147,7 +147,7 @@ pixi run --frozen -- cargo check -p pixi-sandbox  # focused Cargo operation, not
 
 # every repository-automation subcommand goes through ONE task (crates/xtask); extra arguments
 # follow the subcommand, and `--` separates them when there is more than one.
-pixi run --frozen xtask check-repository            # the D10-exempt repo lints
+pixi run --frozen xtask check-repository            # the ADR-10-exempt repo lints
 pixi run --frozen xtask lint-generated-workflow     # actionlint over both workflows `init` generates
 pixi run --frozen xtask render-relock               # rewrite the committed render of .github/workflows/relock.yml
 pixi run --frozen xtask prepare-release auto        # stamp the next version everywhere (no git actions)
@@ -256,7 +256,7 @@ scenario binds behind the same `#[cfg]` the descriptive suite uses.
   handle user input (the tests may unwrap freely).
 - Comments explain *why* (usually pointing at a decision ID or a measurement), not *what*.
 - GitHub `uses:` dependencies are full commit SHAs with a trailing human release-label comment;
-  do not downgrade them to mutable tags. See `.knowledge/publish-automation.md`.
+  do not downgrade them to mutable tags. See `backlog/docs/specifications/publish-automation/doc-3 - Publish-Automation-Specification.md`.
 - Docs pages in `docs/src/content/docs/` are user-facing; keep the airlock page (`restore.mdx`)
   actionable for someone with no network and no context.
 

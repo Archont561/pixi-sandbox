@@ -12,7 +12,7 @@ pub const GENERATED_MARKER: &str =
 pub const MARKER_WINDOW: usize = 3;
 
 /// Key of the machine-readable version-stamp line every generated file carries beside
-/// [`GENERATED_MARKER`] (task-47 AC#3 / decision D16): `# pixi-sandbox-version: X.Y.Z`.
+/// [`GENERATED_MARKER`] (task-47 AC#3 / decision ADR-16): `# pixi-sandbox-version: X.Y.Z`.
 ///
 /// Kept as its own line rather than folded into the marker prose so a tool can parse it
 /// without a human-prose regex, and as a line comment so every rendered format (YAML,
@@ -49,5 +49,5 @@ pub use relock_workflow::{
     render_relock_workflow,
 };
 
-// Tested through the public API in `tests/generated_stamp.rs` (D10 / the no-inline-test-modules
+// Tested through the public API in `tests/generated_stamp.rs` (ADR-10 / the no-inline-test-modules
 // rule in `tests/fixtures.rs`): this module is new, not grandfathered into `LEGACY` there.

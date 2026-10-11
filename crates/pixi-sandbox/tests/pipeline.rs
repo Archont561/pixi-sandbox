@@ -3,7 +3,7 @@
 //!
 //! The orchestration — phase order, exact argv, outcome recording, the failure summary and
 //! annotation — is asserted against a fake runner. No phase ever executes, no socket is
-//! opened, and no test touches this checkout or a real HOME (D10).
+//! opened, and no test touches this checkout or a real HOME (ADR-10).
 
 use anyhow::Result;
 use pixi_sandbox::pipeline::{self, PhaseCommand, PhaseRunner, Spec};

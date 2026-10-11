@@ -4,7 +4,7 @@
 //! The decision flow — drift detection, regeneration, the version-derived commit, the
 //! artifact fallback, and every delivery verdict — is asserted against a fake runner,
 //! `FakeGit` and a fake pull-request source. No phase executes, no git remote is touched,
-//! no socket is opened, and no test points at this checkout or a real HOME (D10).
+//! no socket is opened, and no test points at this checkout or a real HOME (ADR-10).
 
 use anyhow::Result;
 use pixi_sandbox::pipeline::{PhaseCommand, PhaseRunner};

@@ -12,7 +12,7 @@ labels:
 dependencies: []
 references:
   - crates/pixi-sandbox/src/commands/publish.rs
-  - .knowledge/design.md
+  - backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md
 priority: high
 ordinal: 3000
 ---
@@ -48,7 +48,7 @@ Red 3 (CLI seam): publish --keep 2 still errored not_yet. Green: args.keep flows
 
 Guard added after the loop: a_rotating_publish_fetches_metadata_only_and_a_default_one_does_not_fetch_at_all asserts the argv (one fetch, --filter=blob:none, --depth=1) and that a default publish never fetches - it was green on arrival, it exists so the cheapness of rotation cannot be lost silently.
 
-Live smoke outside the suite: four publishes of the fixture transport with --keep 3 against a local bare remote left exactly 3 commits. Docs: docs/reference/cli.mdx gained a Rotation section with a caution that rotation is not a shrink; design.md step 4 and the README CLI notes updated; tools update is now the only deferred verb.
+Live smoke outside the suite: four publishes of the fixture transport with --keep 3 against a local bare remote left exactly 3 commits. Docs: docs/reference/cli.mdx gained a Rotation section with a caution that rotation is not a shrink; doc-2 step 4 and the README CLI notes updated; tools update is now the only deferred verb.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

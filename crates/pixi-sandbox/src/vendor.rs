@@ -1,4 +1,4 @@
-//! Cargo vendoring policy (D6): refuse collisions before creating a transport.
+//! Cargo vendoring policy (ADR-6): refuse collisions before creating a transport.
 
 use crate::pack::{sum_files, support};
 use anyhow::{Context, Result, bail};
@@ -32,7 +32,7 @@ pub fn validate_vendorable_lockfile(root: &Path) -> Result<()> {
 ///
 /// `cargo vendor` cannot represent this: it maps each crate to a `<name>-<version>` directory
 /// under the vendor root, so two entries for the same pair collide and cargo aborts with
-/// "found duplicate version of package ... vendored from two sources" and no remedy (design.md
+/// "found duplicate version of package ... vendored from two sources" and no remedy (doc-2
 /// §11, known upstream). Left alone that surfaces as a pack failure on the connected side at
 /// best, and at worst as a transport that packs "successfully" around a missing crate and only
 /// breaks on the airlock, where cargo reports nothing useful.
@@ -111,7 +111,7 @@ fn reject_duplicate_crate_sources(cargo_lock: &Path) -> Result<()> {
     );
 }
 
-/// Cargo trees stay loose for deduplication, or use one archive per crate (D6).
+/// Cargo trees stay loose for deduplication, or use one archive per crate (ADR-6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VendorMode {
     Loose,

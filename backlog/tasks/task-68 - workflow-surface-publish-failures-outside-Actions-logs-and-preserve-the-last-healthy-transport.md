@@ -83,7 +83,7 @@ Two deviations a reviewer should rule on rather than take on trust:
 
 The failure itself was pack's own documented pre-flight refusal rather than a synthetic break:
 `Cargo.lock` carrying `anyhow 1.0.104` from two sources, which `cargo vendor` cannot represent
-(design.md §11). Checked locally first — exit 1, the message naming both sources and both
+(doc-2 §11). Checked locally first — exit 1, the message naming both sources and both
 remedies, and no output directory created. Because it fires in pack, the install phase had
 already succeeded, which is what makes this the mid-pipeline case.
 

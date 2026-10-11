@@ -1,6 +1,6 @@
 //! The fixture policy, as tests.
 //!
-//! The rule (tests/fixtures/README.md, design.md §12): project-level tests use the fixture
+//! The rule (tests/fixtures/README.md, doc-2 §12): project-level tests use the fixture
 //! project, never this repository. The repository *is* this tool's development environment —
 //! its `dev` environment contains `pixi-pack`, its lockfile resolves hundreds of MiB — so a
 //! test pointed at it silently passes on a developer's machine and fails (or never runs) on a
@@ -104,7 +104,7 @@ fn the_duplicate_source_project_carries_every_required_file(
     );
 }
 
-// A second project fixture, for the pack-time duplicate-crate-source check (design.md §11,
+// A second project fixture, for the pack-time duplicate-crate-source check (doc-2 §11,
 // backlog task-8). It carries the same policy as `demo-project`: a plain pixi project with
 // no packer, so using it cannot depend on the developer's environment.
 #[rstest]
@@ -254,7 +254,7 @@ fn the_fixtures_file_list_is_derivable_from_its_tarball() {
     );
 
     // The fixture's placeholder plays the role the staging path plays in a real pack, which
-    // is exactly how files.json was generated (D13): both sides canonicalise their own path
+    // is exactly how files.json was generated (ADR-13): both sides canonicalise their own path
     // spelling to the sentinel, so the digests must agree.
     let (derived, _) = files_manifest::scan_prefix(&prefix, &[b"@PREFIX@".to_vec()]).unwrap();
     let listed = FilesDoc::parse(

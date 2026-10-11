@@ -50,7 +50,7 @@ fn static_elf() -> Vec<u8> {
     elf(1)
 }
 
-/// The same file with a `PT_INTERP` header — the `~/.pixi/bin` trampoline shape (D4).
+/// The same file with a `PT_INTERP` header — the `~/.pixi/bin` trampoline shape (ADR-4).
 fn dynamic_elf() -> Vec<u8> {
     elf(3)
 }
@@ -182,7 +182,7 @@ fn a_disagreement_with_the_upstream_manifest_aborts() {
     assert!(error.contains("sha256.sum"), "got: {error}");
 }
 
-/// AC#2 and D4: the pin says static, the bytes say dynamic. This is the failure the whole
+/// AC#2 and ADR-4: the pin says static, the bytes say dynamic. This is the failure the whole
 /// catalogue exists to prevent, and it must be caught at pin time.
 #[test]
 fn a_dynamic_asset_under_a_static_pin_aborts() {

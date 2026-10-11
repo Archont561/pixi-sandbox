@@ -1,6 +1,6 @@
 //! `tools update` — refresh the helper-tool pins from the same upstream the pins name.
 //!
-//! The catalogue is reviewed data (D4), so this command never *installs* anything and never
+//! The catalogue is reviewed data (ADR-4), so this command never *installs* anything and never
 //! decides that a newer build is better. It produces a candidate lock for a human to diff.
 //! What it does insist on is that every hash it writes is earned:
 //!

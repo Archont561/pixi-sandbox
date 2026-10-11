@@ -1,4 +1,4 @@
-//! `envs/<name>/files.json` — the per-file oracle for a restored environment prefix (D13).
+//! `envs/<name>/files.json` — the per-file oracle for a restored environment prefix (ADR-13).
 //!
 //! `doctor --verify` proves the *branch* is intact and `restore` verifies every blob before
 //! writing it, but nothing checked the tree that comes out the other end: a prefix that is
@@ -23,7 +23,7 @@
 //! 2. **Every known spelling of the prefix path becomes [`SENTINEL`].** Each side replaces
 //!    only the paths it knows: pack replaces its verification-scratch paths, the airlock
 //!    replaces the final prefix and the restore-scratch paths that survive inside NUL-fixed
-//!    binaries (relocation deliberately skips those, D5's invariant 7).
+//!    binaries (relocation deliberately skips those, ADR-5's invariant 7).
 //!
 //! ## What is content-verified and what is not
 //!
@@ -379,7 +379,7 @@ fn find_at(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 #[must_use]
 pub fn replace_all(haystack: &[u8], needle: &[u8], replacement: &[u8]) -> Vec<u8> {
     // Deliberately dependency-free (memmem would be faster, but the airlock builds from the
-    // vendored tree and D6 keeps that tree exactly as locked — no new crates for a scan that
+    // vendored tree and ADR-6 keeps that tree exactly as locked — no new crates for a scan that
     // runs once per pack and once per verify).
     let mut out = Vec::with_capacity(haystack.len());
     let mut at = 0;

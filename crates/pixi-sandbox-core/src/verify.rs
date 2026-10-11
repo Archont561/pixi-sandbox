@@ -6,10 +6,10 @@
 //!    instead of stopping at the first — an airlock operator wants the full list, not a game
 //!    of whack-a-mole.
 //! 2. **Check the tree that comes out the other end.** [`verify_restored`] compares a
-//!    restored project against the manifest's per-file oracle (D13) — the branch being intact
+//!    restored project against the manifest's per-file oracle (ADR-13) — the branch being intact
 //!    and each written blob matching its sha does not by itself prove the *prefix* is right,
 //!    and a forged-but-plausible prefix used to pass every check.
-//! 3. **Refuse to ship a dynamic tool** (decision D4). The `~/.pixi/bin` shims are 766 KiB
+//! 3. **Refuse to ship a dynamic tool** (decision ADR-4). The `~/.pixi/bin` shims are 766 KiB
 //!    trampolines that exec a dynamically linked binary inside their own prefix; a transport
 //!    that carries one works perfectly on the machine that built it and fails on the airlock.
 //!    [`linkage_of`] is what catches that.
@@ -86,7 +86,7 @@ impl Report {
 }
 
 /// Check every blob of the selected environments (all of them when `envs` is `None`),
-/// the per-env file lists that act as the restored-tree oracle (D13), plus the embedded
+/// the per-env file lists that act as the restored-tree oracle (ADR-13), plus the embedded
 /// tools' integrity and linkage.
 ///
 /// Never writes anything, never needs the network.
@@ -169,7 +169,7 @@ pub fn verify(manifest: &Manifest, branch_location: &Path, envs: Option<&[String
                 kind: Kind::DynamicTool,
                 detail: format!(
                     "tool {name} is dynamically linked; it will not run on an airlock \
-                     (ship the static release asset — see decisions D4)"
+                     (ship the static release asset — see decisions ADR-4)"
                 ),
             });
         }
@@ -210,7 +210,7 @@ impl RestoredReport {
     }
 }
 
-/// Verify the tree a restore produced against the manifest's per-file digests (D13).
+/// Verify the tree a restore produced against the manifest's per-file digests (ADR-13).
 ///
 /// `project` is the restored project root (holding `.pixi/envs/<name>`), `branch_location`
 /// the transport the manifest — and therefore the oracle — came from. `work_dir` only needs

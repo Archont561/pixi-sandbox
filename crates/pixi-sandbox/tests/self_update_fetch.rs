@@ -4,7 +4,7 @@
 //! The contract that separates it from `self_update::run`: there is no up-to-date shortcut.
 //! The destination is not the running binary, so "the running binary already has this
 //! version" says nothing about what the destination holds — every call resolves, downloads,
-//! verifies and installs (decision-4 / D16: the bootstrap is the pinned, checksum-verified
+//! verifies and installs (ADR-26 / ADR-16: the bootstrap is the pinned, checksum-verified
 //! binary, always).
 
 use anyhow::Result;

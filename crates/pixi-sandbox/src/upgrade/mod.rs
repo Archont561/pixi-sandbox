@@ -8,14 +8,14 @@
 //! workflow's "how", so it lives here, driven by the updated binary itself: the workflow's
 //! step is a single `pixi-sandbox upgrade …` invocation.
 //!
-//! The flow, in order (decision-4 / D16):
+//! The flow, in order (ADR-26 / ADR-16):
 //!
 //! 1. **Check** the owned files: spawn `<exe> init --check …` with the exact generation
 //!    arguments. Any non-zero exit is drift — the shell's `if ! …; then drift=true`.
 //! 2. **Regenerate** on drift: spawn `<exe> init …`. A failure here is a hard error, like
 //!    the shell's `set -euo pipefail` step.
 //! 3. **Commit** the three owned files onto `pixi-sandbox-upgrade/<version>` through
-//!    `GitProtocol::commit_files` (all git access stays behind the trait, D9), and write
+//!    `GitProtocol::commit_files` (all git access stays behind the trait, ADR-9), and write
 //!    the patch plus the regenerated copies into the artifact directory — the fallback a
 //!    human applies when delivery is refused.
 //! 4. **Deliver**: without the `PIXI_SANDBOX_UPGRADE_TOKEN` secret, or when the push or
@@ -34,7 +34,7 @@ use crate::pipeline::{PhaseCommand, PhaseRunner};
 
 /// Where pull requests are created — the delivery half of the upgrade lane.
 ///
-/// A trait for the same reason git goes through `GitProtocol` (D9): the decision flow is
+/// A trait for the same reason git goes through `GitProtocol` (ADR-9): the decision flow is
 /// tested against a fake, while the real HTTP adapter lives in [`crate::github`] with the
 /// release adapter — the one piece no offline test can exercise.
 pub trait PullRequestSource {
@@ -64,7 +64,7 @@ pub struct PullRequest {
     pub number: u64,
 }
 
-/// Everything `upgrade` needs, with every ambient input resolved by the caller (D10).
+/// Everything `upgrade` needs, with every ambient input resolved by the caller (ADR-10).
 ///
 /// The tests pass tempdirs, a fake runner, `FakeGit` and a fake pull-request source, so
 /// no code path can reach a developer's real repository, token or HOME.
@@ -82,7 +82,7 @@ pub struct Spec {
     pub script_path: PathBuf,
     /// `init`'s `--relock-ci-workflow`, forwarded verbatim.
     pub relock_ci_workflow: String,
-    /// `init`'s `--config`, forwarded verbatim when present (reviewed data, D16).
+    /// `init`'s `--config`, forwarded verbatim when present (reviewed data, ADR-16).
     pub config: Option<PathBuf>,
     /// `init`'s `--branch`, forwarded verbatim.
     pub branch: String,
@@ -207,7 +207,7 @@ pub fn run(
 }
 
 /// The `init` invocation's arguments — the exact generation arguments, forwarded verbatim
-/// to both the check and the regeneration (D16: never defaults that could diverge).
+/// to both the check and the regeneration (ADR-16: never defaults that could diverge).
 fn init_args(spec: &Spec, check: bool) -> Vec<String> {
     let mut args = vec!["init".to_string()];
     if check {

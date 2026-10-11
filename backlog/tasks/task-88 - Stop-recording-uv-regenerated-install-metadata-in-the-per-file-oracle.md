@@ -29,7 +29,7 @@ registration, so the documented next command then fails with `pixi: command not 
 though every environment unpacked correctly. Reported against `Archont561/qgis-rust` with an
 18-line failure output (issue #128).
 
-The cause is D13's per-file oracle meeting a package kind it does not model. `pixi-pack`
+The cause is ADR-13's per-file oracle meeting a package kind it does not model. `pixi-pack`
 transports a pypi dependency as the **wheel**, not as installed bytes, so `pixi-unpack`
 *reinstalls* it with uv at restore time. Two files come back as a function of when and where
 that install ran:
@@ -59,7 +59,7 @@ transport to lean on.
 - [x] #4 `uv_cache.json` may appear in a restored prefix without being listed, because uv only writes it for installs it routes through its cache; a forged conda-meta record is still an unlisted-file failure, and a `uv_cache.json` outside a `.dist-info` directory keeps its content digest.
 - [x] #5 A regression test reproduces issue #128 at the `verify_restored` seam: a prefix scanned at pack time, a wheel reinstalled with a different timestamp, and a clean verdict. Its complement — tampering with the package payload the wheel shipped — is still caught, so the exemption is not wider than the two files.
 - [x] #6 No manifest or `files.json` schema change: a list written by an older tool still parses and still verifies under the digests it recorded, and a list written by this one is still readable by an older binary.
-- [x] #7 D13's honest-limits record in `.knowledge/decisions.md` names the new exemption, why presence is the sound check for it, and the consumer-facing consequence: **an already-packed transport still fails until it is re-packed**, because its recorded digest was computed over bytes the restore path regenerates by design.
+- [x] #7 ADR-13's honest-limits record in `backlog/docs/adr/README.md` names the new exemption, why presence is the sound check for it, and the consumer-facing consequence: **an already-packed transport still fails until it is re-packed**, because its recorded digest was computed over bytes the restore path regenerates by design.
 - [ ] #8 The fix is exercised against a real `pixi-unpack` reinstall of a pypi wheel. Recorded as evidence; if it cannot be produced on this machine, the AC stays open with the missing proof named rather than satisfied by the fixture.
 <!-- AC:END -->
 
@@ -158,7 +158,7 @@ Suite: 928 → 935 passing / 1 skipped. `pixi run --frozen lint` 11/11,
 ## Final Summary
 
 <!-- SECTION:SUMMARY:BEGIN -->
-D13's per-file oracle now models the one package kind it was blind to. uv's install
+ADR-13's per-file oracle now models the one package kind it was blind to. uv's install
 metadata — `*.dist-info/uv_cache.json`, and the row of `*.dist-info/RECORD` that hashes it —
 is a function of when and where the install ran, so it is presence-checked and row-collapsed
 rather than content-digested, through one canonical form that pack and verify share. Every

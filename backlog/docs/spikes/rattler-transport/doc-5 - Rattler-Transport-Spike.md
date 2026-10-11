@@ -15,13 +15,13 @@ tags:
 **Status:** spike note, no code. Produced for backlog task-9, which requires a measured
 trade-off *before* any implementation and a go/no-go recorded as a decision ID.
 
-**Question.** `design.md` §1.3 and D2/D3 record that re-implementing pack and unpack on the
+**Question.** `doc-2` §1.3 and ADR-2/ADR-3 record that re-implementing pack and unpack on the
 [`rattler`](https://crates.io/crates/rattler) library is "possible but not v1 work". Is it worth
 doing now? What would it actually save, and what would it cost?
 
 **Reference environment.** The numbers below come from this repository's own published transport,
 `sandbox/developer-linux-64`, restored and verified offline on 2026-09-29 (Debian 13, 2 vCPU,
-pixi 0.81.0, pixi-unpack 0.7.11, cargo 1.98.1, linux-64). Tags follow the `.knowledge` convention:
+pixi 0.81.0, pixi-unpack 0.7.11, cargo 1.98.1, linux-64). Tags follow the ADR convention:
 ✅ measured here, ⚠️ reasoned.
 
 ---
@@ -44,13 +44,13 @@ pixi 0.81.0, pixi-unpack 0.7.11, cargo 1.98.1, linux-64). Tags follow the `.know
 
 **The prize, stated exactly.** Removing the `pixi-unpack` subprocess removes **15.0 MiB (1.82 %)
 of payload and one blob out of 10 313 (0.01 %)**, once per branch — git stores that blob once no
-matter how many snapshots the branch carries (D1, measured dedup). `pixi-pack` is *not* in the
+matter how many snapshots the branch carries (ADR-1, measured dedup). `pixi-pack` is *not* in the
 payload at all: it runs on the connected build machine, so replacing it saves zero transport bytes
 and only removes a CI-side download.
 
 **What rattler cannot remove.** `pixi` itself — 76.6 MiB, **81 % of the tools bytes** — stays,
 because the airlock must run `pixi install --frozen --offline` and `pixi run` after the prefix is
-installed (D5 markers, §6). So even a perfect v2 leaves the tools section at ~80 MiB and the
+installed (ADR-5 markers, §6). So even a perfect v2 leaves the tools section at ~80 MiB and the
 payload at ~811 MiB: **a 1.8 % transport reduction, not a category change.**
 
 ---
@@ -90,7 +90,7 @@ The pack format is `pixi-pack.json` + `environment.yml` + a `channel/` tree with
 ([pixi docs](https://prefix-dev.github.io/pixi/latest/deployment/pixi_pack/)) — a tool's output
 layout, not a versioned specification. Two exits, both with a bill:
 
-- **Stay byte-compatible** with what `pixi-unpack` expects (D2's "what would change it"): the
+- **Stay byte-compatible** with what `pixi-unpack` expects (ADR-2's "what would change it"): the
   coupling remains, now as our code tracking someone else's undocumented layout, without their CI.
 - **Own the format**: `manifest.json` `SCHEMA_VERSION` bumps, and §9 obliges `doctor` to keep
   reading schema 1 across tool versions — so we would carry both readers, plus a regenerated
@@ -118,7 +118,7 @@ platforms.
   is a bug**, and `verify.rs` fails the build over it.
 - Today `cargo check --offline --workspace` is 21 s and the whole lint gate ~50 s ✅. A rattler
   tree makes both minutes ⚠️, on every CI run of a repository whose CI is one job.
-- It does **not** unlock a platform: D11's macOS/Windows gate exists because the *helper assets*
+- It does **not** unlock a platform: ADR-11's macOS/Windows gate exists because the *helper assets*
   are system-linked there — and `pixi`, which stays either way, is system-linked on exactly those
   platforms too (`tools.lock.json`).
 
@@ -146,7 +146,7 @@ Honest list, because it is not nothing:
 
 | Option | Transport | Risk | Verdict |
 |:---|:---|:---|:---|
-| **A. Status quo** (D2/D3: pinned static assets, subprocess) | 826.0 MiB | none new | recommended |
+| **A. Status quo** (ADR-2/ADR-3: pinned static assets, subprocess) | 826.0 MiB | none new | recommended |
 | **B. Full v2**: rattler pack *and* install, own format | ≈ −1.8 % ⚠️ | high: format, prefix correctness, supply chain, CI time | not now |
 | **C. Narrow**: keep `pixi-pack` output, replace only the *install* step with `rattler_package_streaming` | ≈ −1.8 % ⚠️ | medium; still owns placeholder rewriting and `conda-meta` | the only variant worth a prototype, and only if §3.3 becomes a real complaint |
 
@@ -157,9 +157,9 @@ Honest list, because it is not nothing:
 **No-go for now.** The measurable prize is 15.0 MiB (1.82 %) and one blob out of 10 313; the
 measurable costs are a binary that grows by roughly what it removes ⚠️, a vendored dependency tree
 that grows at 1.79 MiB per added crate ✅ on this repo's own branch, a minutes-longer CI gate, and
-ownership of prefix installation on a machine that cannot be debugged. D2 and D3 stand as written.
+ownership of prefix installation on a machine that cannot be debugged. ADR-2 and ADR-3 stand as written.
 
-**What would change it** (the triggers to watch, in the `.knowledge` "what would change it" sense):
+**What would change it** (the triggers to watch, in the ADR "what would change it" sense):
 
 1. `pixi-unpack` stops shipping static release assets for a tier-1 platform, or a pin becomes
    unmaintainable — then the subprocess is no longer cheaper than owning the code.
@@ -174,11 +174,11 @@ Any prototype must be measured, not argued: binary size for all five targets, `c
 cold `cargo check` time, restore wall clock, peak disk, and a byte-for-byte comparison of the
 installed prefix against a `pixi-unpack` restore of the same transport.
 
-### Decision text — recorded as D12 in `decisions.md`
+### Decision text — recorded as ADR-12 in `decisions.md`
 
-> **D12 — The conda pack/unpack subprocesses stay (rattler is not v2 work yet).**
+> **ADR-12 — The conda pack/unpack subprocesses stay (rattler is not v2 work yet).**
 > *Decision.* `pixi-pack` and `pixi-unpack` remain external, sha256-pinned static assets driven as
-> subprocesses (D2, D3). `rattler` is not linked into `pixi-sandbox`.
+> subprocesses (ADR-2, ADR-3). `rattler` is not linked into `pixi-sandbox`.
 > *Why.* Measured on this repository's transport: dropping `pixi-unpack` removes 15.0 MiB of
 > 826.0 MiB (1.82 %) and one blob of 10 313, while the replacement code is itself ~15 MiB of
 > binary, the added crates cost ~1.79 MiB each in the vendored payload, and prefix installation
@@ -187,5 +187,5 @@ installed prefix against a `pixi-unpack` restore of the same transport.
 > change category.
 > *What would change it.* The four triggers in `rattler-spike.md` §5.
 
-Recorded in `decisions.md` as **D12** (backlog task-9 AC#2). The status-quo (option A) stands;
+Recorded in `decisions.md` as **ADR-12** (backlog task-9 AC#2). The status-quo (option A) stands;
 revisit only on one of the four triggers in §5.

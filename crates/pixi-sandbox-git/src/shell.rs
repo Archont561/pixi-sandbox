@@ -371,7 +371,7 @@ impl ShellGit {
 
     /// The parent chain a rotating publish commits on top of, or `None` for an orphan.
     ///
-    /// Rotation *rebuilds* (design.md §2): the kept snapshots are re-committed here as a fresh
+    /// Rotation *rebuilds* (doc-2 §2): the kept snapshots are re-committed here as a fresh
     /// parentless chain, so the pushed history is exactly what this call constructed and the
     /// dropped snapshots are unreferenced. Reusing the fetched commits as parents instead would
     /// drag their whole ancestry along, which is the growth the flag exists to stop.
@@ -473,7 +473,7 @@ impl ShellGit {
     // Working-tree primitives for repository automation (xtask `commit-release`, the
     // consumer-checkout operations on the GitProtocol trait below). These are still git, so
     // they live here rather than as bare `Command::new("git")` calls in a consumer crate
-    // (D9). Every command carries the caller's `root` as cwd and this instance's identity
+    // (ADR-9). Every command carries the caller's `root` as cwd and this instance's identity
     // through the `-c` pair, so an automation commit never depends on the invoking user's
     // git config.
     // ------------------------------------------------------------------

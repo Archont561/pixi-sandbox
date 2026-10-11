@@ -1,7 +1,7 @@
 //! task-33 integration tests: persisting the restored Pixi tools on the user PATH.
 //!
 //! Every test isolates HOME, USERPROFILE, SHELL and the user-bin directory in its own
-//! tempdir — a test that touches the developer's real home is a broken test (D10's rule,
+//! tempdir — a test that touches the developer's real home is a broken test (ADR-10's rule,
 //! applied at the user level). The transport is the checked-in fixture; its `pixi` stub
 //! resolves `pixi sandbox` through PATH exactly like the real pixi, so the discovery chain
 //! is exercised end to end: launcher → verified tool → PATH lookup → `pixi-sandbox`.

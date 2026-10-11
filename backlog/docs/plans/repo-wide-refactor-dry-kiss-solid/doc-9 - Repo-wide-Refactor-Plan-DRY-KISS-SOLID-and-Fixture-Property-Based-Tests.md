@@ -43,8 +43,8 @@ Baseline to protect while doing any of this: **`pixi run --frozen test` → 516 
 1. **Behavior preserved, one thing at a time.** No item here bundles a feature change; each is pure restructuring.
 2. **No new crate dependencies.** `cargo` only builds against the vendored tree under `.pixi-sandbox/vendor` (D-series transport decisions; see `AGENTS.md` "Pixi is the only environment entrypoint"). A new proc-macro crate (`strum`, `derive_more`, …) cannot be fetched on this airlocked host and would have to be vendored through a full restore/relock cycle. Every suggestion below uses only what the workspace already depends on (`proptest`, `rstest`, plain `std`).
 3. **Generated files are rendered, not edited.** `crates/pixi-sandbox/src/generated/{github_workflow,relock_workflow}.rs` and `.github/workflows/{publish-sandbox,relock}.yml` are templates and their committed renders. Where a finding touches one, the fix is in the Rust template function, followed by re-rendering — never a hand edit of the `.yml`.
-4. **Tests still target fixtures/tempdirs, never this checkout** (D10). Every "add a fixture / property test" item below builds on `tempfile::tempdir()` or in-memory data, matching what's already there.
-5. **Respect `.knowledge/decisions.md` (D1–D15).** Nothing here proposes a different transport, schema, or git-access path — this plan only touches internal code shape, not the design.
+4. **Tests still target fixtures/tempdirs, never this checkout** (ADR-10). Every "add a fixture / property test" item below builds on `tempfile::tempdir()` or in-memory data, matching what's already there.
+5. **Respect `backlog/docs/adr/README.md` (ADR-1–ADR-15).** Nothing here proposes a different transport, schema, or git-access path — this plan only touches internal code shape, not the design.
 
 ---
 
@@ -68,7 +68,7 @@ The five Pixi platform strings (`linux-64`, `linux-aarch64`, `osx-64`, `osx-arm6
 
 None of these call each other. `self_update/assets.rs` even depends on `pixi-sandbox-core`, and `xtask` already depends on **all three** of `pixi-sandbox`, `pixi-sandbox-core`, and `pixi-sandbox-git` (`crates/xtask/Cargo.toml`) — so `xtask/airlock.rs::static_asset_for_platform` could call `pixi_sandbox::self_update::assets::asset_for` *today*, with no new wiring, and doesn't.
 
-**Why it matters (not just taste):** adding a sixth platform — which `.knowledge/decisions.md` already flags as planned work (task-1, osx-arm64 was itself a late addition) — means touching 8+ files by hand, and a missed one fails silently at the worst time (a release that builds four platforms and silently drops the fifth, the exact failure mode `conda_platforms.rs`'s own doc comment warns about for a *different* step in the same pipeline).
+**Why it matters (not just taste):** adding a sixth platform — which `backlog/docs/adr/README.md` already flags as planned work (task-1, osx-arm64 was itself a late addition) — means touching 8+ files by hand, and a missed one fails silently at the worst time (a release that builds four platforms and silently drops the fifth, the exact failure mode `conda_platforms.rs`'s own doc comment warns about for a *different* step in the same pipeline).
 
 **Proposed refactor** (Extract Class / Replace Magic Number with Constant, scoped to avoid new deps):
 
@@ -143,7 +143,7 @@ For completeness, every production file over 450 lines, as a prioritized review 
  859  user_tools.rs             — review only: already one coherent responsibility (install/registration), not an obvious split
  788  pixi-sandbox-git/shell.rs — review only: this *is* "all git access" by design (AGENTS.md), expected to be the largest file in that crate
  763  commands/tools/update.rs  — candidate, see A3 (file mixes pure helpers + I/O flow + its own 500 lines of tests; tests should move to tests/self_update_assets.rs-style sibling per Part B.2)
- 745  pixi-sandbox-core/verify.rs — review only: single cohesive responsibility (collect every failure, D13), size is proportional to the number of failure kinds it reports, not a smell
+ 745  pixi-sandbox-core/verify.rs — review only: single cohesive responsibility (collect every failure, ADR-13), size is proportional to the number of failure kinds it reports, not a smell
 ```
 
 ---
@@ -233,7 +233,7 @@ task-38 did **not** touch:
 2. `pixi run --frozen lint` (clippy `-D warnings`, `deny`, `sandbox-plan --json`, `lint-toml`, `lint-docs`) stays clean.
 3. `pixi run --frozen -- convco check HEAD~1..HEAD` passes per commit (one focused conventional commit per task, per the refactor skill's golden rules).
 4. For any item touching a generated file's template (item 4 above): the regenerated file is byte-identical to (or a deliberate, reviewed diff from) what's committed, verified the same way `check-repository`'s check 10 already verifies `relock.yml`.
-5. No test added or changed points at this repository or a real `HOME` (D10) — every new fixture/property test builds its subject in a `tempfile::tempdir()` or in-memory, matching every existing test in the suite.
+5. No test added or changed points at this repository or a real `HOME` (ADR-10) — every new fixture/property test builds its subject in a `tempfile::tempdir()` or in-memory, matching every existing test in the suite.
 
 ## Explicit non-goals
 

@@ -129,8 +129,8 @@ Facts about this sandbox that shape every command:
    working branch is based on `origin/main`'s tip — if it is behind, say so before anything
    else. Never edit on a stale base.
 2. **Read the standing context** (skim, do not quote back): `AGENTS.md` (repo map, invariants,
-   task commands), `CONTEXT.md`, and `.knowledge/decisions.md` — the decisions
-   D1–D15 are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
+   task commands), `CONTEXT.md`, and `backlog/docs/adr/README.md` — the decisions
+   ADR-1–ADR-15 are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
 3. **List the open work**:
    `pixi run --frozen bunx backlog task list -s "To Do" --plain` — or read `backlog/tasks/*.md` directly;
    tasks are markdown files whose frontmatter carries `dependencies`, `priority`, `ordinal`,
@@ -172,7 +172,7 @@ between sessions, and the loop only closes because the last artifact is the firs
   `updated_date`, append `SECTION:NOTES` Implementation Notes and `SECTION:SUMMARY` Final
   Summary — following the task's exact existing section markers (no PLAN edits).
 - **Tests target fixtures and tempdirs, never this repository or a real HOME**
-  (D10; isolate `HOME`/`USERPROFILE`/`SHELL` per test).
+  (ADR-10; isolate `HOME`/`USERPROFILE`/`SHELL` per test).
 - **Pull requests**: push the working branch, squash-merge, conventional title ending
   `(#N)`. Watch the required checks; when a platform job fails, read that job's log before
   changing code. What happens after the merge is § 5, not an afterthought.

@@ -39,7 +39,7 @@ pub const BOT_EMAIL: &str = "41898282+github-actions[bot]@users.noreply.github.c
 #[derive(Debug, Clone, Copy)]
 pub struct RelockWorkflowOptions<'a> {
     /// The pixi-sandbox CLI version that rendered this file, stamped beside the ownership
-    /// marker (task-47 AC#3 / decision D16). Deliberately distinct from `pixi_version` below:
+    /// marker (task-47 AC#3 / decision ADR-16). Deliberately distinct from `pixi_version` below:
     /// one names this *tool's* release, the other names the *pixi binary* the bot solves with.
     pub cli_version: &'a str,
     /// Exact pixi version the bot solves with.

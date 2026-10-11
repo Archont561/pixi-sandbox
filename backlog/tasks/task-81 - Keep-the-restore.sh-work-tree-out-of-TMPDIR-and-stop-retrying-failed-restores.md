@@ -24,7 +24,7 @@ Two control-flow problems sit in the same file. (a) Line 250-253: any failure of
 
 Intended behaviour: the branch worktree lives under the restore's own work directory inside the output tree (covered by .gitignore), and nothing the restore writes goes under TMPDIR. A failing restore is reported once. The flag-compatibility fallback is chosen by probing the binary, or retried only on clap's usage-error exit, never on any failure.
 
-Seam to agree before tests are written: run `scripts/restore.sh` against a fixture branch from `crates/pixi-sandbox/tests/restore_script.rs` with TMPDIR pointed at an empty directory, and assert that nothing lands under it. Use the fixture transport, not this repository (D10).
+Seam to agree before tests are written: run `scripts/restore.sh` against a fixture branch from `crates/pixi-sandbox/tests/restore_script.rs` with TMPDIR pointed at an empty directory, and assert that nothing lands under it. Use the fixture transport, not this repository (ADR-10).
 
 Non-goals: no manifest, branch-format, or verification change; no change to the user-tool registration policy. The `--help` header range is cosmetic and out of scope.
 <!-- SECTION:DESCRIPTION:END -->

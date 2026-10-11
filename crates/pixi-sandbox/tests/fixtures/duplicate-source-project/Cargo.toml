@@ -7,7 +7,7 @@
 name = "duplicate-source-project"
 version = "0.1.0"
 edition = "2021"
-description = "Fixture for the pack-time duplicate-crate-source check (design.md §11)"
+description = "Fixture for the pack-time duplicate-crate-source check (doc-2 §11)"
 publish = false
 
 [dependencies]

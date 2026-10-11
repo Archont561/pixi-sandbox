@@ -32,7 +32,7 @@ Non-goals: no behaviour change, no new test framework, and no weakening of asser
 - [x] #2 A guard test in each crate's tests/ fails on any production source containing #[cfg(test)] that is not in a LEGACY list, and fails on stale LEGACY entries (mirroring fixtures.rs).
 - [x] #3 The LEGACY list is recorded in the guard test when it lands and shrinks over successive commits; the final list is empty.
 - [x] #4 AGENTS.md's test-convention paragraph is updated to match the enforced state.
-- [x] #5 No test points at this repository or a real HOME (D10).
+- [x] #5 No test points at this repository or a real HOME (ADR-10).
 <!-- AC:END -->
 
 ## Implementation Notes

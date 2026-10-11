@@ -13,7 +13,7 @@ labels:
 milestone: m-0
 dependencies: []
 references:
-  - .knowledge/v1-evolution-plan.md
+  - backlog/docs/plans/v1-evolution/doc-15 - v1-Evolution-Plan.md
 documentation:
   - backlog/docs/plans/v1-platform-workflow-transport/doc-1
 priority: high

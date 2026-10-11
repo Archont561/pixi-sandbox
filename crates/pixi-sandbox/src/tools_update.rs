@@ -247,7 +247,7 @@ fn refresh_platform(ctx: &mut PlatformRefresh<'_>) -> Result<PlatformPin> {
         bail!(
             "integrity: {name} {version} for {platform} is a {} binary, but the pin \
              declares it static ({url}). A dynamic helper works on the build machine and \
-             dies in the airlock (D4) — this is the failure the pin exists to prevent. \
+             dies in the airlock (ADR-4) — this is the failure the pin exists to prevent. \
              Refusing to write the lock.",
             linkage.as_str()
         );

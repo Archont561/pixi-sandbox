@@ -17,7 +17,7 @@
 //!
 //! 1. **Publishing is an orphan.** One call produces exactly one commit with no parent on the
 //!    destination branch and force-pushes it. History is *replaced*, never appended — that is
-//!    what makes a branch a snapshot rather than a changelog (design.md §2, decision D1).
+//!    what makes a branch a snapshot rather than a changelog (doc-2 §2, decision ADR-1).
 //!    With [`Snapshot::keep`] > 1 the branch is *rebuilt* to the N most recent snapshots
 //!    instead: still a force-push of a history this call constructed, never an append.
 //! 2. **The snapshot directory is read-only.** `publish` never writes into it, never creates a
@@ -76,7 +76,7 @@ pub enum Error {
     /// ruleset. Worth its own variant because the fix is on the remote, not in the payload.
     #[error(
         "the remote {remote} rejected the push to {branch}: {stderr} \
-         (design.md §2 / decision D1 — the sandbox branch must be allowed to be force-pushed)"
+         (doc-2 §2 / decision ADR-1 — the sandbox branch must be allowed to be force-pushed)"
     )]
     Rejected {
         remote: String,
@@ -113,7 +113,7 @@ pub struct Snapshot<'a> {
     pub message: &'a str,
     /// How many snapshots the branch may carry afterwards. `0` and `1` both mean the
     /// single-commit orphan branch; a larger N *rebuilds* the history to the N most recent
-    /// snapshots (design.md §2 — a force-push is not a shrink, so retention cannot append).
+    /// snapshots (doc-2 §2 — a force-push is not a shrink, so retention cannot append).
     pub keep: u32,
 }
 

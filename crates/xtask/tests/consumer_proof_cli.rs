@@ -6,7 +6,7 @@
 //! -- …`, so the flag wiring is part of what has to stay true: a subcommand that reads the wrong
 //! argument fails on a runner forty minutes into a release, not on a developer's machine. These
 //! tests drive the built binary over tempdir fixtures with a stand-in CLI, and touch neither
-//! this repository nor the network (D10).
+//! this repository nor the network (ADR-10).
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

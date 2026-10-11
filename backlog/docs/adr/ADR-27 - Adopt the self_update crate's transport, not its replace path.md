@@ -1,12 +1,14 @@
 ---
-id: decision-5
+id: ADR-27
 title: Adopt the self_update crate's transport, not its replace path
 date: '2026-10-11'
 status: accepted
+tags:
+  - decision
 ---
 ## Context
 
-`pixi-sandbox self-update` (decision-4) is hand-rolled: `resolver`, `assets`, `checksums`,
+`pixi-sandbox self-update` (ADR-26) is hand-rolled: `resolver`, `assets`, `checksums`,
 `ownership`, `replace`, and an orchestration in `mod.rs` (889 lines) judged by 94 integration
 tests. The `self_update` crate (1.3.0) can do the download → verify → replace engine and was
 declared ahead of the verdict so the airlock's relocked vendor tree would carry it. TASK-90

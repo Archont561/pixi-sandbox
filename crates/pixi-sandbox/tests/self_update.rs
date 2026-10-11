@@ -1,7 +1,7 @@
 //! Unit tests for the self-update orchestration (`src/self_update/mod.rs`).
 //!
 //! The whole trust boundary — resolve, classify, download, verify, replace — against an
-//! in-memory fake release. No socket is opened and no real binary is written (D10).
+//! in-memory fake release. No socket is opened and no real binary is written (ADR-10).
 
 use anyhow::Result;
 use pixi_sandbox::release::{Asset, ReleaseSource};
@@ -164,7 +164,7 @@ fn latest_by_default_resolves_downloads_verifies_and_replaces(scratch: Scratch) 
 
 #[rstest]
 fn an_exact_version_installs_that_release_even_when_it_is_older_than_latest(scratch: Scratch) {
-    // Rollback: decision-4's "manual rollback selects an exact older one".
+    // Rollback: ADR-26's "manual rollback selects an exact older one".
     let old = b"the 0.3.7 binary";
     let source = FakeRelease::healthy()
         .with_asset("v0.3.7", LINUX_ASSET, old)

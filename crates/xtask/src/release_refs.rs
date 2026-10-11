@@ -58,10 +58,10 @@ fn is_ours(line: &str, root_ident: &str) -> bool {
 /// The files that carry LITERAL references (the README family): GitHub renders them raw, so
 /// there is no build step to derive a version in. These are what `rewrite` stamps at release
 /// time. Markdown and MDX only, and never the places that are historical by construction: a
-/// changelog and a closed task record are *supposed* to name old releases; `.knowledge/`
+/// changelog and a closed task record are *supposed* to name old releases; `backlog/docs/`
 /// holds design history; `docs/` derives.
 fn ref_files(root: &Path) -> Vec<PathBuf> {
-    const EXCLUDED_TOP_DIRS: [&str; 5] = [".git", ".knowledge", "node_modules", "docs", "backlog"];
+    const EXCLUDED_TOP_DIRS: [&str; 4] = [".git", "node_modules", "docs", "backlog"];
     let mut files: Vec<PathBuf> = walkdir::WalkDir::new(root)
         .min_depth(1)
         .into_iter()

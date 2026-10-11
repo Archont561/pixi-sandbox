@@ -15,9 +15,9 @@ license = "MIT"
 repository = "https://github.com/Archont561/pixi-sandbox"
 authors = ["Archont561"]
 
-# The lint gate is pedantic, inherited by every crate (decision D20): the policy lives here
+# The lint gate is pedantic, inherited by every crate (decision ADR-20): the policy lives here
 # once so no crate can drift, and the per-crate lint scripts' `-D warnings` makes the level
-# binding. Nursery stays off (D20). The one workspace-wide exception is deliberate and
+# binding. Nursery stays off (ADR-20). The one workspace-wide exception is deliberate and
 # reasoned: every `literal_string_with_formatting_args` hit in this workspace is an
 # intentional placeholder template (`.replace("{version}", …)`) or a shell parameter
 # expansion asserted inside a Rust string literal (`${PREFIX:-sandbox}`) — "fixing" them
@@ -44,7 +44,7 @@ fs2 = "0.4"
 tar = "0.4"
 # Connected-side fetching: HTTPS release assets are verified against the embedded tool pins before use.
 ureq = "3.4"
-# The self-update transport (TASK-90 / doc-14, adopted as decision-5): `self_update` supplies the
+# The self-update transport (TASK-90 / doc-14, adopted as ADR-27): `self_update` supplies the
 # release-lookup, download and checksum-parse path; our `ownership` refusal ladder, `replace` swap
 # and the `mod.rs` orchestration stay hand-rolled. The feature set is the measured minimum: `ureq`
 # reuses the HTTPS client this

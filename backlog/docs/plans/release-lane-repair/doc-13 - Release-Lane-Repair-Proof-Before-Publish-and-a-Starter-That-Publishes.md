@@ -143,7 +143,7 @@ Instead, in `publish`:
 5. `SCAFFOLD_FILES` grows from 3 (`pixi.toml`, `.gitignore`, `README.md`) to add the two
    devcontainer files.
 
-Tests (tempdir fixtures, D10 — never this checkout):
+Tests (tempdir fixtures, ADR-10 — never this checkout):
 
 - a bare remote seeded with a README-only initial commit + a complete working tree publishes
   **all** required files, not one (regression test for §1.1; must fail against today's code);

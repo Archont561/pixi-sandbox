@@ -1,6 +1,6 @@
 //! `self-update` — replace a standalone pixi-sandbox binary with a published release.
 //!
-//! The trust boundary, in the order it is enforced (decision-4 / D16):
+//! The trust boundary, in the order it is enforced (ADR-26 / ADR-16):
 //!
 //! 1. **Resolve** a tag — `latest` only as discovery for a reviewed upgrade, otherwise exact.
 //! 2. **Classify the destination.** A Pixi-managed executable, a `pixi global` trampoline, a
@@ -42,7 +42,7 @@ pub const SUMS_ASSET: &str = "SHA256SUMS";
 /// Everything the command needs, with every ambient input resolved by the caller.
 ///
 /// No field here is read from the environment inside this module — the same rule `user_tools`
-/// follows (D10): tests pass tempdirs and explicit hosts, so no code path can reach a
+/// follows (ADR-10): tests pass tempdirs and explicit hosts, so no code path can reach a
 /// developer's real binary.
 pub struct Request<'a> {
     pub repo: &'a str,
@@ -157,7 +157,7 @@ pub fn apply(source: &dyn ReleaseSource, request: &Request<'_>, plan: Plan) -> R
 ///
 /// Unlike [`run`] there is no up-to-date shortcut: the destination is not the running
 /// binary, so the running binary's version says nothing about what the destination holds.
-/// Every call resolves, downloads, verifies and installs (decision-4 / D16 — the bootstrap
+/// Every call resolves, downloads, verifies and installs (ADR-26 / ADR-16 — the bootstrap
 /// is the pinned, checksum-verified binary, always).
 ///
 /// # Errors

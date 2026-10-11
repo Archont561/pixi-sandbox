@@ -1,8 +1,10 @@
 ---
-id: decision-3
+id: ADR-25
 title: Defer Turbo until the JS workspace graph earns it
 date: '2026-10-01 15:51'
 status: deferred
+tags:
+  - decision
 ---
 ## Context
 

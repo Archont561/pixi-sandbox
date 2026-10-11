@@ -289,7 +289,7 @@ fn materialise_names_the_branch_path_when_the_blob_is_missing() {
     );
 }
 
-/// All-or-nothing (D7), now that there is a staging step to get it wrong: a blob whose bytes
+/// All-or-nothing (ADR-7), now that there is a staging step to get it wrong: a blob whose bytes
 /// do not match the manifest must leave the file already on disk exactly as it was — a
 /// half-replaced tool is worse than an un-replaced one — and must not leave the staged copy
 /// lying next to it.

@@ -6,7 +6,7 @@
 //! `xtask starter-check-dispatch`, so the flag wiring is part of what has to stay true — a guard
 //! that reads the wrong argument is the same class of incident task-85 was written from. Real
 //! `git` in tempdirs, a `gh` stub on `PATH`: neither test touches this repository or the network
-//! (D10), and the `gh` stub is the shape `starter_check_main.rs` established.
+//! (ADR-10), and the `gh` stub is the shape `starter_check_main.rs` established.
 
 use std::{
     fs,

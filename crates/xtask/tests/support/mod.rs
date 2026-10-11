@@ -1,6 +1,6 @@
 //! A minimal repository that passes every check, shared by every check module's own tests.
 //! Each test then breaks exactly one policy and asserts that policy alone fires. Built in a
-//! tempdir: D10 forbids these tests from ever looking at the real checkout. (Moved from
+//! tempdir: ADR-10 forbids these tests from ever looking at the real checkout. (Moved from
 //! `repo_checks/test_support.rs`, TASK-83.)
 
 use std::fs;
@@ -31,7 +31,7 @@ pub fn valid_fixture() -> tempfile::TempDir {
     );
     write(
         "README.md",
-        "<img src=\"https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg\" alt=\"Platforms\">\n\nwin-64 is unsupported: conda-forge ships no bun build (D11).\n\npixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox\npixi-sandbox init\n",
+        "<img src=\"https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg\" alt=\"Platforms\">\n\nwin-64 is unsupported: conda-forge ships no bun build (ADR-11).\n\npixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox\npixi-sandbox init\n",
     );
     write(
         "crates/pixi-sandbox/pixi.toml",
@@ -88,7 +88,7 @@ pub fn headlines(root: &Path) -> Vec<String> {
 ///
 /// Tests here drive the repository's own `git` only to *build the world under test* — the
 /// carve-out invariant 8 gives fixture builders, so an oracle never shares code with the thing
-/// it judges. Nothing in these tests reads `pixi-sandbox` itself (D10).
+/// it judges. Nothing in these tests reads `pixi-sandbox` itself (ADR-10).
 #[allow(dead_code)]
 pub fn run_git(cwd: &Path, args: &[&str]) -> String {
     let identity = [
@@ -140,7 +140,7 @@ pub const STARTER_SOURCE: &str = "Archont561/pixi-sandbox";
 pub const STARTER_REPO: &str = "Archont561/pixi-sandbox-starter";
 /// The pixi version a fixture release pins. The real lane reads it from the release's embedded
 /// tools lock; a fixture states it, because a fixture that read the real lock would be reading
-/// this repository (D10).
+/// this repository (ADR-10).
 #[allow(dead_code)]
 pub const STARTER_PIXI_VERSION: &str = "0.81.0";
 

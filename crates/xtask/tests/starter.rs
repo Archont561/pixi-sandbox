@@ -642,7 +642,7 @@ fn publishing_over_a_readme_only_starter_commits_the_whole_template() {
         "1"
     );
     // What a reader of the starter repository sees: the snapshot is an initial commit, not a
-    // chore appended to a history that D22 removed.
+    // chore appended to a history that ADR-22 removed.
     assert_eq!(
         run_git(&verify, &["log", "-1", "--pretty=%s", "HEAD"]).trim(),
         "Initial commit"
@@ -695,7 +695,7 @@ fn publishing_over_a_readme_only_starter_commits_the_whole_template() {
     assert_eq!(run_git(&remote, &["show-ref"]), published);
 }
 
-/// Every publication replaces main with a parentless commit (D22), so the snapshot *is* the
+/// Every publication replaces main with a parentless commit (ADR-22), so the snapshot *is* the
 /// repository's initial commit and its subject says so. The body is the only place the starter
 /// records which release generated it, so both halves of the hand-off have to survive.
 #[test]

@@ -194,7 +194,7 @@ closes [#128](https://github.com/Archont561/pixi-sandbox/issues/128)
 [#1](https://github.com/Archont561/pixi-sandbox/issues/1)
 [#7](https://github.com/Archont561/pixi-sandbox/issues/7)
 [#8](https://github.com/Archont561/pixi-sandbox/issues/8)
-* **knowledge:** record D21 on uv-regenerated install metadata in the oracle
+* **knowledge:** record ADR-21 on uv-regenerated install metadata in the oracle
 ([ef45808](https://github.com/Archont561/pixi-sandbox/commit/ef45808966d89cc28074fb68c65c4d35239cf9e5)),
 closes [#128](https://github.com/Archont561/pixi-sandbox/issues/128)
 * **context:** record the close-out session and the next session prompt
@@ -691,9 +691,9 @@ closes [#36](https://github.com/Archont561/pixi-sandbox/issues/36)
 
 #### Features
 
-* **sandbox:** declare the osx-arm64 developer bundle to schedule the D11 proof
+* **sandbox:** declare the osx-arm64 developer bundle to schedule the ADR-11 proof
 ([78b60cb](https://github.com/Archont561/pixi-sandbox/commit/78b60cb0e35f671da4d07a4c771cb38e2cb02c08))
-* **core:** verify a restored project against the manifest, not just its shape (task-10, D13)
+* **core:** verify a restored project against the manifest, not just its shape (task-10, ADR-13)
 ([30272a9](https://github.com/Archont561/pixi-sandbox/commit/30272a98f1cb6d39687794d66348c0e2b2255660))
 * **tools:** implement tools update, with honest verification (task-4)
 ([fdabd2b](https://github.com/Archont561/pixi-sandbox/commit/fdabd2b7b10d7892cce93639822c8d91c49feb88))
@@ -772,7 +772,7 @@ closes [#16](https://github.com/Archont561/pixi-sandbox/issues/16)
 
 ### Fixes
 
-* **cli:** cite only design.md for deferred verbs
+* **cli:** cite only doc-2 for deferred verbs
 ([2520562](https://github.com/Archont561/pixi-sandbox/commit/252056207a285a5e72c6fb43328fd9373876abcb))
 * **restore:** delete the staging scratch once an environment is in place
 ([fca1f0e](https://github.com/Archont561/pixi-sandbox/commit/fca1f0eb3a0d270ed02258aa06528ed1ec78ebfe)),
@@ -805,7 +805,7 @@ closes [#16](https://github.com/Archont561/pixi-sandbox/issues/16)
 
 * sync the README devcontainer quote with the actual command
 ([8d6cca6](https://github.com/Archont561/pixi-sandbox/commit/8d6cca6a87171e507f84e353244f28515a173c02))
-* fix install one-liner (task-2), record rattler no-go D12 (task-9)
+* fix install one-liner (task-2), record rattler no-go ADR-12 (task-9)
 ([6fd1152](https://github.com/Archont561/pixi-sandbox/commit/6fd1152c992ced5933b72fb5e5fd7ef7adbb7ece)),
 closes [#1](https://github.com/Archont561/pixi-sandbox/issues/1)
 [#3](https://github.com/Archont561/pixi-sandbox/issues/3)

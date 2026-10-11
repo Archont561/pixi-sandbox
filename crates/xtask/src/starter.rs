@@ -332,7 +332,7 @@ fn publishable_paths(dir: &Path) -> Result<Option<Vec<String>>> {
 /// Report every reason `dir` is not a publishable starter revision for `tag`.
 ///
 /// Returns findings rather than failing on the first one, for the same reason
-/// `check-repository` does: one run should tell you everything that is wrong (D13).
+/// `check-repository` does: one run should tell you everything that is wrong (ADR-13).
 ///
 /// The forbidden-path half is judged on *the tree git would commit*, not on the directory
 /// listing: the assembly steps leave runtime state behind on purpose, and the starter's
@@ -889,7 +889,7 @@ pub fn publish_refusals(
 
 /// The message a published starter snapshot carries.
 ///
-/// Every publication replaces main with a parentless commit (D22), so the snapshot *is* the
+/// Every publication replaces main with a parentless commit (ADR-22), so the snapshot *is* the
 /// repository's initial commit; a `chore: regenerate` subject described an append that no longer
 /// happens. The body keeps the release-to-source-commit link, which is the snapshot's only
 /// provenance — nothing else in the starter repository records which release generated it.

@@ -1,4 +1,4 @@
-//! The pinned helper-tool catalogue (decision D4).
+//! The pinned helper-tool catalogue (decision ADR-4).
 //!
 //! The canonical JSON is compiled into `pixi-sandbox-core`, so an installed
 //! `pixi-sandbox` binary can safely run `pack --fetch-tools` without requiring a loose file

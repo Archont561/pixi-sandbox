@@ -8,9 +8,9 @@
 //! worktree-against-index because `git status --porcelain` and `git diff-index HEAD` also
 //! report staged changes and therefore rejected every release while looking correct.
 //!
-//! Git goes through `pixi-sandbox-git` (D9) — the working-tree primitives on `ShellGit`, not
+//! Git goes through `pixi-sandbox-git` (ADR-9) — the working-tree primitives on `ShellGit`, not
 //! the transport trait — and every guard is tested against a tempdir repository with a real
-//! bare remote, never this checkout (D10).
+//! bare remote, never this checkout (ADR-10).
 
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_git::ShellGit;

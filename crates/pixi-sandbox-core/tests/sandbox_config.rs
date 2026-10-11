@@ -449,7 +449,7 @@ fn every_platform_with_a_hosted_runner_has_complete_embedded_helper_pins(
     );
 }
 
-/// Mirrors `manifest::schema_supported`'s policy exactly (task-47 AC#5 / decision D16): every
+/// Mirrors `manifest::schema_supported`'s policy exactly (task-47 AC#5 / decision ADR-16): every
 /// schema from 1 up to the current one is understood, zero is not a schema that ever existed,
 /// and only a schema newer than this build knows about is refused. The range reads as `{1}`
 /// today only because `CONFIG_SCHEMA` has never bumped — this property holds for the function
@@ -527,7 +527,7 @@ platforms = ["linux-64"]
     }
 
     /// AC#1: present but empty is still a real `Some`, distinct from absent — it is the signal
-    /// `push_paths`/`setup_pixi_cache` use to switch to their safer defaults (decision D18).
+    /// `push_paths`/`setup_pixi_cache` use to switch to their safer defaults (decision ADR-18).
     #[test]
     fn empty_workflow_table_is_some_with_every_field_default() {
         let config = with_workflow("[workflow]\n");

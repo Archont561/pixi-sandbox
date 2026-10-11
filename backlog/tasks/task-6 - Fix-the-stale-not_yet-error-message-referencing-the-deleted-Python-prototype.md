@@ -24,28 +24,28 @@ The not_yet helper in commands/mod.rs tells the user that the Python prototype i
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 The not_yet message points only at .knowledge/design.md sections and no longer mentions any Python prototype
+- [x] #1 The not_yet message points only at backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md sections and no longer mentions any Python prototype
 - [x] #2 A grep across crates/ finds no Python-prototype references left
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-TDD: red CLI test in tests/cli.rs asserting a deferred verb (publish --keep, tools update) names .knowledge/design.md and mentions no Python prototype; green by rewriting not_yet in commands/mod.rs. AC2 via a new pixi lint task that greps crates/ (cargo tests stay fixture-only, D10).
+TDD: red CLI test in tests/cli.rs asserting a deferred verb (publish --keep, tools update) names backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md and mentions no Python prototype; green by rewriting not_yet in commands/mod.rs. AC2 via a new pixi lint task that greps crates/ (cargo tests stay fixture-only, ADR-10).
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Red: new tests/cli.rs test a_deferred_verb_cites_only_the_design_section drove both deferred verbs (publish --keep, tools update) through the CLI and asserted the stderr names .knowledge/design.md with its section and contains no python/prototype/.knowledge/research. It failed against the old wording.
+Red: new tests/cli.rs test a_deferred_verb_cites_only_the_design_section drove both deferred verbs (publish --keep, tools update) through the CLI and asserted the stderr names backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md with its section and contains no python/prototype/.knowledge/research. It failed against the old wording.
 
 Green: not_yet() in commands/mod.rs now cites only the design section. Module doc of commands/mod.rs, the two Linkage comments in core/src/verify.rs, the script fixture in core/tests/verify.rs, the actions.rs header and tests/fixtures/README.md lost their prototype references.
 
-AC2 is executable as pixi run lint-repo-consistency (scripts/lint-repo-consistency.sh), not a cargo test: D10 forbids tests that target this repository. Opt-out marker: stale-ref-allowed on or above the line, used once by the test that must spell the forbidden words out.
+AC2 is executable as pixi run lint-repo-consistency (scripts/lint-repo-consistency.sh), not a cargo test: ADR-10 forbids tests that target this repository. Opt-out marker: stale-ref-allowed on or above the line, used once by the test that must spell the forbidden words out.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Deferred verbs now cite .knowledge/design.md and nothing else; crates/ is free of references to the Python prototype deleted in 0.2.0, enforced by the new lint-repo-consistency task in the lint gate, CI and the pre-commit hook.
+Deferred verbs now cite backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md and nothing else; crates/ is free of references to the Python prototype deleted in 0.2.0, enforced by the new lint-repo-consistency task in the lint gate, CI and the pre-commit hook.
 <!-- SECTION:FINAL_SUMMARY:END -->

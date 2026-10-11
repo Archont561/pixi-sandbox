@@ -27,7 +27,7 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 5. **Git Trait Boundary**: All Git commands go through the `GitProtocol` trait (`crates/pixi-sandbox-git`). The CLI uses `ShellGit`, tests use in-memory runners, and tests never touch developers' real Git configuration.
 6. **Airlock Restoration Independence**: The restore step on the disconnected host requires only the embedded static binaries (`pixi-unpack` / `pixi-sandbox`) and no network connectivity.
 7. **A Restored Environment Names Itself**: while an environment is staged it still points at the staging path, so every valid-UTF-8, NUL-free text file has that path rewritten to the final prefix immediately before the rename — a NUL byte means a fixed-width binary, which is left exactly as it is. The scratch goes when the restore succeeds and stays when it fails, because a failed restore's scratch is the evidence.
-8. **A Restored Tree Is Checked Against the Manifest, Not Its Shape** (D13): a schema-2 manifest carries a per-file oracle (`envs/<env>/files.json`) recorded by the packer from its own verification unpack, and `doctor --verify-restored <PROJECT>` compares the restored prefix against it — content, symlink targets, exec bits, the fingerprint marker — collecting every mismatch and writing nothing. Shape checks (conda-meta present, `pixi install` a no-op) prove self-sufficiency, not integrity; a stub prefix with a fabricated conda-meta record must fail the airlock gate, and it does, by test.
+8. **A Restored Tree Is Checked Against the Manifest, Not Its Shape** (ADR-13): a schema-2 manifest carries a per-file oracle (`envs/<env>/files.json`) recorded by the packer from its own verification unpack, and `doctor --verify-restored <PROJECT>` compares the restored prefix against it — content, symlink targets, exec bits, the fingerprint marker — collecting every mismatch and writing nothing. Shape checks (conda-meta present, `pixi install` a no-op) prove self-sufficiency, not integrity; a stub prefix with a fabricated conda-meta record must fail the airlock gate, and it does, by test.
 
 ---
 
@@ -63,7 +63,7 @@ Orientation guide for developers and AI agents working on `pixi-sandbox`.
 All three entries below are closed, so this list was retired on 2026-10-05; it is kept only to
 record the airlock boundary each one sat on.
 
-1. **Prove `osx-arm64` and publish a macOS bundle** (backlog **task-1**, gated by **D11**) — the
+1. **Prove `osx-arm64` and publish a macOS bundle** (backlog **task-1**, gated by **ADR-11**) — the
    native `macos-14` leg went green end to end (released binary installed and checksum-verified,
    packed, published to the throwaway remote, fetched, restored, gate passed). AC#1 was held back
    until a run showed Tier A **actually executed**: `BLOCK_NETWORK` had been opt-*in*, so `null ==
@@ -108,20 +108,20 @@ on create). Its setup step reaches bun through the implicit `default` environmen
 
 ## 🧭 Current v1 Planning and Network Boundary
 
-The current redesign is planned in Backlog milestone **m-0 — v1 standalone cross-platform workflow**. The canonical planning/specification documents are under `backlog/docs/`; `.knowledge/` now keeps historical decisions, raw evidence, and discovery pointers.
+The current redesign is planned in Backlog milestone **m-0 — v1 standalone cross-platform workflow**. The canonical planning/specification documents are under `backlog/docs/`; `backlog/docs/` now keeps historical decisions, raw evidence, and discovery pointers.
 
 ### Backlog workstreams
 
 - **TASK-21** — make `init` provider-neutral and platform-specific; use `pixi-sandbox init` with `--github-workflow-path`, `--script-path`, and `--config`; generate only the current platform launcher.
 - **TASK-22** — generate a disposable workflow that installs `pixi-sandbox` from `@archont561/pixi-sandbox` and calls the binary directly, without Archont561 composite Actions.
 - **TASK-23** — publish Pixi/Conda package variants for `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64`, and `win-64`, while retaining standalone release binaries for transport bootstrap.
-- **TASK-24** — measure standalone transport/restore orchestration and tool deduplication before changing the existing D2/D3 `pixi-pack`/`pixi-unpack` decisions; schema compatibility is required.
+- **TASK-24** — measure standalone transport/restore orchestration and tool deduplication before changing the existing ADR-2/ADR-3 `pixi-pack`/`pixi-unpack` decisions; schema compatibility is required.
 - **TASK-25** — moved npm-compatible tooling such as Biome and Astro to `package.json`/`bun.lock`; task-70 later folded Bun into the one developer environment for cross-language orchestration.
-- **TASK-26 / TASK-70** — the JS-only Turbo spike deferred adoption, then Pathway's measured Rust-package model supplied a new use case; D15 now records Turbo as the cross-language graph.
+- **TASK-26 / TASK-70** — the JS-only Turbo spike deferred adoption, then Pathway's measured Rust-package model supplied a new use case; ADR-15 now records Turbo as the cross-language graph.
 
-The v1 proposal is now an accepted architectural decision: backlog `decision-1` is accepted
-(through task-24's measurements, recorded in `decision-2` and `doc-7`), with the boundary that
-`pixi-pack`/`pixi-unpack` remain pinned helper subprocesses (D2/D3/D4/D12, reaffirmed as D14).
+The v1 proposal is now an accepted architectural decision: backlog `ADR-23` is accepted
+(through task-24's measurements, recorded in `ADR-24` and `doc-7`), with the boundary that
+`pixi-pack`/`pixi-unpack` remain pinned helper subprocesses (ADR-2/ADR-3/ADR-4/ADR-12, reaffirmed as ADR-14).
 
 ### Work that requires an online Codespace or native CI
 
@@ -162,9 +162,9 @@ Do not attempt package resolution, prefix.dev publication, GitHub Actions dispat
 
 | Resource | Purpose |
 |:---|:---|
-| [`.knowledge/decisions.md`](.knowledge/decisions.md) | Architectural Decisions D1–D12 with empirical lab measurements |
-| [`.knowledge/design.md`](.knowledge/design.md) | In-depth design specification and airlock invariants |
-| [`.knowledge/rust-bootstrap.md`](.knowledge/rust-bootstrap.md) | Rust static bootstrap binary strategy and validation checklist |
+| [`backlog/docs/adr/README.md`](backlog/docs/adr/README.md) | Architectural Decisions ADR-1–ADR-12 with empirical lab measurements |
+| [`backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md`](backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md) | In-depth design specification and airlock invariants |
+| [`backlog/docs/specifications/rust-bootstrap/doc-4 - Rust-Bootstrap-Specification.md`](backlog/docs/specifications/rust-bootstrap/doc-4 - Rust-Bootstrap-Specification.md) | Rust static bootstrap binary strategy and validation checklist |
 | [`.knowledge/README.md`](.knowledge/README.md) | Open Knowledge Format index |
 
 ---
@@ -175,12 +175,12 @@ Do not attempt package resolution, prefix.dev publication, GitHub Actions dispat
 > **This is the only place an agent records something it did not implement.** Suggestions,
 > half-finished designs, alternatives considered, measurements worth keeping, "we should
 > probably…" — they go here, newest section last, each under a dated heading. They do **not**
-> go into `AGENTS.md`, `README.md`, `.knowledge/`, a spec under `backlog/docs/`, or a comment
+> go into `AGENTS.md`, `README.md`, `backlog/docs/`, a spec under `backlog/docs/`, or a comment
 > in the code they speculate about: those files state what *is*, and a proposal mixed into them
 > reads as a decision nobody made.
 >
 > Promotion out of here is deliberate: a proposal becomes a backlog task (it will be built), a
-> decision in `.knowledge/decisions.md` (it was decided, with evidence), or it is deleted.
+> decision in `backlog/docs/adr/README.md` (it was decided, with evidence), or it is deleted.
 > Anything still sitting here is explicitly **not** agreed.
 
 ### 2026-10-01 — tooling session (lefthook split, workflow rule, restore findings)
@@ -499,7 +499,7 @@ in `crates/pixi-sandbox/tests/e2e.rs` with explicit inputs (`PIXI_SANDBOX_GATE_P
 `pixi.toml` has the one-line tasks `airlock-gate-archive` and `airlock-gate-run`;
 `.github/workflows/airlock.yml` builds a nextest archive while connected, runs it in Tier B,
 and replays the same archive through `xtask deny-egress` in Tier A. `scripts/airlock-gate.sh`
-is deleted, and the D10 fixture exception now names only `scripts/restore.sh`. CI fixes found
+is deleted, and the ADR-10 fixture exception now names only `scripts/restore.sh`. CI fixes found
 live: the workflow installs `default` before archiving, the archive build no longer passes
 Cargo's offline `--frozen`, the gate filter targets only the `ci_gate` tests, `airlock-pack`
 downloads the static release asset instead of embedding Pixi's global trampoline/dynamic conda
@@ -611,13 +611,13 @@ job is deciding what to seed: the deferred proofs above are watch-items, not tas
 v2 spike (task-9, rattler-based pack/unpack) and any new work come from the owner's
 priorities, not from re-opening Done tasks.
 
-### 2026-10-02 — issue #71: init's channel append broke consumer locks (task-48, D17, PR #73)
+### 2026-10-02 — issue #71: init's channel append broke consumer locks (task-48, ADR-17, PR #73)
 
 **Open on the session branch** (`arena/01a0fe32-pixi-sandbox`, PR #73, `fix(init): …`, net
 −175 lines). Issue #71 measured what task-34's namespace-root choice actually does:
 `https://prefix.dev/archont561` serves no repodata, so every consumer with a dependency
 fails `pixi lock` right after `init`, and a dependency-free project locks fine (an empty
-solve never fetches repodata) — the smoke-test trap that let it ship. Recorded as **D17**
+solve never fetches repodata) — the smoke-test trap that let it ship. Recorded as **ADR-17**
 and fixed as the no-mutation option: init writes only the files it owns and leaves
 `pixi.toml` byte-identical, with a bare existence check keeping the
 run-init-from-a-Pixi-project guard. The channel machinery and the `toml_edit` dependency
@@ -633,7 +633,7 @@ token cannot start workflows or comment on issues (`Resource not accessible by i
 — it could open the PR, and `Fixes #71` in its body links the issue. The upstream pixi
 report (the coalesced-request error hiding the 404 URL) is drafted verbatim in task-48's
 notes; searched first, no existing issue covers it. Also filed this session, not yet
-implemented: task-47 + decision-4/D16 (consumer version-drift gate and reviewed upgrade
+implemented: task-47 + ADR-26/ADR-16 (consumer version-drift gate and reviewed upgrade
 path).
 
 **Next session should start with:**
@@ -672,7 +672,7 @@ succeeded, and the republished `sandbox/developer-linux-64` manifest names sourc
 triggered — both remain dispatch/tag driven, and cutting a release before self-update exists
 would not prove the next target.
 
-The same PR promoted task-47 into the v1 upgrade design and updated proposed decision-4. The
+The same PR promoted task-47 into the v1 upgrade design and updated proposed ADR-26. The
 planned `pixi-sandbox self-update` resolves latest only in the review-producing upgrade lane (or
 an exact manually requested version), verifies the standalone asset against `SHA256SUMS`, safely
 replaces a CI-managed standalone path, and refuses package-manager/global-trampoline ownership.
@@ -685,7 +685,7 @@ full GitHub CI evidence, so task-47 is unblocked.
 
 > Restore the sandbox and baseline the suite (expect **405 passing / 1 skipped**; the trusted
 > transport is `sandbox/developer-linux-64` created by publish run 37073291962, whose manifest
-> names source `15b82c7`, pixi-sandbox 0.4.3, static). Read `AGENTS.md`, decision-4, and task-47.
+> names source `15b82c7`, pixi-sandbox 0.4.3, static). Read `AGENTS.md`, ADR-26, and task-47.
 > Confirm main's latest `ci` and `publish sandbox` runs are still green; auto-release/release did
 > not run and must not be dispatched yet.
 >
@@ -798,7 +798,7 @@ deserves its own backlog task rather than an opportunistic refactor.
 > Restore the sandbox and baseline the suite (expect **500 passing / 1 skipped**; re-read the
 > manifest rather than trusting this number — the trusted transport is
 > `sandbox/developer-linux-64`, repacked by the `publish sandbox` run on `79e4f83`, and its
-> manifest should name that commit, pixi-sandbox 0.4.4, static). Read `AGENTS.md`, decision-4,
+> manifest should name that commit, pixi-sandbox 0.4.4, static). Read `AGENTS.md`, ADR-26,
 > and task-47's notes. Confirm main's latest `ci`, `docs` and `publish sandbox` runs are green.
 >
 > **Settle the release state first.** `v0.4.5` (`afcbdbf`) is tagged on main but its `release`
@@ -855,12 +855,12 @@ path detaches readers now.
 ### 2026-10-03 — task-48 re-verified; still 4/7, same two connected-host gaps
 
 A later session picked task-48 back up expecting to implement it, found the fix already
-merged (PR #73, D17) and shipped in **v0.4.4** (confirmed via `gh release view`, published
+merged (PR #73, ADR-17) and shipped in **v0.4.4** (confirmed via `gh release view`, published
 2026-10-02T22:56:26Z, ~40 minutes after the PR merged) and still present in the current
 **v0.5.0**; issue #71 is closed. Re-ran the init test suite to reconfirm nothing regressed
 (`init_leaves_the_consumer_pixi_manifest_untouched` and
 `init_still_refuses_a_directory_without_a_pixi_manifest` both pass) and re-read the guide
-section and D17 — both still match the shipped code. No code or doc changes were needed.
+section and ADR-17 — both still match the shipped code. No code or doc changes were needed.
 
 The two remaining gaps are exactly what the prior session left: AC#2/#6's live `pixi lock`
 probe needs a connected host (this sandbox still reaches only github.com — prefix.dev,
@@ -928,7 +928,7 @@ AC#1-6 fully done, AC#7 partially (every offline gate green; the connected proof
 release stay open, same shape as task-47/task-52's remaining gaps). An optional `[workflow]`
 table (`push_paths`, `permissions`, `concurrency`, `timeouts`, `pixi_version`,
 `setup_pixi_cache`) now carries CI policy that previously required hand-editing the generated
-workflow after every `init --force`. Decision D18 records the one judgement call: the table's
+workflow after every `init --force`. Decision ADR-18 records the one judgement call: the table's
 mere *presence* (not each field) is the opt-in to a safer default for exactly two
 correctness/cost-flavoured fields (`setup_pixi_cache` → `false`, `push_paths` → derived from the
 known transport inputs instead of an unfiltered trigger); `permissions`/`concurrency`/`timeouts`
@@ -1164,7 +1164,7 @@ simply had no `[workflow]` table.
   it does not promise that every push publishes. Here that is correct, since a superseded
   pending repack would pack older main.
 
-**D18 is real and was taken deliberately, not inherited.** Adding `[workflow]` at all flips
+**ADR-18 is real and was taken deliberately, not inherited.** Adding `[workflow]` at all flips
 `push_paths` to a derivation and `setup_pixi_cache` to `false`, so both are now written out
 explicitly. `push_paths` is the derived seven (`.pixi-sandbox.toml`, `pixi.toml`, `pixi.lock`,
 `package.json`, `bun.lock`, `Cargo.toml`, `Cargo.lock`) **plus `crates/**`**: the derivation
@@ -1236,10 +1236,10 @@ was no window in which a published release pointed at a stale transport.
 - **`publish-sandbox.yml` group `publish-sandbox-${{ github.repository }}` — not exercised.** The
   previous repack (37513641598, PR #114's own merge) ended 18:48:16; this one started 18:52:39.
   Four minutes apart, never concurrent. Same verdict.
-- **`on.push.paths` (D18) — proven, positive direction only.** The release commit touches
+- **`on.push.paths` (ADR-18) — proven, positive direction only.** The release commit touches
   `Cargo.toml`, `Cargo.lock`, `pixi.toml`, `crates/pixi-sandbox/Cargo.toml`,
   `crates/pixi-sandbox/pixi.toml` and `crates/xtask/Cargo.toml` — six matches against the eight
-  entries — and the publisher fired on the main push. The D18 trap did not spring and
+  entries — and the publisher fired on the main push. The ADR-18 trap did not spring and
   `dispatch-sandbox-repack` was not needed. No push to main since `ea0f77d` has *missed* the
   filter, so the negative half (a docs-only push correctly skipping a repack) is still untested.
 - **`setup_pixi_cache = false` — proven, and it costs nothing.** The `setup-pixi` step takes 1s
@@ -1362,7 +1362,7 @@ the cost of setting it late is a whole release.
 ### 2026-10-08 — TASK-75 landed; host requirements end to end, starter-lane trail folded in
 
 **Landed** (so: not proposals) — four commits on `arena/44e28d89-pixi-sandbox`:
-`1b55eac` the `[host_requirements]` config table (snake_case, D19 — the issue sketched
+`1b55eac` the `[host_requirements]` config table (snake_case, ADR-19 — the issue sketched
 kebab-case, which this repo's loader refuses), `5573b26` the manifest carry (`pack --config`
 resolves the set for the packed platform; absent declaration leaves the manifest byte-identical),
 `3f60269` the read-only probes (`doctor` classifies satisfied / missing / unknown / not
@@ -1401,7 +1401,7 @@ repack (this repository declares none).
   the issue named `/dev/dri`.
 - **macOS/Windows probes.** The seam and the family short-circuit exist (`Osx`/`Windows` report
   `unknown`/`not applicable`); only Linux has a real probe, and the family list stays closed at
-  three — a fourth family needs a decision first (D19).
+  three — a fourth family needs a decision first (ADR-19).
 
 **Proposals, not agreed:**
 
@@ -1477,7 +1477,7 @@ surfaces** — the surfaces are the one place a malformed manifest cannot do dam
 **Also landed, as the guard TASK-84 did not ask for:** `xtask check-repository` **check 12**
 (`crates/xtask/src/repo_checks/agents_md.rs`) — every root-anchored path in AGENTS.md's repo map
 resolves, and the promoted-module list is exactly `lib.rs`'s `pub mod` set, checked in both
-directions. It lives in xtask rather than in `tests/` because D10 forbids a test from reading this
+directions. It lives in xtask rather than in `tests/` because ADR-10 forbids a test from reading this
 repository, which is precisely why the drift had gone uncaught. Reverting AGENTS.md to its pre-fix
 state makes it fail with `repo consistency: 2 check(s) failed`, naming `release.rs` and the two
 modules the paragraph omitted.
@@ -1822,7 +1822,7 @@ package version as an input, so future release bumps remain valid but wrong emit
 one module per slice on the existing session branch:
 
 - `f0933ce9 refactor(pack): promote preflight and the per-file oracle` — layout refusals,
-  host-requirement resolution, D13's verification unpack, and file recording. Shared command
+  host-requirement resolution, ADR-13's verification unpack, and file recording. Shared command
   primitives moved once and re-exported, not duplicated. Public tests: **20**.
 - `29962105 refactor(pack): promote cargo vendoring policy` — collision policy, loose/per-crate-
   tar output and toolchain provenance; explicit external-program paths keep tests off ambient
@@ -1988,7 +1988,7 @@ two e2e narrative tests (137, 124), both workflow renderers (naming TASK-76). Ca
 shard.rs:124, transport_budget.rs:232, pack.rs:68 (the third moved into src/pack.rs with
 TASK-82). Policy approved: `[workspace.lints.clippy]` pedantic = "warn" inherited by all
 four crates, nursery off, `literal_string_with_formatting_args` allowed with a reason,
-recorded as D20; the gate is red between the policy commit and the per-crate fix commits
+recorded as ADR-20; the gate is red between the policy commit and the per-crate fix commits
 (nothing pushed in between). LEGACY inline-test list still has 5 entries; only
 `commands/tools/update.rs` migrates in this task.
 
@@ -2009,7 +2009,7 @@ reconstruction notes: the git crate's sweep fixes are folded into the TASK-76 co
 the TASK-76 commit (it carries TASK-76's `fetch_release`). Re-baselined: 924/1.
 
 **TASK-77 progress (branch `arena/00dbb795-pixi-sandbox`, pushed; PR created and merged
-with a regular merge, not squash):** policy D20 (pedantic = warn workspace-wide,
+with a regular merge, not squash):** policy ADR-20 (pedantic = warn workspace-wide,
 `literal_string_with_formatting_args` allowed with reason) plus per-crate
 `clippy --fix` sweeps; then per crate — pixi-sandbox-core pedantic-clean (22
 `# Errors` sections, the audited judgement items, the AC#8 casts resolved with
@@ -2087,7 +2087,7 @@ diff on the branch.
   `arena/00dbb795-pixi-sandbox` (`08a7e765` core, `afa06c63` pixi-sandbox, `38d6dc3b` xtask, and
   the per-function extractions). Pedantic is clean across all four crates.
 - AC#4 **open**: `missing_errors_doc`, `missing_panics_doc` and `doc_markdown` are all clean.
-  `too_long_first_doc_paragraph` is a nursery lint, so D20 does not enforce it, and it is
+  `too_long_first_doc_paragraph` is a nursery lint, so ADR-20 does not enforce it, and it is
   neither written nor allowed for 52 locations (`pixi-sandbox` 31, `xtask` 12, `pixi-sandbox-core`
   8, `pixi-sandbox-git` 1). Recorded here, not in code: user_tools.rs ×10, airlock.rs ×4,
   pipeline.rs ×4, workflow.rs ×3, upgrade/mod.rs ×3, standalone.rs ×3,
@@ -2128,7 +2128,7 @@ entries.
 Every rewrite is the same shape: the first paragraph becomes a one-sentence summary
 under the lint's 200-character text threshold, the detail moves to following paragraphs.
 All 52 findings are rewritten; **none is allowed**, so there is no decisions.md amendment
-to make (D20 keeps nursery out of the gate, and the debt itself is paid rather than
+to make (ADR-20 keeps nursery out of the gate, and the debt itself is paid rather than
 suppressed). The doc-comment edits inside the generated module sources
 (`src/generated/*.rs`) touch no template literal; the golden fixtures are byte-identical.
 
@@ -2186,7 +2186,7 @@ With AC#4 and the per-commit clause of AC#10 evidenced above, TASK-77 is set to 
 > TASK-77 is Done and merged in PR #131, based on main after the PR #130 merge
 > (`8d9e3b41`): pedantic clippy is clean on all four crates, all 52
 > `too_long_first_doc_paragraph` findings are rewritten (none allowed), nursery stays off
-> per D20 — do not reopen it. Read `CONTEXT.md` § Session scratchpad, **2026-10-10
+> per ADR-20 — do not reopen it. Read `CONTEXT.md` § Session scratchpad, **2026-10-10
 > (fourth session)** for the closure evidence, the per-commit test table and the gates.
 >
 > Open candidates — propose before starting: **TASK-76 AC#8** is the only open AC left in
@@ -2319,7 +2319,7 @@ with a pypi dependency, and because it exits non-zero it also skips user-tool re
 the documented next command fails with `pixi: command not found`. This repository cannot
 reproduce its own bug — `pixi.toml` resolves no pypi package, so its transport has no
 `dist-info` at all and restores with 0 failures across 5520 entries. Written up as TASK-88,
-fixed as D21.
+fixed as ADR-21.
 
 **Landed:** 935 passing / 1 skipped (core 212 → 219), `lint` 11/11, `check-repository` clean.
 AC#1–#7 proven locally; **AC#8 left open** — the connected proof needs a real
@@ -2415,7 +2415,7 @@ the release assets.
    `fetch-release`, and `generated_workflow.rs` asserts the render contains **no** such
    literal. So the proof failed deterministically from v0.6.1 (run 38130260877) while releases
    published green. Check 13 now holds every `grep -F` the proof aims at a generated publisher
-   to a string the generator's source still contains — a repo lint, because D10 forbids a crate
+   to a string the generator's source still contains — a repo lint, because ADR-10 forbids a crate
    test from reading this repository.
 3. *No binary-completeness gate.* `release_checksums` refuses only an empty directory, so a
    release missing a platform would publish a green SHA256SUMS covering four binaries; v0.6.1
@@ -2599,7 +2599,7 @@ not committing, tagging, or releasing" — so v0.6.2 is staged, one real dispatc
 it exists the release-shaped proofs (TASK-76 AC#8, TASK-89 AC#3) stay open.
 
 **What landed (PR #139, TASK-92).** `rust-version` 1.85 → 1.88 — the highest MSRV among normal
-dependencies, owed by `self_update 1.3` (decision-5 adopted it as the release transport) and
+dependencies, owed by `self_update 1.3` (ADR-27 adopted it as the release transport) and
 `rstest-bdd 0.6.0` alike. The README badge *and* `docs/src/components/Badges.astro:15` moved
 with it (the docs site carries the identical shield; the task's AC#1 "no other file
 contradicts" clause decided that, not taste), and the `self_update` comment in `Cargo.toml`
@@ -2660,7 +2660,7 @@ new was filed this session.
 > `CONTEXT.md` § Session scratchpad — the 2026-10-11 (ninth session) entry lists what is open.
 >
 > Next engineering: **TASK-78** (high, feature, no dependencies) — but its AC#1 comes before
-> any code: a D-numbered decision in `.knowledge/decisions.md` recording the shape (new
+> any code: a D-numbered decision in `backlog/docs/adr/README.md` recording the shape (new
 > pixi-sandbox verb, xtask subcommand, or documented rattler-build recipe pattern), the
 > upstream preview status of pixi-build, the rattler-build dependency, and the no-new-crate-
 > without-a-relock rule. Propose the decision doc first; the other nine ACs are engineering
@@ -2767,7 +2767,7 @@ run are still needed; full template-derived offline restore proof remains TASK-7
 > tag. Propose landing the local commits and obtaining a corrected starter publisher/restore
 > proof; push, PR, merge, release, and dispatch still require explicit go-ahead.
 
-### 2026-10-11 — single-commit starter main (TASK-95 / D22)
+### 2026-10-11 — single-commit starter main (TASK-95 / ADR-22)
 
 The owner requested replacing starter main on every update and confirmed preserving immutable
 release tags. Implemented in the publisher, not applied to the live repository. Each successful
@@ -2778,7 +2778,7 @@ Unchanged trees still receive a new snapshot/tag for a new release; existing tag
 Only main is eligible, and the canonical remote check now rejects substring lookalikes.
 
 Workflow checkout explicitly selects main; all releases share a publication concurrency group.
-D22, doc-10, TASK-74 AC#7 and the generated starter README record the owner-approved history
+ADR-22, doc-10, TASK-74 AC#7 and the generated starter README record the owner-approved history
 policy. Retaining old tags means **one commit in main ancestry**, not one commit in all refs or
 a promise that old objects vanish from GitHub storage.
 
@@ -2801,7 +2801,7 @@ open. These are deployment/evidence boundaries, not claims that the live starter
 
 > Load the session skill; baseline 996 passing / 1 skipped. Read the 2026-10-11 TASK-94 and
 > TASK-95 entries. Local commits now include the README refresh, non-Cargo starter fix, and
-> leased single-commit-main publisher. D22 is decided: preserve old release tags, never replace
+> leased single-commit-main publisher. ADR-22 is decided: preserve old release tags, never replace
 > them; replace only canonical starter main with one root commit, atomically with its new tag.
 > TASK-94 and TASK-95 remain In Progress only for real connected publisher evidence. Propose
 > the landing/rollout slice and stop: push, PR, merge, release, dispatch, and live starter changes

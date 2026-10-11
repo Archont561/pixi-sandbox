@@ -1,5 +1,5 @@
 //! The machine-readable version stamp every generated file carries beside the ownership marker
-//! (task-47 AC#3 / decision D16): `pixi-sandbox-version: X.Y.Z`, within the same leading-line
+//! (task-47 AC#3 / decision ADR-16): `pixi-sandbox-version: X.Y.Z`, within the same leading-line
 //! window the ownership marker lives in, so `init --check` can read both with one short scan.
 
 use pixi_sandbox::generated::{parse_version_stamp, version_stamp_line};

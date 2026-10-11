@@ -110,7 +110,7 @@ impl FakeGit {
     }
 
     /// The commits the remote would serve for this branch, newest first. One after a default
-    /// publish — the orphan-branch contract (design.md §2) — and at most `keep` after a
+    /// publish — the orphan-branch contract (doc-2 §2) — and at most `keep` after a
     /// rotating one.
     ///
     /// # Panics

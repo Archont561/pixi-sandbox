@@ -13,7 +13,7 @@ labels:
 milestone: m-0
 dependencies: []
 references:
-  - .knowledge/rust-bootstrap.md
+  - backlog/docs/specifications/rust-bootstrap/doc-4 - Rust-Bootstrap-Specification.md
 documentation:
   - backlog/docs/plans/v1-platform-workflow-transport/doc-1
 priority: high

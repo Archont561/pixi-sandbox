@@ -132,7 +132,7 @@ integration report. No additional product or fixture changes are included in thi
 
 <!-- SECTION:SUMMARY:BEGIN -->
 Pack is now thin wiring: **495 production lines** instead of 1,254. Reusable preflight and the
-D13 file oracle live in `pack`; Cargo collision/storage policy in `vendor`; reviewed pin selection,
+ADR-13 file oracle live in `pack`; Cargo collision/storage policy in `vendor`; reviewed pin selection,
 verified helper caching and embedding in `tool_fetch`; and pure guide rendering plus ordered
 writes in `branch_docs`. All four are promoted through lib.rs and have public-API integration
 roots. Shared process/filesystem helpers were moved once and re-exported, not duplicated.

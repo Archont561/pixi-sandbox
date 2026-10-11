@@ -1,5 +1,5 @@
 # A complete, self-contained pixi project — the fixture every project-level test uses instead
-# of this repository (see tests/fixtures/README.md and .knowledge/design.md §12).
+# of this repository (see tests/fixtures/README.md and backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md §12).
 #
 # Deliberately NOT here: `pixi-pack` and `pixi-unpack`. The fixture is a *project to be
 # sandboxed*, not this tool's development environment. A test that needs a packer must ask for

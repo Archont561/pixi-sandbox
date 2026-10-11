@@ -1,4 +1,4 @@
-//! Argument surface. Kept deliberately close to the spec in `.knowledge/design.md` §5.
+//! Argument surface. Kept deliberately close to the spec in `backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md` §5.
 
 use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
@@ -35,7 +35,7 @@ pub enum Command {
     Plan(PlanArgs),
     /// Manage the pinned helper tools (`pixi-pack`, `pixi-unpack`, `pixi`).
     Tools(ToolsArgs),
-    /// Replace this standalone binary with a published release (decision-4).
+    /// Replace this standalone binary with a published release (ADR-26).
     SelfUpdate(SelfUpdateArgs),
     /// Download the checksum-verified standalone release binary for this host (workflow bootstrap).
     FetchRelease(FetchReleaseArgs),
@@ -57,7 +57,7 @@ pub struct UpgradeArgs {
     pub repo_root: PathBuf,
 
     /// GitHub Actions workflow path, relative to the project root — `init`'s flag name, so
-    /// the upgrade forwards the exact generation arguments (D16).
+    /// the upgrade forwards the exact generation arguments (ADR-16).
     #[arg(long, value_name = "PATH")]
     pub github_workflow_path: PathBuf,
 
@@ -74,7 +74,7 @@ pub struct UpgradeArgs {
     pub script_path: PathBuf,
 
     /// Reviewed sandbox plan path (`init`'s `--config`), forwarded to both `init` calls.
-    /// The config itself is reviewed data and is never regenerated or staged (D16).
+    /// The config itself is reviewed data and is never regenerated or staged (ADR-16).
     #[arg(long, value_name = "PATH")]
     pub config: Option<PathBuf>,
 
@@ -183,7 +183,7 @@ pub struct SelfUpdateArgs {
     ///
     /// Every committed workflow and published transport names an exact version; `latest` is
     /// discovery for a reviewed upgrade, and this is also how a rollback selects an older
-    /// release (decision-4).
+    /// release (ADR-26).
     #[arg(long, value_name = "X.Y.Z")]
     pub version: Option<String>,
 
@@ -511,7 +511,7 @@ pub struct InitArgs {
 
     /// Render every owned file fresh and compare it to what is on disk; write nothing. Exits
     /// non-zero naming each drifted file (remedy: `pixi-sandbox init`) and each foreign-owned
-    /// file separately (remedy: `--force`); a clean tree exits 0 (task-47 AC#4 / decision D16).
+    /// file separately (remedy: `--force`); a clean tree exits 0 (task-47 AC#4 / decision ADR-16).
     #[arg(long)]
     pub check: bool,
 }

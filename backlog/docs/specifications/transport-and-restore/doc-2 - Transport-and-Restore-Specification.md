@@ -19,7 +19,7 @@ now the primary bootstrap, with `action.yml` providing verified download (like `
 itself) get from a connected machine to one that has no network.
 
 Conventions: `✅` = measured in the lab (numbers in `research/EVIDENCE.md`), `⚠️` = reasoned
-but not yet verified. Decision IDs (`D4`) point at `decisions.md`; the lab was Debian 13,
+but not yet verified. Decision IDs (`ADR-4`) point at `decisions.md`; the lab was Debian 13,
 2 vCPU, pixi 0.81.0, pixi-pack/pixi-unpack 0.7.11, cargo/rustc 1.98.1, linux-64.
 
 ---
@@ -36,27 +36,27 @@ Hard constraints, all of which shaped the design:
 | --- | --- | --- |
 | git blobs > 100 MiB are rejected by GitHub (warn > 50 MiB) | GitHub docs ✅ | shard at 95 MiB (§3) |
 | a repo is soft-limited to ~1 GB, a push to ~2 GB | GitHub docs ✅ | one branch per (platform × env-set), not per env; rotation (§2) |
-| nothing may be fetched at restore time | the whole point | tools are embedded and static (D4) |
-| `pixi install` on the airlock must not need the network | reproducibility claim | markers must be written correctly (D5) |
+| nothing may be fetched at restore time | the whole point | tools are embedded and static (ADR-4) |
+| `pixi install` on the airlock must not need the network | reproducibility claim | markers must be written correctly (ADR-5) |
 | `/tmp` can be a small tmpfs | measured here: 993 MB | work dir on the target filesystem (§4) |
-| no new infrastructure (no registry, no cache server) | operational reality | the project's own git remote is the transport (D1) |
+| no new infrastructure (no registry, no cache server) | operational reality | the project's own git remote is the transport (ADR-1) |
 | the operator may be an agent | user scenario | branch carries a generated `AGENTS.md` (§3) |
 
 ### Questions this study answered
 
-1. **Is `pixi-pack` needed?** Yes (D2). It produces exactly the transportable unit: the raw
+1. **Is `pixi-pack` needed?** Yes (ADR-2). It produces exactly the transportable unit: the raw
    `.conda` files of an environment as a local channel, plus `environment.yml` and
    `pixi-pack.json`. Re-implementing that on top of `rattler` is possible but is not v1 work.
-2. **Is `pixi-unpack` needed on the airlock?** Yes (D3). It is the only supported way to turn a
+2. **Is `pixi-unpack` needed on the airlock?** Yes (ADR-3). It is the only supported way to turn a
    pack back into a prefix, it stages through `$TMPDIR`, and it must therefore be *in* the
    branch.
 3. **Should `pixi-pack`/`pixi-unpack` be compiled into `pixi-sandbox`?** Not in v1: neither is
    published on crates.io ✅ (they are git-only), and linking them would drag rattler/uv
    into every build. v1 embeds sha256-pinned release assets — static musl on Linux, native
-   system executables on macOS/Windows that need separate proof (D4/D11); a `rattler`-based
+   system executables on macOS/Windows that need separate proof (ADR-4/ADR-11); a `rattler`-based
    library implementation is the ⚠️ v2 path that would remove the subprocess entirely.
 4. **What else is uncovered?** The airlock still needs: the *Rust toolchain* (vendoring does
-   not carry `rustc`, §11), the pixi **markers** after a raw unpack (D5), and a
+   not carry `rustc`, §11), the pixi **markers** after a raw unpack (ADR-5), and a
    **conda channel** for `pixi global install` to come from (§6). Everything else the
    payload carries.
 
@@ -69,7 +69,7 @@ usually one project; putting several envs on one branch lets git dedup shared pa
 
 ---
 
-## §2 The transport is an orphan branch (D1)
+## §2 The transport is an orphan branch (ADR-1)
 
 An orphan branch has no history to merge, holds exactly one snapshot tree, and is force-pushed
 on every publish. The airlock does:
@@ -105,13 +105,13 @@ fetched checkout (AGENTS invariant 2). A restore stages everything in the *proje
 <branch>/
 ├── .pixi-sandbox/
 │   ├── manifest.json               schema 2 — the only source of truth
-│   ├── envs/<env>/pack/            output of `pixi-pack --directory-only` (D2)
+│   ├── envs/<env>/pack/            output of `pixi-pack --directory-only` (ADR-2)
 │   │   ├── channel/{noarch,linux-64}/*.conda
 │   │   ├── environment.yml
 │   │   └── pixi-pack.json
-│   ├── envs/<env>/files.json       the per-file oracle for the unpacked prefix (D13)
+│   ├── envs/<env>/files.json       the per-file oracle for the unpacked prefix (ADR-13)
 │   ├── tools/<platform>/           pixi · pixi-unpack · pixi-sandbox (sha256-verified; static on Linux)
-│   └── vendor/                     cargo vendor output (D6)
+│   └── vendor/                     cargo vendor output (ADR-6)
 ├── README.md                       generated from the manifest
 └── AGENTS.md                       generated from the manifest
 ```
@@ -126,7 +126,7 @@ executable is written to the orphan branch.
 The directory form is what makes the transport addressable at file granularity; the tar form
 (and `--create-executable`) is for single-file hand-offs, and a prefix tar is ≈3.7× larger
 than the same environment as raw `.conda` files ✅ (`--directory-only` is therefore the
-default, D2).
+default, ADR-2).
 
 **Shards are whole files.** The only split that ever happens is a single file larger than
 `shard_limit_bytes` (95 MiB), which becomes `<name>.partNNN` pieces; `doctor --verify`
@@ -146,8 +146,8 @@ bump ✅) and is explicitly rejected.
 | `tools` | embedded tools: `version`, `url`, `pinned_sha256`, `linkage`, `size_bytes`, `path` |
 | `envs.<name>` | `pack_path`, packed/unpacked sizes, `pixi_environment_fingerprint`, `blobs`, `files` |
 | `envs.<name>.blobs[]` | every packed file: `path`, `size`, `sha256`, optional `parts[]` |
-| `envs.<name>.files` | schema 2: the per-file oracle — `files.json`'s own blob record (path, size, sha256) and its entry count (D13) |
-| `vendor` | `mode`, `crates`, `size_bytes`, `cargo_lock_sha256`, `directory`, `blobs[]` (D6) |
+| `envs.<name>.files` | schema 2: the per-file oracle — `files.json`'s own blob record (path, size, sha256) and its entry count (ADR-13) |
+| `vendor` | `mode`, `crates`, `size_bytes`, `cargo_lock_sha256`, `directory`, `blobs[]` (ADR-6) |
 
 Rules the validator enforces: schema match, at least one env or tool, no empty envs, every
 `path` relative and non-escaping, every digest a 64-hex sha256, split parts summing to the
@@ -156,7 +156,7 @@ manifest — env blobs *and* `tools.<name>.path` — is relative to `.pixi-sandb
 `envs.<name>.pack_path` is relative to the branch root and informational (it is where *pack*
 put the directory).
 
-**The per-file oracle (D13).** After packing an env, `pack` runs its own verification
+**The per-file oracle (ADR-13).** After packing an env, `pack` runs its own verification
 unpack of the pack into scratch (a throwaway `.pixi-sandbox-verify-<env>` under the output),
 scans the prefix it got, and records `envs/<env>/files.json`: one entry per file (relative
 path, canonicalised sha256, exec bit) and symlink (target), with conda-meta records
@@ -185,7 +185,7 @@ where the bytes went; the same numbers appear in the generated `README.md`.
 1. **Load + validate the manifest.** Unknown schema ⇒ refuse, do not guess.
 2. **Verify everything, write nothing.** Every blob of every selected env, every vendor blob,
    every tool (size + pinned sha256), and the tool linkage (a `dynamic` tool aborts here —
-   D4). `doctor --verify` is the same code path, and `restore --verify-only` stops after it.
+   ADR-4). `doctor --verify` is the same code path, and `restore --verify-only` stops after it.
 3. **Materialise the tools** into `<project>/.pixi/tools/<platform>/`. Idempotent: an existing
    file whose sha256 matches the pin is skipped ✅ (this is what makes a re-restore cheap).
 4. **Preflight disk space** on the *work dir's* filesystem (packed + unpacked + vendor,
@@ -200,7 +200,7 @@ where the bytes went; the same numbers appear in the generated `README.md`.
      `<stage>/<env>` has the canonicalised staging path replaced by the final prefix, so no
      installed `.pc` / CMake config / activation script points into scratch. Binaries are
      skipped (a NUL byte means fixed-width payloads; rewriting one corrupts it) ✅.
-6. **Write the pixi markers** (D5): `<prefix>/conda-meta/pixi_env_prefix` and, when the
+6. **Write the pixi markers** (ADR-5): `<prefix>/conda-meta/pixi_env_prefix` and, when the
    manifest recorded one, `<prefix>/conda-meta/.pixi-environment-fingerprint`. A raw prefix
    without them is rejected by pixi's fast path and `pixi install --frozen --offline` tries to
    do real work (which fails offline ✅).
@@ -213,7 +213,7 @@ where the bytes went; the same numbers appear in the generated `README.md`.
 8. **Remove any legacy `.pixi/sandbox-env.sh`**. Restore does not generate a project-level
    activation script; `pixi run ...` is the entrypoint, with only restore-owned per-env
    activation hooks for Cargo vendor wiring.
-9. **Verify the restored tree** against the manifest's per-file oracle (D13) — the same check
+9. **Verify the restored tree** against the manifest's per-file oracle (ADR-13) — the same check
    `doctor --verify-restored` runs, executed by `restore` itself so that a success exit means
    both sides are proven. Schema-1 envs are reported `unverifiable`, never failed; a mismatch
    fails the restore *before* the scratch is cleaned (the evidence rule of step 10).
@@ -226,7 +226,7 @@ where the bytes went; the same numbers appear in the generated `README.md`.
     — both, because pixi discovers `pixi sandbox` through `PATH` — into a per-user bin
     directory (`--user-bin`, default `~/.local/bin`; Windows
     `%USERPROFILE%\.pixi-sandbox\bin`), `exec`-ing the manifest-verified copies under
-    `.pixi/tools/<platform>/` (decision-2 §4.1: the `tools` entry is the canonical
+    `.pixi/tools/<platform>/` (ADR-24 §4.1: the `tools` entry is the canonical
     executable). The bin directory is added idempotently to the detected shell's profile
     (`~/.bash_profile`/`~/.profile`/`~/.zshrc`, managed marker block) or, on Windows, to the
     user `PATH` in the registry — no administrator rights. Managed entries retarget on a
@@ -248,7 +248,7 @@ payload can legitimately arrive *outside* the branch flow (a single `pack` direc
 stick, an artifact from another CI). It accepts a transport dir, a
 `.pixi-sandbox/envs/<env>/pack` dir, or a bare pack dir; with a manifest it verifies and
 materialises first, without one it treats the input as a bare pack and says so. It leaves the
-pixi markers to `restore` on purpose (D5) — `unpack` produces a *prefix*, not a pixi
+pixi markers to `restore` on purpose (ADR-5) — `unpack` produces a *prefix*, not a pixi
 environment.
 
 **What restore does *not* do:** it never writes into the fetched branch, never installs
@@ -302,7 +302,7 @@ machine-readable form for scripts and CI.
 
 **Source-driven GitHub Actions commands are one line: `pixi run <task>`.** If a
 source-driven step needs more than one line, it is a task in `pixi.toml` (or a script in
-`.knowledge/research/`) — not inline bash in YAML. The release-driven publisher uses dependency-free composite-action shell (bash + pwsh) with checksum verification, native-runner, and token handling, not caller-inline shell. This is not
+`scripts/`) — not inline bash in YAML. The release-driven publisher uses dependency-free composite-action shell (bash + pwsh) with checksum verification, native-runner, and token handling, not caller-inline shell. This is not
 style for its own sake:
 
 * the exact command CI runs is the command a developer runs, so gate failures reproduce
@@ -325,7 +325,7 @@ read `SANDBOX_PROJECT`, `SANDBOX_ENVS`, `SANDBOX_TRANSPORT`, `SANDBOX_PLATFORM`,
       - run: pixi run ci-doctor    # verify every blob, write nothing
       - run: pixi run ci-publish   # one orphan commit, force-pushed
 ```
-* **The tool's own distribution** is a conda package (D8): `pixi publish --path
+* **The tool's own distribution** is a conda package (ADR-8): `pixi publish --path
   crates/pixi-sandbox --target-channel file://…` produces a `.conda` and an indexed channel ✅
   (no `rattler-index` needed for a `file://` target); `pixi global install -c <channel>
   -c conda-forge pixi-sandbox` installs it, after which the verbs appear as
@@ -354,7 +354,7 @@ failures, not the first ✅ — for the branch and, since task-10, for the resto
    Owned by verify-before-write (every blob is sha256-checked before it is written) and
    `doctor --verify` over the branch. This is what `restore` enforces on arrival.
 2. **Restored-tree integrity** — *is the tree restore produced the tree the manifest
-   describes, file for file?* Owned by `doctor --verify-restored <PROJECT>` (D13): the
+   describes, file for file?* Owned by `doctor --verify-restored <PROJECT>` (ADR-13): the
    manifest carries a per-file oracle (`envs/<name>/files.json`, schema 2) that the packer
    records from its own verification unpack, and the doctor compares the restored prefix
    against it — content, symlink targets, executable bits, and the fingerprint marker, with
@@ -387,10 +387,10 @@ Failure catalogue (each verified in the lab ✅ unless marked):
 | --- | --- | --- |
 | `integrity: … expected sha256 …, got …` | truncated/corrupted file | re-fetch the branch; re-run with `--force` |
 | `missing split part …` | a `.partNNN` not pushed (or filtered by a proxy) | re-fetch; check `doctor --verify` output |
-| `tool … is dynamically linked` | a `~/.pixi/bin` trampoline or a distro binary got embedded | ship the static asset (D4); the packer refuses it too |
-| `pixi install` wants the network | markers missing/wrong, or a package absent from `envs/<env>/pack` | D5; re-pack with the same `pixi.lock` |
+| `tool … is dynamically linked` | a `~/.pixi/bin` trampoline or a distro binary got embedded | ship the static asset (ADR-4); the packer refuses it too |
+| `pixi install` wants the network | markers missing/wrong, or a package absent from `envs/<env>/pack` | ADR-5; re-pack with the same `pixi.lock` |
 | `unexpected: … present in the restored prefix but not in the manifest's file list` | a file smuggled into (or forged inside) a restored prefix | treat the restore as untrusted; re-restore from a verified branch |
-| `integrity: content does not match the manifest's file list` | tampered or unrelocated content in a restored prefix | same — the oracle lists per-file digests (D13) |
+| `integrity: content does not match the manifest's file list` | tampered or unrelocated content in a restored prefix | same — the oracle lists per-file digests (ADR-13) |
 | `mode: executable bit …` | a restored file lost (or gained) the exec bit the manifest records | re-restore; do not chmod by hand |
 | `unverifiable` (env-level) | a schema-1 transport, packed before the oracle existed | nothing is wrong; re-pack to gain per-file verification |
 | unpack fails at ~all of the disk's free space | `$TMPDIR` on a small tmpfs | use `--work-dir`/default work dir (§4) |
@@ -408,12 +408,12 @@ schema bump requires a fixture update in `tests/manifest.rs`. Schema 2 adds `env
 | --- | --- |
 | `crates/pixi-sandbox-core` | wire format, sharding, tool pins, verification — no CLI, no network |
 | `crates/pixi-sandbox` | the CLI: pack, publish, restore, unpack, doctor, plan and tools list; its integration suite uses synthetic transports and fake local helper tools |
-| `.knowledge/` | this document, `decisions.md`, `research/` (evidence + prototype) |
+| `backlog/docs/` | this document, `decisions.md`, `research/` (evidence + prototype) |
 | `docs/` | Astro + Starlight site; `/restore` is written for someone with no network |
 | `.github/workflows/` | `ci.yml`, `docs.yml`, unified `publish-sandbox.yml`, `release.yml` (multi-platform binaries) |
 | `crates/pixi-sandbox-core/assets/tools.lock.json` | canonical helper-tool pins compiled into the CLI (§10) |
-| `.pixi-sandbox.toml` | explicit publish bundles/platform runners consumed by `plan` and the reusable workflow (D11) |
-| `.github/actions/` | `setup-pixi-sandbox` (like `setup-pixi`) + `publish-pixi-sandbox` composites (D11) |
+| `.pixi-sandbox.toml` | explicit publish bundles/platform runners consumed by `plan` and the reusable workflow (ADR-11) |
+| `.github/actions/` | `setup-pixi-sandbox` (like `setup-pixi`) + `publish-pixi-sandbox` composites (ADR-11) |
 | `action.yml` | root composite alias so `uses: Archont561/pixi-sandbox@vX` works like `setup-pixi` |
 | `pixi.toml` | tasks: `lint`, `test`, `coverage`, `docs-build`, `sandbox-*` |
 | `scripts/restore.sh` | one-liner offline reconstruction with PATH aliases; branch read from `.pixi-sandbox.toml` |
@@ -421,7 +421,7 @@ schema bump requires a fixture update in `tests/manifest.rs`. Schema 2 adds `env
 Conventions that keep it maintainable: the CLI stays a thin shell over `pixi-sandbox-core`;
 comments point at a decision ID or a measurement rather than restating code; generated weight
 (`.pixi/`, `target/`, `vendor/`, `dist/`, `.pixi-sandbox/`) is never committed; docs pages are
-user-facing, `.knowledge/` is for people changing the design.
+user-facing, `backlog/docs/` is for people changing the design.
 
 ---
 
@@ -470,13 +470,13 @@ override path for a reviewed organisation mirror or replacement pin:
                                    "sha256": "8191f586…", "linkage": "static" } } } } }
 ```
 
-Rules (D4): `pack --fetch-tools` and CI download → verify sha256 → cache
+Rules (ADR-4): `pack --fetch-tools` and CI download → verify sha256 → cache
 (`PIXI_SANDBOX_TOOLS_CACHE`, default `~/.cache/pixi-sandbox/tools`) → execute; the version is
 verified against the running binary (`--version`) before it is used; nothing is installed
 system-wide; nothing is taken from `PATH` unless you ask for it by omitting `--fetch-tools`.
 The embedded catalogue covers linux-64, linux-aarch64, osx-64, osx-arm64, and win-64 for pixi,
 pixi-pack, and pixi-unpack. Coverage of a pin is not a platform proof: native pack/restore
-validation remains required under D11. The embedded copy must be **static** on Linux: a
+validation remains required under ADR-11. The embedded copy must be **static** on Linux: a
 `~/.pixi/bin` shim is a 766 KiB trampoline that execs a dynamic binary inside its own prefix —
 it works on the build machine and dies on the airlock ✅. Mach-O and PE require native proof.
 
@@ -516,7 +516,7 @@ reformatted file (`tools_lock::tests::the_catalogue_round_trips_to_its_committed
 ### §11.1 Layout: a sibling of `envs/` and `tools/`
 
 `cargo vendor` output travels in the branch under `.pixi-sandbox/vendor/` — a **sibling** of
-`envs/` and `tools/` (D6), not a subdirectory of an env, because:
+`envs/` and `tools/` (ADR-6), not a subdirectory of an env, because:
 
 1. crates are project-scoped, not env-scoped (one `Cargo.lock`, one tree);
 2. `envs/<env>/` must stay exactly what `pixi-pack` produced, so it can be re-packed and
@@ -564,7 +564,7 @@ crate as `<name>-<version>` under one vendor root, so when the same crate+versio
 from two sources (crates.io and a git dependency — measured, upstream known) the two collide and
 cargo aborts with `found duplicate version of package … vendored from two sources` and **no
 remedy** ⚠️. That arrives late — after the whole graph is resolved and downloaded — and points
-at nothing actionable. `pack` therefore reads `Cargo.lock` itself (D6 preflight, no network)
+at nothing actionable. `pack` therefore reads `Cargo.lock` itself (ADR-6 preflight, no network)
 and refuses **before** the output tree is created, naming the crate, both sources, and the two
 real fixes: make the versions differ, or drop one of the dependencies. Without the early exit a
 refused pack would also leave a half-built transport behind, and the retry would then fail on

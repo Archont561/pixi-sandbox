@@ -1,7 +1,7 @@
 //! Persistent per-user registration of a restored transport's Pixi tools (task-33).
 //!
 //! `restore` verifies the branch before writing a byte and checks the tree it produced
-//! against the manifest's per-file oracle (D13) before this module runs; registration is the
+//! against the manifest's per-file oracle (ADR-13) before this module runs; registration is the
 //! last step of a successful restore. It puts *launchers* — small managed scripts that `exec`
 //! the manifest-verified tool copies under `<project>/.pixi/tools/<platform>/` — into a
 //! per-user bin directory, and adds that directory to the shell's persistent PATH, so `pixi`
@@ -15,7 +15,7 @@
 //!
 //! Everything here is written against *explicit* roots: the caller resolves HOME, the bin
 //! directory and the profile file, so no code path in this module reads the environment and
-//! tests never touch a developer's real home (D10's rule, applied to the user level).
+//! tests never touch a developer's real home (ADR-10's rule, applied to the user level).
 
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -478,7 +478,7 @@ pub fn powershell_user_path_script(bin_dir: &Path) -> Result<String> {
 ///
 /// POSIX uses the de-facto standard `~/.local/bin`; Windows gets its own
 /// `~\.pixi-sandbox\bin` because `~\.pixi\bin` belongs to `pixi global install` and its
-/// trampolines (D4) — colliding with it would be confusing by design, and the whole point
+/// trampolines (ADR-4) — colliding with it would be confusing by design, and the whole point
 /// is a recognisable, pixi-sandbox-owned location.
 #[must_use]
 pub fn default_bin_dir(home: &Path) -> PathBuf {

@@ -38,5 +38,5 @@ channels = ["https://prefix.dev/conda-forge"]
 [package.run-dependencies]
 # NOTE: deliberately empty. `pixi-pack`/`pixi-unpack` are *not* run-dependencies of the
 # packaged binary — CI fetches them from the binary's embedded tool pins and the airlock gets
-# them from the branch (D4). If you prefer conda-managed pinning for connected users, add:
+# them from the branch (ADR-4). If you prefer conda-managed pinning for connected users, add:
 #   pixi-pack = "*", pixi-unpack = "*"   # then `pixi global install` pulls them together

@@ -75,7 +75,7 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
 
     // task-33: registration is gated on *two* verifications. The branch was verified before
     // anything was written; this checks the tree that came out the other end against the
-    // manifest's per-file oracle (D13) — the same check `doctor --verify-restored` runs, so a
+    // manifest's per-file oracle (ADR-13) — the same check `doctor --verify-restored` runs, so a
     // restore that reports success has proven both sides before it touches the user's home.
     // A failure here is a restore failure: it bails *before* the work dir is cleaned, because
     // the staged packs are the evidence.
@@ -187,7 +187,7 @@ fn print_cargo_wiring(cargo_wiring: &CargoWiring) {
 
 /// Print the restored-tree verdict in the same voice `doctor --verify-restored` uses, and
 /// fail closed on any mismatch. Schema-1 environments are reported `unverifiable`, never
-/// failed (D13): a published branch outlives the tool that packed it, and registration
+/// failed (ADR-13): a published branch outlives the tool that packed it, and registration
 /// proceeds on branch verification alone for those.
 fn report_restored_tree(restored: &pixi_sandbox_core::verify::RestoredReport) -> Result<()> {
     println!("verify restored tree");
@@ -226,7 +226,7 @@ fn report_restored_tree(restored: &pixi_sandbox_core::verify::RestoredReport) ->
 
 /// task-33: register the restored `pixi` and `pixi-sandbox` for the user. `pixi` is the entry
 /// point and `pixi sandbox` resolves through PATH, so both get launchers; they point at the
-/// manifest-verified copies under `.pixi/tools/<platform>/` and nothing else (decision-2 §4.1:
+/// manifest-verified copies under `.pixi/tools/<platform>/` and nothing else (ADR-24 §4.1:
 /// the `tools` entry is the canonical executable, never an environment-embedded copy).
 fn register_user_tools(
     manifest: &Manifest,

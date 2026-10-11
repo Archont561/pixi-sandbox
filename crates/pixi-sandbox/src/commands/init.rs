@@ -56,7 +56,7 @@ impl LauncherShell {
 /// The three marker-carrying files `init` owns and `init --check` audits. The sandbox config is
 /// deliberately not one of these: it is reviewed data `init` only ever seeds when absent, never
 /// regenerates, so "drift" is not a concept that applies to it the way it does to these three
-/// (AC#5 / D16) — its own check is [`config_schema_finding`].
+/// (AC#5 / ADR-16) — its own check is [`config_schema_finding`].
 struct Targets {
     workflow: (PathBuf, String),
     relock: (PathBuf, String),
@@ -117,7 +117,7 @@ impl ResolvedWorkflowPolicy {
                 .and_then(|p| p.timeouts.as_ref())
                 .and_then(|t| t.publish),
             pixi_version: policy.and_then(|p| p.pixi_version.clone()),
-            // Once `[workflow]` is present at all, cache defaults to off (decision D18) unless
+            // Once `[workflow]` is present at all, cache defaults to off (decision ADR-18) unless
             // explicitly re-enabled; absent the table entirely, `None` renders no `cache:` key.
             setup_pixi_cache: policy.map(|p| p.setup_pixi_cache.unwrap_or(false)),
         }
@@ -291,7 +291,7 @@ fn classify(path: &Path, fresh: &str) -> Result<Drift> {
     })
 }
 
-/// Render fresh, write nothing, and name every finding (task-47 AC#4 / decision D16): this is
+/// Render fresh, write nothing, and name every finding (task-47 AC#4 / decision ADR-16): this is
 /// `init`'s drift gate, run by the generated workflow's upgrade job (AC#6) ahead of regenerating
 /// anything, and usable by a consumer directly to audit a tree before deciding to run `init`.
 fn check(root: &Path, args: &InitArgs) -> Result<()> {
@@ -339,7 +339,7 @@ fn check(root: &Path, args: &InitArgs) -> Result<()> {
     bail!("{} finding(s); see above", findings.len())
 }
 
-/// Config is reviewed data `init` only ever seeds when absent (D17, AC#5): a schema mismatch is
+/// Config is reviewed data `init` only ever seeds when absent (ADR-17, AC#5): a schema mismatch is
 /// reported as a named finding rather than surfacing `SandboxConfig::load`'s validation error
 /// verbatim, because the right remedy differs by direction and `--check` must say so without
 /// requiring the rest of the file to parse under today's exact field set.
@@ -368,7 +368,7 @@ fn config_schema_finding(config: &Path) -> Result<Option<String>> {
     }))
 }
 
-/// Init writes only files it owns (D17): the publisher workflow, the relock workflow, the
+/// Init writes only files it owns (ADR-17): the publisher workflow, the relock workflow, the
 /// launcher, and the config when absent. The consumer's `pixi.toml` is never read beyond
 /// this existence check — task-34's channel append is gone because the publisher namespace
 /// root it added serves no repodata, so a consumer with any dependency failed `pixi lock`
