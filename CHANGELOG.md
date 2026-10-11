@@ -6,7 +6,76 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-### [v0.6.1](https://github.com/Archont561/pixi-sandbox/compare/v0.6.0...73b498d9fc1d39ab5f73d41c718ea1090ac80645) (2026-10-10)
+### [v0.6.2](https://github.com/Archont561/pixi-sandbox/compare/v0.6.1...3d01bad511da9df1f6ccde4f3cb1768af2d8927e) (2026-10-11)
+
+#### Fixes
+
+* **verify:** collapse regenerated uv direct-url metadata
+([8a17a26](https://github.com/Archont561/pixi-sandbox/commit/8a17a26fca1c5f1a514fbe296d00ce194571e31b))
+* **release-lane:** publish a complete starter and gate the release on the consumer proof (#133)
+([46efd1a](https://github.com/Archont561/pixi-sandbox/commit/46efd1a73aee7af5231aa056f2029bf12b6a749b)),
+closes [#133](https://github.com/Archont561/pixi-sandbox/issues/133)
+
+#### Refactoring
+
+* **msrv:** declare rust 1.88 and clear the collapsible_if debt (#139)
+([3d01bad](https://github.com/Archont561/pixi-sandbox/commit/3d01bad511da9df1f6ccde4f3cb1768af2d8927e)),
+closes [#139](https://github.com/Archont561/pixi-sandbox/issues/139)
+* **pixi-sandbox:** consolidate GitHub adapters
+([297a257](https://github.com/Archont561/pixi-sandbox/commit/297a2576ed1b485d7c38822b836d85347b11d673))
+* **release:** port the consumer proof into xtask subcommands (#136)
+([3665185](https://github.com/Archont561/pixi-sandbox/commit/36651855f86b3d70723a98270af462663526df93)),
+closes [#136](https://github.com/Archont561/pixi-sandbox/issues/136)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+
+#### Documentation
+
+* **backlog:** TASK-85 AC#6 re-attempted, dispatch still 403 (token capability)
+([a4c0022](https://github.com/Archont561/pixi-sandbox/commit/a4c0022c0d30175c905ed2e509e9da99e0934144)),
+closes [#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+* **backlog:** TASK-89 record connected-host lifecycle evidence, AC#3 still open
+([bf794ce](https://github.com/Archont561/pixi-sandbox/commit/bf794ced8f8be20c8818c91101451596c7c33d3a)),
+closes [#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+* **backlog:** TASK-90 spike verdict — adopt self_update transport, keep our replace
+([0d1e691](https://github.com/Archont561/pixi-sandbox/commit/0d1e69131f577cbdc5ee971f667b007e9a268743))
+* **backlog:** TASK-76 AC#8 proven on released v0.6.1 consumer-shaped run
+([9194f38](https://github.com/Archont561/pixi-sandbox/commit/9194f38261b86ebf29f082517ca58857e9b962cb)),
+closes [#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+* **backlog:** record TASK-88 AC#8 real-round-trip failure, file TASK-93
+([e2db1f6](https://github.com/Archont561/pixi-sandbox/commit/e2db1f6958cb007358439be6fe17967409d7cd0b)),
+closes [#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+* **context:** record the TASK-89 session and the check-13 vacuity it found (#137)
+([2883243](https://github.com/Archont561/pixi-sandbox/commit/2883243e8c4b53677c9ce3bdcc2ad3b9c6bdaea8)),
+closes [#137](https://github.com/Archont561/pixi-sandbox/issues/137)
+[#136](https://github.com/Archont561/pixi-sandbox/issues/136)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+* record the release-lane session and the two tasks it leaves open (#134)
+([7cb3d54](https://github.com/Archont561/pixi-sandbox/commit/7cb3d5438b8aa2d501f01650d06c59c6726d59da)),
+closes [#134](https://github.com/Archont561/pixi-sandbox/issues/134)
+[#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+[#9](https://github.com/Archont561/pixi-sandbox/issues/9)
+[#10](https://github.com/Archont561/pixi-sandbox/issues/10)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+
+#### Build System
+
+* **deps:** declare self_update for the self-update evaluation (#135)
+([00ef66e](https://github.com/Archont561/pixi-sandbox/commit/00ef66e4fa830c69baa8c30f1e15c86f8eaef816)),
+closes [#135](https://github.com/Archont561/pixi-sandbox/issues/135)
+[#135](https://github.com/Archont561/pixi-sandbox/issues/135)
+
+### [v0.6.1](https://github.com/Archont561/pixi-sandbox/compare/v0.6.0...v0.6.1) (2026-10-10)
 
 #### Features
 
