@@ -2377,3 +2377,105 @@ issue when its task lands — 13 of 17 are. It is a one-click close, and it is t
 > conventional commits, one crate or concern per commit, `pixi run --frozen test` ≥654 at
 > every commit. Do not push, open a pull request, merge, release or dispatch without my
 > explicit go-ahead.
+
+### 2026-10-11 (seventh session) — the release lane repaired; PR #133
+
+**Branch note:** session fixed to `arena/88cc6d79-pixi-sandbox`, based on main at `a79f82df`
+(v0.6.1). Restore ran clean (14 495 blobs / 866.4 MiB verified, 0 failures; 5520 entries
+checked against the manifest); the transport names commit `a79f82d` and tool `v0.6.1`. The
+clone arrived shallow again — `git rev-list --count HEAD` was 1 — fixed with
+`git fetch --deepen=300 origin main` (319 commits). Baseline **935 passing / 1 skipped**,
+exactly as the sixth session predicted; ended at **952 passing / 1 skipped**
+(36 git / 219 core / 525 pixi-sandbox / 172 xtask), `lint` 11/11. Merged as PR #133 →
+`46efd1a7`; post-merge `ci`, `docs` and `publish sandbox` all green.
+
+**The v0.6.1 release had never published.** `release.yml` run 38061777852 failed at
+`build x86_64-apple-darwin` → `Upload binary artifact` with `CreateArtifact: … ENOTFOUND`, and
+because `release` has `needs: build` the publish job was skipped: `gh release view v0.6.1`
+answered "release not found" while `gh release list` showed v0.6.0 as Latest. A re-run of the
+failed job (owner click) succeeded — proof the fault was transient runner DNS, not code — and
+v0.6.1 published at 09:58:15Z with all five binaries, five conda packages and SHA256SUMS. The
+`publish sandbox` transport had been fine throughout; it is built from source and never needed
+the release assets.
+
+**Three defects found and fixed (doc-13, `backlog/docs/plans/release-lane-repair/`):**
+
+1. *The starter published an empty tree.* `pixi-sandbox-starter` at `945ed1a7` holds one file,
+   `README.md`, and the immutable tag `pixi-sandbox-v0.6.1` seals it — behind a green run
+   (38130262129). `starter::publish` staged `worktree_status_files`, which is
+   `git status --porcelain --untracked-files=no`, so over a repository whose only tracked file
+   was the README every generated file was invisible. `verify` could not catch it: it judges
+   the directory, not the revision. Reproduced end to end with the real `xtask` against a
+   bare-remote fixture, and the regression test was confirmed to fail with the fix neutralised
+   (`the published revision is missing pixi.toml`). Publish now stages
+   `ls-files --cached --others --exclude-standard` and refuses a revision missing a required
+   file or carrying a forbidden one.
+2. *The consumer proof asserted a string a passing test forbids.* It grepped the generated
+   publisher for `Archont561/pixi-sandbox/releases/download`; TASK-76 moved that download into
+   `fetch-release`, and `generated_workflow.rs` asserts the render contains **no** such
+   literal. So the proof failed deterministically from v0.6.1 (run 38130260877) while releases
+   published green. Check 13 now holds every `grep -F` the proof aims at a generated publisher
+   to a string the generator's source still contains — a repo lint, because D10 forbids a crate
+   test from reading this repository.
+3. *No binary-completeness gate.* `release_checksums` refuses only an empty directory, so a
+   release missing a platform would publish a green SHA256SUMS covering four binaries; v0.6.1
+   came within one artifact upload of exactly that. `check-release-binaries` is the binary twin
+   of the conda check, its expected set derived from `SUPPORTED_HOSTS`/`Platform::ALL`.
+
+**Ordering changed:** the consumer proof now gates the publish. Nothing in it needs a release
+to exist — it runs on the build's own artifact — so it moved into `release.yml` as a
+`consumer-proof` job with `needs: build`, and publish needs `[build, consumer-proof]`. What
+genuinely cannot move is the asset boundary (`releases/download/<tag>` plus the published
+SHA256SUMS), which keeps its own job; `consumer-proof.yml` shrank to that smoke. The honest
+cost: a red smoke now blocks the *next* release, not its own.
+
+**The starter gained what the owner asked for:** `scripts/restore.sh` — `init --script-path`
+already supported it and creates the parent directory, so no core change was needed, only both
+lane invocations carrying the flag — and a devcontainer pinned to the pixi image the release
+pins, whose setup installs `git`, `gh` and `pixi-sandbox` from the canonical
+`archont561/archont561` channel and **no compiler toolchain**. The pixi pin is read from the
+release's embedded tools lock, so the template never hardcodes a version the next release
+invalidates. `verify` holds both halves of that contract, because `init --check` has never
+heard of the devcontainer.
+
+**Not implemented, deliberately.** The moved proof steps still carry embedded shell behind
+`multiline-run-allowed` opt-outs; the move had to be verifiable on its own, so the port into
+`xtask` subcommands is **TASK-89** rather than a rider on it.
+
+**Owner actions still open, none of them engineering:**
+* Delete the starter tag `pixi-sandbox-v0.6.1`. It names an empty tree, and `publish_refusals`
+  refuses an existing tag, so the corrected template cannot be published for v0.6.1 while it
+  stands.
+* Confirm `PIXI_SANDBOX_STARTER_TOKEN` carries `Workflows: write` on the starter repository.
+  The README-only push succeeded; a push carrying `.github/workflows/*` into another repository
+  is issue #101's exact shape. Unverifiable from this sandbox.
+* Then re-dispatch the starter lane, or let the next release carry the corrected template.
+
+**Prompt to start the next session with:**
+
+> Restore only if the tree or `.pixi/` is missing (`bash scripts/restore.sh`, offline and
+> idempotent; then `export PATH="$HOME/.local/bin:$PATH"`). **If `git rev-list --count HEAD`
+> returns 1 the clone is shallow — `git fetch --deepen=300 origin main` first**, or
+> release-ordering facts silently invert. Expect **952 passing / 1 skipped** (36 git / 219 core
+> / 525 pixi-sandbox / 172 xtask), `lint` 11/11. Pixi only, cargo `--offline`.
+>
+> The release lane was repaired in PR #133 (`46efd1a7`): the starter publishes its whole
+> revision, the consumer proof gates the publish, and a release missing a platform binary is
+> refused. Read `CONTEXT.md` § Session scratchpad — the 2026-10-11 entry lists what is still
+> open.
+>
+> Three owner actions gate everything downstream: delete the starter tag
+> `pixi-sandbox-v0.6.1`, confirm `PIXI_SANDBOX_STARTER_TOKEN` has `Workflows: write` on the
+> starter repo, then re-dispatch the starter lane. Until a release exists, **TASK-76 AC#8 and
+> TASK-88 AC#8 stay unchecked** — do not close them on a rehearsal.
+>
+> New work: **TASK-89** (medium, no dependencies) — port the consumer proof recipe into `xtask`
+> subcommands so the last `multiline-run-allowed` blocks leave `release.yml`; `starter.rs` is
+> the template to copy. **TASK-78** (high, no dependencies) is still the largest unstarted
+> item, and its shape is already decided: a `rattler-build` recipe driven by `xtask`, not a new
+> verb — note that `rattler-build` is **not** in the restored environment (only `rattler-index
+> 0.31.5`), so its build proofs need a lockfile refresh this airlock cannot do.
+>
+> House rules: `AGENTS.md` (invariant 10), session procedure in `.agents/skills/session/`;
+> conventional commits, one concern per commit, `pixi run --frozen test` ≥952 at every commit.
+> Do not push, open a pull request, merge, release or dispatch without my explicit go-ahead.
