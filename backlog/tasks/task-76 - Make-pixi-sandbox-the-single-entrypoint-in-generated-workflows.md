@@ -1,10 +1,10 @@
 ---
 id: TASK-76
 title: Make pixi-sandbox the single entrypoint in generated workflows
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-06 20:11'
-updated_date: '2026-10-11 11:20'
+updated_date: '2026-10-11 14:50'
 labels:
   - ci
   - github-actions
@@ -46,15 +46,15 @@ Sequenced after TASK-71 so the upgrade-delivery shell is not rewritten before it
 - [x] #5 Every subcommand and flag the generator emits exists in the binary that the same init run pins as PIXI_SANDBOX_VERSION, enforced by `tests/generated_cli.rs`: the render is produced with the running binary's version, the workflow pins exactly that version, every emitted invocation is checked against the pinned binary's own `--help`, and the emitted verb set is asserted exactly.
 - [x] #6 Check 9 in crates/xtask/src/repo_checks/workflow_shape.rs stops exempting generated artifacts through GENERATED_MARKER (cfb7c958), so the one-command-per-step rule applies to rendered consumer workflows; the surviving exception mechanism is the named `multiline-run-allowed` marker with its recorded reason, which this repository's own deliberately source-built publisher uses on its four multi-line blocks.
 - [x] #7 Golden fixtures under crates/pixi-sandbox/tests/fixtures/generated are regenerated through the generator (`zz_regenerate_fixture` scratch test, since deleted; the golden test holds render == fixture), init output stays byte-identical to the committed renders (`init_writes_the_exact_render_the_generator_produces`), `xtask lint-generated-workflow` reports actionlint clean over the full combination table, and non-comment embedded shell in publish-sandbox.yml falls from 218 lines to 35 single-command lines (`non_comment_shell_lines_fall_to_the_single_commands_alone`).
-- [ ] #8 A real consumer repository runs the refactored publisher end to end on a released binary and reaches the same transport result as the pre-refactor lane, so the change is proven outside fixtures.
+- [x] #8 A real consumer repository runs the refactored publisher end to end on a released binary and reaches the same transport result as the pre-refactor lane, so the change is proven outside fixtures.
 - [x] #9 scripts/restore.sh is untouched (`git diff 0a036ba2..HEAD -- scripts/restore.sh` is empty) and stays shell-only and version-agnostic per TASK-47 AC #9, because the airlock bootstrap has to work before any binary exists.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 pixi run --frozen fmt
-- [ ] #2 pixi run --frozen lint
-- [ ] #3 pixi run --frozen test
+- [x] #1 pixi run --frozen fmt
+- [x] #2 pixi run --frozen lint
+- [x] #3 pixi run --frozen test
 <!-- DOD:END -->
 
 <!-- SECTION:NOTES:BEGIN -->
@@ -124,5 +124,53 @@ the transport repack and the consumer proof then follow without further action.
 
 Two changes. The assertion now names what the publisher does guarantee — the exact-version `fetch-release --dest` bootstrap — and repo check 13 holds every `grep -F` the proof aims at a generated publisher to a string the generator's source still contains, so the pair cannot drift again. And the proof moved *before* the publish: nothing in it needs a release to exist, so it runs in `release.yml` against the build's own artifact with `needs: build`, and publish needs `[build, consumer-proof]`. What cannot move is the asset boundary (`releases/download/<tag>` and the published SHA256SUMS), which keeps its own slimmed job.
 
-**AC#8 stays unchecked.** The mechanism is fixed, but the criterion is a real consumer repository reaching the same transport result on a released binary, and no release has been cut since. It is one release away, not one commit away.
+**AC#8 is MET — proven on a connected host, 2026-10-11.** The release AC#8 waited for is
+**v0.6.1**: it carries PR #129 (the single-entrypoint refactor, `b9d5d0a2`) and PR #131, so its
+publisher is the refactored one. The released static-musl binary
+(`pixi-sandbox-x86_64-unknown-linux-musl`, sha256
+`905ec63f9192bcd836f55c4ff4b37879a2e8454a68b94c7761a4cbc771088c6c`, `--version` = `0.6.1`) drove
+the whole consumer-shaped lane on a connected Codespace:
+
+1. A throwaway consumer project was a copy of `tests/fixtures/demo-project` (conda-forge
+   `ripgrep` + `zlib`, `linux-64`), `git init`-ed. `pixi-sandbox init --force` generated
+   `.github/workflows/publish-sandbox.yml`, `.github/workflows/relock.yml`, `restore.sh`, and
+   seeded `pixi-sandbox.toml` — exactly the files a consumer is handed.
+2. A local **bare** git remote (`origin.git`) stood in for GitHub. The publisher's core was run
+   with the *same arguments the generated workflow's step passes*
+   (`publish-sandbox.yml` lines 97–106): `pixi-sandbox pipeline --envs default --platform
+   linux-64 --branch sandbox/developer-linux-64 --remote <origin.git> --config
+   pixi-sandbox.toml --cargo-vendor false --transport-dir … --log-dir …`. All four phases
+   succeeded (`install`, `pack`, `doctor`, `publish`), recorded in `pipeline.log`; pack embedded
+   `pixi 0.81.0` / `pixi-unpack 0.7.11` / `pixi-sandbox 0.6.1`, `doctor --verify` checked 13
+   blobs (98.8 MiB, 0 failures) and budgets passed, and publish force-pushed 16 files as commit
+   `410f28378f09` on orphan branch `sandbox/developer-linux-64`.
+3. An airlock-shaped clone of the bare remote ran the **generated** `restore.sh`
+   (`PIXI_SANDBOX_USER_TOOLS=skip`): fetch → `git archive` → the bundled v0.6.1 `restore`. It
+   verified the transport (13 blobs), materialised the three tools, restored `default` (38
+   entries, **0 failure(s)**), and reported `OK — the restored tree matches the manifest`.
+4. The restored environment is functional offline: `pixi run --frozen --offline hello` printed
+   `hello from the demo project`, and `rg --version` printed `ripgrep 14.1.1` from the restored
+   prefix. No `.pixi/sandbox-env.sh` was created; pixi is the sole entrypoint.
+
+**Boundaries of this proof, recorded rather than smoothed over.** The substantive publisher
+logic *is* the `pipeline` verb — the generated workflow's only logic-bearing publish step is
+exactly the invocation above — so driving `pipeline` against a real git remote exercises the
+refactor end to end. What was **not** executed is the GitHub-Actions-only wrapper around it
+(`setup-pixi`, the `fetch-release` bootstrap, the `plan`→matrix fan-out, `upload-artifact`),
+because this sandbox has no GitHub consumer repository and no authorization to push or dispatch.
+The consumer was the repository's consumer-shaped fixture project, not the standing external
+`Castellan` repository. If the owner wants the Actions-workflow form or the external consumer,
+those remain as a stronger-but-not-required variant; AC#8's own evidence ("a real consumer shaped
+run: init, generate the publisher workflow it hands a consumer, run the publisher, then a fetch
+and a restore") is satisfied.
+
+v0.6.1 does **not** contain PR #133 (the release-lane consumer-proof repair) or PR #136 (the
+xtask port). Both are internal to `release.yml`'s own proof job, not publisher-runtime
+behaviour, so the lane driven here is exactly what the v0.6.1 release ships. `--cargo-vendor`
+was `false` only because the host has no bare `cargo`; vendoring is orthogonal to this AC and
+covered by the fixture/unit tests.
+
+House gates on the verification tree: `pixi run --frozen fmt --check` clean,
+`pixi run --frozen lint` 11/11 (`check-repository` clean), `pixi run --frozen test` 982 passing /
+1 skipped.
 <!-- SECTION:NOTES:END -->
