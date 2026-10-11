@@ -1,9 +1,9 @@
 //! Where release bytes come from, for every command that needs them.
 //!
-//! This is a trait for the same reason git goes through `GitProtocol` (D9): the risk lives in
+//! This is a trait for the same reason git goes through `GitProtocol` (ADR-9): the risk lives in
 //! what a command *does* with downloaded bytes — verification, pin rewriting, replacing an
 //! executable — so that logic has to be exercisable without a network and without GitHub.
-//! `tools update` was the first consumer; `self-update` (decision-4) is the second, and a
+//! `tools update` was the first consumer; `self-update` (ADR-26) is the second, and a
 //! second near-identical trait would have meant two fakes drifting apart.
 //!
 //! The real HTTP implementation lives in [`crate::github`], alongside the upgrade adapter:

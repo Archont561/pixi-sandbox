@@ -1,7 +1,7 @@
 //! Check 12: `AGENTS.md` describes a tree that exists — the repo map names no path that has
 //! moved, and the promoted-module list is the one `lib.rs` declares.
 //!
-//! Why this is a check and not a test: the file is documentation, and D10 forbids a test from
+//! Why this is a check and not a test: the file is documentation, and ADR-10 forbids a test from
 //! reading this repository at all (`tests/fixtures.rs::no_test_targets_the_repository_root`),
 //! so the drift an agent reads as instruction had nothing holding it to the tree. Both halves
 //! of it were stale when this check was written (TASK-84): the repo map named

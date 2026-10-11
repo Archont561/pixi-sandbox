@@ -4,7 +4,7 @@
 //! proof only means something if it runs against the artifact a user gets: a clone of the
 //! revision, in a clean directory. That excludes the `.pixi/` the assembly steps necessarily
 //! write next door, which is the false positive that used to make the verifier refuse a
-//! publishable starter (task-85). Tests build the world with real `git` in tempdirs — D10 keeps
+//! publishable starter (task-85). Tests build the world with real `git` in tempdirs — ADR-10 keeps
 //! this file away from the repository it lives in.
 
 use std::path::Path;

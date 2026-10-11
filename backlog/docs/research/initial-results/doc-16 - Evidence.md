@@ -1,4 +1,15 @@
-# Evidence
+---
+id: doc-16
+title: "Evidence: Every Measured Number the Transport Design Leans On"
+created_date: '2026-10-12 00:00'
+updated_date: '2026-10-12 00:00'
+tags:
+  - research
+  - evidence
+  - transport
+---
+
+# Evidence: Every Measured Number the Transport Design Leans On
 
 Every number the design leans on, as measured. Nothing here is estimated unless marked `⚠️` or
 `open`.
@@ -17,7 +28,7 @@ git 2.4x, Python 3.13, date 2026-09-20.
   files are **hardlinks** into the package cache, not copies.
 * `cp -a` of such an environment works at runtime (it is a valid prefix) but leaves **213
   files** carrying build-path references — which is exactly why the transport does not carry
-  prefixes (D2).
+  prefixes (ADR-2).
 * `unshare -rn` works in this sandbox, which is how every "no network" claim below was
   produced (network namespace with no interfaces plus a dead proxy).
 
@@ -29,7 +40,7 @@ git 2.4x, Python 3.13, date 2026-09-20.
 * `pixi-unpack <pack>` restores it offline with an empty package cache; pixi then accepts the
   environment if the markers are right (§4).
 * Neither `pixi-pack` nor `pixi-unpack` exists on crates.io ✅ (both are git-only projects),
-  which is why D4 ships static release assets.
+  which is why ADR-4 ships static release assets.
 * Clip of the environment fingerprint: pixi stores 16 bytes of xxh3 over the lock's
   `(name, sha256)` records → 16 hex characters, in
   `conda-meta/.pixi-environment-fingerprint`; it identifies the *lockfile*, so it cannot
@@ -47,7 +58,7 @@ git 2.4x, Python 3.13, date 2026-09-20.
 | GitHub push/repo budgets | push ≤2 GB, repo soft ~1 GB |
 
 Consequences: 95 MiB shard limit, one branch per (platform × env-set), rotation by rebuilding
-a branch rather than by force-pushing, and CI that reports the branch size per publish (D1).
+a branch rather than by force-pushing, and CI that reports the branch size per publish (ADR-1).
 
 ## §4 Integrity and tamper behaviour
 
@@ -56,12 +67,12 @@ a branch rather than by force-pushing, and CI that reports the branch size per p
 * A blob overwritten with different bytes ⇒ `integrity … expected sha256 … got …`, exit 1 ✅;
   `restore` writes nothing.
 * A split blob with one corrupted part ⇒ refuses, and **no half-written file is left** ✅
-  (this is the case that produced the atomic join in D7; the first implementation left a
+  (this is the case that produced the atomic join in ADR-7; the first implementation left a
   partial destination behind and a property test caught it).
 * Hand-placed but *correct* environment, markers present ⇒ `pixi install --frozen --offline`
   accepted it in **~0.03 s** ✅.
 * The same environment with the `conda-meta` record missing ⇒ `pixi install
-  --frozen --offline` **fails** (it tries to do real work with no network) ✅ ⇒ D5.
+  --frozen --offline` **fails** (it tries to do real work with no network) ✅ ⇒ ADR-5.
 * Restoring an environment whose fingerprint does not match the branch's manifest value:
   pixi still uses the prefix, so the manifest value is what an operator should compare ⚠️.
 
@@ -91,7 +102,7 @@ a branch rather than by force-pushing, and CI that reports the branch size per p
 * The wrong binary is worse than a missing one: `~/.pixi/bin/pixi-unpack` is a 766 KiB
   trampoline that execs a dynamically linked binary inside its own prefix. Restore with it
   "succeeded" on the build machine and failed on the airlock with a missing
-  `trampoline_configuration` ✅ ⇒ the ELF `PT_INTERP` check in `verify.rs` (D4).
+  `trampoline_configuration` ✅ ⇒ the ELF `PT_INTERP` check in `verify.rs` (ADR-4).
 * conda-forge availability checked for the dev tooling: rust 1.98.1, cargo-nextest,
   cargo-llvm-cov, cargo-deny, actionlint, lefthook, bun, biome, nodejs, rattler-index and
   taplo all exist ✅; `convoco` returns 404 ✅ (see `.convoco/README.md`).
@@ -168,7 +179,7 @@ The end-to-end proof re-runs from a bare checkout in **52 s** with identical num
 Payload of that run: **262.0 MB** — envs 133.3 MB (51 %; dev 64.2 MiB/40 files, docs
 62.9 MiB/28 files, unpacked 507.5 / 501.9 MiB), vendor 32.5 MB (12 %), tools 96.1 MB (37 %).
 
-**The packaged path** (D8) was executed too:
+**The packaged path** (ADR-8) was executed too:
 
 ```
 pixi publish --path crates/pixi-sandbox --build-dir … --target-dir …
@@ -188,7 +199,7 @@ the solve fails on `libgcc`.
 
 ## §11 Git-as-a-trait, fixtures, and CI one-liners
 
-**The git crate** (`crates/pixi-sandbox-git`, decision D9):
+**The git crate** (`crates/pixi-sandbox-git`, decision ADR-9):
 
 | fact ✅ | value |
 | --- | --- |
@@ -205,7 +216,7 @@ The payload is **not copied** to publish: `GIT_DIR` points at a scratch repo ins
 transport, `GIT_INDEX_FILE` at a scratch index, `GIT_WORK_TREE` at the transport, committed
 with plumbing — a 250 MiB transport is published by moving objects, not by duplicating it.
 
-**The fixtures** (decision D10):
+**The fixtures** (decision ADR-10):
 
 | fact ✅ | value |
 | --- | --- |
@@ -222,7 +233,7 @@ the first because the fixture's `pixi.toml` *explains* why the packers are absen
 checking dependencies, not comments), the second because the checker flagged its own source
 (fixed by forbidding only `".."`/`.parent()` escapes).
 
-**The CI one-liner rule** (design.md §6) — verified with pixi 0.81.0:
+**The CI one-liner rule** (doc-2 §6) — verified with pixi 0.81.0:
 
 | fact ✅ | value |
 | --- | --- |

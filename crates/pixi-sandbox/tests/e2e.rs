@@ -918,7 +918,7 @@ mod ci_gate {
         match assert_gate_restored_tree(&inputs.project, &inputs.transport, &inputs.envs) {
             GateIntegrity::Verified => {}
             GateIntegrity::DegradedPreOracle => eprintln!(
-                "::notice::the bundled pixi-sandbox predates the per-file oracle (D13); \
+                "::notice::the bundled pixi-sandbox predates the per-file oracle (ADR-13); \
                  restored-tree integrity cannot be checked for this transport"
             ),
         }
@@ -961,7 +961,7 @@ mod ci_gate {
         let _ = fs::remove_file(&forged);
         match result {
             Ok(GateIntegrity::DegradedPreOracle) => eprintln!(
-                "::notice::the bundled pixi-sandbox predates the per-file oracle (D13); \
+                "::notice::the bundled pixi-sandbox predates the per-file oracle (ADR-13); \
                  forged-record rejection cannot be checked for this transport"
             ),
             Ok(GateIntegrity::Verified) => {

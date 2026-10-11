@@ -4,7 +4,7 @@
 //! `self-update`, `fetch-release`, `pipeline`, and `upgrade` share one manifest/config
 //! contract. `unpack` is the single-environment primitive that `restore` drives once per
 //! env, and is also the escape hatch for a payload that arrived outside the branch flow.
-//! `.knowledge/design.md` specifies every verb; there are no deferred operations left, so
+//! `backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md` specifies every verb; there are no deferred operations left, so
 //! nothing here can send an operator to a section instead of doing the work.
 
 mod doctor;

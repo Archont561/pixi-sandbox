@@ -2,8 +2,8 @@ name: ci
 
 # Every step in this file is ONE line: `pixi run <task>`.
 #
-# The rule (design.md §6): a step that needs more than one line is a task in `pixi.toml`
-# (or a script under `.knowledge/research/`) — never inline bash here. That keeps the
+# The rule (doc-2 §6): a step that needs more than one line is a task in `pixi.toml`
+# (or a script under `scripts/`) — never inline bash here. That keeps the
 # workflow reviewable, and it means the exact command CI runs is the command you run
 # locally. Tasks that need paths from the workflow read them from the environment.
 
@@ -66,7 +66,7 @@ jobs:
   #
   # This proves the updater's replace path on Windows. It does NOT make win-64 a supported
   # platform: `pixi.lock` still carries no win-64 entries, the README's Windows gap (no
-  # conda-forge `bun`, D11) stands, and `.pixi-sandbox.toml` still publishes linux-64 only.
+  # conda-forge `bun`, ADR-11) stands, and `.pixi-sandbox.toml` still publishes linux-64 only.
   replace-running-image:
     name: replace a running image (windows)
     runs-on: windows-latest

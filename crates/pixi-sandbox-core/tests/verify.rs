@@ -226,7 +226,7 @@ fn elf_with_ph(p_type: u32) -> Vec<u8> {
     elf
 }
 
-// ---------------------------------------------------------------- the restored-tree oracle (D13)
+// ---------------------------------------------------------------- the restored-tree oracle (ADR-13)
 //
 // These tests build the whole pipeline in miniature: a staged prefix (what pixi-unpack
 // produced), the per-file oracle scanned from it, and a "restored" prefix (what restore

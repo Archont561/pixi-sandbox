@@ -2,7 +2,7 @@
 //!
 //! Every environment read lives here (the host triple, the compiled-in version), so
 //! `self_update::fetch_release` stays a pure function of its `Request` and the tests never
-//! reach a developer's real binary or a socket (D10). The command is deliberately thin:
+//! reach a developer's real binary or a socket (ADR-10). The command is deliberately thin:
 //! unlike `self-update` it has no `--check` and no up-to-date shortcut — the bootstrap
 //! download always fetches (see the function's doc comment).
 

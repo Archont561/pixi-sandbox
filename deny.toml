@@ -13,7 +13,7 @@ ignore = []
 version = 2
 # Permissive only. If a dependency needs an exception, add it here *with a reason*
 # rather than loosening the list — this crate ships into places that have to pass a
-# license review (see .knowledge/decisions.md D8).
+# license review (see backlog/docs/adr/README.md ADR-8).
 allow = [
   "MIT",
   "Apache-2.0",

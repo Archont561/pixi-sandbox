@@ -1,4 +1,4 @@
-# A project whose Cargo.lock cargo itself cannot vendor (design.md §11, backlog task-8):
+# A project whose Cargo.lock cargo itself cannot vendor (doc-2 §11, backlog task-8):
 # `itoa 1.0.15` appears twice, once from crates.io and once from a git source. `cargo vendor`
 # maps each crate to a `<name>-<version>` directory, so the two collide and it aborts.
 #

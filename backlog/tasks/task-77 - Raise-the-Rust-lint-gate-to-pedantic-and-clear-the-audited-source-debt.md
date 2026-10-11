@@ -44,7 +44,7 @@ Encode the policy first so the gate holds the line for free, then sweep, then fi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 A reviewed clippy policy lives in a `[workspace.lints.clippy]` table that all four crates inherit, every deliberate allow carries a reason comment, and the choice is recorded in .knowledge/decisions.md as a new D-number rather than left implicit.
+- [x] #1 A reviewed clippy policy lives in a `[workspace.lints.clippy]` table that all four crates inherit, every deliberate allow carries a reason comment, and the choice is recorded in backlog/docs/adr/README.md as a new D-number rather than left implicit.
 - [x] #2 The policy allows clippy::literal_string_with_formatting_args with a reason, because all 10 hits are intentional: placeholder templates such as `.replace("{version}", ...)` and shell parameter expansions such as `${PREFIX:-sandbox}` asserted inside Rust string literals, per doc-12 Finding 6.
 - [x] #3 The 261 MachineApplicable findings are applied in reviewed per-crate commits with no behaviour change, and pixi run --frozen lint passes on all four crates at the raised bar.
 - [x] #4 Documentation debt the policy demands is paid rather than silently downgraded: 58 missing_errors_doc, 28 too_long_first_doc_paragraph, 12 missing_panics_doc and 16 doc_markdown are each either written or allowed with a recorded reason.
@@ -53,7 +53,7 @@ Encode the policy first so the gate holds the line for free, then sweep, then fi
 - [x] #7 The two workflow renderers are left to task-76: this task does not restructure render_github_workflow at 476 lines or render_relock_workflow at 347, and where the raised gate would fail on them it adds a function-scoped allow naming task-76 as the owner instead of reshaping the templates.
 - [x] #8 The three cast sites in transport-size arithmetic are each read and resolved: shard.rs:122, transport_budget.rs:232 and pack.rs:523 are either corrected with a test pinning the bound, or annotated with why the cast cannot truncate, since a silent truncation there yields a wrong budget verdict rather than a crash.
 - [x] #9 The 413-line inline test module in commands/tools/update.rs, 54 percent of that file against a 22 percent workspace rate, moves to a tests/ sibling matching the crate self_update_*.rs convention, with no test lost.
-- [x] #10 pixi run --frozen test reports at least 654 passing before and after every commit in this task, no test added or changed points at this checkout or a real HOME per D10, no new crate dependency is added because the vendored tree cannot fetch one without a relock cycle, and no rendered workflow, manifest schema, transport format or git-access path changes.
+- [x] #10 pixi run --frozen test reports at least 654 passing before and after every commit in this task, no test added or changed points at this checkout or a real HOME per ADR-10, no new crate dependency is added because the vendored tree cannot fetch one without a relock cycle, and no rendered workflow, manifest schema, transport format or git-access path changes.
 <!-- AC:END -->
 
 <!-- SECTION:NOTES:BEGIN -->
@@ -71,7 +71,7 @@ Pedantic-clean with per-crate `clippy -D warnings` green: pixi-sandbox-core (22
 pinning tests, two extractions), pixi-sandbox-git (24 `# Errors`, 10 `# Panics`,
 `#[must_use]` builders, format_collect, two test judgement items) and pixi-sandbox
 (42 doc sections, all mechanical findings, the pack casts with a pinning test, eight
-extractions one per commit, four scoped allows with reasons). Policy D20 plus the
+extractions one per commit, four scoped allows with reasons). Policy ADR-20 plus the
 `literal_string_with_formatting_args` allow with its reason. AC#1, #2, #5, #7 and
 #8 are met.
 

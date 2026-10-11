@@ -258,7 +258,7 @@ mod upgrade_job {
     }
 
     /// The upgrade job never trusts a package manager's "latest" for anything that ends up in
-    /// a committed file (decision-4 / D16): it bootstraps the exact pinned, checksum-verified
+    /// a committed file (ADR-26 / ADR-16): it bootstraps the exact pinned, checksum-verified
     /// binary — `fetch-release` verifies against the release's SHA256SUMS inside the tool —
     /// and only that binary's own `self-update` ever decides the new version. The version
     /// conditional is two `if:`-gated one-line steps, so the pinned binary never sees an
@@ -301,7 +301,7 @@ mod upgrade_job {
         );
     }
 
-    /// The upgrade step forwards the exact generation arguments (D16) — each flag once. The
+    /// The upgrade step forwards the exact generation arguments (ADR-16) — each flag once. The
     /// check/regenerate split is the verb's phase, not the render's: no drift output and no
     /// `if:`-gated regenerate step survives in the YAML.
     #[test]
@@ -339,7 +339,7 @@ mod upgrade_job {
         );
     }
 
-    /// Config is reviewed data (D16): the upgrade step passes it to the verb, and no git
+    /// Config is reviewed data (ADR-16): the upgrade step passes it to the verb, and no git
     /// staging shell remains in the render — the commit stages exactly the three owned files
     /// and never the config (asserted with `FakeGit` in tests/upgrade.rs).
     #[test]

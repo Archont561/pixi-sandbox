@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 // stale-ref-allowed — the check must spell the forbidden words out to forbid them.
 const STALE_WORDS: [&str; 3] = ["python", "prototype", "knowledge/research"];
 
-/// task-6: no reference under `crates/` to the implementation deleted in 0.2.0. It lived
-/// under `.knowledge/`'s research directory; an airlocked reader has no network to discover
-/// that it is gone. A line that must name the thing to forbid it opts out with the marker on
-/// (or above) it.
+/// task-6: no reference under `crates/` to the implementation deleted in 0.2.0. Its research
+/// tree has since been deleted as well, so an airlocked reader has no network with which to
+/// discover that either is gone. A line that must name the thing to forbid it opts out with
+/// the marker on (or above) it.
 ///
 /// Generated trees are pruned rather than left to gitignore: `crates/pixi-sandbox/.pixi/bld`
 /// holds a vendored third-party registry the moment anyone runs `pixi run package` locally,
@@ -33,7 +33,7 @@ pub(super) fn stale_implementation_references(root: &Path, failures: &mut Vec<Fa
         failures.push(Failure::with(
             "crates/ still references the implementation deleted in 0.2.0 (task-6):",
             hits,
-            "point the text at .knowledge/design.md instead, or mark the line stale-ref-allowed",
+            "point the text at backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md instead, or mark the line stale-ref-allowed",
         ));
     }
 }

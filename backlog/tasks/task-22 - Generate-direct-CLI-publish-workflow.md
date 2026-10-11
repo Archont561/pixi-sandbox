@@ -14,7 +14,7 @@ dependencies:
   - TASK-21
   - TASK-27
 references:
-  - .knowledge/publish-automation.md
+  - backlog/docs/specifications/publish-automation/doc-3 - Publish-Automation-Specification.md
 documentation:
   - backlog/docs/plans/v1-platform-workflow-transport/doc-1
 priority: high

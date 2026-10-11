@@ -641,6 +641,12 @@ fn publishing_over_a_readme_only_starter_commits_the_whole_template() {
         run_git(&verify, &["rev-list", "--count", "HEAD"]).trim(),
         "1"
     );
+    // What a reader of the starter repository sees: the snapshot is an initial commit, not a
+    // chore appended to a history that ADR-22 removed.
+    assert_eq!(
+        run_git(&verify, &["log", "-1", "--pretty=%s", "HEAD"]).trim(),
+        "Initial commit"
+    );
     let committed = run_git(&verify, &["ls-files"]);
     for required in REQUIRED_FILES {
         assert!(
@@ -687,6 +693,19 @@ fn publishing_over_a_readme_only_starter_commits_the_whole_template() {
     )
     .unwrap_err();
     assert_eq!(run_git(&remote, &["show-ref"]), published);
+}
+
+/// Every publication replaces main with a parentless commit (ADR-22), so the snapshot *is* the
+/// repository's initial commit and its subject says so. The body is the only place the starter
+/// records which release generated it, so both halves of the hand-off have to survive.
+#[test]
+fn the_snapshot_subject_is_an_initial_commit_and_the_body_names_the_release() {
+    let message = snapshot_message(TAG, COMMIT);
+    let subject = message.lines().next().expect("a subject line");
+    assert_eq!(subject, "Initial commit", "{message}");
+    assert!(!subject.starts_with("chore"), "{message}");
+    assert!(message.contains(TAG), "{message}");
+    assert!(message.contains(COMMIT), "{message}");
 }
 
 /// The devcontainer's pixi image pin is an argument, never a literal: `starter.yml`'s contract

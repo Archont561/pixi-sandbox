@@ -121,7 +121,7 @@ dependency:
 
 ## §6 Decision
 
-**Defer** — recorded as **decision-3** through the Backlog decision API. Today's repository
+**Defer** — recorded as **ADR-25** through the Backlog decision API. Today's repository
 has one JS workspace and a ~27 s docs job; the threshold in §2 is not met, so no Turbo
 dependency, no `turbo.json`, and no pixi task changes are made. The triggers above are the
 re-entry point.

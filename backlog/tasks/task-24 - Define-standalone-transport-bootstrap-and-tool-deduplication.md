@@ -13,8 +13,8 @@ milestone: m-0
 dependencies:
   - TASK-21
 references:
-  - .knowledge/decisions.md
-  - .knowledge/rattler-spike.md
+  - backlog/docs/adr/README.md
+  - backlog/docs/spikes/rattler-transport/doc-5 - Rattler-Transport-Spike.md
 documentation:
   - backlog/docs/plans/v1-platform-workflow-transport/doc-1
   - backlog/docs/spikes/standalone-transport/doc-7
@@ -48,7 +48,7 @@ Schema policy (`doc-7` §3): schema stays 2; readers accept 1..=N and refuse new
 
 Duplicate-packaging rule (`doc-7` §4): the `tools` entry is the canonical executable and every launcher path executes it; an environment copy is payload restored verbatim (excluding it would corrupt the prefix against `pixi.lock`); `pack` should warn about the duplication rather than refuse; promotion of the environment's copy to the bootstrap is rejected (version/schema coupling).
 
-Decision: recorded through the Backlog decision API as `decision-2` (accepted) — retain `pixi-pack`/`pixi-unpack` as pinned helper subprocesses; `pixi-sandbox` stays the single transport bootstrap; schema 2 stands. `decision-1` (the v1 standalone orchestrator proposal) is resolved as accepted with that boundary, and the outcome is mirrored in `.knowledge/decisions.md` as D14 with the header count and `.knowledge/README.md`/`CONTEXT.md` pointers updated.
+Decision: recorded through the Backlog decision API as `ADR-24` (accepted) — retain `pixi-pack`/`pixi-unpack` as pinned helper subprocesses; `pixi-sandbox` stays the single transport bootstrap; schema 2 stands. `ADR-23` (the v1 standalone orchestrator proposal) is resolved as accepted with that boundary, and the outcome is mirrored in `backlog/docs/adr/README.md` as ADR-14 with the header count and `.knowledge/README.md`/`CONTEXT.md` pointers updated.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

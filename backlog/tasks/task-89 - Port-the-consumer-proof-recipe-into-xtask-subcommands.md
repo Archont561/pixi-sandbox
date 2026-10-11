@@ -36,7 +36,7 @@ Deliberately not folded into doc-13. That slice had to move the proof before the
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Every step of the `consumer-proof` job in `release.yml` is a pinned `uses:` or a one-line pixi task, and no `multiline-run-allowed` opt-out remains in that job.
-- [x] #2 The ported recipe is covered by `xtask` tests over tempdir fixtures per D10, and each test is confirmed to fail with the behaviour it checks neutralised, so the tests prove the recipe rather than restating it.
+- [x] #2 The ported recipe is covered by `xtask` tests over tempdir fixtures per ADR-10, and each test is confirmed to fail with the behaviour it checks neutralised, so the tests prove the recipe rather than restating it.
 - [x] #3 A full proof run on a real release reaches the same verdict as the shell recipe it replaces, recorded as evidence here with the run link.
 - [x] #4 `check-repository` still reports every workflow `run:` as a single command line, `actionlint` stays clean, and the proof's assertions on the generated publisher stay inside check 13's reach.
 <!-- AC:END -->

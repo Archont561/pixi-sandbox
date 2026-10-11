@@ -23,4 +23,4 @@ comment:
 ignore:
   - "crates/pixi-sandbox/tests/fixtures/**"
   - "docs/**"
-  - ".knowledge/**"
+  - "backlog/**"

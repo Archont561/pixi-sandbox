@@ -228,7 +228,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
           "pixi-sandbox==${PIXI_SANDBOX_VERSION}"
 
       # Never trust a package manager's "latest" for anything that ends up in a committed
-      # file (decision-4 / D16): bootstrap the version already pinned above — checksum
+      # file (ADR-26 / ADR-16): bootstrap the version already pinned above — checksum
       # verified, exactly like the publish job's own bootstrap — then ask that exact binary to
       # self-update in place. Only the verified result of that self-update, never a floating
       # resolver, ever touches a generated file.
@@ -258,7 +258,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
         run: '"$PIXI_SANDBOX_BIN" self-update --dest "$PIXI_SANDBOX_BIN"'
 
       # Check, regenerate, commit and deliver — one step, one cross-platform invocation.
-      # Config is reviewed data, never rewritten by `init` or this job (D16): only the three
+      # Config is reviewed data, never rewritten by `init` or this job (ADR-16): only the three
       # owned paths are ever staged. A workflow-capable token is optional: without it the
       # step leaves the patch artifact and a precise hand-off, rather than turning every
       # consumer's weekly schedule red.

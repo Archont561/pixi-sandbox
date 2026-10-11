@@ -5,7 +5,7 @@
 //! sentences this file was written against; each one is bound below by `#[scenario]`, which
 //! emits the rstest test itself, so the names nextest reports did not move. Steps drive the
 //! binary black-box through the `tests/support` fixture builders against an isolated home
-//! (task-33's contract, D10). The pre-policy scenario drives `scripts/restore.sh` against a
+//! (task-33's contract, ADR-10). The pre-policy scenario drives `scripts/restore.sh` against a
 //! `transport_repo` staged with the pre-0.3.7 shim, so its binding and its steps carry the
 //! same `#[cfg]` the descriptive suite uses (unix, linux-64 transport) — on a foreign host the
 //! scenario is absent from the binary rather than failing in it.

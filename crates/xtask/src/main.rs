@@ -8,7 +8,7 @@
 //!
 //! Commands take an explicit `--root` (default: the working directory, which is the project
 //! root under `pixi run`); the policy logic lives in per-module pure functions that tests
-//! drive against tempdir fixtures, never against this checkout (D10).
+//! drive against tempdir fixtures, never against this checkout (ADR-10).
 
 use xtask::{
     airlock, commit_release, conda_platforms, consumer_proof, prepare_release, release_assets,
@@ -261,7 +261,10 @@ enum Command {
         #[arg(long)]
         commit: String,
     },
-    /// Commit, tag, and push one validated starter revision. Never force-pushes.
+    /// Commit, tag, and push one validated starter revision.
+    ///
+    /// Replaces main with one parentless commit, leased against the checked-out HEAD and pushed
+    /// atomically with its immutable release tag; prior release tags are retained (ADR-22).
     StarterPublish {
         /// Assembled and validated starter tree (a git worktree with its remote configured).
         #[arg(long)]

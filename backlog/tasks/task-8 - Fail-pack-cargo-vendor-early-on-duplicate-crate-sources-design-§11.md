@@ -12,7 +12,7 @@ labels:
 dependencies: []
 references:
   - crates/pixi-sandbox/src/commands/pack.rs
-  - .knowledge/design.md
+  - backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md
 priority: low
 ordinal: 8000
 ---
@@ -32,7 +32,7 @@ cargo vendor hard-fails when the same crate and version is reachable from two so
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Read design.md 11 for the exact upstream failure, read pack.rs vendor path, reproduce the duplicate-source condition in tests/fixtures, fail at pack time with a remedy, add a fixture-based test.
+Read doc-2 11 for the exact upstream failure, read pack.rs vendor path, reproduce the duplicate-source condition in tests/fixtures, fail at pack time with a remedy, add a fixture-based test.
 <!-- SECTION:PLAN:END -->
 
 ## Final Summary

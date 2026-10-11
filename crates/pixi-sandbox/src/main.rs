@@ -2,7 +2,7 @@
 //! on a machine with no network.
 //!
 //! pixi discovers `pixi-<command>` binaries on `PATH`, so every verb below also works as
-//! `pixi sandbox <verb>` without patching pixi (see `.knowledge/design.md` §5).
+//! `pixi sandbox <verb>` without patching pixi (see `backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md` §5).
 
 mod cli;
 mod commands;

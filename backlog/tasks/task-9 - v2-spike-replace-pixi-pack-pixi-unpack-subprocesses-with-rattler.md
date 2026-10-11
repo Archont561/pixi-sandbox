@@ -11,8 +11,8 @@ labels:
   - spike
 dependencies: []
 references:
-  - .knowledge/design.md
-  - .knowledge/decisions.md
+  - backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md
+  - backlog/docs/adr/README.md
 priority: low
 ordinal: 9000
 ---
@@ -26,7 +26,7 @@ Design §1 notes that re-implementing the pack format on the rattler library is 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A spike note in .knowledge/ measures the trade-off: binary size and blob count saved versus implementation risk and pixi-pack format coupling
-- [x] #2 A go/no-go decision is recorded as a new decision ID in .knowledge/decisions.md before implementation starts
+- [x] #2 A go/no-go decision is recorded as a new decision ID in backlog/docs/adr/README.md before implementation starts
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -34,5 +34,5 @@ Design §1 notes that re-implementing the pack format on the rattler library is 
 <!-- SECTION:NOTES:BEGIN -->
 Headline numbers: dropping pixi-unpack saves 15.0 MiB (1.82 percent) and 1 blob of 10313, once per branch; pixi (76.6 MiB, 81 percent of tools bytes) stays regardless because the airlock still runs pixi install --frozen --offline. pixi-unpack is itself a rattler front-end, so its 15.0 MiB static binary is the empirical proxy for what rattler costs compiled in - the saving is spent on our own binary. Vendored payload grows at 1.79 MiB per added crate measured on this repo, and rattler pulls ~28 crates plus tokio/reqwest/rayon.
 
-Recommendation: no-go, keep D2/D3. Four triggers to revisit are listed, and only option C (replace the install step, keep the pixi-pack format) is worth a prototype - the one categorical win would be peak restore disk, measured today at 2876.8 MiB of scratch for a 1867.5 MiB environment. AC2 done: the go/no-go is recorded as D12 in .knowledge/decisions.md (no-go; keep D2/D3), and the spike note updated to point at it.
+Recommendation: no-go, keep ADR-2/ADR-3. Four triggers to revisit are listed, and only option C (replace the install step, keep the pixi-pack format) is worth a prototype - the one categorical win would be peak restore disk, measured today at 2876.8 MiB of scratch for a 1867.5 MiB environment. AC2 done: the go/no-go is recorded as ADR-12 in backlog/docs/adr/README.md (no-go; keep ADR-2/ADR-3), and the spike note updated to point at it.
 <!-- SECTION:NOTES:END -->

@@ -1,6 +1,6 @@
 # Reviewed publish plan consumed by `pixi-sandbox plan` and the release-binary reusable workflow.
 # Add a target only after its native runner and standalone Rust bootstrap artifact have passed
-# the airlock proof (D11). Declaring a platform here *is* what schedules that proof: the
+# the airlock proof (ADR-11). Declaring a platform here *is* what schedules that proof: the
 # `pull_request` trigger in .github/workflows/airlock.yml runs `plan --json` over this file and
 # fans the matrix out onto each platform's native runner, egress-denied tier included. So a new
 # target lands as a PR that must stay red-free on its own runner before it is merged — the gate
@@ -25,7 +25,7 @@ max_restore_required_mib = 8192
 
 # CI policy for the generated publisher (task-53). Every field below is decided on purpose,
 # because the *presence* of this table alone moves `push_paths` and `setup_pixi_cache` to new
-# defaults (decision D18) — both are therefore written out explicitly rather than inherited.
+# defaults (decision ADR-18) — both are therefore written out explicitly rather than inherited.
 [workflow]
 # Explicit, not derived. The derivation (`derive_push_paths`) would yield the seven manifest and
 # lock files below and nothing else; this repository's publisher additionally builds the
@@ -44,7 +44,7 @@ push_paths = [
   "pixi.lock",
   "pixi.toml",
 ]
-# D18's default, taken deliberately: `setup-pixi` runs with `run-install: false` here, so its
+# ADR-18's default, taken deliberately: `setup-pixi` runs with `run-install: false` here, so its
 # cache would be keyed on this manifest without holding the environments the publish job then
 # installs itself with `pixi install --frozen`.
 setup_pixi_cache = false

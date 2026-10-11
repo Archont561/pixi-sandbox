@@ -5,7 +5,7 @@
 //! sentences this file was written against; each one is bound below by `#[scenario]`, which
 //! emits the rstest test itself, so the names nextest reports did not move. Steps drive
 //! `doctor --verify` black-box through the `tests/support` fixture builders, against tempdir
-//! copies of the fixture transport (D10).
+//! copies of the fixture transport (ADR-10).
 
 mod support;
 

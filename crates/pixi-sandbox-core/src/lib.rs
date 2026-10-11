@@ -9,7 +9,7 @@
 //! * [`shard`] — the only two file operations in the project: `record_file` (split when
 //!   oversized) and `materialise`/`join_parts` (verify, then write, never a half file);
 //! * [`files_manifest`] — the per-file oracle for a restored prefix (`envs/<name>/files.json`);
-//! * [`tools_lock`] — embedded helper-tool pins plus explicit external overrides (decision D4);
+//! * [`tools_lock`] — embedded helper-tool pins plus explicit external overrides (decision ADR-4);
 //! * [`sandbox_config`] — a reviewed `.pixi-sandbox.toml` publish matrix;
 //! * [`transport_budget`] — size measurements and hard refusal thresholds for publishable bundles;
 //! * [`verify`] — walk a transport and check every declared byte, and walk a *restored

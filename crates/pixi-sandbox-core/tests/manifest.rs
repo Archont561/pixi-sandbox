@@ -513,7 +513,7 @@ fn the_embedded_tool_pins_are_valid_and_complete(#[case] tool: &str, #[case] pla
     assert!(url.starts_with("https://github.com/"), "got {url}");
     assert!(!url.contains('{'), "unsubstituted template: {url}");
 
-    // The linux-64 unpacker is the static musl asset (decisions D4) — the whole airlock story
+    // The linux-64 unpacker is the static musl asset (decisions ADR-4) — the whole airlock story
     // rests on that one asset.
     if (tool, platform) == ("pixi-unpack", "linux-64") {
         assert_eq!(pin.linkage, "static");

@@ -17,7 +17,7 @@
 //!   size follows the shim, and a shim is `linkage = "script"`, so the airlock's
 //!   dynamically-linked-tool rule is satisfied honestly rather than bypassed;
 //! * `HOME` and `TMPDIR` point into the test's tempdir, so a test that would touch the
-//!   developer's home fails instead of succeeding quietly (D10, user level).
+//!   developer's home fails instead of succeeding quietly (ADR-10, user level).
 //!
 //! The reach out of this crate to `../../scripts/restore.sh` is deliberate and is one of the
 //! two exceptions recorded in `tests/fixtures.rs`: the script *is* the artifact under test, and
@@ -449,7 +449,7 @@ fn a_local_branch_restores_without_touching_the_network() {
     );
     assert!(!log.contains("→ fetching"), "{log}");
 
-    // Verified before anything was written, and again after it was written (D13).
+    // Verified before anything was written, and again after it was written (ADR-13).
     assert!(
         log.contains("verify    OK — every declared byte matches the manifest"),
         "{log}"

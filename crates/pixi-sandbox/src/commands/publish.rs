@@ -1,4 +1,4 @@
-//! `publish` — put the transport on an orphan branch. See `.knowledge/design.md` §2.
+//! `publish` — put the transport on an orphan branch. See `backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md` §2.
 //!
 //! Implemented on top of `pixi-sandbox-git`, which is a trait: this command only ever names
 //! [`GitProtocol`], so it runs unchanged against the real `git` or the in-memory mock that

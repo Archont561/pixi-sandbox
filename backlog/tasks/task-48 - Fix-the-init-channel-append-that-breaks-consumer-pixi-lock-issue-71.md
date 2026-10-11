@@ -53,10 +53,10 @@ never reads project channels).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 One fix option is chosen and recorded as a decision entry in `.knowledge/decisions.md`, explicitly reversing or amending task-34's namespace-root intent, with the trade-off stated against the two options not taken
+- [x] #1 One fix option is chosen and recorded as a decision entry in `backlog/docs/adr/README.md`, explicitly reversing or amending task-34's namespace-root intent, with the trade-off stated against the two options not taken
 - [x] #2 After `init`, a consumer pixi.toml with at least one dependency passes `pixi lock` on a connected host — the issue's reproduction probe re-run against the fix, output recorded in this task; the empty-project case is explicitly not sufficient evidence, because an empty solve is what hid this bug
 - [x] #3 Any URL `init` still appends serves repodata at `<url>/noarch/repodata.json` (probe output or an `#[ignore]`d network test); if no URL is appended, `init` leaves the consumer's `pixi.toml` byte-identical
-- [x] #4 Fixture tests cover the chosen behavior per D10 against a fixture project that has a dependency; the task-41 preservation tests are updated to the chosen append or replaced by the byte-identical assertion
+- [x] #4 Fixture tests cover the chosen behavior per ADR-10 against a fixture project that has a dependency; the task-41 preservation tests are updated to the chosen append or replaced by the byte-identical assertion
 - [x] #5 The "Channel configured by init" section of the project guide (and any configuration-reference or README mention) states the chosen behavior, and no documentation presents the namespace root as a consumable channel
 - [x] #6 The fix ships in a released patch package whose `init` passes the reproduction probe on a clean connected host — or the release is explicitly reported as awaiting the online release workflow, per the online-task constraints in CONTEXT.md
 - [x] #7 The pixi-side error surface that hid the cause (`a coalesced request failed → other error` naming neither URL nor status) is reported upstream in pixi/rattler and linked from this task, or the attempt and its outcome are recorded
@@ -88,7 +88,7 @@ connected host, and let the patch release carry it (auto-release from the merge)
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-02: Implemented as the no-mutation option in **PR #73** (commit `fix(init): …`,
-net −175 lines), recorded as **D17** (AC#1): `init` writes only the files it owns, leaves
+net −175 lines), recorded as **ADR-17** (AC#1): `init` writes only the files it owns, leaves
 `pixi.toml` byte-identical, and keeps a bare existence check (`ensure_pixi_project`) so a
 missing manifest still fails with *run init from a Pixi project* — malformed TOML no longer
 does, because the manifest was only ever parsed in order to be edited. Deleted:
@@ -140,7 +140,7 @@ is drafted below verbatim for a one-click filing from a personal token:
 > the unhelpful message (Archont561/pixi-sandbox#71).
 
 2026-10-03 (follow-up session): re-verified this task's state rather than re-doing the
-implementation, which was already complete and merged (PR #73, D17) before this branch was
+implementation, which was already complete and merged (PR #73, ADR-17) before this branch was
 created. Findings:
 
 - AC#1/#3/#4/#5 reconfirmed in the current checkout (now at v0.5.0, two releases past the
@@ -149,7 +149,7 @@ created. Findings:
   exists and never parses or mutates it; `init_leaves_the_consumer_pixi_manifest_untouched`
   and `init_still_refuses_a_directory_without_a_pixi_manifest` (crates/pixi-sandbox/tests/cli.rs)
   both pass; the project guide's "Channel configured by init" section states the no-mutation
-  behavior and the 0.4.3 remediation. D17 in .knowledge/decisions.md matches the shipped code.
+  behavior and the 0.4.3 remediation. ADR-17 in backlog/docs/adr/README.md matches the shipped code.
 
 - AC#6 (ships in a released patch): confirmed via `gh release view v0.4.4` — the fix (PR #73)
   shipped in v0.4.4, published 2026-10-02T22:56:26Z, about 40 minutes after the PR merged; the
@@ -198,7 +198,7 @@ met; task closed.
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Implemented and merged (PR #73, D17): the channel append is gone, the consumer's pixi.toml
+Implemented and merged (PR #73, ADR-17): the channel append is gone, the consumer's pixi.toml
 is left byte-identical by construction and by test, the docs tell the truth and carry the
 0.4.3 remediation. Confirmed shipped in the v0.4.4 release (2026-10-02T22:56:26Z) and still
 present in the current v0.5.0; issue #71 is closed.

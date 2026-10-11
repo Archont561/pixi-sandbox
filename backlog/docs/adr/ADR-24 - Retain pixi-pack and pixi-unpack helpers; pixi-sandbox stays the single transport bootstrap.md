@@ -1,10 +1,12 @@
 ---
-id: decision-2
+id: ADR-24
 title: >-
   Retain pixi-pack and pixi-unpack helpers; pixi-sandbox stays the single transport
   bootstrap
 date: '2026-10-01 15:18'
 status: accepted
+tags:
+  - decision
 ---
 ## Context
 
@@ -35,7 +37,7 @@ reported as a blocker by any real airlock.
    registration) executes that manifest-verified copy — never a `PATH`-discovered or
    environment-embedded one.
 2. `pixi-pack` and `pixi-unpack` remain pinned, sha256-verified static helper tools driven as
-   subprocesses (D2/D3/D4, reaffirming D12 with current measurements).
+   subprocesses (ADR-2/ADR-3/ADR-4, reaffirming ADR-12 with current measurements).
 3. **Schema stays 2.** Readers accept 1..=2 and refuse newer; additive fields may land without
    a bump only when old readers ignore them safely; removals or semantic changes are a
    schema-3 event that must keep reading 1 and 2 for as long as published branches exist.
@@ -49,8 +51,8 @@ reported as a blocker by any real airlock.
 
 ## Consequences
 
-- No transport-format change, no migration, no new dependency; D2/D3/D4/D12 stand as written
-  and `.knowledge/decisions.md` gains D14 recording this outcome.
+- No transport-format change, no migration, no new dependency; ADR-2/ADR-3/ADR-4/ADR-12 stand as written
+  and `backlog/docs/adr/README.md` gains ADR-14 recording this outcome.
 - The cheapest remaining disk lever is option C′ of doc-7 §2 (restore from the git object
   store, no worktree checkout; −845 MiB combined), noted for the backlog — it changes the
   `--branch-location` contract shared by `doctor`/`restore`/`unpack` and the launchers, so it

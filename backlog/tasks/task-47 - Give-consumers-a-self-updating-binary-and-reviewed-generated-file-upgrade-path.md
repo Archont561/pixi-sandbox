@@ -52,8 +52,8 @@ never a floating production pin. This repository's owner-level publisher remains
 exception and does not install or self-update a released CLI.
 
 Give consumers the same drift policy this repository already enforces on itself and the same bot
-precedent the relock workflow set (task-39), under the four-domain split recorded as decision-4 /
-D16: the binary **self-updates in the upgrade lane**, generated files **regenerate**, config
+precedent the relock workflow set (task-39), under the four-domain split recorded as ADR-26 /
+ADR-16: the binary **self-updates in the upgrade lane**, generated files **regenerate**, config
 **migrates explicitly behind review**, and the transport **repacks** when the regenerated workflow
 lands on main.
 <!-- SECTION:DESCRIPTION:END -->
@@ -63,7 +63,7 @@ lands on main.
 - [x] #1 `pixi-sandbox self-update` supports latest-by-default and an exact `--version X.Y.Z`; it maps every supported host to the canonical standalone release asset, downloads that asset plus `SHA256SUMS`, refuses a missing checksum entry or digest mismatch, and never executes or installs unverified bytes — resolver, platform-map, checksum, HTTP-failure, and pinned-version paths are fixture-tested without live network access
 - [x] #2 Self-update stages beside the destination and replaces atomically on Unix and Windows without leaving a partial executable; `--check` reports the current and resolved versions without writing; package-managed binaries/global-install trampolines are refused with a remedy, while an explicit CI-managed standalone path is supported and covered by tests
 - [x] #3 Every file `init` writes carries a machine-readable version stamp beside the ownership marker (a `pixi-sandbox-version: X.Y.Z` line, within the first three lines the marker check already reads) for the publisher workflow, the relock workflow, and the launcher; fixture tests cover presence and parsing on every render
-- [x] #4 `pixi-sandbox init --check` renders fresh, writes nothing, and exits non-zero naming each drifted file with its remedy (`pixi-sandbox init`) and each foreign-owned file separately (`--force`); a clean tree exits 0 — fixture-tested in both directions (D10)
+- [x] #4 `pixi-sandbox init --check` renders fresh, writes nothing, and exits non-zero naming each drifted file with its remedy (`pixi-sandbox init`) and each foreign-owned file separately (`--force`); a clean tree exits 0 — fixture-tested in both directions (ADR-10)
 - [x] #5 `init` and `--check` never rewrite an existing config; a config whose `schema` is older than the CLI's is reported as a finding naming the explicit migration path (no `config migrate` command is built while config schema is 1 — it exists only once a schema bump gives it something to do), and config readers keep accepting older schemas for a deprecation window, mirroring the manifest reader policy
 - [x] #6 The generated `publish-sandbox.yml` gains a scheduled and manually dispatchable upgrade job that bootstraps its currently pinned standalone binary with checksum verification, runs `self-update` (latest by default, exact version for manual dispatch), then uses that updated binary for `init --check` and regeneration; drift opens a pull request and never pushes to main or touches config, and the workflow remains actionlint-clean
 - [x] #7 The regenerated pull request contains a new exact `PIXI_SANDBOX_VERSION` and the templates emitted by that same binary; a human merge triggers the normal publisher, which uses the exact matching released binary for plan, pack, doctor, publish, and `--self-bin`, and the resulting manifest names that version — no production step resolves `latest`
@@ -140,7 +140,7 @@ not a `cfg!` read, so both paths run on every host (the `LauncherKind` precedent
 Evidence: suite 404 -> 476 passing / 1 skipped; `pixi run --frozen lint` green (clippy
 `-D warnings`, deny, actionlint, taplo, biome, check-repository). Fixtures and an in-memory
 fake release only — no socket is opened by any test, and no test writes to a real user binary
-(D10). Two defects were found by smoke-testing the built binary rather than by the unit tests:
+(ADR-10). Two defects were found by smoke-testing the built binary rather than by the unit tests:
 clap's propagated `--version` collided with the requested-release `--version` (fixed with
 `disable_version_flag`, and `Cli::command().debug_assert()` is now a test so the whole command
 tree is audited), and the first rollback test passed vacuously on Linux (rewritten to drive
@@ -268,7 +268,7 @@ dispatch-supplied exact version) — so only a verified self-update, never a flo
 ever decides what gets written — then runs the *updated* binary's own `init --check` against
 the baked-in exact paths/branch/config. A clean result stops here, nothing written, nothing
 proposed. A drifted result re-runs `init` for real, stages only the three owned paths
-(explicitly never the config — D16; the test
+(explicitly never the config — ADR-16; the test
 `upgrade_job::the_regenerated_commit_never_stages_the_config` holds this), commits as
 `pixi-sandbox[bot]` (the same identity `relock.yml` already uses), pushes a side branch, and
 opens a PR with `gh pr create` — never a push to `main`. The PR body names the exact explicit
@@ -313,7 +313,7 @@ workflow` and `xtask check-repository` clean; `pixi run docs` and `pixi run lint
 
 AC#2 is checked. ci.yml gained a `replace-running-image` job on windows-latest running `test-self-update-replace` against the empty `package` environment: `pixi.lock` carries no win-64 entries, so nothing else resolves on that runner, and the job therefore uses the runner-provided Rust toolchain exactly as the release build leg already does. The test spawns a copy of itself as a child that holds the mapped image open, replaces it through `windows_swap`, and asserts the corpse survives this update at its original byte length, that no staged file is left, that the running process is undisturbed, and that the corpse is swept by the next update once the image is released.
 
-It does not make win-64 a supported platform: `pixi.lock` still carries no win-64 entries, the README Windows gap (no conda-forge `bun`, D11) stands, and `.pixi-sandbox.toml` still publishes linux-64 only.
+It does not make win-64 a supported platform: `pixi.lock` still carries no win-64 entries, the README Windows gap (no conda-forge `bun`, ADR-11) stands, and `.pixi-sandbox.toml` still publishes linux-64 only.
 
 `self_update = 1.3.0` (crates.io) had been added to `crates/pixi-sandbox/Cargo.toml` and was never referenced: `mod self_update` in `commands/mod.rs` shadows the extern prelude, so every `self_update::` in the tree is the local module. It dragged in reqwest -> rustls -> aws-lc-rs -> aws-lc-sys, whose C build needs cmake and cannot link against conda glibc (`rust-lld: undefined symbol: __isoc23_sscanf`); that failed `ci` at `lint-generated-workflow` and the airlock matrix job before either reached a test. Dropped, and `Cargo.lock` sheds 1485 lines. The trust boundary stays hand-written, as recorded in slice 1.
 
@@ -366,5 +366,5 @@ Task-47 stands at AC#1-#6 and #8-#9 met, with AC#7 the only criterion left. Slic
 
 Slices 2 and 3 added the version stamps, `init --check`, and the generated upgrade lane with its explicit dispatch. Slice 4 closed AC#2 with the one proof no local run can produce: a windows-latest job replacing a genuinely mapped image, asserting the corpse survives the update whole, the running process is undisturbed, and the corpse is reaped once the image is released.
 
-AC#7 closed on 2026-10-05 with the connected v0.5.2 → v0.5.3 cycle in Castellan: PR #13 carried the regenerated owned files at a new exact `PIXI_SANDBOX_VERSION` and the templates that same binary emits, a human merge triggered the ordinary publisher, and that run installed, bootstrapped and packed with the exact 0.5.3 release — publishing a manifest that names 0.5.3, with no production step resolving `latest`. All nine criteria are met, so the task is Done and decision-4 is accepted with this implementation as its evidence. The credential that delivered that pull request is a separate and still-open question: the token-less lane reaches regeneration and then cannot push workflow files, which task-71 AC#5 and task-73 own.
+AC#7 closed on 2026-10-05 with the connected v0.5.2 → v0.5.3 cycle in Castellan: PR #13 carried the regenerated owned files at a new exact `PIXI_SANDBOX_VERSION` and the templates that same binary emits, a human merge triggered the ordinary publisher, and that run installed, bootstrapped and packed with the exact 0.5.3 release — publishing a manifest that names 0.5.3, with no production step resolving `latest`. All nine criteria are met, so the task is Done and ADR-26 is accepted with this implementation as its evidence. The credential that delivered that pull request is a separate and still-open question: the token-less lane reaches regeneration and then cannot push workflow files, which task-71 AC#5 and task-73 own.
 <!-- SECTION:FINAL_SUMMARY:END -->

@@ -3,7 +3,7 @@
 //! The ambient inputs are the running executable (which also drives the pack/doctor/publish
 //! phases and is the default transport bootstrap), the push token, and
 //! `$GITHUB_STEP_SUMMARY` — every one of them runner-provided, so the command reads them
-//! here and `pixi_sandbox::pipeline` stays a pure function of its `Spec` (D10). On a phase
+//! here and `pixi_sandbox::pipeline` stays a pure function of its `Spec` (ADR-10). On a phase
 //! failure the command prints the annotation, prints the summary when no summary file was
 //! provided, and exits with the phase's exit code — the shell's `exit "$exit_code"`.
 

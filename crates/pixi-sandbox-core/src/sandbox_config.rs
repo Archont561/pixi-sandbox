@@ -20,7 +20,7 @@ use std::str::FromStr;
 
 /// Bumped only for incompatible changes; readers refuse anything newer.
 ///
-/// Older schemas stay readable for a deprecation window (task-47 AC#5 / decision D16),
+/// Older schemas stay readable for a deprecation window (task-47 AC#5 / decision ADR-16),
 /// mirroring `manifest::SCHEMA_VERSION`'s policy exactly. Config is reviewed data and is
 /// never rewritten automatically to a newer schema — unlike a transport manifest, which
 /// this build itself wrote, a sandbox config is maintained by the consumer, so bumping it
@@ -180,7 +180,7 @@ impl BudgetPolicy {
 /// mere preference — `push_paths` (an unfiltered trigger repacks and force-pushes on every push,
 /// including a README typo) and `setup_pixi_cache` (a cache keyed on the consumer manifest can
 /// restore a solve pixi-sandbox's own native `pixi install` will not reuse) — move to their
-/// safer default unless given an explicit value (decision D18). The remaining three fields
+/// safer default unless given an explicit value (decision ADR-18). The remaining three fields
 /// (`permissions`, `concurrency`, `timeouts`) carry no such defect in the status quo, so they
 /// stay fully per-field opt-in with no default change from the table's mere presence.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -206,7 +206,7 @@ pub struct WorkflowPolicy {
     #[serde(default)]
     pub pixi_version: Option<String>,
     /// `setup-pixi`'s `cache:` input. Defaults to `false` once `[workflow]` is present at all
-    /// (decision D18); a consumer who wants the old best-effort caching back sets
+    /// (decision ADR-18); a consumer who wants the old best-effort caching back sets
     /// `setup_pixi_cache = true` explicitly.
     #[serde(default)]
     pub setup_pixi_cache: Option<bool>,
@@ -271,7 +271,7 @@ pub const OVERRIDE_BUNDLE: &str = "custom";
 /// This exists so the platform → runner table lives in exactly one place. The workflow used to
 /// repeat it as an inline `case` statement in each of its two matrix steps, which meant a
 /// platform could be mapped one way in `.pixi-sandbox.toml` planning and another way the moment
-/// someone dispatched by hand — the precise drift D11 exists to prevent. Composing a synthetic
+/// someone dispatched by hand — the precise drift ADR-11 exists to prevent. Composing a synthetic
 /// config and running the normal [`SandboxConfig::plan`] means an override cannot skip the
 /// runner-label check or the embedded helper-coverage check.
 ///

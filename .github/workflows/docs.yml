@@ -6,7 +6,7 @@ name: docs
 on:
   push:
     branches: [main]
-    paths: ["docs/**", "crates/**", ".knowledge/**", "package.json", "bun.lock", "pixi.toml", "pixi.lock"]
+    paths: ["docs/**", "crates/**", "backlog/**", "package.json", "bun.lock", "pixi.toml", "pixi.lock"]
   workflow_dispatch:
 
 concurrency:
@@ -47,4 +47,4 @@ jobs:
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
         # Pages limits that matter here: 1 GB published site, ~100 GB/month bandwidth,
         # 10-minute build timeout. Never publish the sandbox payload from this site;
-        # large channels belong on a package channel, not Pages (.knowledge/design.md §6).
+        # large channels belong on a package channel, not Pages (backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md §6).

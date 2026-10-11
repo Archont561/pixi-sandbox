@@ -86,7 +86,7 @@ mod staged_and_binary_name_properties {
     }
 }
 
-/// `staged_name` stays pure over *any* target triple on purpose (D10: testable without a
+/// `staged_name` stays pure over *any* target triple on purpose (ADR-10: testable without a
 /// Windows host, and tolerant of a target this project does not yet publish for). It is
 /// deliberately not migrated onto `Platform` (task-55) the way `conda_platforms.rs` and
 /// `airlock.rs` were (task-59) — doing so would narrow it to the five known platforms. This

@@ -58,7 +58,7 @@ pub(super) fn action_pins(root: &Path, failures: &mut Vec<Failure>) -> Result<()
     }
     if !findings.is_empty() {
         failures.push(Failure::with(
-            "a third-party action is not pinned to a full commit SHA (see .knowledge/publish-automation.md):",
+            "a third-party action is not pinned to a full commit SHA (see backlog/docs/specifications/publish-automation/doc-3 - Publish-Automation-Specification.md):",
             findings,
             "resolve the tag with 'gh api repos/OWNER/REPO/git/ref/tags/TAG', dereference it if it is an annotated tag, and pin it as owner/repo@<sha> # vX.Y.Z",
         ));

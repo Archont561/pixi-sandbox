@@ -95,7 +95,7 @@ workflow. Everything below is locally provable; AC#6 is not, and is left open on
   (`starter_clone.rs`, `starter_cli.rs`) plus the shared starter fixture in `tests/support/mod.rs`,
   which three binaries now need identically; `starter_cli.rs` drives the two new verbs through the
   built binary with a `gh` stub on `PATH`, in the shape `starter_check_main.rs` established.
-  `pixi-sandbox`'s `LEGACY` list is untouched and no inline test module was added (D10, invariant 8).
+  `pixi-sandbox`'s `LEGACY` list is untouched and no inline test module was added (ADR-10, invariant 8).
 
 **AC#6 left open, deliberately.** It asks for a `workflow_dispatch` of `.github/workflows/starter.yml`
 with `source-commit 8298edce13049ab01a7bc9d3e09c9daf8d14fc08` and the verify step completing on a

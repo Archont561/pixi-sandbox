@@ -53,7 +53,7 @@ on the 404.
 
 Out of scope: the `PIXI_SANDBOX_CHANNEL` half of issue #80 is already fixed — v0.5.0 emits
 the working `https://prefix.dev/archont561/archont561` (task-49's channel surface; the
-consumer's channel complaint against v0.4.3 duplicates issue-71/task-48, closed by D17).
+consumer's channel complaint against v0.4.3 duplicates issue-71/task-48, closed by ADR-17).
 Where task-45 fixed *which* binary the bootstrap uses, this task fixes *where the released
 one downloads from*. The step's `SHA256SUMS` verification must survive the fix: nothing
 unverified is ever executed.
@@ -67,7 +67,7 @@ The issue's suggested shapes: a template-time constant, or a `${{ github.reposit
 <!-- AC:BEGIN -->
 - [x] #1 Both generated download legs (bash and pwsh) resolve the `v${PIXI_SANDBOX_VERSION}` assets from the pixi-sandbox repository via one canonical OWNER/REPO constant in the renderer — shared with `self_update`'s default `--repo` so template and updater cannot drift — and `GITHUB_REPOSITORY`/`$env:GITHUB_REPOSITORY` no longer appears in any release-download URL
 - [x] #2 The downloaded binary is still verified against the release's `SHA256SUMS` before use in every leg, and a checksum mismatch fails the job (nothing unverified is executed)
-- [x] #3 Fixture/golden-render tests assert the release-download URL names the pixi-sandbox repository in both shells, so a template edit cannot silently reintroduce consumer-repo resolution; house test conventions hold (D10 fixtures, no inline test modules)
+- [x] #3 Fixture/golden-render tests assert the release-download URL names the pixi-sandbox repository in both shells, so a template edit cannot silently reintroduce consumer-repo resolution; house test conventions hold (ADR-10 fixtures, no inline test modules)
 - [x] #4 `pixi run --frozen xtask lint-generated-workflow` (actionlint) passes on the regenerated template, and this repository's own committed workflows are untouched — the owner publisher is source-built (task-47 AC#9) and must not gain a download step
 - [x] #5 The ci-publishing guide states where the released binary is downloaded from and records the pre-fix failure mode (`curl: (22)` 404 on the consumer repo) as the remediation note for consumers who pinned a broken v0.4.3–v0.5.0 template
 - [x] #6 The fix ships in a released patch whose generated workflow passes the issue's repro on a consumer-shaped repo (`init`, then `grep releases/download` names pixi-sandbox; a publish run no longer 404s) — a connected/CI proof, or the task stays In Progress naming exactly this AC and its missing proof

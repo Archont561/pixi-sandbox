@@ -6,7 +6,7 @@
 //! lives beside the branch and is removed before returning), never touches the network, and
 //! (with `--verify`) reports every failure instead of the first one. `--verify-restored
 //! <project>` extends the same honesty to the *output* of a restore: the tree that came out
-//! the other end is checked against the manifest's per-file digests (D13), because an intact
+//! the other end is checked against the manifest's per-file digests (ADR-13), because an intact
 //! branch plus verified writes still does not prove the prefix is right.
 
 use crate::cli::DoctorArgs;

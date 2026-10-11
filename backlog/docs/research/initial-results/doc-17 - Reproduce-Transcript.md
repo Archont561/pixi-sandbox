@@ -1,4 +1,15 @@
-# Reproduce transcript
+---
+id: doc-17
+title: "Reproduce Transcript: The Whole Flow Run Cold"
+created_date: '2026-10-12 00:00'
+updated_date: '2026-10-12 00:00'
+tags:
+  - research
+  - evidence
+  - transport
+---
+
+# Reproduce Transcript: The Whole Flow Run Cold
 
 The whole flow, run cold, verbatim (pixi-pack's package-by-package log lines elided — they are
 one line per conda package). Recorded on 2026-09-20, linux-64, pixi 0.81.0,
@@ -120,7 +131,7 @@ size all match — which is what makes this script usable as a CI gate.
   level); the payload sizes above are the stable signal.
 * **Timings** depend on the machine; the assertion timings (0.9 s / 17.99 s) are the useful
   ones — if `pixi install --frozen --offline` starts doing real work, a marker is missing
-  (D5), and if `cargo build --offline` reaches for the network, the vendor wiring is wrong
-  (D6).
+  (ADR-5), and if `cargo build --offline` reaches for the network, the vendor wiring is wrong
+  (ADR-6).
 * The restore phase is only meaningful under `unshare -rn` (or a genuinely unplugged machine);
   the script says which one it used in the preflight block.

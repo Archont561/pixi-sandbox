@@ -33,7 +33,7 @@ seven files). This is an **evaluation spike, then a decision** — the deliverab
 a migration. Write it as the next `backlog/docs/spikes/` document:
 `backlog/docs/spikes/self-update/doc-14 - Self-Update-Crate-Evaluation.md` (doc-13 is the highest
 document today). Do **not** add a `.knowledge/*-spike.md` tombstone: those files are pointers *into*
-`backlog/docs/spikes/` (`.knowledge/rattler-spike.md` → doc-5), not a second home for a live spike.
+`backlog/docs/spikes/` (`backlog/docs/spikes/rattler-transport/doc-5 - Rattler-Transport-Spike.md` → doc-5), not a second home for a live spike.
 
 **Scope boundary, measured:** the airlock cannot reach crates.io (`crates.io`, `index.crates.io`,
 `static.crates.io` all refuse; the crate is not in the Cargo cache). The dependency can therefore be
@@ -111,7 +111,7 @@ created: 2026-10-11 11:51
 **Verdict: adopt partially** — the crate's release-lookup + transport + checksum parse
 (`backends::github` / `Download` / `Checksum`), keep ours for `ownership.rs`, `replace.rs` and
 the `mod.rs` orchestration. `update()` is not called (it would surrender both must-survive
-properties). Recorded as `decision-5`; analysis and per-file test mapping in `doc-14`.
+properties). Recorded as `ADR-27`; analysis and per-file test mapping in `doc-14`.
 
 Evidence, all on a connected host (crates.io reachable; the workspace builds with the crate in
 the graph — `cargo tree -p pixi-sandbox -i self_update` → `self_update v1.3.0 └── pixi-sandbox`):
@@ -131,7 +131,7 @@ the graph — `cargo tree -p pixi-sandbox -i self_update` → `self_update v1.3.
   `self-replace 1.5.0` (+`fastrand`, Windows `windows-sys`) and `urlencoding 2.1.3`; `reqwest`/
   `hyper` locked but not built (`cargo tree -i` prints nothing). MSRV 1.88 is already owed by
   `rstest-bdd 0.6.0`, so adoption adds no incremental MSRV cost (TASK-92).
-- **AC#6** outcome in `decision-5`; nothing added to `Cargo.toml`/`Cargo.lock` (the
+- **AC#6** outcome in `ADR-27`; nothing added to `Cargo.toml`/`Cargo.lock` (the
   `self_update` declaration predates this task).
 
 Follow-ups: TASK-92 (rust-version 1.88) is now required; a migration task is not filed — it must

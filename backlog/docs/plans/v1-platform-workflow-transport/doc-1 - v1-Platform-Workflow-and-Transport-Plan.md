@@ -14,11 +14,11 @@ tags:
 
 ## Status
 
-Proposed plan. The existing `.knowledge/` decisions remain authoritative until the relevant spike and acceptance tests are complete.
+Proposed plan. The existing `backlog/docs/` decisions remain authoritative until the relevant spike and acceptance tests are complete.
 
 ## Source context
 
-This plan consolidates the current `.knowledge/` base and the design discussion. Background: `.knowledge/design.md`, `.knowledge/decisions.md`, `.knowledge/publish-automation.md`, `.knowledge/rust-bootstrap.md`, `.knowledge/rattler-spike.md`, and `.knowledge/v1-evolution-plan.md`.
+This plan consolidates the current `backlog/docs/` base and the design discussion. Background: `backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md`, `backlog/docs/adr/README.md`, `backlog/docs/specifications/publish-automation/doc-3 - Publish-Automation-Specification.md`, `backlog/docs/specifications/rust-bootstrap/doc-4 - Rust-Bootstrap-Specification.md`, `backlog/docs/spikes/rattler-transport/doc-5 - Rattler-Transport-Spike.md`, and `backlog/docs/plans/v1-evolution/doc-15 - v1-Evolution-Plan.md`.
 
 ## Desired user experience
 
@@ -50,7 +50,7 @@ pixi-sandbox init [--github-workflow-path PATH] [--script-path PATH] [--config P
 
 - Keep the generated script thin: resolve branch, extract transport, execute embedded `pixi-sandbox restore`.
 - Keep restore verification, relocation, Pixi markers, Cargo vendor handling, and final checks in Rust.
-- Measure the proposed standalone v1 transport before replacing D2/D3; schema changes require explicit compatibility or migration behavior.
+- Measure the proposed standalone v1 transport before replacing ADR-2/ADR-3; schema changes require explicit compatibility or migration behavior.
 - Prevent duplicate `pixi-sandbox` copies: one canonical bootstrap binary, with any environment dependency promoted or excluded deliberately.
 
 ### 4. Platform packages and binaries
@@ -89,7 +89,7 @@ pixi-sandbox init [--github-workflow-path PATH] [--script-path PATH] [--config P
 
 ## Explicit non-goals
 
-- Do not silently replace the measured D2/D3 transport with rattler.
+- Do not silently replace the measured ADR-2/ADR-3 transport with rattler.
 - Do not use global npm installs in CI or airlock environments.
 - Do not require Bun in the Windows default Pixi environment.
 - Do not hand-edit generated workflows or restore launchers.

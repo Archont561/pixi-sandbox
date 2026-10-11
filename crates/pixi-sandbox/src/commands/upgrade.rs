@@ -3,7 +3,7 @@
 //! The ambient inputs are the running (updated) executable and its compiled-in version,
 //! the delivery credentials, and the runner's summary/output files — every one of them
 //! runner-provided, so the command reads them here and `pixi_sandbox::upgrade` stays a pure
-//! function of its `Spec` (D10). Every delivery verdict exits successfully: a refusal is a
+//! function of its `Spec` (ADR-10). Every delivery verdict exits successfully: a refusal is a
 //! handoff with a prepared patch, not a red scheduled lane.
 
 use anyhow::{Context, Result};
@@ -17,7 +17,7 @@ use pixi_sandbox_git::ShellGit;
 
 /// The version this binary was built as — the upgrade target. The workflow's upgrade step
 /// runs this binary only after self-updating to it, so the version that regenerates the
-/// files is always the one the workflow asked for (decision-4 / D16).
+/// files is always the one the workflow asked for (ADR-26 / ADR-16).
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn run(args: UpgradeArgs) -> Result<()> {

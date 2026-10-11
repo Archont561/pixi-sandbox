@@ -9,7 +9,7 @@ use std::path::Path;
 
 /// task-7: the README Platforms badge says exactly what `pixi.toml` declares, every platform
 /// `.pixi-sandbox.toml` publishes is one of them, and the Windows gap (no conda-forge `bun`,
-/// D11) is documented rather than advertised by the badge.
+/// ADR-11) is documented rather than advertised by the badge.
 pub(super) fn platform_claims(root: &Path, failures: &mut Vec<Failure>) -> Result<()> {
     let declared = workspace_platforms(root)?;
     let readme = crate::util::read(&root.join("README.md"))?;
@@ -45,11 +45,11 @@ pub(super) fn platform_claims(root: &Path, failures: &mut Vec<Failure>) -> Resul
     // Windows is not dropped in silence: one line has to carry the whole explanation, or the
     // reader has to assemble it — the platform, the blocker (`bun` as a word; `bundle` does
     // not count) and the decision that gates it.
-    let gap =
-        Regex::new(r"win-64.*[^a-z]bun([^a-z]|$).*[^A-Za-z]D11([^0-9]|$)").expect("static regex");
+    let gap = Regex::new(r"win-64.*[^a-z]bun([^a-z]|$).*[^A-Za-z]ADR-11([^0-9]|$)")
+        .expect("static regex");
     if !readme.lines().any(|l| gap.is_match(l)) {
         failures.push(Failure::new(
-            "README.md does not document the Windows gap on one line: name win-64, the conda-forge bun blocker and D11 (task-7)",
+            "README.md does not document the Windows gap on one line: name win-64, the conda-forge bun blocker and ADR-11 (task-7)",
         ));
     }
     Ok(())

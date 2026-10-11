@@ -8,7 +8,7 @@ platforms = ["linux-64", "osx-arm64"]
 # ---------------------------------------------------------------------------
 # One development environment (`default`) built from layered features: a change to the rust
 # toolchain, the docs toolchain or the lint utilities stays reviewable on its own. Everything
-# below was checked against conda-forge (see .knowledge/decisions.md D8).
+# below was checked against conda-forge (see backlog/docs/adr/README.md ADR-8).
 #
 # The second environment, `package`, is deliberately empty and is the only exception — see
 # `[environments]` below for why packaging needs an environment that resolves nowhere.
@@ -61,8 +61,8 @@ rattler-index = "=0.31.5"
 default = ["rust", "web", "utils", "sandbox"]
 # Deliberately empty, and the only reason it exists is that an empty environment needs no
 # solve: `pixi run -e package <task>` therefore runs on any runner, including win-64, where
-# `default` cannot resolve at all (conda-forge ships no `bun` build — the gap `.knowledge/
-# decisions.md` D11 and task-7 record). The release matrix builds one conda package per
+# `default` cannot resolve at all (conda-forge ships no `bun` build — the gap ADR-11 and
+# task-7 record). The release matrix builds one conda package per
 # platform (task-23); packaging needs the pixi binary and a Rust toolchain, both of which the
 # runner already has, so resolving the development environment would only add a failure mode.
 package = []
@@ -147,7 +147,7 @@ lint-commit = "convco check --from-stdin"
 lint = { depends-on = ["bun-install"], cmd = "bun run lint" }
 
 # the conda package this project ships, installed with
-# `pixi global install -c <target-dir> -c conda-forge pixi-sandbox` (decision D8)
+# `pixi global install -c <target-dir> -c conda-forge pixi-sandbox` (decision ADR-8)
 #
 # Runs in the empty `package` environment (see `[environments]`), which is how the release
 # matrix builds one variant per native runner: the task is the command CI runs, on every

@@ -5,7 +5,7 @@
 //! `xtask release-checksums` covers (`crates/xtask/src/release_assets.rs`, migrated onto the
 //! same type in task-59). A host that is not in this table is a hard error naming the host —
 //! guessing a triple would produce a 404 at best and the wrong architecture's binary at worst,
-//! and decision-4 makes "never executes or installs unverified bytes" the property of this
+//! and ADR-26 makes "never executes or installs unverified bytes" the property of this
 //! command.
 
 use anyhow::{Result, bail};

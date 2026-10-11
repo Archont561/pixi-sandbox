@@ -173,8 +173,8 @@ cost. Lifting it is TASK-92, which also switches on clippy's MSRV-gated `collaps
 ## AC#6 — where the outcome lives
 
 The outcome is an adoption, so it is recorded as a decision:
-`backlog/decisions/decision-5 - Adopt-the-self_update-crate-transport-not-its-replace-path.md`.
-doc-14 carries the analysis; decision-5 carries the call, the halves, and the consequences.
+`backlog/decisions/ADR-27 - Adopt-the-self_update-crate-transport-not-its-replace-path.md`.
+doc-14 carries the analysis; ADR-27 carries the call, the halves, and the consequences.
 
 **No production code or dependency is migrated in this task.** The `self_update` declaration in
 `Cargo.toml`/`crates/pixi-sandbox/Cargo.toml` and its `Cargo.lock` entry were already present

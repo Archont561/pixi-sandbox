@@ -1,6 +1,6 @@
 //! Which release to install, and why.
 //!
-//! Two modes, and the difference is the whole point of decision-4: `latest` is *discovery*,
+//! Two modes, and the difference is the whole point of ADR-26: `latest` is *discovery*,
 //! permitted while preparing a reviewed upgrade, while an exact `--version X.Y.Z` is what every
 //! committed workflow and every published transport names. The resolver records which of the
 //! two produced the tag so the caller can say it out loud.

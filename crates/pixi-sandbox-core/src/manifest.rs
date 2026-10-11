@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 /// Bumped only for incompatible changes; readers refuse anything newer.
 ///
-/// Schema 2 added `envs.<name>.files` (the per-file oracle for a restored prefix, D13);
+/// Schema 2 added `envs.<name>.files` (the per-file oracle for a restored prefix, ADR-13);
 /// a schema-1 transport simply has no oracle and `doctor --verify-restored` says so
 /// instead of guessing.
 pub const SCHEMA_VERSION: u32 = 2;
@@ -39,13 +39,13 @@ pub struct Manifest {
     /// Files above this size were split into `.partNNN` (GitHub blocks blobs > 100 MiB).
     pub shard_limit_bytes: u64,
     pub source: Source,
-    /// name → tool, e.g. `pixi`, `pixi-unpack`, `pixi-sandbox` (decision D4).
+    /// name → tool, e.g. `pixi`, `pixi-unpack`, `pixi-sandbox` (decision ADR-4).
     #[serde(default)]
     pub tools: BTreeMap<String, ToolEntry>,
     /// environment name → packed environment.
     #[serde(default)]
     pub envs: BTreeMap<String, Env>,
-    /// Present only when the transport carries `cargo vendor` output (decision D6).
+    /// Present only when the transport carries `cargo vendor` output (decision ADR-6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vendor: Option<Vendor>,
     /// What this transport's workloads need from the *host*, resolved for [`Manifest::platform`]
@@ -104,7 +104,7 @@ pub struct Env {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pixi_environment_fingerprint: Option<String>,
     pub blobs: Vec<Blob>,
-    /// Per-file digests of the unpacked, relocated tree (schema 2, D13). Absent on schema-1
+    /// Per-file digests of the unpacked, relocated tree (schema 2, ADR-13). Absent on schema-1
     /// transports, where `doctor --verify-restored` reports the environment as unverifiable
     /// rather than claiming a check it cannot make.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -143,7 +143,7 @@ pub struct Part {
     pub sha256: String,
 }
 
-/// Vendored cargo dependencies (`cargo vendor`), keyed by `Cargo.lock` (decision D6).
+/// Vendored cargo dependencies (`cargo vendor`), keyed by `Cargo.lock` (decision ADR-6).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vendor {
     /// `loose` (default: git dedups files) or `tarballs` (one archive per crate).

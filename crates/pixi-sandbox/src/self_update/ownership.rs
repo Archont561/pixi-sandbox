@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 pub enum Ownership {
     /// A pixi-sandbox-managed launcher script (`user_tools`), not the binary itself.
     ManagedLauncher,
-    /// A `pixi global install` trampoline, recognised by its sibling config (D4).
+    /// A `pixi global install` trampoline, recognised by its sibling config (ADR-4).
     GlobalTrampoline,
     /// Inside a conda/Pixi prefix, recognised by an ancestor `conda-meta/`.
     CondaPrefix { prefix: PathBuf },

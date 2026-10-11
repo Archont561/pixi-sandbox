@@ -13,7 +13,7 @@ milestone: m-0
 dependencies:
   - TASK-25
 references:
-  - .knowledge/v1-evolution-plan.md
+  - backlog/docs/plans/v1-evolution/doc-15 - v1-Evolution-Plan.md
 documentation:
   - backlog/docs/plans/v1-platform-workflow-transport/doc-1
   - backlog/docs/spikes/turbo-orchestration/doc-8
@@ -51,7 +51,7 @@ adoption day (build/check/lint/dev mirroring the pixi task names, lockfiles in e
 in the `web` environment; §5 fixes cache policy — local `.turbo` for developers, `--force`
 for published builds, CI caches `.turbo` keyed on `bun.lock` + OS, remote caching off as an
 airlock posture. The decision — **defer** — is recorded through the Backlog decision API as
-decision-3 (status `deferred`) and compressed into `.knowledge/decisions.md` as D15.
+ADR-25 (status `deferred`) and compressed into `backlog/docs/adr/README.md` as ADR-15.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -59,6 +59,6 @@ decision-3 (status `deferred`) and compressed into `.knowledge/decisions.md` as 
 <!-- SECTION:SUMMARY:BEGIN -->
 Turbo stays out: the repository's JS surface is one docs package building in ~27 s, which
 meets none of the three documented adoption triggers. The threshold, the task graph, the
-Bun-not-Conda ownership rule, and the cache/CI policy are written down in doc-8 and decision-3
-(D15), so the next evaluation is a lookup, not a re-spike.
+Bun-not-Conda ownership rule, and the cache/CI policy are written down in doc-8 and ADR-25
+(ADR-15), so the next evaluation is a lookup, not a re-spike.
 <!-- SECTION:SUMMARY:END -->

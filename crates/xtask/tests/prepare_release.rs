@@ -117,7 +117,7 @@ fn internal_path_pins_move_and_external_requirements_do_not() {
 
 /// The touched-file report is the release workflow's `git add` list, so its filtering —
 /// tracked files only, staged or not — is exactly what commit-release stages. Exercised
-/// against a real git in a tempdir (D10: never this checkout); the fixture builder runs
+/// against a real git in a tempdir (ADR-10: never this checkout); the fixture builder runs
 /// git itself because an oracle must not share code with the thing it judges.
 #[test]
 fn modified_and_staged_tracked_files_are_listed_and_untracked_are_not() {

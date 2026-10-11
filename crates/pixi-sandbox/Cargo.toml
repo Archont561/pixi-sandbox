@@ -24,7 +24,7 @@ pixi-sandbox-core = { path = "../pixi-sandbox-core", version = "0.6.2" }
 pixi-sandbox-git = { path = "../pixi-sandbox-git", version = "0.6.2" }
 anyhow = { workspace = true }
 clap = { workspace = true }
-# Reads Cargo.lock to reject a lockfile cargo itself cannot vendor (design.md §11).
+# Reads Cargo.lock to reject a lockfile cargo itself cannot vendor (doc-2 §11).
 toml = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
@@ -59,6 +59,6 @@ gherkin = { version = "0.16.0", default-features = false, features = [
   "parser",
 ] }
 
-# Inherit the workspace lint policy (decision D20): the gate is pedantic, workspace-wide.
+# Inherit the workspace lint policy (decision ADR-20): the gate is pedantic, workspace-wide.
 [lints]
 workspace = true

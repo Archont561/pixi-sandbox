@@ -87,8 +87,8 @@ default set non-negotiable, which is why the tree is clean against it — and al
 accumulated invisibly. This is the single highest-leverage item in the audit: it is not "fix 469
 things", it is "decide the policy once, then the gate holds the line for free."
 
-There is no evidence of a deliberate decision to stay at the default level. `.knowledge/decisions.md`
-(D1–D15) contains no lint-level decision, and `AGENTS.md`'s Style section asks only for "clippy clean
+There is no evidence of a deliberate decision to stay at the default level. `backlog/docs/adr/README.md`
+(ADR-1–ADR-15) contains no lint-level decision, and `AGENTS.md`'s Style section asks only for "clippy clean
 with `-D warnings`". The absence looks like an omission, not a choice — but a task acting on this
 audit should confirm that rather than assume it, and record the answer as a decision either way.
 
@@ -265,7 +265,7 @@ comment instead of discovering it mid-refactor.
 1. **Decide and encode the lint policy** (Finding 1). Add `[workspace.lints.clippy]` with
    `pedantic` and the deliberate `allow`s (at minimum `literal_string_with_formatting_args`, each
    with a reason), have all four crates inherit it, and record the choice in
-   `.knowledge/decisions.md` as a new D-number. **Do this first**: it is what makes every later item
+   `backlog/docs/adr/README.md` as a new D-number. **Do this first**: it is what makes every later item
    permanent rather than cosmetic.
 2. **Sweep the 261 machine-applicable findings** with `cargo clippy --fix`, reviewed as a diff, in
    per-crate commits. No behaviour change; tests must be identical before and after.
@@ -285,6 +285,6 @@ Items 1–2 are the cheap, high-leverage half. Items 4–6 are the half that nee
 1. `pixi run --frozen test` ≥ 654 passed, 1 skipped before *and* after every commit.
 2. `pixi run --frozen lint` stays clean, including the newly-raised bar.
 3. One focused conventional commit per step; `convco` clean.
-4. No test added or changed points at this repository or a real `HOME` (D10).
+4. No test added or changed points at this repository or a real `HOME` (ADR-10).
 5. Nothing here touches a rendered workflow, the manifest schema, the transport format, or
    git-access strategy.

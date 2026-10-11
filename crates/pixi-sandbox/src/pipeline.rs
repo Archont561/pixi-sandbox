@@ -47,7 +47,7 @@ pub struct PhaseCommand {
 
 /// Everything `pipeline` needs, with every ambient input resolved by the caller.
 ///
-/// The same rule `self_update::Request` follows (D10): tests pass tempdirs and explicit
+/// The same rule `self_update::Request` follows (ADR-10): tests pass tempdirs and explicit
 /// programs, so no code path can reach a developer's real binary, PATH or HOME.
 #[derive(Debug, Clone)]
 pub struct Spec {
@@ -105,7 +105,7 @@ pub struct Failure {
 /// stdout/stderr while appending the same bytes to the pipeline log.
 ///
 /// Faking this is how the orchestration is tested without a runner, a network, or a real
-/// pixi (D10).
+/// pixi (ADR-10).
 pub trait PhaseRunner: std::fmt::Debug {
     /// Run `command`; return the child's exit code. An `Err` means the child could not be
     /// started at all — the shell's answer to that was exit 127, so the caller maps it there.

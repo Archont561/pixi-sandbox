@@ -11,7 +11,7 @@
 #   Tier A runs the same gate with egress actually denied, which is the authoritative check.
 # Only Tier A can fail for the reason we care about. The gate is the e2e test suite's
 # `ci`-feature airlock module: it is archived while connected, replayed from that archive after
-# restore, and compares the restored tree against the manifest's per-file digests (D13).
+# restore, and compares the restored tree against the manifest's per-file digests (ADR-13).
 # Tier B's no-op check cannot be trusted on its own: `pixi install --offline` is a request, not
 # an enforcement, and can re-fetch a damaged prefix over a live network while reporting success.
 #
@@ -258,7 +258,7 @@ jobs:
         run: pixi run -e package airlock-publish "${{ runner.temp }}/airlock-transport" "${{ matrix.branch }}" "${{ runner.temp }}/airlock-remote.git"
 
       # The developer-shaped fetch: fresh host repo, remote, one shallow fetch, linked
-      # worktree — git through pixi-sandbox-git inside the xtask (D9).
+      # worktree — git through pixi-sandbox-git inside the xtask (ADR-9).
       - name: Fetch the published branch the way a developer would
         working-directory: project
         run: pixi run -e package xtask airlock-fetch -- --remote "${{ runner.temp }}/airlock-remote.git" --branch "${{ matrix.branch }}" --host-dir "${{ runner.temp }}/airlock-host" --worktree "${{ runner.temp }}/airlock-checkout"

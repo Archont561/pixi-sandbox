@@ -5,7 +5,7 @@ Two things live here, and the rule that ties them together:
 | fixture | what it is | used for |
 | --- | --- | --- |
 | [`demo-project/`](demo-project) | a **complete pixi project definition** — `pixi.toml`, `pixi.lock`, `Cargo.toml`, `Cargo.lock`, `src/` | anything that needs a project to pack: the pack input, the `sha256` a manifest would record, the crate tree a vendor step would carry |
-| [`duplicate-source-project/`](duplicate-source-project) | a project whose `Cargo.lock` has **one crate+version from two sources** (crates.io and a git source) — the input `cargo vendor` cannot represent (design.md §11) | the pack-time duplicate-source check: it must fail with a remedy, before anything is written. The lockfile is the only variable against `demo-project` |
+| [`duplicate-source-project/`](duplicate-source-project) | a project whose `Cargo.lock` has **one crate+version from two sources** (crates.io and a git source) — the input `cargo vendor` cannot represent (doc-2 §11) | the pack-time duplicate-source check: it must fail with a remedy, before anything is written. The lockfile is the only variable against `demo-project` |
 | [`transport/`](transport) | a tiny **synthetic sandbox payload** (`.pixi-sandbox/manifest.json` + fake envs, tools, vendor, and one deliberately split blob) | anything that needs a payload that is already packed: `doctor`, `publish`, `restore`, hash verification — no packer, no pixi, no network |
 
 ## Why a fixture and not this repository

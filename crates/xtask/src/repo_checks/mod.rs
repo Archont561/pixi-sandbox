@@ -1,7 +1,7 @@
 //! Repo-level consistency lints: the claims this repository makes about itself that no
 //! ordinary cargo test is allowed to check.
 //!
-//! Why an xtask and not a `#[test]`: D10 — tests target fixtures, never this repository, and
+//! Why an xtask and not a `#[test]`: ADR-10 — tests target fixtures, never this repository, and
 //! `tests/fixtures.rs::no_test_targets_the_repository_root` enforces it. Every checker here
 //! therefore takes an explicit root; only `main.rs` ever passes the real checkout, and
 //! `tests/repo_checks*.rs` drive each policy against synthetic repositories in tempdirs.
@@ -43,7 +43,7 @@
 //! 12. task-84 — `AGENTS.md` describes a tree that exists: no repo-map row names a path that
 //!     has moved, and the promoted-module list is exactly the `pub mod` set of
 //!     `crates/pixi-sandbox/src/lib.rs`. The document is what an agent reads as instruction,
-//!     and D10 forbids the one thing that would otherwise catch the drift — a test that
+//!     and ADR-10 forbids the one thing that would otherwise catch the drift — a test that
 //!     reads this repository.
 //! 13. doc-13 §1.2 — the consumer proof asserts properties of a publisher another crate
 //!     renders, so every assertion must match a string the generator's source still contains.

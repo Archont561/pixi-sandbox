@@ -237,7 +237,7 @@ pub fn stamp_internal_pins(path: &Path, semver: &str) -> Result<bool> {
 /// hard-coded manifest of "the files this is supposed to touch" — that manifest was correct
 /// right up until the repin added eleven more files to the set, at which point `git add`
 /// would have staged the manifests and quietly dropped every documentation fix. The query
-/// goes through `pixi-sandbox-git` (D9); the output path stays explicit so the release
+/// goes through `pixi-sandbox-git` (ADR-9); the output path stays explicit so the release
 /// workflow's environment lookup is exercised once at the entrypoint and this function is
 /// tempdir-fixture testable.
 #[doc(hidden)] // test boundary (tests/prepare_release.rs)

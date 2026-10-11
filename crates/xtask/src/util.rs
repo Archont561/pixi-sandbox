@@ -1,6 +1,6 @@
 //! Shared plumbing for the repository-automation commands.
 //!
-//! Everything here is pure or takes explicit paths: D10 forbids a test from inspecting this
+//! Everything here is pure or takes explicit paths: ADR-10 forbids a test from inspecting this
 //! checkout, so every function must be drivable from a tempdir fixture, and only `main.rs`
 //! ever hands over the real repository root at runtime.
 

@@ -37,7 +37,7 @@ committed render and the golden fixture, check 5's canonical-install constants a
 the README badge/one-liner/release description, eight docs pages, the session skill's
 bootstrap, and CONTEXT's online-task instruction.
 
-Two boundaries, stated: **D17 is unchanged** — nothing appends any channel to a consumer's
+Two boundaries, stated: **ADR-17 is unchanged** — nothing appends any channel to a consumer's
 `pixi.toml`; only the *global install command's* URL moves. And per the owner's "rather
 than", the old channel is **not** double-published: it freezes at 0.4.3 (pinned installs
 keep working; upgrading means the new channel's URL — the migration note in the
@@ -50,7 +50,7 @@ installation guide says exactly that).
 - [x] #2 Every install surface names the ecosystem channel — README one-liner and badge, installation guide (with the ≤ 0.4.3 migration note), quickstart, index, both actions pages, the CI-publishing guide, using-in-your-project, the configuration reference, the session skill's bootstrap, and `airlock-install-released` — with check 5's canonical constants and fixtures moved and `check-repository` green
 - [x] #3 The generated publisher template, this repository's committed `publish-sandbox.yml`, and the golden fixture agree byte-for-byte on the new channel (golden-equality test and `lint-generated-workflow` both hold)
 - [x] #4 installation.mdx carries no stale claim that init configures channels (one sentence survived task-48's docs sweep and is caught here) and states the migration path: pinned installs from the old channel keep working, upgrading uses the ecosystem channel
-- [x] #5 D17's install-channel mention and revisit clause match reality: the ecosystem channel exists, releases publish to it from 0.4.4 on, and the no-append decision stands
+- [x] #5 ADR-17's install-channel mention and revisit clause match reality: the ecosystem channel exists, releases publish to it from 0.4.4 on, and the no-append decision stands
 - [x] #6 The next release run publishes to `archont561/archont561` and its proofs pass against it — `package-smoke`, the airlock leg's `airlock-install-released`, and prefix.dev serving the new channel's repodata — or the release is explicitly reported as awaiting the owner's dispatch; this sandbox cannot reach prefix.dev to verify the channel, and Repository Access for `release.yml` on the new channel must be granted by the owner in its prefix.dev settings
 <!-- AC:END -->
 
@@ -62,10 +62,10 @@ One mechanical URL migration (`https://prefix.dev/archont561/pixi-sandbox` →
 `'archont561/archont561'`) across pixi.toml (2 tasks), release.yml (comment),
 publish-sandbox.yml + github_workflow.rs + the golden fixture (lockstep), two test
 assertions, repo_checks.rs (constants, comments, fixtures), README (badge, one-liner,
-release description), eight docs pages, SKILL.md, CONTEXT.md and D17; then the hand edits:
+release description), eight docs pages, SKILL.md, CONTEXT.md and ADR-17; then the hand edits:
 installation.mdx's ecosystem wording + migration note + stale-claim removal, check 5's doc
-comments, and D17's revisit clause. Historical records (backlog tasks, v1 evolution plan,
-CHANGELOG, CONTEXT's task-22 line, D17's namespace-root evidence) keep the old URL on
+comments, and ADR-17's revisit clause. Historical records (backlog tasks, v1 evolution plan,
+CHANGELOG, CONTEXT's task-22 line, ADR-17's namespace-root evidence) keep the old URL on
 purpose — they describe what was true when written.
 <!-- SECTION:PLAN:END -->
 
@@ -104,7 +104,7 @@ inconsistency window that no consistency check covers).
 <!-- SECTION:SUMMARY:BEGIN -->
 In progress in PR #73: the release upload target, every install surface, the generated
 publisher, and the repo-consistency constants all name the `archont561/archont561`
-ecosystem channel; the installation guide documents the ≤ 0.4.3 migration; D17 is updated
+ecosystem channel; the installation guide documents the ≤ 0.4.3 migration; ADR-17 is updated
 without changing its no-append decision. Open: the owner seeds the new channel with the
 v0.4.3 packages (the PR's airlock proof is red at the released-package install until then,
 run 37066597737) and grants `release.yml` Repository Access on it; the next release run

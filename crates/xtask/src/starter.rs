@@ -332,7 +332,7 @@ fn publishable_paths(dir: &Path) -> Result<Option<Vec<String>>> {
 /// Report every reason `dir` is not a publishable starter revision for `tag`.
 ///
 /// Returns findings rather than failing on the first one, for the same reason
-/// `check-repository` does: one run should tell you everything that is wrong (D13).
+/// `check-repository` does: one run should tell you everything that is wrong (ADR-13).
 ///
 /// The forbidden-path half is judged on *the tree git would commit*, not on the directory
 /// listing: the assembly steps leave runtime state behind on purpose, and the starter's
@@ -887,6 +887,18 @@ pub fn publish_refusals(
     refusals
 }
 
+/// The message a published starter snapshot carries.
+///
+/// Every publication replaces main with a parentless commit (ADR-22), so the snapshot *is* the
+/// repository's initial commit; a `chore: regenerate` subject described an append that no longer
+/// happens. The body keeps the release-to-source-commit link, which is the snapshot's only
+/// provenance — nothing else in the starter repository records which release generated it.
+#[doc(hidden)] // test boundary (tests/starter.rs)
+#[must_use]
+pub fn snapshot_message(tag: &str, source_commit: &str) -> String {
+    format!("Initial commit\n\npixi-sandbox {tag}\nSource commit: {source_commit}")
+}
+
 /// Commit and push one validated starter revision.
 ///
 /// Replaces main with one parentless commit, preserving immutable release tags. The branch
@@ -976,9 +988,7 @@ pub fn publish(
         remote,
         branch,
         &immutable,
-        &format!(
-            "chore: regenerate starter for pixi-sandbox {tag}\n\nSource commit: {source_commit}"
-        ),
+        &snapshot_message(tag, source_commit),
     )?;
     crate::util::github_summary(&format!(
         "## Starter published\n\n- release `{tag}`\n- source commit `{source_commit}`\n- starter tag `{immutable}`\n"

@@ -16,7 +16,7 @@ tags:
 **Status:** measured spike, no production code changed. Produced for backlog task-24, which
 requires binary-size and restore-disk measurements, a schema compatibility policy, a
 duplicate-packaging rule, and an explicit decision recorded through the Backlog decision API
-(**decision-2**, accepted). It completes the no-go already reasoned in `doc-5` (rattler) with
+(**ADR-24**, accepted). It completes the no-go already reasoned in `doc-5` (rattler) with
 numbers taken from the *current* v0.3.7 design: five native packages published, the channel
 install canonical, and the verified standalone `pixi-sandbox` binary embedded under
 `.pixi-sandbox/tools/<platform>/` as the transport bootstrap.
@@ -30,7 +30,7 @@ being shipped twice — as the bootstrap tool *and* as an environment dependency
 this repository (Debian 12 bookworm, Linux 6.1, x86_64, 2 vCPU, git 2.39.5, cargo 1.98.1,
 pixi 0.81.0, pixi-unpack 0.7.11) from the published `sandbox/developer-linux-64` branch
 snapshot `7c69402` (manifest schema 2, packed by pixi-sandbox 0.3.6 from commit `910df8f`,
-created 2026-10-01T14:20:49Z). Tags follow the `.knowledge` convention: ✅ measured here,
+created 2026-10-01T14:20:49Z). Tags follow the ADR convention: ✅ measured here,
 ⚠️ reasoned or projected from measured parts, 📄 upstream-documented (not fetchable from this
 airlock: crates.io and prefix.dev are unreachable; github.com and npm are not).
 
@@ -129,7 +129,7 @@ launchers, and the CI airlock gate all share, and today's measured peak (2 746 M
 
 ## 3. Schema migration and compatibility policy
 
-The accepted decision (decision-2) changes **no** wire format: schema stays 2. The policy that
+The accepted decision (ADR-24) changes **no** wire format: schema stays 2. The policy that
 governs any future change, recorded so it is not re-derived per task:
 
 1. **Readers accept every schema they understand and refuse only newer ones.** `manifest.rs`
@@ -139,7 +139,7 @@ governs any future change, recorded so it is not re-derived per task:
 2. **Additive-compatible fields may land without a bump** only when a reader of the previous
    schema ignores them safely: the field must be `#[serde(default)]`-shaped and must not
    change what an existing field *means*. Schema 2's `envs.<name>.files` landed this way as an
-   addition; schema-1 envs are reported `unverifiable`, never failed (D13).
+   addition; schema-1 envs are reported `unverifiable`, never failed (ADR-13).
 3. **Removals and semantic changes are a schema-3 event.** If a future release drops
    `pixi-unpack` from the tools map (option B/C) or adds tool roles (bootstrap vs helper),
    `SCHEMA_VERSION` bumps, the new field/removal is specified in doc-2 §3, and `doctor`,
@@ -167,7 +167,7 @@ The rule, specified rather than left implicit:
    byte-verified by the manifest.
 2. **An environment copy is payload, not a tool.** A project that depends on the
    `pixi-sandbox` package gets it restored verbatim inside `.pixi/envs/<env>/` — excluding it
-   would corrupt the prefix against `pixi.lock` and break the D13 per-file oracle. The
+   would corrupt the prefix against `pixi.lock` and break the ADR-13 per-file oracle. The
    duplication is bounded and cheap: the bootstrap costs 1.7 MiB in-pack ✅; the env package
    is the user's own lockfile choice.
 3. **`pack` warns instead of refusing.** When a packed environment contains a
@@ -211,13 +211,13 @@ git -C repo verify-pack -v .git/objects/pack/*.pack | awk '$2=="blob"{print $1,$
 ## 6. Recommendation
 
 **Accept the standalone design as it stands; retain the helpers** — recorded as
-**decision-2 (accepted)**:
+**ADR-24 (accepted)**:
 
 - `pixi-sandbox` is the standalone transport/restore orchestrator and the single transport
   bootstrap; the verified binary travels once, under `tools/<platform>/`, executed by every
   launcher path (rule §4.1).
-- `pixi-pack`/`pixi-unpack` remain pinned, sha256-verified static helper tools (D2/D3/D4),
-  reaffirming D12 with current numbers: absorbing the unpacker trades 6.5 MiB of in-pack
+- `pixi-pack`/`pixi-unpack` remain pinned, sha256-verified static helper tools (ADR-2/ADR-3/ADR-4),
+  reaffirming ADR-12 with current numbers: absorbing the unpacker trades 6.5 MiB of in-pack
   branch bytes for a binary that grows by about the same, ~28 vendored crates on this repo's
   own branch, and ownership of prefix installation on a machine that cannot be debugged.
 - Schema stays 2 under the compatibility policy in §3; no migration is proposed.
@@ -225,7 +225,7 @@ git -C repo verify-pack -v .git/objects/pack/*.pack | awk '$2=="blob"{print $1,$
   (§4.3) and the TASK-33 registration pointing at `tools/<platform>/` are the implementation
   tasks that follow from it.
 
-**What would change it** (triggers, in the `.knowledge` sense): the four triggers of doc-5 §5
+**What would change it** (triggers, in the ADR sense): the four triggers of doc-5 §5
 stand unchanged — an unmaintained `pixi-unpack` pin, a real airlock blocked by peak restore
 disk (then prototype option C only, measured against §2's baseline), a supported rattler
 "install this local channel into this prefix" entry point, or a versioned pack format

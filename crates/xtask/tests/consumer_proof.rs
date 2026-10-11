@@ -1,7 +1,7 @@
 //! `xtask::consumer_proof` (TASK-89) — the release lane's consumer proof as tested Rust over
 //! tempdir fixtures, ported out of the `multiline-run-allowed` blocks of `release.yml`.
 //!
-//! Every test here drives the module through its public API against a tempdir (D10 forbids
+//! Every test here drives the module through its public API against a tempdir (ADR-10 forbids
 //! pointing at this repository), and each was confirmed to fail with the behaviour it checks
 //! neutralised — the mutation evidence is recorded per test in the task file.
 

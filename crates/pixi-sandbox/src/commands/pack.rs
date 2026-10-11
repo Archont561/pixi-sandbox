@@ -52,7 +52,7 @@ pub fn run(args: PackArgs) -> Result<()> {
 }
 
 /// Everything `run` decides before any output exists: path resolution plus the guards that
-/// must refuse before a transport directory is created (design.md §11) — a missing
+/// must refuse before a transport directory is created (doc-2 §11) — a missing
 /// `pixi.lock`, a stale `--output-dir`, an unsafe or duplicate `--envs` name, or (when
 /// `--cargo-vendor` is set) a `Cargo.lock` cargo cannot vendor. Named `PackPlan`, not
 /// `PackArgs`: by the time [`PackPlan::from_args`] returns, every field has been validated or
@@ -85,7 +85,7 @@ struct ResolvedTools {
 }
 
 /// What a `pack` run actually produces before anything is written: the per-environment file
-/// oracle (D13), every embedded tool (including an optional `--self-bin`), and the vendored
+/// oracle (ADR-13), every embedded tool (including an optional `--self-bin`), and the vendored
 /// cargo tree. Kept distinct from [`PackPlan::write_manifest_and_docs`] so the artifacts exist
 /// as plain data before the manifest is assembled around them.
 struct PackedArtifacts {
@@ -111,7 +111,7 @@ impl PackPlan {
 
         // Before anything is created: a lockfile cargo cannot vendor is a property of the
         // project, not of this run, and it is the one `--cargo-vendor` failure an operator
-        // cannot act on without being told what to change (design.md §11). Detecting it here
+        // cannot act on without being told what to change (doc-2 §11). Detecting it here
         // rather than inside the vendor step means a refused pack leaves no output directory
         // behind — otherwise the next attempt fails on the stale-transport guard and the real
         // error is one run in the dark.
@@ -172,7 +172,7 @@ impl PackPlan {
                 )
             })?,
         };
-        // The per-file oracle (D13) is built by unpacking each environment once more, with the
+        // The per-file oracle (ADR-13) is built by unpacking each environment once more, with the
         // same pinned unpacker the airlock will use, so it must be resolved up here rather than
         // in the embed step below. The embed step re-resolves it from the same verified cache.
         let unpacker = match &lock {

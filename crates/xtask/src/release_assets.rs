@@ -5,7 +5,7 @@
 //! built binary, strip it if a strip exists, copy it under its asset name). One Rust runtime
 //! covers all five runners; the v0.3.6 release died on macOS's Bash 3.2 over exactly this
 //! class of step. The functions here are pure over paths so tests drive them against tempdir
-//! fixtures, never this checkout (D10).
+//! fixtures, never this checkout (ADR-10).
 
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::shard::sha256_file;
@@ -237,7 +237,7 @@ pub fn expected_binaries() -> Vec<&'static str> {
 
 /// Every way `dir` fails to hold exactly one binary per supported platform.
 ///
-/// Returns diagnostics rather than failing on the first one (D13): a release missing two
+/// Returns diagnostics rather than failing on the first one (ADR-13): a release missing two
 /// platforms should say so in one run, not send the operator back twice.
 #[doc(hidden)] // test boundary (tests/release_assets.rs)
 #[must_use]

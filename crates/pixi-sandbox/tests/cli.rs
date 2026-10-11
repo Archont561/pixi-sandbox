@@ -95,7 +95,7 @@ fn documents_every_verb(mut bin: Command, #[case] verb: &str) {
 
 /// TASK-76: `fetch-release` is the workflow bootstrap download. Its contract is documented
 /// where an operator meets it: the destination and the exact pinned version are required, and
-/// the pin is exact rather than floating (decision-4 / D16).
+/// the pin is exact rather than floating (ADR-26 / ADR-16).
 #[rstest]
 fn fetch_release_documents_its_bootstrap_contract(mut bin: Command) {
     let output = bin
@@ -164,7 +164,7 @@ fn pipeline_documents_its_publish_contract(mut bin: Command) {
 
 /// TASK-76: `upgrade` is the generated upgrade lane's single entrypoint — check, regenerate,
 /// commit, deliver. Its contract is documented where an operator meets it: the exact
-/// generation arguments are required (D16: never defaults that could diverge), and the
+/// generation arguments are required (ADR-16: never defaults that could diverge), and the
 /// delivery credentials stay environment variables the tool reads natively.
 #[rstest]
 fn upgrade_documents_its_delivery_contract(mut bin: Command) {
@@ -1787,7 +1787,7 @@ fn init_writes_the_exact_render_the_generator_produces() {
 
 #[test]
 fn init_leaves_the_consumer_pixi_manifest_untouched() {
-    // Issue #71 / D17: init used to append the publisher namespace root to
+    // Issue #71 / ADR-17: init used to append the publisher namespace root to
     // [workspace].channels — a URL that serves no repodata — so every consumer with at
     // least one dependency failed `pixi lock` immediately after init. An empty project
     // locked fine because an empty solve never fetches repodata, which is exactly the
@@ -1840,7 +1840,7 @@ fn init_leaves_the_consumer_pixi_manifest_untouched() {
             "name = \"demo\"\n",
             "channels = [\"HTTPS://PREFIX.DEV/Archont561/\"] # Keep this spelling.\n",
         ),
-        // Malformed TOML is no longer init's business (D17): the manifest is not parsed,
+        // Malformed TOML is no longer init's business (ADR-17): the manifest is not parsed,
         // so init succeeds and pixi's own lock reports the syntax error where it belongs.
         "not valid TOML [[[",
     ];

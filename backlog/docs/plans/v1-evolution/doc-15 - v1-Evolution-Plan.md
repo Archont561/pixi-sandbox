@@ -1,6 +1,17 @@
-# v1 evolution plan: standalone CLI, cross-platform workflow, and JS tooling
+---
+id: doc-15
+title: "v1 Evolution Plan: Standalone CLI, Cross-Platform Workflow, and JS Tooling"
+created_date: '2026-10-12 00:00'
+updated_date: '2026-10-12 00:00'
+tags:
+  - plan
+  - v1
+  - architecture
+---
 
-**Status:** proposed; derived from the 2026-10-01 design discussion and the existing `.knowledge/` evidence.
+# v1 Evolution Plan: Standalone CLI, Cross-Platform Workflow, and JS Tooling
+
+**Status:** proposed; derived from the 2026-10-01 design discussion and the existing `backlog/docs/` evidence.
 
 ## Purpose
 
@@ -14,7 +25,7 @@ The generated airlock launcher is deliberately thin: resolve `pixi-sandbox.toml`
 
 ## Packaging and deduplication options
 
-The current measured design (D2/D3/D4/D12) embeds pixi-pack and pixi-unpack as pinned tools. A future standalone v1 may replace them with an internal transport implementation, but this is a transport-schema change and requires compatibility tests. Until then, do not duplicate `pixi-sandbox`: the bootstrap binary is the canonical copy; if a project declares it as a dependency, packing must either promote it to the bootstrap tool or explicitly exclude the environment copy. Git hardlinks are not a valid deduplication mechanism because Git archives do not preserve them.
+The current measured design (ADR-2/ADR-3/ADR-4/ADR-12) embeds pixi-pack and pixi-unpack as pinned tools. A future standalone v1 may replace them with an internal transport implementation, but this is a transport-schema change and requires compatibility tests. Until then, do not duplicate `pixi-sandbox`: the bootstrap binary is the canonical copy; if a project declares it as a dependency, packing must either promote it to the bootstrap tool or explicitly exclude the environment copy. Git hardlinks are not a valid deduplication mechanism because Git archives do not preserve them.
 
 ## Platform distribution
 
@@ -28,11 +39,11 @@ Turbo is not necessary while `docs` is the only Bun workspace. Adopt it once the
 
 ## Evidence and conflicts to resolve
 
-The current knowledge base records D2/D3 as a v1 requirement for pixi-pack/pixi-unpack and D8 as conda distribution. The newer standalone proposal must not silently overwrite those decisions. Create a measured spike/ADR before changing them, including binary size, restore disk usage, schema compatibility, and native platform proofs. Existing platform evidence is strongest for Linux and osx-arm64; Windows package and Bun paths require explicit CI proof.
+The current knowledge base records ADR-2/ADR-3 as a v1 requirement for pixi-pack/pixi-unpack and ADR-8 as conda distribution. The newer standalone proposal must not silently overwrite those decisions. Create a measured spike/ADR before changing them, including binary size, restore disk usage, schema compatibility, and native platform proofs. Existing platform evidence is strongest for Linux and osx-arm64; Windows package and Bun paths require explicit CI proof.
 
 ## Backlog mapping
 
 - `v1 standalone cross-platform workflow` milestone groups the implementation.
 - `doc-1` is the actionable specification and links the relevant knowledge files.
-- `decision-1` records the standalone orchestrator proposal as proposed, not accepted.
+- `ADR-23` records the standalone orchestrator proposal as proposed, not accepted.
 - Follow-up tasks separate CLI/config generation, workflow generation, transport/tool deduplication, package distribution, and JS environment orchestration.

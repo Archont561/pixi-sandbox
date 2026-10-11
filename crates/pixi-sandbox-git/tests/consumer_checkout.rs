@@ -7,7 +7,7 @@
 //! of those inside this crate. `GitProtocol::fetch_into` is deliberately not reused: it
 //! materialises a tree with plumbing and no work tree, so a proof built on it would be a proof
 //! about `pixi-sandbox-git`'s own materialisation instead of about what a consumer's `git`
-//! actually does. These tests pin the primitives against a real `git` in tempdirs (D10), the
+//! actually does. These tests pin the primitives against a real `git` in tempdirs (ADR-10), the
 //! style `tests/publish.rs` uses for the shell side of the protocol.
 
 use pixi_sandbox_git::{PreviewRunner, ShellGit};

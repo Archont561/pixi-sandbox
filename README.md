@@ -134,7 +134,7 @@ The badge above describes this repository's Pixi workspace, not every CLI releas
 | :-- | :-- |
 | `linux-64` | Routinely packed, verified, and published as `sandbox/developer-linux-64` |
 | `osx-arm64` | Native airlock proof exists; omitted from routine publishing to avoid the additional runner cost |
-| `win-64` | Not a development-workspace target: conda-forge has no `bun` build; native proof is required by D11 before this workspace can claim support |
+| `win-64` | Not a development-workspace target: conda-forge has no `bun` build; native proof is required by ADR-11 before this workspace can claim support |
 
 Consumer projects declare their own environments and platforms. A released binary for a
 platform is not evidence that every consumer's dependencies can be packed or restored there.
@@ -157,8 +157,7 @@ This is a Rust workspace with Bun/Turbo orchestration and an Astro documentation
 | `crates/xtask` | Tested repository, release, starter, and CI automation |
 | `docs` | Astro + Starlight documentation, published to GitHub Pages |
 | `scripts/restore.sh` | Bootstrap for this repository's packed development environment |
-| `.knowledge` | Design decisions and supporting evidence |
-| `backlog` | Tasks, specifications, and implementation plans |
+| `backlog` | Tasks, specifications, ADRs, milestones, and implementation plans |
 
 ## Development
 

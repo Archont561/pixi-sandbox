@@ -69,10 +69,10 @@ the `pixi_version`/`setup_pixi_cache` pair is the correctness fix; `permissions`
 - [x] #1 The consumer config accepts an optional `[workflow]` table within schema 1 (no schema bump; absent renders byte-identical to the current template), unknown keys are rejected naming the field, and config readers keep accepting schema-1 files per task-47 AC#5's deprecation policy
 - [x] #2 Each configured block renders into the generated publisher — `push_paths` as a `paths:` allowlist, `permissions` top-level with `contents: write` scoped to the publish job, `concurrency` with group and cancel-in-progress, `timeout-minutes` on both jobs — and the output is actionlint-clean across the combination table in fixture tests
 - [x] #3 `push_paths` defaults to a derivation from the plan's known transport inputs (`pixi-sandbox.toml`, `pixi.toml`, `pixi.lock`, `package.json`, `bun.lock`, `Cargo.toml`, `Cargo.lock`, as applicable to the bundle), `init` emits that allowlist, `plan --json` surfaces the derivation so consumers can diff it, and an explicit `push_paths` overrides the derivation
-- [x] #4 The config can pin `pixi_version` for `setup-pixi` and set `setup_pixi_cache = false`; the default for the generated consumer publisher — and the reasoning for cache-off as the correctness-safe default versus current-behaviour compatibility — is recorded as a decision entry in `.knowledge/decisions.md`
+- [x] #4 The config can pin `pixi_version` for `setup-pixi` and set `setup_pixi_cache = false`; the default for the generated consumer publisher — and the reasoning for cache-off as the correctness-safe default versus current-behaviour compatibility — is recorded as a decision entry in `backlog/docs/adr/README.md`
 - [x] #5 With policy carried in config, `init` on an existing project reproduces the consumer's workflow byte-identically with no hand edits (fixture test: init, render, init again — identical output), and the generated header's "local policy edits follow" phrasing no longer applies to config-carried policy
 - [x] #6 Docs cover every `[workflow]` key with its default (configuration reference and the ci-publishing guide), and the guide's hand-edit-plus-`--force` ritual is retired in favour of the config
-- [x] #7 Fixture tests per D10 (fixture project, never this repository); gates green (fmt, lint — including `lint-generated-workflow` — and test); ships in a minor release, with the connected proof (a real consumer regenerates without hand edits) recorded or the task left In Progress naming that gap
+- [x] #7 Fixture tests per ADR-10 (fixture project, never this repository); gates green (fmt, lint — including `lint-generated-workflow` — and test); ships in a minor release, with the connected proof (a real consumer regenerates without hand edits) recorded or the task left In Progress naming that gap
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -90,7 +90,7 @@ The one judgement call to decide explicitly (AC#4): whether the generated publis
 `setup-pixi` cache default flips to `false` for new configs. The issue argues correctness
 (pixi-sandbox owns the native `pixi install` during pack; an action cache keyed on the
 consumer manifest can restore a solve the pack will not reuse). Record the choice in
-`.knowledge/decisions.md`. Slicing follows the issue's split: the pixi-version/cache pair
+`backlog/docs/adr/README.md`. Slicing follows the issue's split: the pixi-version/cache pair
 first (correctness), then `push_paths` with derivation, then the three independent blocks
 (permissions/concurrency/timeouts). No dependency on task-47 — but read its AC#4 shape
 before choosing the marker wording, so `init --check` later recognises config-carried
@@ -110,7 +110,7 @@ present but empty. `derive_push_paths`/`SandboxConfig::resolved_push_paths` buil
 allowlist from the config path plus `pixi.toml`/`pixi.lock` (always) and whichever of
 `package.json`/`bun.lock`/`Cargo.toml`/`Cargo.lock` exist under the repo root.
 
-Decision D18 (`.knowledge/decisions.md`) records the one judgement call the plan flagged: the
+Decision ADR-18 (`backlog/docs/adr/README.md`) records the one judgement call the plan flagged: the
 table's mere *presence* — not each field individually — is the opt-in to a safer default for
 exactly two fields, `setup_pixi_cache` (→ `false`) and `push_paths` (→ derived, not unfiltered).
 Both are framed by the issue as correctness/cost hazards, not preferences; `permissions`,
@@ -135,7 +135,7 @@ proven inert the same way `schema` already is (the generated workflow only ever 
 `.include`); `plan_json_top_level_keys_stay_matrix_safe` was extended, not relaxed, to still name
 every top-level key explicitly.
 
-Tests, all fixture-based per D10 (temp configs/projects, never this repository's own):
+Tests, all fixture-based per ADR-10 (temp configs/projects, never this repository's own):
 `pixi-sandbox-core/tests/sandbox_config.rs::workflow_policy` (16 tests: parsing, every
 `deny_unknown_fields` rejection, every validation rule, the absent/present/explicit-override
 three-way split for `push_paths`); `pixi-sandbox/tests/generated_workflow.rs::workflow_policy`
@@ -159,7 +159,7 @@ lint-generated-workflow, sandbox-plan --json, lint-toml, lint-docs, check-reposi
 `pixi run docs` and `pixi run lint-docs` clean on the new MDX.
 
 AC#7 stays partially open, the same shape as task-47's AC#2/AC#7 and task-52's AC#6: every gate
-this sandbox can run is green and every fixture test is D10-compliant, but "ships in a minor
+this sandbox can run is green and every fixture test is ADR-10-compliant, but "ships in a minor
 release" (a version bump and tag, not done here) and "the connected proof (a real consumer
 regenerates without hand edits)" both need a cut release and a connected host this sandbox does
 not have. Left named here rather than checked.

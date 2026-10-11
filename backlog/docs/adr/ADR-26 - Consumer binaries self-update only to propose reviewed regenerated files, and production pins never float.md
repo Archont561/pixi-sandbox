@@ -1,8 +1,10 @@
 ---
-id: decision-4
+id: ADR-26
 title: Consumer binaries self-update only to propose reviewed regenerated files, and production pins never float
 date: '2026-10-03'
 status: accepted
+tags:
+  - decision
 ---
 ## Context
 

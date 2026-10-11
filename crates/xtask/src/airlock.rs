@@ -9,11 +9,11 @@
 //!   JSON error bodies captured as tags);
 //! - `airlock-pack` — a comma-list install loop plus a conditional `--cargo-vendor` flag,
 //!   which a plain task cannot express;
-//! - `airlock-fetch` — git, therefore through `pixi-sandbox-git` (D9);
+//! - `airlock-fetch` — git, therefore through `pixi-sandbox-git` (ADR-9);
 //! - `deny-egress` — the OS case-dance (`unshare -n` / `sandbox-exec`) that must fail
 //!   loudly on anything else.
 //!
-//! Spawned processes are thin adapters over pure, tempdir-tested cores (D10).
+//! Spawned processes are thin adapters over pure, tempdir-tested cores (ADR-10).
 
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::platform::Platform;
@@ -510,7 +510,7 @@ pub fn airlock_pack_with_pixi(
 // ---------------------------------------------------------------------------
 
 /// Fetch the published branch the way a developer's machine would: a fresh host repo, a
-/// remote, one shallow fetch, a linked worktree — all through `pixi-sandbox-git` (D9).
+/// remote, one shallow fetch, a linked worktree — all through `pixi-sandbox-git` (ADR-9).
 ///
 /// # Errors
 ///
