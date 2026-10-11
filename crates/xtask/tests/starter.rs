@@ -546,6 +546,16 @@ fn a_draft_an_unresolvable_tag_and_missing_assets_each_fail_closed() {
 /// makes each revision immutable. Both refusals are checked before any git write.
 #[test]
 fn publishing_to_a_fork_or_over_an_existing_revision_is_refused() {
+    for remote in [
+        "https://github.com/Archont561/pixi-sandbox-starter-fork",
+        "https://example.invalid/Archont561/pixi-sandbox-starter",
+        "https://github.com/other/repo?Archont561/pixi-sandbox-starter",
+    ] {
+        assert!(
+            !publish_refusals(remote, STARTER, false, TAG).is_empty(),
+            "{remote}"
+        );
+    }
     assert!(
         publish_refusals(
             "https://github.com/someone-else/pixi-sandbox-starter",
@@ -614,10 +624,23 @@ fn publishing_over_a_readme_only_starter_commits_the_whole_template() {
     starter_tree(&clone, "1.2.3");
     support::runtime_state(&clone);
 
+    let before_refs = run_git(&remote, &["show-ref"]);
+    let before_index = run_git(&clone, &["write-tree"]);
+    publish(&clone, remote_str, STARTER, TAG, "main", COMMIT, true).expect("dry run");
+    assert_eq!(run_git(&remote, &["show-ref"]), before_refs);
+    assert_eq!(run_git(&clone, &["write-tree"]), before_index);
+    assert!(run_git(&clone, &["tag"]).is_empty());
+    publish(&clone, remote_str, STARTER, TAG, "other", COMMIT, false).unwrap_err();
+    assert_eq!(run_git(&remote, &["show-ref"]), before_refs);
+
     publish(&clone, remote_str, STARTER, TAG, "main", COMMIT, false).expect("publish");
 
     run_git(root, &["clone", "-q", remote_str, "verify"]);
     let verify = root.join("verify");
+    assert_eq!(
+        run_git(&verify, &["rev-list", "--count", "HEAD"]).trim(),
+        "1"
+    );
     let committed = run_git(&verify, &["ls-files"]);
     for required in REQUIRED_FILES {
         assert!(
@@ -633,6 +656,37 @@ fn publishing_over_a_readme_only_starter_commits_the_whole_template() {
         run_git(&verify, &["tag"]).contains("pixi-sandbox-v1.2.3"),
         "the immutable evidence tag is missing"
     );
+    let first_tag = run_git(&remote, &["rev-parse", "refs/tags/pixi-sandbox-v1.2.3"]);
+    // An unchanged tree still needs a fresh snapshot and evidence for a new release.
+    publish(
+        &verify, remote_str, STARTER, "v1.2.4", "main", COMMIT, false,
+    )
+    .unwrap();
+    assert_eq!(
+        run_git(&remote, &["rev-list", "--count", "main"]).trim(),
+        "1"
+    );
+    assert_eq!(
+        run_git(&remote, &["rev-parse", "refs/tags/pixi-sandbox-v1.2.3"]),
+        first_tag
+    );
+    assert_eq!(
+        run_git(&remote, &["rev-parse", "main"]),
+        run_git(&remote, &["rev-parse", "refs/tags/pixi-sandbox-v1.2.4^{}"])
+    );
+    assert_eq!(
+        run_git(&remote, &["rev-parse", "main^{tree}"]),
+        run_git(
+            &remote,
+            &["rev-parse", "refs/tags/pixi-sandbox-v1.2.3^{tree}"]
+        )
+    );
+    let published = run_git(&remote, &["show-ref"]);
+    publish(
+        &verify, remote_str, STARTER, "v1.2.4", "main", COMMIT, false,
+    )
+    .unwrap_err();
+    assert_eq!(run_git(&remote, &["show-ref"]), published);
 }
 
 /// The devcontainer's pixi image pin is an argument, never a literal: `starter.yml`'s contract

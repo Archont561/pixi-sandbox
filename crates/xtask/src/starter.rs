@@ -247,6 +247,9 @@ pub fn render_readme(
          \n\
          This repository is a snapshot of `{tag}`. A newer pixi-sandbox release produces a new\n\
          starter revision; it does not change repositories already created from this template.\n\
+         The canonical starter's `main` is replaced with one parentless commit per update;\n\
+         immutable `pixi-sandbox-vX.Y.Z` tags retain previous snapshots. This does not rewrite\n\
+         your own repository. Prefer **Use this template** to following starter main with pulls.\n\
          Your own repository upgrades itself through the weekly upgrade lane in the publisher\n\
          workflow, which opens a reviewable pull request.\n",
         server = "https://github.com",
@@ -861,7 +864,16 @@ pub fn publish_refusals(
     tag: &str,
 ) -> Vec<String> {
     let mut refusals = Vec::new();
-    if !remote.contains(starter_repo) {
+    let remote_path = remote.strip_suffix(".git").unwrap_or(remote);
+    let canonical = [
+        format!("https://github.com/{starter_repo}"),
+        format!("git@github.com:{starter_repo}"),
+        format!("ssh://git@github.com/{starter_repo}"),
+    ];
+    // Local bare remotes are supported for offline rehearsals; never accept a URL by substring.
+    let local =
+        Path::new(remote_path).is_absolute() && Path::new(remote_path).ends_with(starter_repo);
+    if !canonical.iter().any(|url| url == remote_path) && !local {
         refusals.push(format!(
             "remote {remote:?} is not the canonical starter {starter_repo}; the starter lane must never push to a fork or a user's repository"
         ));
@@ -877,8 +889,8 @@ pub fn publish_refusals(
 
 /// Commit and push one validated starter revision.
 ///
-/// Never force-pushes and never rewrites history (doc-10 "Credentials and safety"). A tree
-/// identical to the published revision is an idempotent success.
+/// Replaces main with one parentless commit, preserving immutable release tags. The branch
+/// replacement is lease-protected and atomic with creation of the new evidence tag.
 ///
 /// # Errors
 ///
@@ -894,6 +906,9 @@ pub fn publish(
 ) -> Result<()> {
     use pixi_sandbox_git::ShellGit;
     let git = ShellGit::new();
+    if branch != "main" {
+        bail!("starter snapshots may replace only main");
+    }
     let immutable = starter_tag(tag);
     let refusals = publish_refusals(
         remote,
@@ -947,29 +962,24 @@ pub fn publish(
         bail!("refusing to publish runtime state or credentials to the starter");
     }
 
-    git.add_files(root, &revision)?;
-    let staged = git.staged_files(root)?;
-    if staged.is_empty() {
-        println!("starter is already at {tag}; nothing to publish (idempotent re-run)");
-        return Ok(());
-    }
-    println!("publishing {} file(s) for {tag}", staged.len());
+    println!("publishing {} file(s) for {tag}", revision.len());
     if dry_run {
-        println!("dry run: not committing or pushing");
-        for file in &staged {
+        println!("dry run: not staging, committing, or pushing");
+        for file in &revision {
             println!("  would publish {file}");
         }
         return Ok(());
     }
-    git.commit(
+    git.add_files(root, &revision)?;
+    git.publish_root_snapshot(
         root,
+        remote,
+        branch,
+        &immutable,
         &format!(
             "chore: regenerate starter for pixi-sandbox {tag}\n\nSource commit: {source_commit}"
         ),
     )?;
-    git.tag_annotated(root, &immutable)?;
-    git.push_refspec(root, remote, branch)?;
-    git.push_refspec(root, remote, &format!("refs/tags/{immutable}"))?;
     crate::util::github_summary(&format!(
         "## Starter published\n\n- release `{tag}`\n- source commit `{source_commit}`\n- starter tag `{immutable}`\n"
     ));
