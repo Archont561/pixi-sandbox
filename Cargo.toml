@@ -10,7 +10,7 @@ members = [
 [workspace.package]
 version = "0.6.1"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/Archont561/pixi-sandbox"
 authors = ["Archont561"]
@@ -44,16 +44,17 @@ fs2 = "0.4"
 tar = "0.4"
 # Connected-side fetching: HTTPS release assets are verified against the embedded tool pins before use.
 ureq = "3.4"
-# The self-update crate under evaluation (TASK-90 / doc-14). Declared ahead of the verdict so the
-# relocked vendor tree carries it and the spike can compile against it in the airlock, which cannot
-# reach crates.io. The feature set is the measured minimum: `ureq` reuses the HTTPS client this
+# The self-update transport (TASK-90 / doc-14, adopted as decision-5): `self_update` supplies the
+# release-lookup, download and checksum-parse path; our `ownership` refusal ladder, `replace` swap
+# and the `mod.rs` orchestration stay hand-rolled. The feature set is the measured minimum: `ureq`
+# reuses the HTTPS client this
 # workspace already ships, `rustls` its TLS, `github` the release backend and `checksums` the
 # SHA256SUMS path that mirrors the hand-rolled contract — so nothing here compiles reqwest, hyper,
-# tokio or indicatif. Two consequences the declaration does not remove: the lock resolves the crate's
-# optional reqwest tree anyway (cargo locks optional dependencies no feature enables), and the crate
-# declares rustc 1.88, above the 1.85 declared here. Lifting `rust-version` is TASK-92 — it switches
-# on clippy's MSRV-gated lints (six `collapsible_if` sites in pixi-sandbox-core), which AGENTS.md
-# forbids folding into this change. A reject verdict in doc-14 removes the line in one relock cycle.
+# tokio or indicatif. One consequence the declaration does not remove: the lock resolves the
+# crate's optional reqwest tree anyway (cargo locks optional dependencies no feature enables). The
+# crate declares rustc 1.88; the workspace `rust-version` above matches it since TASK-92, whose
+# lift switched on clippy's MSRV-gated lints — the six `collapsible_if` sites in pixi-sandbox-core
+# collapsed in the same change.
 self_update = { version = "1.3", default-features = false, features = [
   "checksums",
   "github",

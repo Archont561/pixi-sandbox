@@ -378,12 +378,11 @@ mod restored {
             fs::create_dir_all(destination.parent().unwrap()).unwrap();
             fs::copy(&file, &destination).unwrap();
             let bytes = fs::read(&destination).unwrap();
-            if !bytes.contains(&0) {
-                if let Ok(text) = std::str::from_utf8(&bytes) {
-                    if text.contains(&old) {
-                        fs::write(&destination, text.replace(&old, &new)).unwrap();
-                    }
-                }
+            if !bytes.contains(&0)
+                && let Ok(text) = std::str::from_utf8(&bytes)
+                && text.contains(&old)
+            {
+                fs::write(&destination, text.replace(&old, &new)).unwrap();
             }
         }
         // symlinks (files_under skips them)

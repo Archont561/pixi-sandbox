@@ -34,10 +34,10 @@ pub(super) fn agents_md_matches_tree(root: &Path, failures: &mut Vec<Failure>) -
     if let Some(map) = section(&text, "## Repo map") {
         let mut missing = Vec::new();
         for token in backticked(map) {
-            if let Some(candidate) = repo_map_path(root, token) {
-                if !root.join(&candidate).exists() {
-                    missing.push(format!("{shown}: `{token}` does not resolve"));
-                }
+            if let Some(candidate) = repo_map_path(root, token)
+                && !root.join(&candidate).exists()
+            {
+                missing.push(format!("{shown}: `{token}` does not resolve"));
             }
         }
         missing.sort();

@@ -107,11 +107,11 @@ fn write_event(event: &str, detail: Option<&str>) -> Result<()> {
     let mut current = state().lock().expect("diagnostic state lock");
     let detail = detail.map(redact);
     let mut line = format!("command={} {event}", current.command);
-    if let Some(detail) = &detail {
-        if !detail.is_empty() {
-            line.push(' ');
-            line.push_str(detail);
-        }
+    if let Some(detail) = &detail
+        && !detail.is_empty()
+    {
+        line.push(' ');
+        line.push_str(detail);
     }
 
     if let Some(file) = &mut current.file {

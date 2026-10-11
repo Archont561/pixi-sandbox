@@ -155,13 +155,13 @@ impl FilesDoc {
                     entry.p
                 )));
             }
-            if let Some(digest) = &entry.h {
-                if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
-                    return Err(Error::Invalid(format!(
-                        "files manifest {}: not a sha256 digest ({digest})",
-                        entry.p
-                    )));
-                }
+            if let Some(digest) = &entry.h
+                && (digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()))
+            {
+                return Err(Error::Invalid(format!(
+                    "files manifest {}: not a sha256 digest ({digest})",
+                    entry.p
+                )));
             }
             if entry.l.is_some() && entry.h.is_some() {
                 return Err(Error::Invalid(format!(

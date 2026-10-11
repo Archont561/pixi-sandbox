@@ -237,41 +237,40 @@ fn check_failures(
     budget: Option<&BudgetReport>,
     host: Option<&HostReport>,
 ) -> Result<()> {
-    if let Some(report) = report {
-        if !report.ok() {
-            // Everything is already on stdout; the exit code is for scripts.
-            bail!("verify failed: {} failure(s)", report.failures.len());
-        }
+    if let Some(report) = report
+        && !report.ok()
+    {
+        // Everything is already on stdout; the exit code is for scripts.
+        bail!("verify failed: {} failure(s)", report.failures.len());
     }
-    if let Some((_, restored)) = restored {
-        if !restored.ok() {
-            bail!(
-                "restored-tree verification failed: {} failure(s)",
-                restored.report.failures.len()
-            );
-        }
+    if let Some((_, restored)) = restored
+        && !restored.ok()
+    {
+        bail!(
+            "restored-tree verification failed: {} failure(s)",
+            restored.report.failures.len()
+        );
     }
     if let Some(StandaloneProbe::Refused { detail }) = standalone {
         bail!("standalone probe failed:\n{detail}");
     }
-    if let Some(budget) = budget {
-        if !budget.ok() {
-            bail!(
-                "transport budget exceeded: {} threshold(s)",
-                budget.violations.len()
-            );
-        }
+    if let Some(budget) = budget
+        && !budget.ok()
+    {
+        bail!(
+            "transport budget exceeded: {} threshold(s)",
+            budget.violations.len()
+        );
     }
-    if args.require_host_requirements {
-        if let Some(host) = host {
-            if !host.ok() {
-                bail!(
-                    "host requirements not met: {} missing ({} unknown, never a failure)",
-                    host.missing(),
-                    host.unknown()
-                );
-            }
-        }
+    if args.require_host_requirements
+        && let Some(host) = host
+        && !host.ok()
+    {
+        bail!(
+            "host requirements not met: {} missing ({} unknown, never a failure)",
+            host.missing(),
+            host.unknown()
+        );
     }
     Ok(())
 }

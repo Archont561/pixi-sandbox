@@ -64,12 +64,12 @@ pub fn embed_tool(
         );
     }
     let actual = shard::sha256_file(&destination)?;
-    if let Some(expected) = &source.pinned_sha256 {
-        if &actual != expected {
-            bail!(
-                "integrity: embedded {name} does not match its pin (expected {expected}, got {actual})"
-            );
-        }
+    if let Some(expected) = &source.pinned_sha256
+        && &actual != expected
+    {
+        bail!(
+            "integrity: embedded {name} does not match its pin (expected {expected}, got {actual})"
+        );
     }
 
     let linkage = verify::linkage_of(&destination);

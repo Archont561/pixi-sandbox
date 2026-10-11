@@ -22,10 +22,11 @@ fn text_files_under(root: &Path, out: &mut Vec<PathBuf>) {
         let path = entry.path();
         if entry.file_type().unwrap().is_dir() {
             text_files_under(&path, out);
-        } else if let Ok(bytes) = fs::read(&path) {
-            if !bytes.contains(&0) && std::str::from_utf8(&bytes).is_ok() {
-                out.push(path);
-            }
+        } else if let Ok(bytes) = fs::read(&path)
+            && !bytes.contains(&0)
+            && std::str::from_utf8(&bytes).is_ok()
+        {
+            out.push(path);
         }
     }
 }

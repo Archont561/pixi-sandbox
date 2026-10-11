@@ -250,10 +250,10 @@ impl Manifest {
     pub fn blobs(&self, only: Option<&[String]>) -> Vec<(&str, &Blob)> {
         let mut out = Vec::new();
         for (name, env) in &self.envs {
-            if let Some(sel) = only {
-                if !sel.iter().any(|s| s == name) {
-                    continue;
-                }
+            if let Some(sel) = only
+                && !sel.iter().any(|s| s == name)
+            {
+                continue;
             }
             for blob in &env.blobs {
                 out.push((name.as_str(), blob));

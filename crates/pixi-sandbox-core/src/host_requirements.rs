@@ -167,10 +167,10 @@ impl HostRequirementSet {
     /// Returns an error for an empty or whitespace-bearing entry, a duplicate entry, or a
     /// `libc` spec outside [`LibcFloor::parse`]'s grammar.
     pub fn validate(&self, field: &str) -> Result<()> {
-        if let Some(spec) = &self.libc {
-            if let Err(error) = LibcFloor::parse(spec) {
-                return Err(Error::Invalid(format!("[{field}] {error}")));
-            }
+        if let Some(spec) = &self.libc
+            && let Err(error) = LibcFloor::parse(spec)
+        {
+            return Err(Error::Invalid(format!("[{field}] {error}")));
         }
         for (key, entries) in [
             ("packages", &self.packages),
