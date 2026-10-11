@@ -4,7 +4,7 @@ title: Publish a release-pinned Pixi Sandbox starter template
 status: In Progress
 assignee: []
 created_date: '2026-10-05'
-updated_date: '2026-10-06 20:54'
+updated_date: '2026-10-11 11:20'
 labels:
   - onboarding
   - template
@@ -101,4 +101,13 @@ Publication is fail-closed and idempotent: it refuses a remote that is not the c
 Still open. AC#1/#2/#6/#9/#10 are implemented but unproven: Archont561/pixi-sandbox-starter is marked as a GitHub template and is still empty, so nothing is proven until the lane runs once. AC#7 is not done: cross-repository delivery currently falls back to `secrets.PIXI_SANDBOX_STARTER_TOKEN || github.token`, and GITHUB_TOKEN cannot push `.github/workflows/*` (issue #101 is the same restriction in the consumer upgrade lane). The GitHub App credential model TASK-73 is proving is the intended replacement. AC#9 proves locked install, the documented dev task and byte-identical regeneration, but the bare-remote pack/doctor/publish/fetch/restore lifecycle is still consumer-proof.yml exclusively and is not replicated in the starter lane.
 
 Note on the repository name: doc-10 specified Archont561/pixi-sandbox-starter, the repository was created as pixi-sandbox-template on 2026-10-06 and renamed to pixi-sandbox-starter the same day, so the spec and the artifact now agree and no doc change was needed.
+2026-10-11 — the publication path was broken, and is now fixed (PR #133, `46efd1a7`, doc-13 §1.1).
+
+The starter lane ran green for v0.6.1 (run 38130262129) and published **one file**. `starter::publish` staged whatever `worktree_status_files` reported, and that query is `git status --porcelain --untracked-files=no`, so over a repository whose only tracked file was `README.md` every generated file was invisible: commit `945ed1a7` holds README.md alone and the immutable tag `pixi-sandbox-v0.6.1` seals it. `starter-verify` could not catch it because it judges the *directory*, which did hold all seven required files on the runner; nothing compared the staged set to the required one. Reproduced end to end with the real `xtask` against a bare-remote fixture (`publishing 1 file(s) for v0.0.1` → pushed tree `README.md`), and the regression test was confirmed to fail with the fix neutralised.
+
+Publish now stages `ls-files --cached --others --exclude-standard` — the revision, not the diff — and refuses a revision missing a required file or carrying a forbidden one. The refusal sits at the last gate before the push, which is where the directory-scoped verdict could not reach.
+
+AC#1 also grew two things the owner asked for: the launcher moved to `scripts/restore.sh` (via `init --script-path`, which already existed and creates the parent directory, so no core change was needed), and a devcontainer pinned to the pixi image the release pins, whose setup installs `git`, `gh` and `pixi-sandbox` from the canonical `archont561/archont561` channel and no compiler toolchain. `REQUIRED_FILES` is now ten entries and names the launcher for the first time — until now a starter could publish without one and pass.
+
+Still unproven, and not provable from here: the starter repository still holds only `README.md`. AC#1/#2/#6/#9/#10 remain open because the corrected lane has not run once, and running it needs two owner actions first — delete the tag `pixi-sandbox-v0.6.1` (it names an empty tree and `publish_refusals` refuses an existing tag), and confirm `PIXI_SANDBOX_STARTER_TOKEN` carries `Workflows: write` on the starter repository, since the push now carries `.github/workflows/*` into another repository (AC#7's concern, and issue #101's exact shape).
 <!-- SECTION:NOTES:END -->

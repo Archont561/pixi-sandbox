@@ -4,7 +4,7 @@ title: Make pixi-sandbox the single entrypoint in generated workflows
 status: In Progress
 assignee: []
 created_date: '2026-10-06 20:11'
-updated_date: '2026-10-10'
+updated_date: '2026-10-11 11:20'
 labels:
   - ci
   - github-actions
@@ -118,4 +118,11 @@ accessible by integration`, and an agent session is confined to its own branch, 
 release commit could not be pushed to `main` from here even if the token allowed it. One
 maintainer dispatch of `auto-release.yml` with its default `bump=auto` cuts the release;
 the transport repack and the consumer proof then follow without further action.
+2026-10-11 — the lane AC#8 needs was itself broken, and is now fixed and moved in front of the release (PR #133, `46efd1a7`, doc-13 §1.2/§2).
+
+`consumer proof` had been failing deterministically since v0.6.1 (run 38130260877, step "Render and regenerate consumer workflow", exit 1): it grepped the generated publisher for `Archont561/pixi-sandbox/releases/download`, but this task moved that download into `pixi-sandbox fetch-release`, and `generated_workflow.rs` asserts the render contains **no** such literal. The proof and the generator contradicted each other for a full release, and because the proof ran *after* publish, the release went out and the red run landed afterwards. Reproduced offline with the released 0.6.1 binary: `init --force` ×2 exit 0, `cmp` exit 0, the retired grep exit 1.
+
+Two changes. The assertion now names what the publisher does guarantee — the exact-version `fetch-release --dest` bootstrap — and repo check 13 holds every `grep -F` the proof aims at a generated publisher to a string the generator's source still contains, so the pair cannot drift again. And the proof moved *before* the publish: nothing in it needs a release to exist, so it runs in `release.yml` against the build's own artifact with `needs: build`, and publish needs `[build, consumer-proof]`. What cannot move is the asset boundary (`releases/download/<tag>` and the published SHA256SUMS), which keeps its own slimmed job.
+
+**AC#8 stays unchecked.** The mechanism is fixed, but the criterion is a real consumer repository reaching the same transport result on a released binary, and no release has been cut since. It is one release away, not one commit away.
 <!-- SECTION:NOTES:END -->
