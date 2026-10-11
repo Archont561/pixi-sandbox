@@ -45,6 +45,11 @@
 //!     `crates/pixi-sandbox/src/lib.rs`. The document is what an agent reads as instruction,
 //!     and D10 forbids the one thing that would otherwise catch the drift — a test that
 //!     reads this repository.
+//! 13. doc-13 §1.2 — the consumer proof greps a publisher another crate renders, so every
+//!     `grep -F` it aims at a generated file must match a string the generator's source still
+//!     contains. At v0.6.1 the proof kept grepping for a download URL that TASK-76 had moved
+//!     into `fetch-release`, and whose absence the generator's own tests assert; the release
+//!     published and the proof went red afterwards (run 38130260877).
 
 pub mod agents_md;
 mod badges;
@@ -52,6 +57,7 @@ mod bash32;
 mod channel_drift;
 mod conda_manifest;
 mod mutable_refs;
+mod proof_assertions;
 mod release_tags;
 mod relock;
 mod stale_refs;
@@ -97,16 +103,17 @@ const CHECKS: &[Check] = &[
         stale_refs::stale_implementation_references(root, failures);
         Ok(())
     }, // 1
-    badges::platform_claims,                    // 2
-    conda_manifest::version_references,         // 3
-    mutable_refs::action_pins,                  // 4
-    channel_drift::canonical_channel_install,   // 5
-    release_tags::workflow_literal_tags,        // 6
-    bash32::bash32_surface,                     // 8
-    workflow_shape::workflow_shape,             // 9
-    relock::generated_relock_is_current,        // 10
-    workflow_permissions::workflow_permissions, // 11
-    agents_md::agents_md_matches_tree,          // 12
+    badges::platform_claims,                                // 2
+    conda_manifest::version_references,                     // 3
+    mutable_refs::action_pins,                              // 4
+    channel_drift::canonical_channel_install,               // 5
+    release_tags::workflow_literal_tags,                    // 6
+    bash32::bash32_surface,                                 // 8
+    workflow_shape::workflow_shape,                         // 9
+    relock::generated_relock_is_current,                    // 10
+    workflow_permissions::workflow_permissions,             // 11
+    agents_md::agents_md_matches_tree,                      // 12
+    proof_assertions::proof_assertions_match_the_generator, // 13
 ];
 
 /// Run every check, returning all failures in one pass so a red run names every problem.

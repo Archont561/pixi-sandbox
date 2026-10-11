@@ -343,3 +343,83 @@ fn stale_extra_lines_in_the_sums_file_fail_the_completeness_check() {
         "must flag the surplus: {error:#}"
     );
 }
+
+// ------------------------------------------------------- the binary-completeness gate (doc-13 §1.3)
+
+fn dist_with(dir: &Path, names: &[&str]) {
+    for name in names {
+        write(&dir.join(name), b"binary");
+    }
+}
+
+#[test]
+fn the_expected_binaries_are_one_per_supported_platform() {
+    let expected = expected_binaries();
+    assert_eq!(
+        expected.len(),
+        pixi_sandbox_core::platform::Platform::ALL.len(),
+        "{expected:?}"
+    );
+    assert!(expected.contains(&"pixi-sandbox-x86_64-pc-windows-msvc.exe"));
+}
+
+#[test]
+fn a_complete_binary_set_passes_the_gate() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    dist_with(dir.path(), &expected_binaries());
+    assert!(check_binaries(dir.path(), &expected_binaries()).is_ok());
+}
+
+/// v0.6.1's shape: one leg failed to upload, and `release_checksums` would have published a
+/// green `SHA256SUMS` covering the four that survived.
+#[test]
+fn a_release_missing_one_platforms_binary_is_refused_by_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let expected = expected_binaries();
+    let present: Vec<&str> = expected
+        .iter()
+        .copied()
+        .filter(|name| *name != "pixi-sandbox-x86_64-apple-darwin")
+        .collect();
+    dist_with(dir.path(), &present);
+
+    let (ok, diagnostics) = validate_binaries(dir.path(), &expected);
+    assert_eq!(ok.len(), expected.len() - 1, "{ok:?}");
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("pixi-sandbox-x86_64-apple-darwin") && d.contains("missing")),
+        "{diagnostics:?}"
+    );
+    assert!(check_binaries(dir.path(), &expected).is_err());
+}
+
+#[test]
+fn an_unexpected_binary_is_reported_rather_than_silently_published() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let expected = expected_binaries();
+    let mut names = expected.clone();
+    names.push("pixi-sandbox-mips-unknown-elf");
+    dist_with(dir.path(), &names);
+
+    let (_, diagnostics) = validate_binaries(dir.path(), &expected);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("pixi-sandbox-mips-unknown-elf")),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn a_missing_artifact_directory_names_the_download_not_a_platform() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let absent = dir.path().join("dist");
+    let (_, diagnostics) = validate_binaries(&absent, &expected_binaries());
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("were not downloaded")),
+        "{diagnostics:?}"
+    );
+}

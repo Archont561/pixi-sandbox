@@ -224,3 +224,87 @@ pub fn verify_completeness(sums: &Path, binaries: &[PathBuf]) -> Result<()> {
     }
     Ok(())
 }
+
+/// The release's expected standalone binary names, from the same table the updater resolves
+/// assets through, so the gate cannot drift from the platform set.
+#[must_use]
+pub fn expected_binaries() -> Vec<&'static str> {
+    pixi_sandbox::self_update::assets::SUPPORTED_HOSTS
+        .iter()
+        .map(|(_, _, name)| *name)
+        .collect()
+}
+
+/// Every way `dir` fails to hold exactly one binary per supported platform.
+///
+/// Returns diagnostics rather than failing on the first one (D13): a release missing two
+/// platforms should say so in one run, not send the operator back twice.
+#[doc(hidden)] // test boundary (tests/release_assets.rs)
+#[must_use]
+pub fn validate_binaries(dir: &Path, expected: &[&str]) -> (Vec<String>, Vec<String>) {
+    let mut ok = Vec::new();
+    let mut diagnostics = Vec::new();
+    if !dir.is_dir() {
+        diagnostics.push(format!(
+            "{} does not exist — the binary artifacts were not downloaded",
+            dir.display()
+        ));
+        return (ok, diagnostics);
+    }
+    let present: Vec<String> = match standalone_binaries(dir) {
+        Ok(found) => found
+            .iter()
+            .filter_map(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .collect(),
+        Err(error) => {
+            diagnostics.push(format!("reading {}: {error:#}", dir.display()));
+            return (ok, diagnostics);
+        }
+    };
+    for name in expected {
+        if present.iter().any(|found| found == name) {
+            ok.push(format!("ok: {name}"));
+        } else {
+            diagnostics.push(format!(
+                "{name} is missing — that platform's build produced no staged binary"
+            ));
+        }
+    }
+    for found in &present {
+        if !expected.contains(&found.as_str()) {
+            diagnostics.push(format!(
+                "{found} is not a release asset of any supported platform — a stale artifact would be published under this name"
+            ));
+        }
+    }
+    (ok, diagnostics)
+}
+
+/// Fail the release unless every supported platform contributed exactly one standalone binary.
+///
+/// `release_checksums` hashes whatever it finds and refuses only an empty directory, so a
+/// release missing a platform used to publish a green `SHA256SUMS` covering four binaries. The
+/// conda packages have had this gate since task-23; this is its binary twin, and v0.6.1 came
+/// within one artifact upload of needing it (run 38061777852: the osx-64 leg failed to upload
+/// and only the skipped publish job stood between that and a four-platform release).
+///
+/// # Errors
+///
+/// Fails, naming every defect, when a platform's binary is missing or an unexpected one is present.
+pub fn check_binaries(dir: &Path, expected: &[&str]) -> Result<()> {
+    let (ok, diagnostics) = validate_binaries(dir, expected);
+    for line in &ok {
+        eprintln!("{line}");
+    }
+    if !diagnostics.is_empty() {
+        for diagnostic in &diagnostics {
+            eprintln!("::error::{diagnostic}");
+        }
+        bail!("{} standalone binary problem(s)", diagnostics.len());
+    }
+    eprintln!("all {} standalone binaries present", ok.len());
+    Ok(())
+}

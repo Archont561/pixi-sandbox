@@ -148,8 +148,11 @@ jobs:
       - name: Scaffold the starter's own files
         run: pixi run -e package xtask starter-scaffold -- --out starter --tag "$TAG" --source-commit "$SOURCE_COMMIT" --source-repo "$SOURCE_REPO" --starter-repo "$STARTER_REPO"
 
+      # `--script-path` puts the launcher under scripts/, which is where the starter's
+      # REQUIRED_FILES expects it. Both invocations carry it, or `--check` compares against the
+      # root-level default and reports drift that is not there (doc-13 §3.2).
       - name: Generate the owned files with the released binary
-        run: '"$RUNNER_TEMP/pixi-sandbox" init --project-root starter --force'
+        run: '"$RUNNER_TEMP/pixi-sandbox" init --project-root starter --script-path scripts/restore.sh --force'
 
       - name: Lock the starter environment
         run: pixi lock --manifest-path starter/pixi.toml
@@ -157,7 +160,7 @@ jobs:
       # Second generation must change nothing: that is the publication contract's idempotence
       # promise, and `init --check` is the same gate consumers run against their own tree.
       - name: Prove regeneration is byte-identical
-        run: '"$RUNNER_TEMP/pixi-sandbox" init --project-root starter --check'
+        run: '"$RUNNER_TEMP/pixi-sandbox" init --project-root starter --script-path scripts/restore.sh --check'
 
       - name: Lint the generated workflows
         run: pixi run -e default lint-actions starter/.github/workflows/publish-sandbox.yml starter/.github/workflows/relock.yml
@@ -193,6 +196,8 @@ jobs:
             starter/pixi-sandbox.toml
             starter/README.md
             starter/.gitignore
+            starter/scripts/restore.sh
+            starter/.devcontainer/
             starter/.github/workflows/
           if-no-files-found: warn
           retention-days: 30

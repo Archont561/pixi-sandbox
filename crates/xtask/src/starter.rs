@@ -20,10 +20,20 @@ use std::path::{Path, PathBuf};
 /// `init` owns the publisher, the relock workflow and the restore launcher, and writes a
 /// default `pixi-sandbox.toml` once. Everything below is the Pixi project that gives those
 /// files something to pack.
-pub const SCAFFOLD_FILES: [&str; 3] = ["pixi.toml", ".gitignore", "README.md"];
+pub const SCAFFOLD_FILES: [&str; 5] = [
+    "pixi.toml",
+    ".gitignore",
+    "README.md",
+    ".devcontainer/devcontainer.json",
+    ".devcontainer/setup.sh",
+];
 
 /// Every file a validated starter revision must contain before it is published.
-pub const REQUIRED_FILES: [&str; 7] = [
+///
+/// `scripts/restore.sh` is the launcher `init` writes when the starter lane asks for
+/// `--script-path scripts/restore.sh`; the launcher is listed because a starter without it
+/// cannot restore on an airlocked host, and until doc-13 it was not listed at all.
+pub const REQUIRED_FILES: [&str; 10] = [
     "pixi.toml",
     "pixi.lock",
     "pixi-sandbox.toml",
@@ -31,6 +41,9 @@ pub const REQUIRED_FILES: [&str; 7] = [
     "README.md",
     ".github/workflows/publish-sandbox.yml",
     ".github/workflows/relock.yml",
+    "scripts/restore.sh",
+    ".devcontainer/devcontainer.json",
+    ".devcontainer/setup.sh",
 ];
 
 /// Paths that must never be committed to the starter: runtime state, caches and anything
@@ -43,6 +56,10 @@ pub const FORBIDDEN_PATHS: [&str; 6] = [
     "pixi-sandbox",
     "pixi-sandbox.exe",
 ];
+
+/// How a connected host installs the CLI. Spelled exactly as check 5 requires the README and
+/// installation guide to spell it, so a user sees one command in all three places.
+pub const CANONICAL_GLOBAL_INSTALL: &str = "pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox";
 
 /// Strip a leading `v` so a tag and a CLI version can be compared.
 ///
@@ -104,6 +121,70 @@ pub fn render_gitignore() -> String {
         .to_string()
 }
 
+/// The starter's devcontainer, pinned to the pixi image the release pins.
+///
+/// The image tag is an argument, never a literal: `starter.yml`'s contract is that it invents
+/// no content, and a hardcoded pixi version starts lying the first time the tool's pin moves.
+/// The lane reads it from the release's own embedded tools lock (doc-13 §3.2).
+#[must_use]
+pub fn render_devcontainer_json(pixi_version: &str) -> String {
+    format!(
+        "{{\n\
+         \x20 \"$schema\": \"https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json\",\n\
+         \x20 \"name\": \"pixi-sandbox-starter\",\n\
+         \x20 \"image\": \"ghcr.io/prefix-dev/pixi:{pixi_version}\",\n\
+         \x20 \"postCreateCommand\": \"bash .devcontainer/setup.sh\"\n\
+         }}\n"
+    )
+}
+
+/// The devcontainer's post-create setup: the two CLI tools the pixi image lacks and the
+/// pixi-sandbox CLI itself, then the locked project environment.
+///
+/// Deliberately shorter than this repository's own `.devcontainer/setup.sh`. A starter is a
+/// consumer template, not the sandbox's build environment: no C toolchain (nothing here
+/// compiles Rust), no agent CLIs. The channel spelling is the canonical one check 5 holds the
+/// README and installation guide to, so a user sees the same command in both places.
+#[must_use]
+pub fn render_devcontainer_setup() -> String {
+    format!(
+        "#!/usr/bin/env bash\n\
+         # Devcontainer setup for the pixi-sandbox starter. Kept out of devcontainer.json so\n\
+         # each step can be commented and the JSON stays a one-liner.\n\
+         set -euo pipefail\n\
+         \n\
+         pixi --version\n\
+         \n\
+         # CLI tooling the pixi image does not ship with.\n\
+         pixi global install git gh\n\
+         \n\
+         # The pixi-sandbox CLI, from the Archont561 channel on prefix.dev.\n\
+         {CANONICAL_GLOBAL_INSTALL}\n\
+         \n\
+         # The project's own environment, pinned to the lockfile.\n\
+         pixi install --locked\n"
+    )
+}
+
+/// The pixi version a release pins, read from the embedded tools lock it was built with.
+///
+/// The lane checks out the exact commit the tag names (`starter-check-dispatch` refuses any
+/// other), so this file *is* the release's pin — the same bytes the binary compiles in and
+/// `pixi-sandbox tools list` prints, read without executing anything.
+///
+/// # Errors
+///
+/// Fails when the lock cannot be read, is not valid JSON, or names no pixi version.
+pub fn pixi_version_from_tools_lock(path: &Path) -> Result<String> {
+    let text = crate::util::read(path)?;
+    let lock: serde_json::Value =
+        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    lock["tools"]["pixi"]["version"]
+        .as_str()
+        .map(str::to_string)
+        .with_context(|| format!("{} names no tools.pixi.version", path.display()))
+}
+
 /// The starter README.
 ///
 /// doc-10 requires the prose to state the release it corresponds to and to cross-link the main
@@ -141,6 +222,9 @@ pub fn render_readme(
          3. Push to `main`. The included publisher packs your locked environment and pushes a\n\
             self-contained sandbox branch, using your repository's own `GITHUB_TOKEN`.\n\
          \n\
+         Opening it in a Codespace or any devcontainer works the same way: the pixi image\n\
+         arrives with `git`, `gh` and the `pixi-sandbox` CLI already installed.\n\
+         \n\
          No `pixi-sandbox init`, no workflow copying, no version to choose, and no token owned\n\
          by anyone else.\n\
          \n\
@@ -151,10 +235,11 @@ pub fn render_readme(
          \n\
          - `.github/workflows/publish-sandbox.yml` — packs and publishes the sandbox branch\n\
          - `.github/workflows/relock.yml` — refreshes `pixi.lock` on pull requests\n\
-         - `restore.sh` — offline restore launcher for an airlocked host\n\
+         - `scripts/restore.sh` — offline restore launcher for an airlocked host\n\
          - `pixi-sandbox.toml` — the reviewed publish plan; written once, then yours\n\
          \n\
-         `pixi.toml`, `pixi.lock`, `.gitignore` and this README are yours from the start.\n\
+         `pixi.toml`, `pixi.lock`, `.gitignore`, `.devcontainer/` and this README are yours\n\
+         from the start.\n\
          \n\
          ## Updating\n\
          \n\
@@ -183,6 +268,7 @@ pub fn scaffold(
     source_commit: &str,
     source_repo: &str,
     starter_repo: &str,
+    pixi_version: &str,
 ) -> Result<()> {
     if !is_strict_tag(tag) {
         bail!("starter tag must be a strict semver tag like v1.2.3, got {tag:?}");
@@ -190,12 +276,17 @@ pub fn scaffold(
     if source_commit.len() < 7 || !source_commit.chars().all(|c| c.is_ascii_hexdigit()) {
         bail!("starter source commit must be a hex sha of at least 7 chars, got {source_commit:?}");
     }
+    if pixi_version.trim().is_empty() {
+        bail!("the devcontainer image needs the pixi version the release pins");
+    }
     std::fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
     // Keyed by SCAFFOLD_FILES so the published set and the written set cannot drift apart.
     let contents = [
         render_pixi_toml(name),
         render_gitignore(),
         render_readme(tag, source_commit, source_repo, starter_repo),
+        render_devcontainer_json(pixi_version),
+        render_devcontainer_setup(),
     ];
     for (file, body) in SCAFFOLD_FILES.iter().zip(&contents) {
         crate::util::write_atomic(&out.join(file), body)?;
@@ -304,6 +395,25 @@ pub fn verify(dir: &Path, tag: &str) -> Result<Vec<String>> {
         let readme = crate::util::read(&readme_path)?;
         if !readme.contains(tag) {
             findings.push(format!("README does not state the release tag {tag}"));
+        }
+    }
+
+    // The devcontainer is scaffold-owned, so nothing else polices it: `init --check` does not
+    // know it exists. These two findings hold the owner's contract — the CLI comes from the
+    // canonical channel, and a consumer template installs no compiler toolchain.
+    let setup_path = dir.join(".devcontainer/setup.sh");
+    if setup_path.exists() {
+        let setup = crate::util::read(&setup_path)?;
+        if !setup.contains(CANONICAL_GLOBAL_INSTALL) {
+            findings.push(format!(
+                "devcontainer setup does not install pixi-sandbox from the canonical channel ({CANONICAL_GLOBAL_INSTALL})"
+            ));
+        }
+        if setup.contains("c-compiler") || setup.contains("cxx-compiler") {
+            findings.push(
+                "devcontainer setup must not install a compiler toolchain: the starter is a consumer template and compiles nothing"
+                    .to_string(),
+            );
         }
     }
     Ok(findings)
@@ -721,8 +831,7 @@ fn keep_executable_bit(_from: &Path, _to: &Path) -> Result<()> {
 /// Is there anything to publish, and may we publish it here?
 ///
 /// Separated from the git calls so the refusal rules can be tested directly. Returns the
-/// files to stage; an empty list means the verified tag reproduced the current revision
-/// exactly, which the publication contract requires to be a success, not a no-op failure.
+/// reasons not to publish; an empty list means the lane may proceed.
 #[doc(hidden)] // test boundary (tests/starter.rs)
 #[must_use]
 pub fn publish_refusals(
@@ -779,20 +888,59 @@ pub fn publish(
         bail!("refusing to publish the starter; the previous revision is unchanged");
     }
 
-    let changed = git.worktree_status_files(root)?;
-    if changed.is_empty() {
+    // What the next commit would contain is not "what changed": the starter starts life with
+    // only a README tracked, so every generated file is untracked, and a status query scoped to
+    // tracked entries answers "one file" over a ten-file template. That is exactly the v0.6.1
+    // starter, which published a README-only revision behind a green run and an immutable tag
+    // (doc-13 §1.1). `ls-files --cached --others --exclude-standard` is the revision instead:
+    // tracked plus untracked, minus whatever the starter's own `.gitignore` excludes.
+    let revision = git.ls_publishable(root)?;
+
+    let missing: Vec<&str> = REQUIRED_FILES
+        .iter()
+        .filter(|required| !revision.iter().any(|path| path == *required))
+        .copied()
+        .collect();
+    if !missing.is_empty() {
+        for required in &missing {
+            eprintln!("::error::the starter revision would not contain {required}");
+        }
+        bail!(
+            "refusing to publish a starter revision missing {} required file(s); the previous revision is unchanged",
+            missing.len()
+        );
+    }
+    let forbidden: Vec<&str> = FORBIDDEN_PATHS
+        .iter()
+        .filter(|forbidden| {
+            let prefix = format!("{forbidden}/");
+            revision
+                .iter()
+                .any(|path| path == *forbidden || path.starts_with(&prefix))
+        })
+        .copied()
+        .collect();
+    if !forbidden.is_empty() {
+        for path in &forbidden {
+            eprintln!("::error::{path} would be committed to the starter");
+        }
+        bail!("refusing to publish runtime state or credentials to the starter");
+    }
+
+    git.add_files(root, &revision)?;
+    let staged = git.staged_files(root)?;
+    if staged.is_empty() {
         println!("starter is already at {tag}; nothing to publish (idempotent re-run)");
         return Ok(());
     }
-    println!("publishing {} file(s) for {tag}", changed.len());
+    println!("publishing {} file(s) for {tag}", staged.len());
     if dry_run {
         println!("dry run: not committing or pushing");
-        for file in &changed {
+        for file in &staged {
             println!("  would publish {file}");
         }
         return Ok(());
     }
-    git.add_files(root, &changed)?;
     git.commit(
         root,
         &format!(

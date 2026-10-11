@@ -44,7 +44,11 @@ pub fn valid_fixture() -> tempfile::TempDir {
     );
     write(
         "crates/pixi-sandbox/src/generated/github_workflow.rs",
-        "https://prefix.dev/archont561/archont561\npixi global install pixi-sandbox\n",
+        "https://prefix.dev/archont561/archont561\npixi global install pixi-sandbox\npixi-sandbox fetch-release --dest \"$PIXI_SANDBOX_BIN\"\n# verifies it against the release's SHA256SUMS\n",
+    );
+    write(
+        ".github/workflows/consumer-proof.yml",
+        "name: consumer proof\njobs:\n  consumer-proof:\n    steps:\n      - run: grep -F 'fetch-release --dest' .github/workflows/publish-sandbox.yml\n",
     );
     write(
         ".github/workflows/ci.yml",
@@ -126,6 +130,11 @@ pub const STARTER_COMMIT: &str = "8193c58068c3245e5267c4c604f989237e4d6e49";
 pub const STARTER_SOURCE: &str = "Archont561/pixi-sandbox";
 #[allow(dead_code)]
 pub const STARTER_REPO: &str = "Archont561/pixi-sandbox-starter";
+/// The pixi version a fixture release pins. The real lane reads it from the release's embedded
+/// tools lock; a fixture states it, because a fixture that read the real lock would be reading
+/// this repository (D10).
+#[allow(dead_code)]
+pub const STARTER_PIXI_VERSION: &str = "0.81.0";
 
 /// A starter tree as the lane's scaffold + generate + lock steps leave it, with the publisher
 /// carrying `workflow_version` in both places the verifier reads.
@@ -142,6 +151,7 @@ pub fn starter_tree(dir: &Path, workflow_version: &str) {
         STARTER_COMMIT,
         STARTER_SOURCE,
         STARTER_REPO,
+        STARTER_PIXI_VERSION,
     )
     .expect("scaffold");
     fs::create_dir_all(dir.join(".github/workflows")).expect("mkdir");
@@ -159,7 +169,10 @@ pub fn starter_tree(dir: &Path, workflow_version: &str) {
     )
     .expect("write");
     fs::write(dir.join(".github/workflows/relock.yml"), "name: relock\n").expect("write");
-    fs::write(dir.join("restore.sh"), "echo restore\n").expect("write");
+    // The starter lane passes `init --script-path scripts/restore.sh`, so the launcher the
+    // verifier requires lives under scripts/ (doc-13 §3.2).
+    fs::create_dir_all(dir.join("scripts")).expect("mkdir scripts");
+    fs::write(dir.join("scripts/restore.sh"), "echo restore\n").expect("write");
 }
 
 /// The runtime state `pixi lock` and `pixi run dev` necessarily leave in the assembled directory:

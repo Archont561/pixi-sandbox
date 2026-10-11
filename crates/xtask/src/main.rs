@@ -52,6 +52,12 @@ enum Command {
         #[arg(default_value = "dist/conda")]
         dir: PathBuf,
     },
+    /// Fail the release unless every supported platform contributed one standalone binary.
+    CheckReleaseBinaries {
+        /// Directory the binary artifacts were downloaded into.
+        #[arg(default_value = "dist")]
+        dir: PathBuf,
+    },
     /// Install the just-built conda package(s) and run the packaged binary on this machine.
     SmokeCondaPackage {
         /// Directory the `package` task wrote the `.conda` file(s) into.
@@ -205,6 +211,13 @@ enum Command {
         /// Repository the starter is published to.
         #[arg(long, default_value = "Archont561/pixi-sandbox-starter")]
         starter_repo: String,
+        /// Embedded tools lock the release was built with; the devcontainer image pin comes
+        /// from it, so the template never hardcodes a pixi version.
+        #[arg(
+            long,
+            default_value = "crates/pixi-sandbox-core/assets/tools.lock.json"
+        )]
+        tools_lock: PathBuf,
     },
     /// Assemble the tree a starter checkout would commit and clone it fresh into a scratch dir.
     StarterClone {
@@ -336,6 +349,7 @@ fn run_args(args: Args) -> Result<()> {
             name,
             source_repo,
             starter_repo,
+            tools_lock,
         } => starter::scaffold(
             &out,
             &name,
@@ -343,6 +357,7 @@ fn run_args(args: Args) -> Result<()> {
             &source_commit,
             &source_repo,
             &starter_repo,
+            &starter::pixi_version_from_tools_lock(&tools_lock)?,
         ),
         Command::StarterVerify { dir, tag } => {
             let findings = starter::verify(&dir, &tag)?;
@@ -384,6 +399,9 @@ fn run_args(args: Args) -> Result<()> {
             dry_run,
         ),
         Command::CheckCondaPlatforms { dir } => conda_platforms::check(&root.join(dir)),
+        Command::CheckReleaseBinaries { dir } => {
+            release_assets::check_binaries(&root.join(dir), &release_assets::expected_binaries())
+        }
         Command::SmokeCondaPackage { out_dir } => {
             smoke::smoke_conda_package(&root, &root.join(out_dir))
         }

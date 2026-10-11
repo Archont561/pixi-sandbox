@@ -685,3 +685,59 @@ fn worktree_status_files_reports_tracked_changes_for_xtask() {
     let files = ShellGit::new().worktree_status_files(repo.path()).unwrap();
     assert_eq!(files, vec!["tracked.txt"]);
 }
+
+/// `staged_files` answers "what would this commit contain", which `worktree_status_files`
+/// cannot: an `git add` of a file whose content already matches `HEAD` stages nothing, and a
+/// file the repository never tracked is invisible to the tracked-only status query (doc-13
+/// §1.1 — the starter lane published a one-file revision over a ten-file template).
+#[test]
+fn staged_files_names_only_what_differs_from_head() {
+    let repo = tempfile::tempdir().expect("tempdir");
+    run_git(&["init", "-q"], repo.path());
+    std::fs::write(repo.path().join("tracked.txt"), "initial").unwrap();
+    run_git(&["add", "tracked.txt"], repo.path());
+    run_git(
+        &[
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "initial",
+        ],
+        repo.path(),
+    );
+
+    // A tracked file re-added unchanged, an untracked file, and an ignored file.
+    std::fs::write(repo.path().join("untracked.txt"), "new").unwrap();
+    std::fs::write(repo.path().join("ignored.txt"), "runtime state").unwrap();
+    std::fs::write(repo.path().join(".gitignore"), "ignored.txt\n").unwrap();
+    run_git(
+        &["add", "tracked.txt", "untracked.txt", ".gitignore"],
+        repo.path(),
+    );
+
+    let git = ShellGit::new();
+    let mut staged = git.staged_files(repo.path()).unwrap();
+    staged.sort();
+    assert_eq!(staged, vec![".gitignore", "untracked.txt"]);
+
+    // Committing them leaves nothing staged, which is what makes an idempotent re-publish
+    // a success rather than an empty commit.
+    run_git(
+        &[
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "second",
+        ],
+        repo.path(),
+    );
+    assert!(git.staged_files(repo.path()).unwrap().is_empty());
+}

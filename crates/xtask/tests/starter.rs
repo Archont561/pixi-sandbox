@@ -10,6 +10,8 @@ const TAG: &str = "v1.2.3";
 const COMMIT: &str = "8193c58068c3245e5267c4c604f989237e4d6e49";
 const SOURCE: &str = "Archont561/pixi-sandbox";
 const STARTER: &str = "Archont561/pixi-sandbox-starter";
+/// The pixi version the fixture release pins; the real lane reads it from the tools lock.
+const PIXI_VERSION: &str = "0.81.0";
 
 /// The lane that publishes the starter, read as text. The two assertions below are about step
 /// *order*, which no unit test can see: they are the reason the workflow still runs the proof on
@@ -341,12 +343,30 @@ fn each_floating_version_spelling_is_reported() {
 #[test]
 fn scaffolding_twice_is_byte_identical() {
     let dir = tempfile::tempdir().unwrap();
-    scaffold(dir.path(), "starter", TAG, COMMIT, SOURCE, STARTER).unwrap();
+    scaffold(
+        dir.path(),
+        "starter",
+        TAG,
+        COMMIT,
+        SOURCE,
+        STARTER,
+        PIXI_VERSION,
+    )
+    .unwrap();
     let first: Vec<String> = SCAFFOLD_FILES
         .iter()
         .map(|f| std::fs::read_to_string(dir.path().join(f)).unwrap())
         .collect();
-    scaffold(dir.path(), "starter", TAG, COMMIT, SOURCE, STARTER).unwrap();
+    scaffold(
+        dir.path(),
+        "starter",
+        TAG,
+        COMMIT,
+        SOURCE,
+        STARTER,
+        PIXI_VERSION,
+    )
+    .unwrap();
     let second: Vec<String> = SCAFFOLD_FILES
         .iter()
         .map(|f| std::fs::read_to_string(dir.path().join(f)).unwrap())
@@ -359,7 +379,16 @@ fn a_loose_tag_is_refused_before_anything_is_written() {
     let dir = tempfile::tempdir().unwrap();
     for tag in ["latest", "v1.2", "1.2.3.4", ""] {
         assert!(
-            scaffold(dir.path(), "starter", tag, COMMIT, SOURCE, STARTER).is_err(),
+            scaffold(
+                dir.path(),
+                "starter",
+                tag,
+                COMMIT,
+                SOURCE,
+                STARTER,
+                PIXI_VERSION
+            )
+            .is_err(),
             "{tag:?} was accepted"
         );
     }
@@ -369,7 +398,18 @@ fn a_loose_tag_is_refused_before_anything_is_written() {
 #[test]
 fn a_non_hex_source_commit_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    assert!(scaffold(dir.path(), "starter", TAG, "not-a-sha", SOURCE, STARTER).is_err());
+    assert!(
+        scaffold(
+            dir.path(),
+            "starter",
+            TAG,
+            "not-a-sha",
+            SOURCE,
+            STARTER,
+            PIXI_VERSION
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -534,5 +574,136 @@ fn publishing_to_a_fork_or_over_an_existing_revision_is_refused() {
             TAG,
         )
         .is_empty()
+    );
+}
+
+/// The v0.6.1 regression (doc-13 §1.1). A starter repository whose only tracked file is the
+/// README, published by a lane that asked `git status --untracked-files=no` what to stage,
+/// produced a one-file revision — behind a green run and an immutable tag. The revision is
+/// judged here by asking the remote what it holds, not by looking at the working tree the lane
+/// had already written.
+#[test]
+fn publishing_over_a_readme_only_starter_commits_the_whole_template() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    // The refusal ladder compares the remote against the canonical `owner/repo` slug, so the
+    // fixture's bare repository is nested under the owner the way a URL path is.
+    std::fs::create_dir_all(root.join("Archont561")).expect("owner dir");
+    let owner = root.join("Archont561");
+    let remote = owner.join("pixi-sandbox-starter.git");
+    let remote_str = remote.to_str().expect("utf8 remote");
+
+    run_git(
+        &owner,
+        &["init", "--bare", "-q", "pixi-sandbox-starter.git"],
+    );
+    run_git(&remote, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+
+    // Seeded the way the real starter was: one commit, README and nothing else.
+    let seed = root.join("seed");
+    std::fs::create_dir_all(&seed).expect("seed dir");
+    run_git(&seed, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(seed.join("README.md"), "# starter\n").expect("seed readme");
+    commit_all(&seed, "Initial commit");
+    run_git(&seed, &["remote", "add", "origin", remote_str]);
+    run_git(&seed, &["push", "-q", "origin", "main"]);
+
+    // The clone already has `origin`, which is the shape the lane checks out.
+    run_git(root, &["clone", "-q", remote_str, "starter"]);
+    let clone = root.join("starter");
+    starter_tree(&clone, "1.2.3");
+    support::runtime_state(&clone);
+
+    publish(&clone, remote_str, STARTER, TAG, "main", COMMIT, false).expect("publish");
+
+    run_git(root, &["clone", "-q", remote_str, "verify"]);
+    let verify = root.join("verify");
+    let committed = run_git(&verify, &["ls-files"]);
+    for required in REQUIRED_FILES {
+        assert!(
+            committed.lines().any(|line| line == required),
+            "the published revision is missing {required}; it holds:\n{committed}"
+        );
+    }
+    assert!(
+        !committed.contains(".pixi/"),
+        "runtime state reached the starter:\n{committed}"
+    );
+    assert!(
+        run_git(&verify, &["tag"]).contains("pixi-sandbox-v1.2.3"),
+        "the immutable evidence tag is missing"
+    );
+}
+
+/// The devcontainer's pixi image pin is an argument, never a literal: `starter.yml`'s contract
+/// is that it invents no content, so a hardcoded version would start lying the first time the
+/// tool's pin moves (doc-13 §3.2).
+#[test]
+fn the_devcontainer_pins_the_pixi_image_to_the_version_it_is_given() {
+    assert!(render_devcontainer_json("1.2.3").contains("ghcr.io/prefix-dev/pixi:1.2.3"));
+    assert!(!render_devcontainer_json("1.2.3").contains("0.81.0"));
+}
+
+#[test]
+fn the_devcontainer_setup_installs_three_things_and_no_toolchain() {
+    let setup = render_devcontainer_setup();
+    assert!(setup.contains("pixi global install git gh"), "{setup}");
+    assert!(setup.contains(CANONICAL_GLOBAL_INSTALL), "{setup}");
+    assert!(setup.contains("pixi install --locked"), "{setup}");
+    assert!(!setup.contains("c-compiler"), "{setup}");
+}
+
+#[test]
+fn the_pixi_version_comes_from_the_tools_lock_the_release_embeds() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let lock = dir.path().join("tools.lock.json");
+    std::fs::write(
+        &lock,
+        "{\"schema\":1,\"tools\":{\"pixi\":{\"version\":\"9.9.9\"}}}\n",
+    )
+    .expect("write");
+    assert_eq!(
+        pixi_version_from_tools_lock(&lock).expect("version"),
+        "9.9.9"
+    );
+
+    std::fs::write(&lock, "{\"schema\":1,\"tools\":{}}\n").expect("write");
+    let error = pixi_version_from_tools_lock(&lock).unwrap_err().to_string();
+    assert!(error.contains("names no tools.pixi.version"), "{error}");
+}
+
+/// The devcontainer is scaffold-owned, so `init --check` never sees it; `verify` is the only
+/// gate that can hold its contract.
+#[test]
+fn a_devcontainer_that_installs_a_toolchain_is_not_a_publishable_starter() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    starter_tree(dir.path(), "1.2.3");
+    std::fs::write(
+        dir.path().join(".devcontainer/setup.sh"),
+        "#!/usr/bin/env bash\nset -euo pipefail\npixi global install c-compiler\n",
+    )
+    .expect("write");
+    let findings = verify(dir.path(), TAG).expect("verify");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.contains("must not install a compiler toolchain")),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn a_devcontainer_that_skips_the_canonical_channel_is_not_a_publishable_starter() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    starter_tree(dir.path(), "1.2.3");
+    std::fs::write(
+        dir.path().join(".devcontainer/setup.sh"),
+        "#!/usr/bin/env bash\nset -euo pipefail\npixi global install pixi-sandbox\n",
+    )
+    .expect("write");
+    let findings = verify(dir.path(), TAG).expect("verify");
+    assert!(
+        findings.iter().any(|f| f.contains("canonical channel")),
+        "{findings:?}"
     );
 }

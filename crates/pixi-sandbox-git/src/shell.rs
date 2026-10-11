@@ -545,6 +545,13 @@ impl ShellGit {
     /// This is the porcelain form used by release preparation to account for every tracked
     /// modification without invoking Git from the consumer crate.
     ///
+    /// **Tracked entries only** (`--untracked-files=no`): a file the repository has never
+    /// tracked is invisible here. That is what release preparation wants — it must refuse
+    /// unaccounted modifications, not adopt new files — but it makes this the wrong answer to
+    /// "what should the next commit contain". The starter lane asked exactly that question and
+    /// published a one-file revision over a six-file template (doc-13 §1.1); it now uses
+    /// [`Self::ls_publishable`] instead.
+    ///
     /// # Errors
     ///
     /// Returns an error if `git status` fails or its output is not UTF-8.
@@ -562,6 +569,32 @@ impl ShellGit {
             .lines()
             .filter(|line| line.len() > 3)
             .map(|line| line[3..].to_string())
+            .collect())
+    }
+
+    /// Files whose staged content differs from `HEAD` — `git diff --cached --name-only`.
+    ///
+    /// The honest answer to "what would this commit contain", asked *after* an `git add`:
+    /// unchanged files the add touched are not listed, so an empty result means there is
+    /// nothing to commit. [`Self::worktree_status_files`] cannot answer this — it reports
+    /// working-tree state and, with `--untracked-files=no`, is blind to every file the
+    /// repository has never tracked.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `git` fails or its output is not UTF-8.
+    pub fn staged_files(&self, root: &Path) -> Result<Vec<String>> {
+        let command = self
+            .git(["diff", "--cached", "--name-only", "-z"])
+            .cwd(root);
+        let output = self.run(&command)?;
+        let text = String::from_utf8(output.stdout).map_err(|_| Error::NonUtf8 {
+            command: command.rendered(),
+        })?;
+        Ok(text
+            .split('\0')
+            .filter(|line| !line.is_empty())
+            .map(ToString::to_string)
             .collect())
     }
 
