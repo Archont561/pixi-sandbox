@@ -1,10 +1,10 @@
 ---
 id: TASK-89
 title: Port the consumer proof recipe into xtask subcommands
-status: In Progress
-updated_date: '2026-10-11 15:10'
+status: Done
 assignee: []
 created_date: '2026-10-11 11:20'
+updated_date: '2026-10-11 18:36'
 labels:
   - ci
   - github-actions
@@ -13,7 +13,9 @@ dependencies: []
 references:
   - .github/workflows/release.yml
   - crates/xtask/src/starter.rs
-  - 'backlog/docs/plans/release-lane-repair/doc-13 - Release-Lane-Repair-Proof-Before-Publish-and-a-Starter-That-Publishes.md'
+  - >-
+    backlog/docs/plans/release-lane-repair/doc-13 -
+    Release-Lane-Repair-Proof-Before-Publish-and-a-Starter-That-Publishes.md
 priority: medium
 type: chore
 ordinal: 89000
@@ -32,11 +34,10 @@ Deliberately not folded into doc-13. That slice had to move the proof before the
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
-
 <!-- AC:BEGIN -->
 - [x] #1 Every step of the `consumer-proof` job in `release.yml` is a pinned `uses:` or a one-line pixi task, and no `multiline-run-allowed` opt-out remains in that job.
 - [x] #2 The ported recipe is covered by `xtask` tests over tempdir fixtures per D10, and each test is confirmed to fail with the behaviour it checks neutralised, so the tests prove the recipe rather than restating it.
-- [ ] #3 A full proof run on a real release reaches the same verdict as the shell recipe it replaces, recorded as evidence here with the run link.
+- [x] #3 A full proof run on a real release reaches the same verdict as the shell recipe it replaces, recorded as evidence here with the run link.
 - [x] #4 `check-repository` still reports every workflow `run:` as a single command line, `actionlint` stays clean, and the proof's assertions on the generated publisher stay inside check 13's reach.
 <!-- AC:END -->
 
@@ -138,21 +139,9 @@ proven here; running them end to end is exactly what AC#3 asks for.
 525 pixi-sandbox / 196 xtask), from a 952/1 baseline. `pixi run --frozen lint` → 11/11.
 `pixi run --frozen lint-actions` clean over the rewritten `release.yml`.
 `xtask check-repository` green. `convco check` clean over all four commits.
+
+2026-10-11 — AC#3 proven on release v0.6.2 at d0fc39ad35d8833b69a937079272db1ce0b9504a. Release run https://github.com/Archont561/pixi-sandbox/actions/runs/38163288233 succeeded. Its consumer proof (linux-64, built artifact) job https://github.com/Archont561/pixi-sandbox/actions/runs/38163288233/job/114542089359 passed every recipe step: fixture preparation, built-binary adoption/version, workflow regeneration, pack → publish → fetch → offline restore lifecycle, and evidence upload. The job ran the ported xtask recipe before publication; the subsequent release publication succeeded. This is the real post-port release run AC#3 required, unlike the earlier connected-host rehearsal. Job/step conclusions were read through the GitHub API; raw log downloads were blocked by sandbox egress, so no new byte-level log assertions are claimed. Local suite on the release tree: 986 passing / 1 skipped (42 git, 222 core, 526 pixi-sandbox, 196 xtask).
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:SUMMARY:BEGIN -->
-The release lane's consumer proof is tested Rust now. Its ~60 lines of embedded shell and four
-`multiline-run-allowed` opt-outs are five `xtask consumer-proof-*` subcommands over
-`crates/xtask/src/consumer_proof.rs`, and the `consumer-proof` job is one line per step with no
-opt-out marker left in it — the last of them in the workflows. What the proof proves is
-unchanged: same fixture, same binary, same isolation levels, same evidence, same lifecycle.
-Re-pointing check 13 on the way past turned up that it had been comparing nothing at all since
-doc-13 moved the assertions out of the file it reads, which is the second time that check has
-caught a proof and a generator disagreeing — this time by first admitting it had stopped
-looking. AC#3 is the one open criterion and needs a release this task did not cut.
-<!-- SECTION:SUMMARY:END -->
 
 ## Comments
 
@@ -201,3 +190,9 @@ proof run over a release cut *after* this port merged (with a run link), and no 
 exists — the newest tag is v0.6.1, whose own consumer proof ran the shell recipe this port
 replaces. AC#3 stays unchecked for that reason, not for lack of a connected host.
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:SUMMARY:BEGIN -->
+All four acceptance criteria are proven. The consumer proof recipe is implemented as tested xtask subcommands with single-command workflow steps and non-vacuous publisher assertions. The v0.6.2 release run 38163288233 supplies the last missing release-shaped proof: the complete consumer lifecycle job passed before the release was published. Task closed; no implementation changes were needed in this evidence follow-up.
+<!-- SECTION:SUMMARY:END -->

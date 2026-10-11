@@ -2672,3 +2672,138 @@ new was filed this session.
 > pixi commands in parallel, conventional commits, one concern per commit, `pixi run --frozen
 > test` ≥986 at every commit. Do not push, open a pull request, merge, release or dispatch
 > without my explicit go-ahead.
+
+### 2026-10-11 — v0.6.2 workflow watch and evidence follow-up
+
+**Scope.** Watched the existing release chain; did not dispatch, publish, push, or open a PR.
+Fast-forwarded the session branch to `d0fc39ad35d8833b69a937079272db1ce0b9504a`
+(`chore(release): v0.6.2`). No production implementation changed.
+
+**Remote evidence.** All runs completed successfully: auto-release `38163213333`, release
+`38163288233` (five platform builds/package smoke tests, pre-publish consumer lifecycle proof,
+prefix.dev and GitHub publication), CI `38163288846`, push docs `38163288827`, sandbox publish
+`38163288796`, released-asset consumer proof `38163986987`, starter `38163988956`, and dispatched
+docs `38163991484`. Run URLs use
+`https://github.com/Archont561/pixi-sandbox/actions/runs/<run-id>`.
+The published transport manifest names source `d0fc39a` and static tool `0.6.2`.
+
+**Task evidence, not blanket closure.** TASK-89 AC#3 is now proven by release job
+`114542089359`; all four ACs are checked and the task is Done. TASK-76 was already Done with
+its own AC#8 evidence, so it was not reopened or edited. TASK-74 AC#1 is now proven: GitHub
+reports a public template, and starter tag `pixi-sandbox-v0.6.2` resolves to commit
+`1655285c27f162f24be33428fb1c1f791bd2e063` with all ten required files, rather than README alone.
+The starter job also passed regeneration, lint, fresh-clone dev and verification, but those
+positive steps do not prove every compound acceptance criterion. TASK-74 stays In Progress,
+including its owner-operated App and template-derived publisher/restore proof requirements.
+TASK-85 has the successful real publication recorded, but AC#6 explicitly requires a
+**non-publishing v0.6.0 dry run**; the v0.6.2 publish cannot substitute for it.
+
+**Evidence limits.** Raw Actions log downloads redirect to an egress-blocked host. Conclusions
+above use GitHub API job/step results and the published starter tree/files, not an invented log
+inspection. No new workflow was dispatched to obtain stronger evidence.
+
+**Environment.** The restore preceding release completion registered pixi `0.81.0` and
+pixi-sandbox `0.6.1`; it remains usable on the release tree. Re-baseline at `d0fc39a`:
+**986 passing / 1 skipped** (42 git / 222 core / 526 pixi-sandbox / 196 xtask). A new restore
+from the now-published transport would register pixi-sandbox `0.6.2` instead.
+
+**Next scope, not implemented.** TASK-78's packaging-shape decision remains the next engineering
+candidate; no decision was made or code started here. TASK-73 needs owner GitHub App setup;
+TASK-85 AC#6 needs the specifically requested maintainer dry run; TASK-93 AC#4 needs its
+connected-host wheel round trip.
+
+**Next session opening prompt:**
+
+> Load the session skill and restore only if needed. Expect 986 passing / 1 skipped.
+> v0.6.2 is published and all its release/starter/docs follow-ups passed; do not cut it again.
+> Read CONTEXT.md's 2026-10-11 “v0.6.2 workflow watch and evidence follow-up” entry.
+> TASK-89 is closed with real release-run evidence; TASK-74 AC#1 is checked, but its remaining
+> compound criteria and TASK-85's exact non-publishing dry-run criterion are still open.
+> The next engineering proposal is TASK-78's packaging-shape decision, before implementation.
+> Check branch/remote state first; the evidence commits are local until explicitly approved
+> for push. Propose the slice and stop. Do not push, open a PR, merge, release, or dispatch
+> without explicit go-ahead. Pixi only, frozen tasks, Cargo offline, and one Pixi command at a time.
+
+Validation for this evidence follow-up: `pixi run --frozen fmt` passed;
+`pixi run --frozen lint` passed all 11 gates; release-tree tests remain 986/1.
+
+### 2026-10-11 — README refresh and starter pack failure (TASK-94)
+
+The README now follows the concise bun-test-utils structure: badges, introduction, starter-first
+quickstart, capabilities with guide links, lifecycle, platform distinctions, repository layout,
+development, contributing, license. It explicitly distinguishes release binary targets from the
+workspace badge and removes the stale claim that macOS is routinely published. The starter is
+linked prominently, but the v0.6.2 Cargo-policy workaround and missing successful publisher proof
+are disclosed rather than advertising an unproven path.
+
+The user's starter run `38164114312`, job `114543021308`, failed in pack, after fetching the
+pinned CLI. Published starter tag `pixi-sandbox-v0.6.2` contains no Cargo project/lock but enables
+Cargo vendoring. A local pack preflight using its published pixi.lock reproduces
+`--cargo-vendor needs a Cargo.lock`. Raw job logs are egress-blocked; phase annotations, tree
+inspection, and local reproduction support the diagnosis, not a claim to have read remote stderr.
+This is why TASK-74's template-derived publisher/restore criteria were left open even when
+starter generation passed: generation is not publication proof.
+
+User confirmed the fix seams before tests: black-box init CLI and public starter scaffold/verify.
+TASK-94 adds six passing tests/cases (suite 986/1 → **992/1**), first observed failures at each
+changed behavior, preserves existing consumer config, seeds non-Rust projects without vendoring,
+and makes the language-neutral starter own its explicit non-Cargo plan. Its verifier now rejects
+unusable Cargo policy. Root/bundle overrides and invalid config are covered; schema defaults
+remain unchanged. Refactor review retained the small local changes rather than introducing a new
+abstraction or rewriting reviewed consumer data.
+
+**Not yet implemented remotely.** No push, PR, release, starter edit, or workflow dispatch was
+performed. TASK-94 AC#4 stays open until a corrected published starter's own publisher succeeds.
+A rerun of the existing failed revision alone will not change its config. Do not move or overwrite
+the immutable v0.6.2 starter tag. A new corrected revision and an explicitly sanctioned publisher
+run are still needed; full template-derived offline restore proof remains TASK-74 work.
+
+**Next session opening prompt:**
+
+> Load the session skill. Expect 992 passing / 1 skipped (42 git / 222 core / 530 CLI / 198 xtask).
+> Read the 2026-10-11 README refresh / TASK-94 entry in CONTEXT.md. The init/starter Cargo-policy
+> fix and README refresh are local, not released. TASK-94's local criteria pass; its real starter
+> publisher proof is open. Do not rerun the unchanged v0.6.2 starter or overwrite its immutable
+> tag. Propose landing the local commits and obtaining a corrected starter publisher/restore
+> proof; push, PR, merge, release, and dispatch still require explicit go-ahead.
+
+### 2026-10-11 — single-commit starter main (TASK-95 / D22)
+
+The owner requested replacing starter main on every update and confirmed preserving immutable
+release tags. Implemented in the publisher, not applied to the live repository. Each successful
+publication creates a parentless commit from the validated staged tree and atomically pushes
+main plus its new annotated release tag. The explicit lease names the checked-out HEAD; a
+concurrent main update is refused rather than overwritten. Dry run no longer stages files.
+Unchanged trees still receive a new snapshot/tag for a new release; existing tags remain refused.
+Only main is eligible, and the canonical remote check now rejects substring lookalikes.
+
+Workflow checkout explicitly selects main; all releases share a publication concurrency group.
+D22, doc-10, TASK-74 AC#7 and the generated starter README record the owner-approved history
+policy. Retaining old tags means **one commit in main ancestry**, not one commit in all refs or
+a promise that old objects vanish from GitHub storage.
+
+Evidence: initial red counted two commits on published main; green counts one. The fixture also
+proves dry-run index/remote safety, full template content, unchanged-tree publication for a new
+release, old-tag retention and new-tag/main agreement. Four Git adapter cases refuse remote
+movement, tag conflict, protected main and unsupported atomic push without changing remote refs.
+Mutation checks caught removal of both the explicit lease and atomic flag. Refactor review kept
+Git plumbing inside its adapter, with no new shell recipe or unchecked force fallback.
+Gates: fmt passed, lint 11/11, **996 tests passing / 1 skipped** (46 git / 222 core / 530 CLI /
+198 xtask), up from 992/1. TASK-95 local ACs #1–#4 are checked; #5 remains remote-proof-only.
+
+No push, PR, workflow dispatch, live starter history rewrite, tag deletion or branch-protection
+change was made. Rollout still needs the local commits landed and a connected publication whose
+credential may force-update starter main. A protected main fails closed; do not bypass that by
+removing the lease or splitting the push. TASK-94's corrected-starter publisher proof also remains
+open. These are deployment/evidence boundaries, not claims that the live starter is already fixed.
+
+**Next session opening prompt:**
+
+> Load the session skill; baseline 996 passing / 1 skipped. Read the 2026-10-11 TASK-94 and
+> TASK-95 entries. Local commits now include the README refresh, non-Cargo starter fix, and
+> leased single-commit-main publisher. D22 is decided: preserve old release tags, never replace
+> them; replace only canonical starter main with one root commit, atomically with its new tag.
+> TASK-94 and TASK-95 remain In Progress only for real connected publisher evidence. Propose
+> the landing/rollout slice and stop: push, PR, merge, release, dispatch, and live starter changes
+> still require explicit go-ahead. The owner must allow the publishing credential to force-update
+> starter main; no branch protections have been modified here.

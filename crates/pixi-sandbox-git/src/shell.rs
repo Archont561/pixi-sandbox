@@ -625,6 +625,59 @@ impl ShellGit {
         .map(|_| ())
     }
 
+    /// Publish the staged tree as a parentless branch tip and immutable annotated tag.
+    ///
+    /// The checked-out HEAD is the explicit lease, not a refreshable remote-tracking ref.
+    /// Both remote refs move atomically; tag creation must fail rather than overwrite evidence.
+    /// Local HEAD is left unchanged, so a failed push does not change the lease on a retry.
+    ///
+    /// # Errors
+    ///
+    /// Fails on an invalid index, existing local tag, changed remote branch, rejected tag,
+    /// or a server that does not support atomic pushes. There is no non-atomic fallback.
+    pub fn publish_root_snapshot(
+        &self,
+        root: &Path,
+        remote: &str,
+        branch: &str,
+        tag: &str,
+        message: &str,
+    ) -> Result<()> {
+        let expected = self.run_text(&self.git(["rev-parse", "HEAD"]).cwd(root))?;
+        let tree = self.run_text(&self.git(["write-tree"]).cwd(root))?;
+        // Deliberately no -p: the starter's main is a snapshot, not an accumulating history.
+        let commit = self.run_text(
+            &self
+                .git(["commit-tree"])
+                .arg(tree.trim())
+                .arg("-m")
+                .arg(message)
+                .cwd(root),
+        )?;
+        self.run(
+            &self
+                .git(["tag", "-a"])
+                .arg(tag)
+                .arg(commit.trim())
+                .arg("-m")
+                .arg(tag)
+                .cwd(root),
+        )?;
+        self.run(
+            &self
+                .git(["push", "--atomic"])
+                .arg(format!(
+                    "--force-with-lease=refs/heads/{branch}:{}",
+                    expected.trim()
+                ))
+                .arg(remote)
+                .arg(format!("{}:refs/heads/{branch}", commit.trim()))
+                .arg(format!("refs/tags/{tag}:refs/tags/{tag}"))
+                .cwd(root),
+        )
+        .map(|_| ())
+    }
+
     /// Push one refspec to `remote` from the working tree at `root`.
     ///
     /// # Errors

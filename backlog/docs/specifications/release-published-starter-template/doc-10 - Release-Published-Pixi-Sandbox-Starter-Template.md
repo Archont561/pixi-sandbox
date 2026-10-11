@@ -75,8 +75,8 @@ assets/checksum manifest exist before it changes the template.
 The template publisher derives every managed file from that verified release, refreshes the Pixi
 lockfile, regenerates the publisher using the downloaded checksum-verified standalone binary,
 and records the tag, source commit, and template commit in durable release evidence. It is
-idempotent: rerunning the same verified tag produces no content change; a conflicting manually
-edited managed file fails rather than being silently overwritten.
+immutable per release: an existing namespaced starter tag is refused without remote changes.
+A new release creates a snapshot even if its file tree is unchanged.
 
 ## Credentials and safety
 
@@ -87,7 +87,16 @@ capabilities needed for the update. The ordinary consumer template contains none
 credentials.
 
 The automation may update only the canonical starter repository; it must never push to template
-derivatives, forks, or repositories created by users. It must not force-push or rewrite history.
+derivatives, forks, or repositories created by users. Each successful update replaces only the
+canonical starter's `main` with one parentless commit (D22, owner-approved 2026-10-11). Immutable
+release tags retain previous snapshots; one commit on main does not mean one commit in all refs.
+
+The replacement uses `--force-with-lease=refs/heads/main:<checked-out-SHA>`, never an unguarded
+force push or a lease inferred from a refreshed tracking ref. Main and the new immutable tag are
+pushed atomically; rejected leases, rejected tags, branch protection, and lack of atomic support
+must leave both remote refs unchanged. Existing tags are neither overwritten nor deleted.
+The owner must permit the publication credential to force-update starter main; no automation
+changes branch protections. All starter releases share one workflow concurrency group.
 A failed generation, lock, validation, or push leaves the last known-good template revision
 unchanged. Failure is visible in a GitHub step summary and bounded artifact with the release tag,
 source commit, intended managed-file diff, and a remediation; no token or secret may be emitted.

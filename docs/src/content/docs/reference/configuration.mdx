@@ -64,6 +64,12 @@ packages = ["fontconfig", "fonts-dejavu", "xvfb"]
 | `budgets` | table | reviewed defaults | Hard pre-publish size ceilings enforced by `doctor --budget-config` in the generated workflow |
 | `runners` | table | `{}` | Map platform → runner label override |
 
+The schema default above applies when the field is omitted. For a **new** config, `init`
+explicitly enables Cargo vendoring only when the project root contains `Cargo.toml`; otherwise
+it writes `cargo_vendor = false`. A Rust project still needs a usable `Cargo.lock` before
+packing. Existing reviewed config is preserved, including with `init --force`.
+The language-neutral starter explicitly disables Cargo vendoring.
+
 ## `[budgets]` — pre-publish size ceilings
 
 Optional, within schema 1. Missing fields use the defaults below; `pixi-sandbox init` writes the

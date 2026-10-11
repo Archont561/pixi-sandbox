@@ -2569,3 +2569,53 @@ fn self_update_refuses_a_pixi_managed_destination_with_a_remedy() {
         "a refused destination must be left byte-for-byte alone"
     );
 }
+
+#[rstest]
+#[case::non_cargo(false)]
+#[case::cargo(true)]
+fn init_seeds_vendoring_for_the_project_kind(#[case] cargo: bool) {
+    let project = tempfile::tempdir().unwrap();
+    if cargo {
+        fs::write(
+            project.path().join("Cargo.toml"),
+            "[workspace]\nmembers = []\n",
+        )
+        .unwrap();
+    }
+    init_command(project.path()).assert().success();
+    let config: toml::Value =
+        toml::from_str(&fs::read_to_string(project.path().join("pixi-sandbox.toml")).unwrap())
+            .unwrap();
+    assert_eq!(config["cargo_vendor"].as_bool(), Some(cargo));
+    // The first render and the drift check must agree before a second init can repair anything.
+    init_command(project.path())
+        .arg("--check")
+        .assert()
+        .success();
+}
+
+#[rstest]
+#[case::explicit_on(true)]
+#[case::explicit_off(false)]
+fn init_preserves_reviewed_vendoring_policy(#[case] cargo_vendor: bool) {
+    let project = tempfile::tempdir().unwrap();
+    // Deliberately disagree with the automatic default in both directions.
+    if !cargo_vendor {
+        fs::write(
+            project.path().join("Cargo.toml"),
+            "[workspace]\nmembers = []\n",
+        )
+        .unwrap();
+    }
+    let config = format!(
+        "schema = 1\ncargo_vendor = {cargo_vendor}\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n"
+    );
+    fs::write(project.path().join("pixi-sandbox.toml"), &config).unwrap();
+    for args in [vec![], vec!["--force"], vec!["--check"]] {
+        init_command(project.path()).args(args).assert().success();
+        assert_eq!(
+            fs::read_to_string(project.path().join("pixi-sandbox.toml")).unwrap(),
+            config
+        );
+    }
+}

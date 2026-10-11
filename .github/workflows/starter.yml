@@ -44,11 +44,11 @@ on:
 permissions:
   contents: read
 
-# Never cancel a half-published starter: the job pushes a branch and then an immutable tag,
-# and an interrupted run between the two leaves evidence that names no revision. Same reason
-# release.yml sets it.
+# All releases replace the same main ref. Serialize them across tags; the publisher also
+# leases the checked-out main SHA and atomically pushes the new root commit plus evidence tag.
+# Never cancel a validated publication in flight.
 concurrency:
-  group: starter-${{ inputs.release-tag }}
+  group: starter-publication
   cancel-in-progress: false
 
 env:
@@ -141,6 +141,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Archont561/pixi-sandbox-starter
+          ref: main
           path: starter
           token: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN || github.token }}
           fetch-depth: 0

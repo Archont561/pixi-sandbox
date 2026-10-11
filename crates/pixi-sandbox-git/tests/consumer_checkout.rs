@@ -279,3 +279,51 @@ fn the_new_primitives_run_the_expected_argv() {
         ]
     );
 }
+
+#[rstest::rstest]
+#[case::branch_moved("moved")]
+#[case::tag_exists("tag")]
+#[case::protected_branch("protected")]
+#[case::no_atomic_support("no-atomic")]
+fn root_snapshot_refusal_leaves_both_remote_refs_unchanged(#[case] refusal: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    let remote = dir.path().join("remote.git");
+    let source = dir.path().join("source");
+    std::fs::create_dir(&source).unwrap();
+    let git = ShellGit::new();
+    git.init_bare(&remote).unwrap();
+    committed_consumer(&source);
+    let remote_url = remote.to_str().unwrap();
+    run_git(&["push", remote_url, "HEAD:refs/heads/main"], &source);
+    let original = run_git(&["rev-parse", "refs/heads/main"], &remote);
+    match refusal {
+        "moved" => {
+            run_git(
+                &["commit", "--allow-empty", "-m", "concurrent update"],
+                &source,
+            );
+            run_git(&["push", remote_url, "HEAD:refs/heads/main"], &source);
+            // The publisher still owns the old checked-out revision.
+            run_git(&["reset", "--hard", &original], &source);
+        }
+        "tag" => {
+            run_git(&["tag", "release"], &source);
+            run_git(&["push", remote_url, "refs/tags/release"], &source);
+            run_git(&["tag", "-d", "release"], &source);
+        }
+        "protected" => {
+            run_git(&["config", "receive.denyNonFastForwards", "true"], &remote);
+        }
+        "no-atomic" => {
+            run_git(&["config", "receive.advertiseAtomic", "false"], &remote);
+        }
+        _ => unreachable!(),
+    }
+    let before = run_git(&["show-ref"], &remote);
+    write(&source, "README.md", "new snapshot\n");
+    run_git(&["add", "README.md"], &source);
+    git.publish_root_snapshot(&source, remote_url, "main", "release", "snapshot")
+        .unwrap_err();
+    assert_eq!(run_git(&["show-ref"], &remote), before);
+    assert_eq!(run_git(&["rev-parse", "HEAD"], &source), original);
+}

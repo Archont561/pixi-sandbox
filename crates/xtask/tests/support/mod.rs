@@ -164,7 +164,6 @@ pub fn starter_tree(dir: &Path, workflow_version: &str) {
     .expect("scaffold");
     fs::create_dir_all(dir.join(".github/workflows")).expect("mkdir");
     fs::write(dir.join("pixi.lock"), "version: 6\n").expect("write");
-    fs::write(dir.join("pixi-sandbox.toml"), "schema = 1\n").expect("write");
     fs::write(
         dir.join(".github/workflows/publish-sandbox.yml"),
         format!(

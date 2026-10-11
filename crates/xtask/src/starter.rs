@@ -19,10 +19,11 @@ use std::path::{Path, PathBuf};
 /// Files the starter owns that `pixi-sandbox init` does not write.
 ///
 /// `init` owns the publisher, the relock workflow and the restore launcher, and writes a
-/// default `pixi-sandbox.toml` once. Everything below is the Pixi project that gives those
-/// files something to pack.
-pub const SCAFFOLD_FILES: [&str; 5] = [
+/// default config only when absent. The starter owns its explicit non-Cargo publish plan
+/// so even an older released CLI cannot seed Rust-specific defaults into this template.
+pub const SCAFFOLD_FILES: [&str; 6] = [
     "pixi.toml",
+    "pixi-sandbox.toml",
     ".gitignore",
     "README.md",
     ".devcontainer/devcontainer.json",
@@ -246,6 +247,9 @@ pub fn render_readme(
          \n\
          This repository is a snapshot of `{tag}`. A newer pixi-sandbox release produces a new\n\
          starter revision; it does not change repositories already created from this template.\n\
+         The canonical starter's `main` is replaced with one parentless commit per update;\n\
+         immutable `pixi-sandbox-vX.Y.Z` tags retain previous snapshots. This does not rewrite\n\
+         your own repository. Prefer **Use this template** to following starter main with pulls.\n\
          Your own repository upgrades itself through the weekly upgrade lane in the publisher\n\
          workflow, which opens a reviewable pull request.\n",
         server = "https://github.com",
@@ -253,7 +257,7 @@ pub fn render_readme(
     )
 }
 
-/// Write the three scaffold files into `out`.
+/// Write the scaffold-owned files into `out`.
 ///
 /// Idempotent by construction: every byte is derived from the arguments, so a second call with
 /// the same inputs produces the same tree. That is what makes the publication contract's
@@ -284,6 +288,7 @@ pub fn scaffold(
     // Keyed by SCAFFOLD_FILES so the published set and the written set cannot drift apart.
     let contents = [
         render_pixi_toml(name),
+        "schema = 1\nbranch_prefix = \"sandbox\"\ncargo_vendor = false\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n".to_string(),
         render_gitignore(),
         render_readme(tag, source_commit, source_repo, starter_repo),
         render_devcontainer_json(pixi_version),
@@ -372,6 +377,23 @@ pub fn verify(dir: &Path, tag: &str) -> Result<Vec<String>> {
             findings.push(format!(
                 "{forbidden} must not be committed to the starter (runtime state or credential)"
             ));
+        }
+    }
+
+    // The starter has no Cargo project: a green dev task cannot prove its pack policy works.
+    let config_path = dir.join("pixi-sandbox.toml");
+    if config_path.exists() {
+        match pixi_sandbox_core::sandbox_config::SandboxConfig::load(&config_path) {
+            Ok(config) => {
+                if config
+                    .bundles
+                    .iter()
+                    .any(|bundle| bundle.cargo_vendor.unwrap_or(config.cargo_vendor))
+                {
+                    findings.push("starter publish plan must disable Cargo vendoring: the language-neutral starter has no Cargo.lock".to_string());
+                }
+            }
+            Err(error) => findings.push(format!("invalid starter publish plan: {error}")),
         }
     }
 
@@ -842,7 +864,16 @@ pub fn publish_refusals(
     tag: &str,
 ) -> Vec<String> {
     let mut refusals = Vec::new();
-    if !remote.contains(starter_repo) {
+    let remote_path = remote.strip_suffix(".git").unwrap_or(remote);
+    let canonical = [
+        format!("https://github.com/{starter_repo}"),
+        format!("git@github.com:{starter_repo}"),
+        format!("ssh://git@github.com/{starter_repo}"),
+    ];
+    // Local bare remotes are supported for offline rehearsals; never accept a URL by substring.
+    let local =
+        Path::new(remote_path).is_absolute() && Path::new(remote_path).ends_with(starter_repo);
+    if !canonical.iter().any(|url| url == remote_path) && !local {
         refusals.push(format!(
             "remote {remote:?} is not the canonical starter {starter_repo}; the starter lane must never push to a fork or a user's repository"
         ));
@@ -858,8 +889,8 @@ pub fn publish_refusals(
 
 /// Commit and push one validated starter revision.
 ///
-/// Never force-pushes and never rewrites history (doc-10 "Credentials and safety"). A tree
-/// identical to the published revision is an idempotent success.
+/// Replaces main with one parentless commit, preserving immutable release tags. The branch
+/// replacement is lease-protected and atomic with creation of the new evidence tag.
 ///
 /// # Errors
 ///
@@ -875,6 +906,9 @@ pub fn publish(
 ) -> Result<()> {
     use pixi_sandbox_git::ShellGit;
     let git = ShellGit::new();
+    if branch != "main" {
+        bail!("starter snapshots may replace only main");
+    }
     let immutable = starter_tag(tag);
     let refusals = publish_refusals(
         remote,
@@ -928,29 +962,24 @@ pub fn publish(
         bail!("refusing to publish runtime state or credentials to the starter");
     }
 
-    git.add_files(root, &revision)?;
-    let staged = git.staged_files(root)?;
-    if staged.is_empty() {
-        println!("starter is already at {tag}; nothing to publish (idempotent re-run)");
-        return Ok(());
-    }
-    println!("publishing {} file(s) for {tag}", staged.len());
+    println!("publishing {} file(s) for {tag}", revision.len());
     if dry_run {
-        println!("dry run: not committing or pushing");
-        for file in &staged {
+        println!("dry run: not staging, committing, or pushing");
+        for file in &revision {
             println!("  would publish {file}");
         }
         return Ok(());
     }
-    git.commit(
+    git.add_files(root, &revision)?;
+    git.publish_root_snapshot(
         root,
+        remote,
+        branch,
+        &immutable,
         &format!(
             "chore: regenerate starter for pixi-sandbox {tag}\n\nSource commit: {source_commit}"
         ),
     )?;
-    git.tag_annotated(root, &immutable)?;
-    git.push_refspec(root, remote, branch)?;
-    git.push_refspec(root, remote, &format!("refs/tags/{immutable}"))?;
     crate::util::github_summary(&format!(
         "## Starter published\n\n- release `{tag}`\n- source commit `{source_commit}`\n- starter tag `{immutable}`\n"
     ));

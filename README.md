@@ -2,509 +2,211 @@
 
 <p align="center">
   <a href="https://github.com/Archont561/pixi-sandbox/actions/workflows/ci.yml"><img src="https://github.com/Archont561/pixi-sandbox/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://codecov.io/gh/Archont561/pixi-sandbox"><img src="https://codecov.io/gh/Archont561/pixi-sandbox/branch/main/graph/badge.svg" alt="Coverage"></a>
-  <a href="https://github.com/Archont561/pixi-sandbox/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/Rust-1.88%2B-orange.svg?logo=rust" alt="Rust"></a>
-  <a href="https://pixi.sh"><img src="https://img.shields.io/badge/Pixi-0.81%2B-yellow.svg?logo=condaforge" alt="Pixi"></a>
-  <img src="https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg" alt="Platforms">
+  <a href="https://github.com/Archont561/pixi-sandbox/actions/workflows/docs.yml"><img src="https://github.com/Archont561/pixi-sandbox/actions/workflows/docs.yml/badge.svg" alt="Docs"></a>
   <a href="https://github.com/Archont561/pixi-sandbox/releases"><img src="https://img.shields.io/github/v/release/Archont561/pixi-sandbox?label=release" alt="Release"></a>
-  <a href="https://prefix.dev/channels/@archont561/archont561"><img src="https://img.shields.io/badge/prefix.dev-%40archont561%2Farchont561-5c4ee5" alt="prefix.dev channel"></a>
-  <a href="https://archont561.github.io/pixi-sandbox/"><img src="https://img.shields.io/badge/Docs-Starlight-blueviolet?logo=astro" alt="Docs"></a>
-  <a href="https://github.com/Archont561/pixi-sandbox/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
+  <a href="https://codecov.io/gh/Archont561/pixi-sandbox"><img src="https://codecov.io/gh/Archont561/pixi-sandbox/branch/main/graph/badge.svg" alt="Coverage"></a>
+  <a href="https://archont561.github.io/pixi-sandbox/"><img src="https://img.shields.io/badge/docs-Starlight-6d28d9" alt="Documentation"></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/Rust-1.88%2B-orange.svg?logo=rust" alt="Rust 1.88 or newer"></a>
+  <img src="https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg" alt="Development workspace platforms">
+  <a href="https://github.com/Archont561/pixi-sandbox/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
-<p align="center">
-  <strong>Offline sandboxes for pixi projects — pack, publish to an orphan branch, restore on an airlock with zero network.</strong><br/>
-  Pure Rust, static musl binaries, checksum-verified, Git-native dedup.
-</p>
+**Self-contained, verifiable offline environments for [Pixi](https://pixi.sh) projects.**
+Pack a locked environment on a connected machine, publish it to a Git orphan branch, and restore
+it on an airlocked host without contacting package registries. The transport carries the packages,
+pinned tools, integrity manifest, and optionally vendored Rust crates—not just instructions for
+recreating them online.
 
----
+The CLI is published on [prefix.dev](https://prefix.dev/channels/@archont561/archont561) and as
+[standalone release binaries](https://github.com/Archont561/pixi-sandbox/releases).
+Documentation is at <https://archont561.github.io/pixi-sandbox/>.
 
-> [!NOTE]
-> Because `pixi` discovers `pixi-<command>` on `$PATH`, installing `pixi-sandbox` unlocks native subcommands: `pixi sandbox pack`, `doctor`, `publish`, `restore`, `plan`.
+## Quick start
 
-## 🖥️ Platform Support
+### Start a new project
 
-The badge above mirrors `[workspace] platforms` in `pixi.toml`. A platform only gets a published
-bundle in `.pixi-sandbox.toml` once a native runner has passed the airlock proof (decision D11),
-so "builds here" and "restores offline there" are tracked separately —
-`pixi run --frozen xtask check-repository` keeps the badge, `pixi.toml` and the publish plan in agreement.
+Use the **[Pixi Sandbox starter](https://github.com/Archont561/pixi-sandbox-starter)**:
+choose **Use this template**, create your repository, then clone it and run:
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| `linux-64` | ✅ proven, published | `sandbox/developer-linux-64` is packed, verified and restored offline in CI |
-| `osx-arm64` | ✅ proven, published | Packed, verified and restored on a native `macos-14` runner with **egress denied** (`sandbox-exec`, `network-outbound` refused), then gated against the manifest; `sandbox/developer-osx-arm64` is published by the same plan as linux-64 (task-1) |
-| `linux-aarch64`, `osx-64` | 🟡 release binaries only | Static binaries ship with every release; no bundle published |
-| `win-64` | ❌ not supported | `default` itself no longer needs `bun` (task-25 isolated it in the `web` environment), but `pixi lock` solves **every** environment for **every** platform in `pixi.toml`, and conda-forge has no `bun` build (`pixi lock`: "No candidates were found for bun *"), so Windows is out of `[workspace] platforms` and D11 still lists it as unproven. Until that changes the JS toolchain is unsupported on Windows: use the Rust CLI, and run the JS tools through your own Node.js/Bun install outside the pixi environment |
-
-## 📦 Sandbox Visualization
-
-```text
-  connected build machine           orphan branch (Git)                       airlocked machine
-  ───────────────────────           ───────────────────                       ─────────────────
-
-  ┌─────────────────────┐           ┌─────────────────────────────┐           ┌────────────────────────┐
-  │ pixi project        │   pack    │ sandbox/developer-linux-64  │   fetch   │ airlock                │
-  │                     │ ────────► │                             │ ────────► │                        │
-  │ pixi.toml           │           │ .pixi-sandbox/manifest.json │           │ .pixi/envs/<env>/      │
-  │ pixi.lock           │           │   envs/<env>/pack/          │           │ .pixi/tools/<platform>/│
-  │ Cargo.lock          │           │   tools/<platform>/         │           │ .pixi-sandbox/vendor/  │
-  │ .pixi-sandbox.toml  │           │   vendor/                   │           │ offline ✔              │
-  └─────────────────────┘           └─────────────────────────────┘           └────────────────────────┘
-  pack    pixi sandbox pack --cargo-vendor --fetch-tools --self-bin <static>
-  fetch   plain git — whole files content-addressed, 262 MB transport → ~110 MB after dedup
-  local   ./restore.sh → verify every byte → registered pixi → pixi run offline
+```bash
+pixi run dev
 ```
 
-**Generate publishing and one-command airlock restoration:**
+The starter includes a locked, language-neutral Pixi project, release-pinned publishing and
+relock workflows, a devcontainer, and `scripts/restore.sh`. You do not need to run `init` or
+copy workflows from this repository. It currently targets `linux-64`.
 
-Connected hosts need [Pixi](https://pixi.sh) installed. Install from the canonical channel, then initialise the project:
+> [!IMPORTANT]
+> The v0.6.2 starter's first publisher run exposed an incorrect Cargo-vendoring default.
+> Before pushing a project created from that revision, set `cargo_vendor = false` in
+> `pixi-sandbox.toml`: the starter contains no Rust workspace or `Cargo.lock`.
+> The [failed run](https://github.com/Archont561/pixi-sandbox-starter/actions/runs/38164114312)
+> has not yet been replaced by a verified successful publisher run.
+
+Commit your changes and push to `main` to run the included publisher. Its repository-scoped
+`GITHUB_TOKEN` publishes the transport to `sandbox/developer-linux-64`; no Archont561-owned
+secret is needed for that transport publication. Wait for the publisher to succeed before
+attempting a restore.
+
+### Add it to an existing project
+
+On a connected host with Pixi installed:
 
 ```bash
 pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox
 pixi-sandbox init
-# commit .github/workflows/publish-sandbox.yml, pixi-sandbox.toml, and restore.sh (restore.ps1 on Windows)
-
-# after transferring Git history with the sandbox branch into the airlock:
-./restore.sh
+pixi-sandbox plan
 ```
 
----
+Review `pixi-sandbox.toml`, the generated workflows under `.github/workflows/`, and the restore
+launcher before committing. Enable Cargo vendoring only for a Rust project with a usable
+`Cargo.lock`; with the v0.6.2 CLI, explicitly set `cargo_vendor = false` for other projects.
+After changing that setting, run `pixi-sandbox init` again to refresh the generated relock policy.
 
-## 🚀 Key Features
+When `pixi-sandbox` is on `PATH`, the same commands are available as `pixi sandbox init`,
+`pixi sandbox plan`, and so on. See the [quickstart](https://archont561.github.io/pixi-sandbox/quickstart/)
+and [existing-project guide](https://archont561.github.io/pixi-sandbox/guides/using-in-your-project/).
 
-| Icon | Feature | Description |
-|------|---------|-------------|
-| 🔒 | **Zero-Network Restore** | Verified restore in `unshare -rn` without touching conda channels or crates.io |
-| 📦 | **Git-Native Transport** | Orphan branch, whole files content-addressed, free dedup across envs/releases |
-| ✂️ | **Automatic Sharding** | Splits >95 MiB into `.partNNN` to respect GitHub 100 MiB blob limit |
-| 🛡️ | **Strict Verification** | SHA-256 verified against embedded pins before writing; dynamic tools rejected |
-| 🦀 | **Cargo Vendoring** | Bundles `cargo vendor --versioned-dirs` alongside conda envs |
-| ⚡ | **Pure Rust CLI** | Static musl Linux, native macOS/Windows, no Python; `pixi sandbox` extension |
-| 🤖 | **Generated Native CI** | Project-owned workflow calls the installed CLI directly on native runners |
-| 📚 | **Docs like astro-icon** | Starlight + astro-icon + Iconify (lucide, mdi, tabler, simple-icons) |
+### Restore on an airlocked host
 
-Docs site uses [Astro Icon](https://www.astroicon.dev/) + [Iconify](https://iconify.design/) — 300k+ icons: https://icon-sets.iconify.design/
-
----
-
-## ⚡ Quick Start
-
-### 1. Connected Host: Pack, Verify & Publish
+Transfer the project **and its published sandbox branch** into the restricted environment
+(for example, through an approved Git mirror or Git bundle). In a starter-derived checkout:
 
 ```bash
-# Build static self-binary (or use verified release)
-pixi run --frozen build-release-binary
-
-# 1. Pack
-pixi sandbox pack \
-  --repo-root . \
-  --envs dev,docs \
-  --output-dir .sandbox-transport \
-  --platform linux-64 \
-  --cargo-vendor \
-  --fetch-tools \
-  --self-bin target/release/pixi-sandbox
-
-# 2. Verify (writes nothing)
-pixi sandbox doctor --branch-location .sandbox-transport --verify
-
-# 3. Publish as orphan branch (<branch_prefix>/<bundle>-<platform>, as `plan` reports it)
-pixi sandbox publish \
-  --input-dir .sandbox-transport \
-  --branch-name sandbox/developer-linux-64
+bash scripts/restore.sh
+# Open a new shell, or add the registered user tools to this shell:
+export PATH="$HOME/.local/bin:$PATH"
+pixi install --frozen --offline
+pixi run --frozen dev
 ```
 
-### 2. Disconnected / Airlocked Host: Restore
+For an existing project initialized with default paths, the launcher is `restore.sh`
+(`restore.ps1` on Windows), rather than `scripts/restore.sh`.
+Restore verifies the transport before writing, relocates the environment, verifies the restored
+files, and registers user tools. It does not install missing host OS libraries or turn an
+application that needs a network connection into an offline application.
 
-Transfer a clone or Git bundle containing both the project and sandbox branch, then run the
-project-side launcher generated by `pixi-sandbox init`:
+The [restore guide](https://archont561.github.io/pixi-sandbox/restore/) covers branch transfer,
+verification, tool registration, and shared-machine policies.
 
-```bash
-./restore.sh              # Linux/macOS
-# .\\restore.ps1          # Windows PowerShell
+## What it provides
 
-# in a new shell, pixi and pixi sandbox already resolve (registered user tools);
-# pixi is the sole entrypoint for environment binaries:
-pixi install --frozen --offline              # must be no-op
-pixi run --frozen -- cargo build --offline   # uses vendored crates
-```
+| Capability | What you get | Guide |
+| :-- | :-- | :-- |
+| Git-native transport | Self-contained orphan branches, whole-file deduplication, and sharding for large blobs | [Design](https://archont561.github.io/pixi-sandbox/design/) |
+| Verified restore | SHA-256 checks before writing and a per-file check of the relocated environment | [Airlock restore](https://archont561.github.io/pixi-sandbox/restore/) |
+| Pinned tools | Release assets verified against checksums; static Linux bootstrap tools shipped with the transport | [Installation](https://archont561.github.io/pixi-sandbox/installation/) |
+| Generated CI | Native publish matrix, pack/doctor/publish pipeline, lockfile refresh, and reviewed upgrades | [CI publishing](https://archont561.github.io/pixi-sandbox/guides/ci-publishing/) |
+| Cargo vendoring | Optional vendored crates and sandbox-owned Cargo configuration for offline Rust builds | [Configuration](https://archont561.github.io/pixi-sandbox/reference/configuration/) |
+| Publish budgets | Limits for blobs, transport size, repository pushes, and restore disk requirements | [Configuration](https://archont561.github.io/pixi-sandbox/reference/configuration/) |
+| Host diagnostics | Declare and check OS-level prerequisites that the packed environment cannot supply | [Host requirements](https://archont561.github.io/pixi-sandbox/guides/host-requirements/) |
 
-After verifying the branch *and* the restored tree, the restore registers managed launchers
-for `pixi` and `pixi-sandbox` in `~/.local/bin` (Windows: `%USERPROFILE%\.pixi-sandbox\bin`)
-and puts that directory on the shell's persistent `PATH` — so `pixi` and `pixi sandbox` work
-in a new shell without sourcing anything. `PIXI_SANDBOX_USER_TOOLS=skip` (or
-`--user-tools skip`) leaves the home untouched for CI, shared accounts, or locked-down
-airlocks; `--user-bin <dir>` relocates the launchers.
-
-The launcher reads the selected config (`pixi-sandbox.toml` by default, with
-`.pixi-sandbox.toml` retained as a compatibility fallback) and resolves
-`<branch_prefix>/<bundle>-<platform>` for the host — the same branch `pixi-sandbox plan` gives
-the publisher — so renaming a bundle or
-prefix needs no regenerated launcher. It uses local `git archive` when the sandbox ref is
-present; if a connected clone lacks `refs/remotes/origin/sandbox/*`, it fetches just the selected
-sandbox branch unless `PIXI_SANDBOX_FETCH=skip` is set. It extracts the branch under
-`.pixi/.restore-transport` and invokes `.pixi-sandbox/tools/<platform>/pixi-sandbox`.
-
-```bash
-PIXI_SANDBOX_BRANCH=sandbox/developer-linux-64 ./restore.sh  # pin an exact branch
-PIXI_SANDBOX_BUNDLE=developer ./restore.sh                   # several bundles cover this platform
-```
-
-> [!TIP]
-> After restore, `.pixi/envs/*` has relocated prefixes and Cargo is wired through a sandbox-owned `.pixi-sandbox/cargo-home/config.toml` plus Pixi activation hooks, so an existing project `.cargo/config.toml` is left alone. No `.pixi/sandbox-env.sh` is generated; run package and crate commands through `pixi run ...`.
-
----
-
-## 📖 Using in your project
-
-### Declare what to ship (never infer all envs)
-
-```toml
-# pixi-sandbox.toml
-schema = 1
-branch_prefix = "sandbox"
-cargo_vendor = true
-
-[runners]
-# linux-aarch64 = "self-hosted-arm64"  # required — no hosted default
-
-[[bundle]]
-name = "developer"
-environments = ["dev", "docs"]
-platforms = ["linux-64", "osx-arm64", "win-64"]
-
-[[bundle]]
-name = "minimal"
-environments = ["default"]
-platforms = ["linux-64"]
-cargo_vendor = false
-```
-
-Validate:
-
-```bash
-pixi-sandbox plan --config pixi-sandbox.toml
-pixi-sandbox plan --config pixi-sandbox.toml --json  # GitHub Actions matrix
-```
-
-### Without cargo vendoring
-
-```toml
-schema = 1
-cargo_vendor = false
-[[bundle]]
-name = "python"
-environments = ["dev", "test"]
-platforms = ["linux-64", "win-64"]
-```
-
-```bash
-pixi-sandbox pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --fetch-tools --self-bin target/release/pixi-sandbox
-```
-
-Full guide: https://archont561.github.io/pixi-sandbox/guides/using-in-your-project/
-
----
-
-## 🤖 Generated GitHub Actions publisher
-
-Run `pixi-sandbox init` to generate a reviewed, project-owned `.github/workflows/publish-sandbox.yml`.
-The generated workflow installs the native package from the canonical prefix.dev channel and calls
-`plan`, `pack`, `doctor`, and `publish` directly on native runners. Commit that workflow with
-`pixi-sandbox.toml`; no repository-owned composite Action or reusable workflow is required.
-
-> **Migration from v0.3.x Actions:** new refs no longer contain `Archont561/pixi-sandbox@…`,
-> `Archont561/pixi-sandbox/setup@…`, `Archont561/pixi-sandbox/publish@…`, or the reusable
-> `.github/workflows/publish-sandbox.yml`. Immutable older tags and commit SHAs retain those files.
-> Regenerate and commit the direct CLI workflow with `pixi-sandbox init`.
-
-## ⚙️ Configuration Reference
-
-### `pixi-sandbox.toml` (`.pixi-sandbox.toml` compatibility fallback)
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `schema` | int | **required** `1` | Config schema version |
-| `branch_prefix` | string | `"sandbox"` | Branch prefix: `<prefix>/<bundle>-<platform>` |
-| `cargo_vendor` | bool | `true` | Default vendor for bundles |
-| `budgets` | table | reviewed defaults | Pre-publish size ceilings for blob, transport, push, and restore-disk budgets |
-| `runners` | table | `{}` | Platform → runner label override |
-
-**Bundle:**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | yes | Bundle name, used in branch |
-| `environments` | yes | Explicit pixi envs, never inferred |
-| `platforms` | yes | e.g., `linux-64`, `osx-arm64`, `win-64`, `linux-aarch64` |
-| `cargo_vendor` | no | Override top-level |
-
-**Runners:**
-
-| Platform | Default | Notes |
-|----------|---------|-------|
-| `linux-64` | `ubuntu-latest` | Hosted |
-| `linux-aarch64` | **none** | Must provide `[runners]` self-hosted |
-| `osx-64` | `macos-13` | Hosted Intel |
-| `osx-arm64` | `macos-14` | Apple Silicon |
-| `win-64` | `windows-latest` | Hosted |
-
-Full reference: https://archont561.github.io/pixi-sandbox/reference/configuration/
-
-### CLI
-
-```bash
-pixi-sandbox pack --repo-root . --envs dev,docs --output-dir DIR --platform linux-64 --cargo-vendor --fetch-tools --self-bin <static>
-pixi-sandbox doctor --branch-location DIR --verify [--budget-config pixi-sandbox.toml] [--json] [--envs a,b]
-pixi-sandbox publish --input-dir DIR --branch-name NAME --remote origin [--keep N] [--dry-run]
-pixi-sandbox restore --branch-location DIR --output-path DIR [--envs a,b] [--verify-only] [--force] [--no-vendor] [--work-dir DIR] [--cargo-config auto|write|print|none]
-pixi-sandbox unpack --input-dir X --output-dir PREFIX [--env NAME] [--force] [--work-dir DIR]
-pixi-sandbox init [--github-workflow-path PATH] [--script-path PATH] [--config PATH] [--force]
-pixi-sandbox plan --config pixi-sandbox.toml [--json]
-pixi-sandbox tools list [--tools-lock PATH]
-```
-
-- `--output-path` has alias `--path-to-main-repo-code` for backward compat
-- Work dir default `.pixi/.restore-work` (same FS, TMPDIR redirected) — never small `/tmp`
-- `publish --keep N` retains the N most recent snapshots by *rebuilding* the branch (blobless
-  shallow fetch of the kept commits, then one force-push). It bounds what the branch serves,
-  not what the server stores — dropped snapshots are unreferenced until an admin prunes
-
-Docs: https://archont561.github.io/pixi-sandbox/reference/cli/
-
----
-
-## 📂 The Transport Layout
+## How it works
 
 ```text
-sandbox/<bundle>-<platform>/   # orphan branch
-├── .pixi-sandbox/
-│   ├── manifest.json           # SHA-256 catalog, source commit, tool versions, vendor
-│   ├── envs/<env>/pack/        # pixi-pack --directory-only: channel/*.conda + env.yml + pixi-pack.json
-│   ├── tools/<platform>/       # pixi, pixi-unpack, pixi-sandbox (static, verified)
-│   └── vendor/                 # cargo vendor --versioned-dirs (loose, deduped by git)
-├── README.md                   # human restore instructions
-└── AGENTS.md                   # agent instructions
+Connected host                  Git transport                    Airlocked host
+
+locked Pixi project  -- pack --> sandbox/<bundle>-<platform>
+                                manifest + packages + tools
+                     -- doctor  (optional vendored crates)
+                     -- publish          |
+                                         +-- transfer / restore --> verified environment
 ```
 
-Only Markdown files live at the branch root. `pixi-sandbox init` generates exactly one minimal
-launcher on the normal project branch: `restore.sh` on Unix or `restore.ps1` on Windows. It
-resolves its branch from the selected config, fetches the selected sandbox branch only when no
-local copy exists and fetching is not disabled, archives that ref, and invokes its
-manifest-owned binary.
+`pack` builds the transport. `doctor` checks integrity and budgets without restoring it.
+`publish` writes a dedicated orphan branch, not your source branch. `restore` verifies and
+materializes the payload; `doctor --verify-restored` audits it afterward.
 
-**Sizes (small project, 2 envs, 33 crates, linux-64):**
+The generated publisher runs these phases in order and does not publish a failed pack or
+verification. For manual operation and the exact options, use the
+[CLI reference](https://archont561.github.io/pixi-sandbox/reference/cli/).
 
-| Part | Payload |
-|------|---------|
-| conda envs (.conda) | 133 MB |
-| cargo vendor (loose) | 33 MB |
-| tools | 96 MB |
-| **transport dir** | **262 MB** |
-| **orphan branch after git dedup** | **~110 MB** |
+## Platforms and guarantees
 
-Tools dominate small bundles — expected, git stores each tool blob once.
+**CLI releases and this repository's development sandbox are different support surfaces.**
+Releases contain native binaries and Conda packages for `linux-64`, `linux-aarch64`, `osx-64`,
+`osx-arm64`, and `win-64`. Linux standalone binaries use static musl; macOS and Windows use
+native system linkage.
 
----
+The badge above describes this repository's Pixi workspace, not every CLI release target:
 
-## 🏗️ Repository Architecture
+| Workspace platform | Development transport |
+| :-- | :-- |
+| `linux-64` | Routinely packed, verified, and published as `sandbox/developer-linux-64` |
+| `osx-arm64` | Native airlock proof exists; omitted from routine publishing to avoid the additional runner cost |
+| `win-64` | Not a development-workspace target: conda-forge has no `bun` build; native proof is required by D11 before this workspace can claim support |
 
-| Path | Description |
-|------|-------------|
-| `crates/pixi-sandbox-core` | Core lib: manifest format, sharding, tool pins, verification |
-| `crates/pixi-sandbox-git` | Trait-based Git: `ShellGit` + `FakeGit`/`RecordingRunner` |
-| `crates/pixi-sandbox` | CLI binary + fixtures |
-| `crates/pixi-sandbox/tests/fixtures/` | Synthetic transport (15 KB, split blob) — tests never point at repo root |
-| `crates/xtask` | Typed repository automation behind one `pixi run --frozen xtask <subcommand>` task (`check-repository`, `prepare-release`, release artifact gates) |
-| `.github/workflows/ci.yml` | CI: lint + test + coverage + docs build |
-| `.github/workflows/release.yml` | Release: 5 tier-1 static binaries + prefix.dev Conda package + GitHub Release |
-| `.github/workflows/docs.yml` | Docs → GitHub Pages |
-| `.github/dependabot.yml` | Dependabot: cargo, gha, npm (convco prefixes) |
-| `scripts/restore.sh` | One-liner offline reconstruction with pixi launcher registration; branch derived from `.pixi-sandbox.toml`; selects the user-tool registration policy explicitly and never sources an activation hook |
-| `.pixi-sandbox.toml` | Reviewed publish plan: bundles, platforms, branch prefix, runner overrides |
-| `.devcontainer/devcontainer.json` | Dev container: official pixi image, `git`/`gh` as pixi globals, opencode installed by `.devcontainer/setup.sh` with a global `bun add` |
-| `lefthook.yml` | Git hooks — every hook calls a pixi task so hooks and CI cannot drift; `pre-commit` stays formatter-only (no cargo), every Rust gate runs once at `pre-push` |
-| `docs/` | Starlight + astro-icon + Iconify docs (12 pages) |
-| `package.json` + `bun.lock` + `turbo.json` | Root Bun workspace and cross-language task graph: docs plus private Cargo-crate task packages; Turbo, Biome, backlog and skills are lock-pinned |
-| `.knowledge/` | Open Knowledge Format: decisions D1–D11, design, benchmarks |
-| `CHANGELOG.md` | Changelog via convco |
+Consumer projects declare their own environments and platforms. A released binary for a
+platform is not evidence that every consumer's dependencies can be packed or restored there.
+The airlock CI uses native runners and egress-denied restore checks; local fixture tests are
+not a substitute for that connected-platform proof.
 
----
+A sandbox branch must be available locally before a fully disconnected restore. Integrity
+verification detects changed bytes; it does not replace your trust policy for the source
+repository, Git refs, or release publisher.
 
-## 🛠️ Development & Quality Gates
+## Repository layout
 
-Pixi is the only supported entrypoint for repository tooling. Do not activate `.pixi` or run
-bare `cargo`, `bun`, `rustc`, `taplo`, or `convco`: use `pixi run --frozen <task>`. Rust crate
-work goes through `pixi run --frozen xtask <subcommand>` for repository automation or
-`pixi run --frozen -- cargo <cmd> -p <crate>` when you need Cargo itself; JavaScript package
-work goes through `pixi run bun --filter=<workspace-package> run <script>` (for example,
-`--filter=pixi-sandbox-docs`) or the root `pixi run --frozen bunx <tool>` task.
+This is a Rust workspace with Bun/Turbo orchestration and an Astro documentation site.
 
-Tests use rstest fixtures from `crates/pixi-sandbox/tests/support/mod.rs`, named `#[case]`
-parameterisation for finite inputs, and bounded proptest invariants for universal contracts. New
-properties keep their `.proptest-regressions` seed file in version control; new integration tests
-use the committed fixtures and isolated temp homes rather than this checkout.
+| Path | Role |
+| :-- | :-- |
+| `crates/pixi-sandbox` | CLI, transport lifecycle, generated workflows and launchers |
+| `crates/pixi-sandbox-core` | Manifest, sharding, integrity checks, platform and publish-plan models |
+| `crates/pixi-sandbox-git` | Git protocol and implementation |
+| `crates/xtask` | Tested repository, release, starter, and CI automation |
+| `docs` | Astro + Starlight documentation, published to GitHub Pages |
+| `scripts/restore.sh` | Bootstrap for this repository's packed development environment |
+| `.knowledge` | Design decisions and supporting evidence |
+| `backlog` | Tasks, specifications, and implementation plans |
+
+## Development
+
+On a restricted host, restore the published development environment first:
 
 ```bash
-# Lint (rustfmt, clippy -D warnings, cargo-deny, actionlint, taplo, biome)
-pixi run --frozen lint
+bash scripts/restore.sh
+export PATH="$HOME/.local/bin:$PATH"
+```
 
-# Test (nextest, fixtures, no network)
+Then use Pixi as the environment entrypoint:
+
+```bash
+pixi run --frozen docs-install
+pixi run --frozen fmt
+pixi run --frozen lint
 pixi run --frozen test
 pixi run --frozen test-doc
-
-# Coverage
 pixi run --frozen coverage
-
-# Docs (Astro + Starlight + astro-icon; tasks call bun --filter=pixi-sandbox-docs)
 pixi run --frozen docs dev
 pixi run --frozen docs build
-
-# Agent CLI + repo tooling (root bun workspace, through bunx)
-pixi run --frozen bunx backlog      # markdown backlog
-pixi run --frozen bunx skills       # agent skills CLI
-
-# Transport pipeline (pure Rust self-bin)
-pixi run --frozen sandbox-plan
-pixi run --frozen sandbox-pack      # pack + vendor + fetch-tools + self-bin target/release/pixi-sandbox
-pixi run --frozen sandbox-doctor
-pixi run --frozen sandbox-publish
-pixi run --frozen sandbox-restore   # one-liner from orphan branch
-pixi run --frozen test              # fixture-backed doctor → publish → offline restore lifecycle
-
-# Generated artifacts
-pixi run --frozen xtask render-relock          # rewrite the committed render of .github/workflows/relock.yml
-
-# Changelog via convco
-pixi run --frozen xtask prepare-release auto   # stamps CHANGELOG.md and every version reference
-pixi run --frozen xtask commit-release v0.3.8  # commits, tags and pushes a prepared release (--dry-run shows the diff)
-pixi run --frozen xtask airlock-matrix          # the airlock proof matrix, validated and GitHub-shaped
-pixi run --frozen xtask stage-release-binary   # strip + stage the release asset (host triple by default)
-pixi run --frozen xtask release-checksums      # SHA256SUMS over the standalone binaries, verified complete
-pixi run --frozen build-release-binary         # cargo build -p pixi-sandbox --release (host; -- --target in CI)
-
-# CI variants (env vars: SANDBOX_PROJECT, ENVS, TRANSPORT, PLATFORM, BRANCH, REMOTE, SELF_BIN)
-pixi run --frozen sandbox-pack "$PROJECT" "$ENVS" "$TRANSPORT" "$PLATFORM" && pixi run --frozen sandbox-doctor "$TRANSPORT"
 ```
 
-### Adding a dependency from an airlocked machine
+Use `pixi run --frozen -- cargo <command> --offline -p <crate>` for focused Rust work after a
+restore. Tests use committed fixtures and isolated temporary directories, never this checkout
+as their payload. Keep generated environments, transports, build output, and vendored crates
+out of source commits.
 
-Editing `pixi.toml` or a `Cargo.toml` is a text edit any disconnected host can make; the solve
-behind it is not, because prefix.dev and the crates.io index are exactly what an airlock cannot
-reach (and `pixi add` solves before it writes). So the solve belongs to the connected side:
+On an airlocked machine, editing a dependency manifest does not make the dependency available:
+lock refresh and repacking happen on a connected host. See the
+[repository guide](https://archont561.github.io/pixi-sandbox/repository/) for setup and automation.
 
-1. **Edit the manifest and push** a pull request with the lock left stale.
-2. **The guard reports.** `relock.yml`'s first job runs `pixi lock --check` before any
-   environment is installed, so a stale lock fails with a message about the manifest rather
-   than `setup-pixi`'s message about installation.
-3. **The bot relocks.** When the guard fails, the second job refreshes `pixi.lock` and
-   `Cargo.lock` onto your branch as `pixi-sandbox[bot]` with a `chore(lock):` commit, then
-   dispatches `ci.yml` and `publish-sandbox.yml` explicitly — a `GITHUB_TOKEN` push triggers no workflow, so those
-   dispatches are the only verdict the lock commit gets.
-4. **Merge** once CI is green.
+## Contributing
 
-> [!IMPORTANT]
-> **A merged lockfile does not make a dependency usable in the airlock.** A restored host
-> builds against the packed conda environments and `.pixi-sandbox/vendor`, so the new crate or
-> package exists for it only once a transport carrying it has been packed and published
-> (`pixi run --frozen sandbox-pack` → `pixi run --frozen sandbox-doctor` → `pixi run --frozen sandbox-publish`). Until then the dependency
-> is connected-side only, and an offline `pixi run --frozen -- cargo build --offline` will still fail on it.
+Report bugs and feature requests through [GitHub issues](https://github.com/Archont561/pixi-sandbox/issues).
+Before opening a pull request:
 
-The workflow is generated, not hand-written: it is the render of
-`crates/pixi-sandbox/src/generated/relock_workflow.rs` that `pixi-sandbox init` also writes for
-consumers, byte-checked by `pixi run --frozen xtask check-repository`. Change the template and run
-`pixi run --frozen xtask render-relock`; never edit `.github/workflows/relock.yml` directly.
+- Read [AGENTS.md](AGENTS.md) for repository invariants, test conventions, and task commands.
+- Add regression coverage at the public boundary of the behavior you change.
+- Run formatting, lint, and tests through Pixi.
+- Update the user-facing documentation when behavior changes.
+- Use focused Conventional Commits and record design decisions in the repository.
 
-> [!IMPORTANT]
-> Integration tests run against synthetic fixtures in `crates/pixi-sandbox/tests/fixtures/`, **never** against this repo itself, ensuring hermetic offline isolation. Two tests enforce it: the fixture must not depend on pixi-pack, and no test may walk out via `..`/`.parent()` — with the single reviewed exception `scripts/restore.sh`, which is an artifact under test rather than fixture data (`tests/restore_script.rs` runs the real bootstrap against a throwaway git repo and the transport fixture).
+Release history is in [CHANGELOG.md](CHANGELOG.md). Release automation builds and tests native
+artifacts, runs the consumer lifecycle proof before publication, then publishes packages and
+standalone assets. A successful starter-generation run alone does **not** prove the generated
+starter's publisher works; that requires its own end-to-end run.
 
-### Dev container
+## License
 
-`.devcontainer/devcontainer.json` is four keys and no Dockerfile — it runs the official
-`ghcr.io/prefix-dev/pixi` image as-is. That image is Ubuntu plus the pixi binary: no `git`,
-and no C compiler, so the post-create step delegates to a commented script,
-`.devcontainer/setup.sh`, which provisions the host tools, materialises the
-project environment, installs the bun workspace, and installs the agent CLI:
-
-```jsonc
-"postCreateCommand": "bash .devcontainer/setup.sh"
-```
-
-`pixi global` installs into `/root/.pixi/bin`, which the official image already has on `PATH`,
-so `git`/`gh` are available to Source Control, the lefthook hooks, `scripts/restore.sh` and
-the sandbox tasks.
-
-The compiler is the non-obvious one. `ring` (a transitive dependency of the workspace) shells
-out to `cc` and `ar` from its build script, so without a C toolchain `pixi run --frozen lint` and
-`pixi run --frozen test` cannot even compile — and CI never sees this, because a hosted runner has a
-system `cc`. It is a *global* pixi install on purpose: a `c-compiler` dependency in a feature
-would put a ~200 MB toolchain into the packed sandbox branch, to build nothing an airlock
-restores. `ar` needs the mapping (`ar=x86_64-conda-linux-gnu-ar`) because conda-forge ships
-no unprefixed `ar`; `pixi global list` is the check that `cc`, `gcc` and `ar` are exposed.
-
-The last two steps go through `pixi run` rather than a bare `bun install`: `bun` lives in the
-materialised environment, which is on `PATH` inside a pixi task and nowhere else.
-
-opencode runs last and is **not** a pixi task: `.devcontainer/setup.sh` installs it with a
-global `bun add opencode-ai@latest` (bun from the materialised `web` environment), links the
-binary into `/usr/local/bin` — bun's own global bin dir is on nobody's `PATH` — refreshes the
-model catalogue (`~/.cache/opencode/models.json`, which a binary upgrade does not invalidate),
-and prints the command a Codespace user starts with:
-
-```bash
-opencode -m opencode/big-pickle
-```
-
-It lives in the container setup rather than `pixi.toml` because `pixi.toml` describes what the
-repository is built, tested and released with, and a 185 MB agent binary is none of those.
-
-### Bun workspace
-
-`package.json` at the root makes this one bun workspace with `docs` as a member, so
-`pixi run --frozen docs-install` runs at the root and hoists into the root `node_modules`; package
-scripts target the workspace explicitly (`bun --filter=pixi-sandbox-docs run build/dev`), and
-`docs/` has no lockfile of its own any more. `bunfig.toml` pins the install to bun's `hoisted` linker
-because the workspace default (`isolated`) hides transitive platform packages that Astro
-prerenders by name — see that file for the failure it prevents. The root also carries the
-repo-wide dev tooling — `backlog.md` and `skills` — reached through one generic `bunx` task:
-`pixi run --frozen bunx backlog` / `pixi run --frozen bunx skills` (and `pixi run --frozen bun <args>` for bun itself, in
-the `web` environment). The task runs `bun x --bun`: `bun x` because the conda `bun` package
-ships no `bunx` shim, `--bun` because the bins carry `node` shebangs and no environment here
-carries `node` — adding one would put ~50 MB of developer tooling into the published sandbox
-branch. It resolves the workspace install before the registry and depends on `docs-install`,
-so the committed lockfile still decides what runs.
-
----
-
-## 🔖 Changelog & Release
-
-- **Changelog**: `CHANGELOG.md` generated from conventional commits by `pixi run --frozen xtask prepare-release`, which stamps it together with every version reference (a bare preview is `pixi run --frozen -- convco changelog`).
-- **Release**: Tag `v*.*.*` → `release.yml` builds 5 static binaries, builds `pixi-sandbox` as a Conda package, publishes it to [`archont561/archont561`](https://prefix.dev/channels/@archont561/archont561) with GitHub OIDC, then creates the GitHub Release. Configure prefix.dev Repository Access for this repository's `release.yml` workflow; no long-lived token is stored in GitHub.
-  ```bash
-  gh workflow run auto-release.yml -f version=vX.Y.Z
-  ```
-- **Dependabot**: `.github/dependabot.yml` for cargo, gha, npm (docs) — weekly, groups patch/minor, prefixes `chore`/`ci` to pass convco.
-- **Pixi deps**: Manual via `pixi update`, `pixi lock --check`.
-
----
-
-## 📜 License
-
-MIT — see [LICENSE](LICENSE). Third-party packages and vendored crates retain upstream licenses.
-
----
-
-## 🌟 Docs
-
-Full docs: **https://archont561.github.io/pixi-sandbox/**
-
-- [Installation](https://archont561.github.io/pixi-sandbox/installation/)
-- [Quickstart](https://archont561.github.io/pixi-sandbox/quickstart/)
-- [Using in your project](https://archont561.github.io/pixi-sandbox/guides/using-in-your-project/)
-- [CI Publishing](https://archont561.github.io/pixi-sandbox/guides/ci-publishing/)
-- [Airlock Restore](https://archont561.github.io/pixi-sandbox/restore/)
-- [CI publishing](https://archont561.github.io/pixi-sandbox/guides/ci-publishing/)
-- [Configuration](https://archont561.github.io/pixi-sandbox/reference/configuration/)
-- [CLI](https://archont561.github.io/pixi-sandbox/reference/cli/)
-- [Actions API](https://archont561.github.io/pixi-sandbox/reference/actions/)
+[MIT](LICENSE). Bundled packages and vendored crates retain their upstream licenses.
