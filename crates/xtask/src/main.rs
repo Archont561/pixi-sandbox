@@ -261,7 +261,10 @@ enum Command {
         #[arg(long)]
         commit: String,
     },
-    /// Commit, tag, and push one validated starter revision. Never force-pushes.
+    /// Commit, tag, and push one validated starter revision.
+    ///
+    /// Replaces main with one parentless commit, leased against the checked-out HEAD and pushed
+    /// atomically with its immutable release tag; prior release tags are retained (D22).
     StarterPublish {
         /// Assembled and validated starter tree (a git worktree with its remote configured).
         #[arg(long)]
