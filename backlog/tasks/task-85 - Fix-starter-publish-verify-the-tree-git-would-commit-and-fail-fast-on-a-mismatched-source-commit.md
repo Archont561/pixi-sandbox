@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-08 18:40'
-updated_date: '2026-10-09 08:03'
+updated_date: '2026-10-11 15:12'
 labels:
   - starter
   - workflow
@@ -128,6 +128,15 @@ as `starter-publish ... --dry-run`, which does not push. Note `--ref main` is th
 ref: `starter.yml` does not exist at v0.6.0 (`git cat-file -e
 v0.6.0:.github/workflows/starter.yml` fails) while `source-commit` names the v0.6.0 SHA. A
 rehearsal is not the dispatch, so AC#6 stays open.
+
+**AC#6 re-attempted on a connected host, 2026-10-11 15:12 — still refused.** `gh` here is
+authenticated with an installation token (`ghu_…`, account `Archont561`); `gh workflow list`
+sees `starter` active (`376873092`), but the dispatch is refused the same way:
+`gh workflow run starter.yml --ref main -f release-tag=v0.6.0
+-f source-commit=8298edce13049ab01a7bc9d3e09c9daf8d14fc08 -f dry-run=true` →
+`could not create workflow dispatch event: HTTP 403: Resource not accessible by integration`.
+The blocker is token capability, not connectivity: reaching GitHub works, dispatching a
+workflow does not. AC#6 needs a maintainer with `actions:write`, exactly as above.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

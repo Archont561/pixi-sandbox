@@ -1,9 +1,10 @@
 ---
 id: TASK-91
 title: Put both GitHub adapters under one github module
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-11 11:51'
+updated_date: '2026-10-11 18:15'
 labels:
   - refactor
   - github-api
@@ -71,23 +72,63 @@ dependency above is that sequencing, not a build dependency.
 ## Acceptance Criteria
 
 <!-- AC:BEGIN -->
-- [ ] #1 One `github` module inside `pixi-sandbox` owns both HTTP adapters; `release/github.rs` and `upgrade/github.rs` are gone, the four `commands/` call sites import the new module, and no new crate is created.
-- [ ] #2 `ReleaseSource` and `PullRequestSource` still live in their `mod.rs` homes and remain coverage-counted; the ignore-filename regex in `crates/package.json:11` names the new file and nothing else that carries tested logic.
-- [ ] #3 No behaviour change: every existing test passes unchanged and `pixi run --frozen test` is at or above its pre-change count; the diff moves code and shares the request helper rather than rewriting response handling.
-- [ ] #4 The couplings are updated in the same change and verified: AGENTS.md's repo map describes the new layout, and the coverage guard still passes (`pixi run --frozen test` includes it) — no check silently stops applying.
-- [ ] #5 The promotion trigger — a second consumer (xtask / TASK-73) or a third API call — is recorded in this task's Implementation Notes with the condition that would revisit the crate decision.
+- [x] #1 One `github` module inside `pixi-sandbox` owns both HTTP adapters; `release/github.rs` and `upgrade/github.rs` are gone, the four `commands/` call sites import the new module, and no new crate is created.
+- [x] #2 `ReleaseSource` and `PullRequestSource` still live in their `mod.rs` homes and remain coverage-counted; the ignore-filename regex in `crates/package.json:11` names the new file and nothing else that carries tested logic.
+- [x] #3 No behaviour change: every existing test passes unchanged and `pixi run --frozen test` is at or above its pre-change count; the diff moves code and shares the request helper rather than rewriting response handling.
+- [x] #4 The couplings are updated in the same change and verified: AGENTS.md's repo map describes the new layout, and the coverage guard still passes (`pixi run --frozen test` includes it) — no check silently stops applying.
+- [x] #5 The promotion trigger — a second consumer (xtask / TASK-73) or a third API call — is recorded in this task's Implementation Notes with the condition that would revisit the crate decision.
 <!-- AC:END -->
 
 ## Definition of Done
 
 <!-- DOD:BEGIN -->
-- [ ] #1 pixi run --frozen fmt
-- [ ] #2 pixi run --frozen lint
-- [ ] #3 pixi run --frozen test
+- [x] #1 pixi run --frozen fmt
+- [x] #2 pixi run --frozen lint
+- [x] #3 pixi run --frozen test
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Created `crates/pixi-sandbox/src/github.rs` as the single in-crate socket boundary. It owns
+`GitHubReleaseSource` and `GitHubPullRequestSource`; the former adapter files are deleted and all
+four command call sites now import the consolidated module. `github_request` centralises only the
+shared `Accept`, `User-Agent`, and optional bearer-auth setup. Release still derives its optional
+non-empty `GITHUB_TOKEN` itself, upgrade still receives its caller-supplied token, and the existing
+URLs, status/error handling, empty-body refusal, checksum-404 behaviour, payload, and response
+parsing were moved unchanged.
+
+`ReleaseSource` and `PullRequestSource` remain in their original trait modules. The public
+`PIXI_CHECKSUM_MANIFEST` now lives in `release/mod.rs`, preserving `tools_update`'s existing import
+and keeping that release decision surface coverage-counted. The coverage command now excludes only the
+exact `pixi-sandbox/src/github.rs` filename; `coverage_excludes_only_the_socket_adapter` parses
+`crates/package.json` and rejects the deleted paths, so the filename coupling cannot silently
+regress. AGENTS.md records both the new repo-map layout and the socket-only testing exception.
+
+**Promotion trigger:** retain this small adapter module inside `pixi-sandbox` until `xtask` becomes
+a second consumer (for example through TASK-73) **or** a third distinct GitHub API call is added.
+Either condition reopens the crate-extraction decision; neither exists now.
+
+Validation: the focused coverage-config regression test passed; the pre-change `pixi-sandbox`
+count was 525 passed / 1 skipped and the final full suite reports 526 passed / 1 skipped for that
+crate. `pixi run --frozen fmt`, `pixi run --frozen lint`, and `pixi run --frozen test` all passed;
+the full suite includes 42 `pixi-sandbox-git`, 222 `pixi-sandbox-core`, 526 `pixi-sandbox`, and
+196 `xtask` tests (plus the one documented skip).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Both GitHub HTTP adapters now share one thin, in-crate `github` module and one request-header/auth
+helper. The offline-tested release and upgrade traits stay in their existing modules, the exact
+coverage exclusion follows the moved socket boundary, and AGENTS.md documents the new layout and
+future extraction trigger. No dependency or crate was added, and the workspace gates are green.
+<!-- SECTION:FINAL_SUMMARY:END -->
 
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
 created: 2026-10-11 11:51
+
+2026-10-11 18:15 — completed; all acceptance criteria and required local gates are green.
 <!-- COMMENTS:END -->

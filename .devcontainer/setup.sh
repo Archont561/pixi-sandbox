@@ -18,6 +18,8 @@ pixi global install \
   --expose ar=x86_64-conda-linux-gnu-ar \
   c-compiler
 
+pixi global install --channel https://prefix.dev/archont561/archont561 pixi-sandbox
+
 # Project environments, pinned to the lockfile for reproducibility.
 pixi install --locked --all
 

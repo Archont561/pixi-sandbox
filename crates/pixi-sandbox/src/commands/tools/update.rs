@@ -20,7 +20,7 @@
 use crate::cli::ToolsUpdateArgs;
 use crate::commands::support;
 use anyhow::{Context, Result};
-use pixi_sandbox::release::GitHubReleaseSource;
+use pixi_sandbox::github::GitHubReleaseSource;
 use pixi_sandbox::tools_update::{refresh, render, report_check, write_atomic};
 use pixi_sandbox_core::tools_lock::ToolsLock;
 

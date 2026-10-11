@@ -9,7 +9,7 @@
 use anyhow::Result;
 
 use crate::cli::FetchReleaseArgs;
-use pixi_sandbox::release::GitHubReleaseSource;
+use pixi_sandbox::github::GitHubReleaseSource;
 use pixi_sandbox::self_update::{self, Request, replace::ReplaceStrategy};
 
 /// The version this binary was built as — informational only: a fetch never compares it,

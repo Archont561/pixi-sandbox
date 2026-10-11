@@ -23,10 +23,6 @@
 //!    successfully — a scheduled lane must not turn red over missing credentials. Only a
 //!    successful delivery reports the pull request's URL.
 
-mod github;
-
-pub use github::GitHubPullRequestSource;
-
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::io::{self, Write};
@@ -39,8 +35,8 @@ use crate::pipeline::{PhaseCommand, PhaseRunner};
 /// Where pull requests are created — the delivery half of the upgrade lane.
 ///
 /// A trait for the same reason git goes through `GitProtocol` (D9): the decision flow is
-/// tested against a fake, and the real HTTP lives in `github.rs`, alone, because it is
-/// the one piece no offline test can exercise.
+/// tested against a fake, while the real HTTP adapter lives in [`crate::github`] with the
+/// release adapter — the one piece no offline test can exercise.
 pub trait PullRequestSource {
     /// Open a pull request from `head` onto `base` in `repo` (`owner/name`); `token`
     /// authenticates the call.
