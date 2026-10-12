@@ -1,0 +1,102 @@
+---
+title: Publish transport branches
+description: publish — orphan-branch naming, retention with --keep, dry runs, and how the generated CI workflow drives it.
+---
+
+import ContextChips from '../../../../components/ContextChips.astro';
+
+**Use this when** you are putting a verified transport on a Git remote — locally with `publish`, or
+through the generated workflow — and need the branch naming, retention, and safety rules.
+
+## publish
+
+Publish a transport directory as an orphan branch:
+
+<ContextChips chips={["connected", "network"]} />
+
+```bash
+pixi-sandbox publish \
+  --input-dir .sandbox-out \
+  --branch-name sandbox/dev-linux-64 \
+  --remote origin \
+  --keep 5 \
+  --dry-run
+```
+
+| Flag | Description |
+|------|-------------|
+| `--input-dir` | Transport dir |
+| `--branch-name` | Orphan branch to force-push |
+| `--remote` | Git remote (default `origin`) |
+| `--keep` | Retain at most N snapshots on the branch (default: 1, a single-commit orphan) |
+| `--dry-run` | Preview git commands, don't push |
+
+## Branch naming
+
+The branch is `<branch_prefix>/<bundle>-<platform>` — the same name `plan` emits in the matrix and
+the same name the restore launcher derives for its host. Renaming a bundle or the prefix needs no
+regenerated launcher; `PIXI_SANDBOX_BRANCH` / `PIXI_SANDBOX_BUNDLE` pin the selection at restore
+time when a clone carries several.
+
+## Implementation
+
+`GIT_DIR` points at a scratch repo **next to** the transport (same filesystem, never `/tmp`),
+`GIT_INDEX_FILE` scratch, `GIT_WORK_TREE` the transport; plumbing is
+`add → write-tree → commit-tree (no -p) → update-ref → push --force`. No `.git` is written into an
+owned directory and the payload is never copied.
+
+## Rotation (`--keep N`)
+
+Without `--keep` (or with `--keep 1`) a publish is what it has always been: one parentless commit
+that replaces the branch. `--keep N` keeps the **N most recent snapshots** instead — the N-1
+previous ones are fetched shallow and `--filter=blob:none` (commits and trees only, so rotating does
+not download the payload it is rotating), re-committed as a fresh chain, and the new snapshot goes
+on top. The result is force-pushed like any other publish.
+
+<ContextChips chips={["connected", "network"]} />
+
+```bash
+# a branch that carries the last three builds, oldest dropped on every publish
+pixi-sandbox publish --input-dir .sandbox-out --branch-name sandbox/dev-linux-64 --keep 3
+```
+
+:::caution[Rotation is not a shrink]
+Dropping a snapshot makes its objects **unreferenced, not deleted**. A force-push followed by
+`git gc --aggressive` on the server has been measured *not* to reclaim the space, and a hosted
+server may keep unreferenced objects for a long time. `--keep N` bounds what the branch *serves*,
+which bounds what an airlock fetches; reclaiming disk on the remote still needs an administrator
+to prune, or the branch to be deleted and re-created under a new name.
+:::
+
+## In the generated workflow
+
+The project-owned `publish-sandbox.yml` installs the same native package, computes the matrix with
+`plan`, then calls `pack`, `doctor --verify`, and `publish` per entry. Two properties matter for
+reviewers:
+
+- **Failures halt before the push.** A rejected push or a publish error never commits over or
+  corrupts an existing healthy orphan transport snapshot — the existing transport stays
+  byte-identical and fetchable.
+- **Budgets are enforced pre-push.** `doctor --verify --budget-config <config>` fails read-only
+  when a ceiling is exceeded, so an oversized transport cannot displace a working one.
+
+See [CI publishing](/pixi-sandbox/guides/ci-publishing/) for the failure surfaces, the durable
+diagnostics artifact, and the upgrade lane; [Generated workflow policy](/pixi-sandbox/guides/workflow-policy/)
+for the `[workflow]` table that renders the file.
+
+## Safety implications
+
+- A publish is a force-push by design: the branch is a release artifact. Protect it like one.
+- `--dry-run` previews every git command and changes nothing.
+
+## Failure modes
+
+- Push rejected for an oversized object → [Troubleshooting](/pixi-sandbox/troubleshooting/) entry 5;
+  the sharding rules are in [Sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/).
+- The published branch never appears → entry 3 (the transfer or the matrix entry is wrong).
+
+## Related
+
+- [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) — what must be green first
+- [Restore and inspect a transport](/pixi-sandbox/reference/cli/restore/) — the other end
+- [Verification guarantees](/pixi-sandbox/security/verification-guarantees/) — the trust boundary

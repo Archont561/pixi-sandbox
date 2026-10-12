@@ -1,0 +1,83 @@
+---
+title: CLI overview and shared diagnostics
+description: Invocation forms, verbosity and log-file controls, redaction rules, and exit-code behavior shared by pack, doctor, and publish.
+---
+
+import ContextChips from '../../../../components/ContextChips.astro';
+
+**Use this when** you need the invocation forms, the diagnostics controls every pipeline command
+shares, or the exit-code contract — before going to a specific lifecycle page.
+
+Because pixi discovers `pixi-<command>` on PATH, every verb below also works as
+`pixi sandbox <verb>`.
+
+## Invocation forms
+
+<ContextChips chips={["connected"]} />
+
+```bash
+pixi-sandbox --help
+pixi-sandbox --version
+pixi sandbox --help   # via the pixi extension
+```
+
+The lifecycle pages are:
+
+| Page | Verbs | Use it for |
+|---|---|---|
+| [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) | `init`, `plan`, `pack`, `doctor` | producing and checking a transport |
+| [Publish transport branches](/pixi-sandbox/reference/cli/publish/) | `publish` | the orphan branch, naming, retention |
+| [Restore and inspect a transport](/pixi-sandbox/reference/cli/restore/) | `restore`, `unpack` | the airlock side |
+| [Tools and self-update](/pixi-sandbox/reference/cli/tools/) | `tools`, `self-update` | embedded tool pins and the binary |
+
+## Pipeline diagnostics
+
+`pack`, `doctor`, and `publish` share two diagnostics controls:
+
+<ContextChips chips={["connected"]} />
+
+```bash
+pixi-sandbox pack ... -v
+pixi-sandbox doctor ... -vv --log-file /var/tmp/pixi-sandbox-doctor.log
+pixi-sandbox publish ... --log-file ./publish-attempt.log
+```
+
+`-v` writes phase boundaries to stderr; `-vv` also includes reviewed context such as local paths,
+platform, environment count, and helper-tool paths. `--log-file <PATH>` creates a durable plain
+text log and flushes every phase plus the complete causal error chain before exit. It works with
+or without `-v`, so CI can keep normal stdout unchanged while retaining evidence. The destination
+must not already exist: pixi-sandbox refuses to overwrite the only copy of an earlier failure.
+
+Diagnostics never dump argv or the environment. A configured Git remote is recorded only as
+`<configured>`, and URL credentials plus common token/password query fields are redacted from
+nested process errors. Choose a log path outside the transport output: the log is operator
+evidence, not payload.
+
+## Exit codes and failure behavior
+
+| Situation | Behavior |
+|---|---|
+| Verification failure | Non-zero exit; **all** failures are reported, not just the first |
+| Unverified bytes | Never executed — the standalone probe is skipped with a printed reason |
+| Budget exceeded (`--budget-config`) | Non-zero exit, read-only; nothing is pushed |
+| Host requirement `missing` | Reported; changes the exit code only with `--require-host-requirements` |
+| Host requirement `unknown` | Reported; **never** fails an exit code — a machine that cannot be inspected is not broken |
+| `--log-file` destination exists | Refused before any work, so the first failure is preserved |
+| Schema-1 environment under `--verify-restored` | Reported as `unverifiable`, not failed |
+
+## Safety implications
+
+- Diagnostics are bounded and redacted by construction — they are safe to transfer across an air
+  gap beside an incident report, and never inside the transport branch.
+- A non-zero exit from a verification command always means *nothing was written*.
+
+## Failure modes
+
+- "The log file already exists" → pick a fresh path; the refusal is deliberate.
+- "I need the log but stdout must stay clean" → `--log-file` works without `-v`.
+
+## Related
+
+- [Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/) — the evidence workflow
+- [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) — symptom-first recovery
+- [Glossary and security boundaries](/pixi-sandbox/glossary/) — the vocabulary

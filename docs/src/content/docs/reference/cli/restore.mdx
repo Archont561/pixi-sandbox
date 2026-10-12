@@ -1,0 +1,112 @@
+---
+title: Restore and inspect a transport
+description: "restore and unpack — the airlock-side commands: verify-then-materialize, the flag surface, and operator failure recovery."
+---
+
+import ContextChips from '../../../../components/ContextChips.astro';
+
+**Use this when** you are on the disconnected machine with a transferred branch and need to restore
+it — or inspect a transport without writing anything.
+
+## restore
+
+Airlock restore — verify, then materialize. `pixi-sandbox init` generates project-side `restore.sh`
+and `restore.ps1` launchers that archive the selected sandbox ref (fetching that one branch first
+when a connected clone lacks it, unless `PIXI_SANDBOX_FETCH=skip`) and call this explicit form
+using the branch's nested binary:
+
+<ContextChips chips={["airlock", "offline"]} />
+
+```bash
+/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
+  --branch-location /tmp/sb \
+  --output-path /path/to/project \
+  --envs dev \
+  --verify-only \
+  --force \
+  --no-vendor \
+  --work-dir /path/to/project/.pixi/.restore-work \
+  --cargo-config auto|write|print|none \
+  --user-tools register|skip \
+  --user-bin /path/to/user/bin
+```
+
+When invoked with no subcommand from inside an extracted branch, the nested binary remains
+read-only: it runs `doctor --verify` and prints the explicit restore command.
+
+| Flag | Description |
+|------|-------------|
+| `--branch-location` | Fetched branch dir (read-only) |
+| `--output-path` | Project output |
+| `--path-to-main-repo-code` | Alias for `--output-path` (backward compat) |
+| `--envs` | Partial restore (vendor always materialized) |
+| `--verify-only` | Verify, write nothing |
+| `--force` | Overwrite existing envs; also replaces unmanaged `pixi`/`pixi-sandbox` entries in the user bin directory |
+| `--no-vendor` | Skip vendor |
+| `--work-dir` | Work dir (default `.pixi/.restore-work`, same filesystem, TMPDIR redirected) |
+| `--cargo-config` | `auto` (default) / `write` / `print` / `none` — `auto` writes sandbox-owned `.pixi-sandbox/cargo-home/config.toml` plus Pixi activation hooks; `write` overwrites project `.cargo/config.toml`; `print`/`none` do not wire Cargo |
+| `--user-tools` | `register` (default) / `skip` — register `pixi` + `pixi-sandbox` for the user after both verifications pass, or touch nothing outside the project (env: `PIXI_SANDBOX_USER_TOOLS`) |
+| `--user-bin` | Per-user bin directory for the launchers (default `~/.local/bin`, Windows `%USERPROFILE%\.pixi-sandbox\bin`; env: `PIXI_SANDBOX_USER_BIN`) |
+
+### Order of operations
+
+Load manifest → verify everything → materialize tools (idempotent) → preflight disk → install
+envs (`pixi-unpack` → rename) → write markers (`conda-meta/pixi_env_prefix`, fingerprint) → vendor
++ Cargo wiring (`auto` uses `.pixi-sandbox/cargo-home` and per-env activation hooks, leaving project
+`.cargo/config.toml` untouched) → remove any legacy `.pixi/sandbox-env.sh` → verify the restored
+tree against the manifest's per-file digests → register user tools (launchers + profile/registry
+PATH, unless `--user-tools skip`) → assertions `pixi install --frozen --offline` no-op, and when
+Cargo is wired, `pixi run --frozen -- cargo build --offline` uses the vendor tree.
+
+### User-tool registration
+
+Managed launchers `exec` the manifest-verified copies under `.pixi/tools/<platform>/`; a restore of
+another project retargets them (the most recent restore is the user-level source); unrelated
+existing `pixi`/`pixi-sandbox` commands are refused unless `--force`. There is no supported
+`.pixi/sandbox-env.sh`: `pixi` is the sole entrypoint, and package/crate commands should run as
+`pixi run ...` (or through the manifest-owned `.pixi/tools/<platform>/pixi` when registration is
+skipped), never as bare `cargo`, `rustc`, or `bun` commands from a sourced prefix. The only
+activation hooks restore writes are per-environment Conda/Pixi hooks that set `CARGO_HOME` to the
+sandbox-owned cargo home when vendored crates are restored in `--cargo-config auto` mode.
+
+## unpack
+
+Single-environment primitive, used by restore:
+
+<ContextChips chips={["airlock"]} />
+
+```bash
+pixi-sandbox unpack \
+  --input-dir .sandbox-out \
+  --output-dir /tmp/prefix \
+  --env dev \
+  --unpacker /path/to/pixi-unpack \
+  --force \
+  --work-dir /tmp/work \
+  --verify-only
+```
+
+Accepts a transport dir, a `.pixi-sandbox/envs/<env>/pack` dir, or a bare pack dir. Leaves pixi
+markers to restore.
+
+## Safety implications
+
+- Verification runs **before** any write: a failed restore leaves the work dir for inspection and
+  the target untouched.
+- The work dir lives on the project's filesystem — never a small tmpfs `/tmp`, which
+  `pixi-unpack` stages into and which fails mid-restore with a confusing package-cache error.
+- Registration touches nothing outside the project under `--user-tools skip` (the CI/shared-account
+  policy); verification and project output are identical either way.
+
+## Failure modes
+
+Operator recovery for each audited symptom — a network attempt, a digest mismatch, a missing branch,
+an embedded binary that cannot execute — is in
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/). The ordered checklist is in
+[Restore on the airlock](/pixi-sandbox/restore/).
+
+## Related
+
+- [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) — `doctor --verify` and the standalone probe
+- [Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/) — `--cargo-config auto` in depth
+- [Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/) — collecting evidence on the airlock

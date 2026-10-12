@@ -189,8 +189,12 @@ export default defineConfig({
         {
           label: "Reference",
           items: [
+            { label: "CLI overview and shared diagnostics", slug: "reference/cli/overview" },
+            { label: "Create and verify a transport", slug: "reference/cli/create-verify" },
+            { label: "Publish transport branches", slug: "reference/cli/publish" },
+            { label: "Restore and inspect a transport", slug: "reference/cli/restore" },
+            { label: "Tools and self-update", slug: "reference/cli/tools" },
             { label: "Configuration", slug: "reference/configuration" },
-            { label: "CLI", slug: "reference/cli" },
           ],
         },
         {

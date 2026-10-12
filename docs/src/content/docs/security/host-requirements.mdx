@@ -109,7 +109,7 @@ Prefer not to pass it on the publish runner: that machine packages the transport
 the workload runs, and a missing host font there says nothing about the airlock. The flag fails on
 `missing` alone; `unknown` verdicts are reported and never fail, because a machine that cannot be
 inspected is not a machine that is broken. The
-[CLI reference](/pixi-sandbox/reference/cli/#doctor) documents the probes and the exit-code
+[CLI reference](/pixi-sandbox/reference/cli/create-verify/#doctor) documents the probes and the exit-code
 contract per flag.
 
 ## What pixi-sandbox will not do for you
@@ -132,5 +132,5 @@ contract per flag.
 ## See also
 
 - [Configuration: `[host_requirements]`](/pixi-sandbox/reference/configuration/#host_requirements--host-level-declarations) — the full field table, validation rules, and per-family resolution.
-- [CLI: `doctor`](/pixi-sandbox/reference/cli/#doctor) — the probes behind each verdict, the JSON shape, and `--require-host-requirements`.
+- [CLI: `doctor`](/pixi-sandbox/reference/cli/create-verify/#doctor) — the probes behind each verdict, the JSON shape, and `--require-host-requirements`.
 - [Airlock Restore](/pixi-sandbox/restore/) — getting the transport onto the disconnected machine in the first place.
