@@ -4,6 +4,7 @@ description: Measured transport sizes, why files are sharded, and the pre-push c
 ---
 
 import { Icon } from 'astro-icon/components';
+import ContextChips from '../../../components/ContextChips.astro';
 
 A transport is pushed to a Git host, so its size is not a preference — it is a set of enforced
 limits. This page covers the measured numbers, the sharding mechanism, and the budgets `doctor`
@@ -30,6 +31,8 @@ environment bytes.
 GitHub rejects a blob larger than 100 MiB, and other hosts impose their own limits. `pack`
 therefore shards whole files above the shard limit — default **95 MiB** — into `.partNNN` parts,
 and `restore` re-joins them atomically (`join_parts`) after verification:
+
+<ContextChips chips={["connected"]} />
 
 ```bash
 pixi-sandbox pack ... --shard-limit-mib 95

@@ -4,6 +4,7 @@ description: pixi-sandbox.toml schema and options for reviewed native publishing
 ---
 
 import { Icon } from 'astro-icon/components';
+import ContextChips from '../../../components/ContextChips.astro';
 
 ## File location
 
@@ -237,6 +238,8 @@ Enforcement stays opt-in (`doctor --require-host-requirements`). See the
 example and the boundary that nothing is installed or granted.
 
 ## Validation
+
+<ContextChips chips={["connected"]} />
 
 ```bash
 pixi-sandbox plan --config .pixi-sandbox.toml

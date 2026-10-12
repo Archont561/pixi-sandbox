@@ -4,6 +4,7 @@ description: Ship crates, not a toolchain — what gets vendored, how it is wire
 ---
 
 import { Icon } from 'astro-icon/components';
+import ContextChips from '../../../components/ContextChips.astro';
 
 A restored transport is a complete Pixi environment and a complete crate source tree — but it is
 **not** a Rust toolchain. This page covers the vendoring half: what travels, how the restore wires
@@ -52,6 +53,8 @@ cargo_vendor = false       # conda envs only — no crates travel
 `init` enables it explicitly only when the project root contains a `Cargo.toml`; the
 language-neutral starter writes `cargo_vendor = false`. The local pack flag mirrors the config:
 
+<ContextChips chips={["connected"]} />
+
 ```bash
 pixi-sandbox pack --repo-root . --envs dev,docs --output-dir .sandbox-out \
   --platform linux-64 --cargo-vendor --cargo-vendor-mode loose \
@@ -80,6 +83,8 @@ pixi run --frozen -- cargo build --offline
 ## Proving it is offline
 
 The restore ends with two assertions, and both must be no-ops that never touch the network:
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 pixi install --frozen --offline                 # environment matches pixi.lock

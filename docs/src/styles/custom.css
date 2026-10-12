@@ -291,3 +291,48 @@
   font-weight: 600;
   color: var(--sl-color-accent-high);
 }
+
+/* Machine/network context chips (audit doc-18). Icon + text, never color alone; the
+   state survives greyscale, print, and screen readers. */
+.context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 1rem 0 0.4rem;
+}
+
+.context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--sl-color-gray-5);
+  background: var(--sl-color-gray-6);
+  color: var(--sl-color-gray-2);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.context-chip.ctx-connected {
+  border-color: #facc15;
+  color: var(--sl-color-gray-1);
+}
+
+.context-chip.ctx-airlock {
+  border-color: #10b981;
+  color: var(--sl-color-gray-1);
+}
+
+.context-chip.ctx-ci {
+  border-color: #3b82f6;
+  color: var(--sl-color-gray-1);
+}
+
+.context-chip.ctx-network,
+.context-chip.ctx-offline {
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-gray-1);
+}

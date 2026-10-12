@@ -4,6 +4,7 @@ description: "The complete happy path, proved: one documented Pixi project, from
 ---
 
 import { Icon } from 'astro-icon/components';
+import ContextChips from '../../components/ContextChips.astro';
 
 This is the journey that defines the product: **a verified offline restore**. It has four stages,
 performed by different actors on machines in different network conditions. Each stage below names
@@ -43,6 +44,8 @@ exist at the end is **`sandbox/minimal-linux-64`** — `<branch_prefix>/<bundle>
 **Who:** the project owner. **Where:** the connected host, with Pixi installed. **Network:**
 required (prefix.dev).
 
+<ContextChips chips={["connected", "network"]} />
+
 ```bash
 pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox
 pixi-sandbox init
@@ -58,6 +61,8 @@ restore.sh                             # the one airlock-side entrypoint
 ```
 
 Confirm the CLI runs and the embedded tool pins resolve:
+
+<ContextChips chips={["connected"]} />
 
 ```bash
 pixi-sandbox tools list
@@ -87,6 +92,8 @@ platforms = ["linux-64"]
 
 Validate the plan — this is the same matrix the publisher will run:
 
+<ContextChips chips={["connected"]} />
+
 ```bash
 pixi-sandbox plan --config pixi-sandbox.toml
 pixi-sandbox plan --config pixi-sandbox.toml --json
@@ -105,6 +112,8 @@ runner. **Network:** required.
 
 Commit the generated files and push the project branch:
 
+<ContextChips chips={["ci", "network"]} />
+
 ```bash
 git add pixi-sandbox.toml .github/workflows/publish-sandbox.yml .github/workflows/relock.yml restore.sh
 git commit -m "chore: add pixi-sandbox transport for the minimal bundle"
@@ -116,6 +125,8 @@ runs `pack`, `doctor --verify`, and `publish` for each entry — `doctor --verif
 writes nothing, and the budgets are checked before any force-push.
 
 **Expected:** the workflow's publish job completes, and the repository carries a new orphan branch:
+
+<ContextChips chips={["connected", "network"]} />
 
 ```bash
 git ls-remote origin 'sandbox/*'
@@ -139,11 +150,15 @@ runs on the disconnected machine. **Network:** none — if any step reaches out,
 On the connected host, put both refs into one Git bundle and carry it across the gap on physical
 media:
 
+<ContextChips chips={["connected", "network"]} />
+
 ```bash
 git bundle create project-airlock.bundle main sandbox/minimal-linux-64
 ```
 
 On the airlock, clone the bundle and restore:
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 git clone project-airlock.bundle project
@@ -158,6 +173,8 @@ never contacts a remote; `PIXI_SANDBOX_FETCH=skip` makes "local Git objects only
 **Expected:** `.pixi/envs/default` materialized, vendored crates present when enabled, and the
 registered user tools reported. Now the proof — both commands must be no-ops that never touch the
 network:
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 pixi install --frozen --offline                 # environment matches pixi.lock

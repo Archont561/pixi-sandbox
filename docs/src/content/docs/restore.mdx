@@ -4,6 +4,7 @@ description: The operator checklist for a machine with no network.
 ---
 
 import { Icon } from 'astro-icon/components';
+import ContextChips from '../../components/ContextChips.astro';
 
 This page is written for the person (or agent) standing in front of the disconnected
 machine. Nothing here needs network access — if any step tries to reach out, stop and
@@ -21,6 +22,8 @@ you see, not by command.
   <strong>Fetch orphan branch</strong>
 </div>
 
+<ContextChips chips={["connected", "network"]} />
+
 ```bash
 # on the connected host, include both refs in the transferred Git bundle
 git bundle create project-airlock.bundle main sandbox/dev-linux-64
@@ -35,6 +38,8 @@ fails here, not at the restore. The normal project branch carries the minimal la
   <Icon name="lucide:zap" size={18} />
   <span><strong>One-command offline reconstruction</strong></span>
 </div>
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 git clone project-airlock.bundle project
@@ -57,6 +62,8 @@ require local Git objects only. Set `PIXI_SANDBOX_BRANCH` to pin an exact branch
   <Icon name="lucide:shield-check" size={18} />
   <strong>Verify every byte</strong>
 </div>
+
+<ContextChips chips={["airlock", "offline", "readonly"]} />
 
 ```bash
 /tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
@@ -81,6 +88,8 @@ credentials and common token/password query values are not recorded.
 For a local airlock check, the same binary can write evidence without changing doctor’s normal
 report:
 
+<ContextChips chips={["airlock", "offline", "readonly"]} />
+
 ```bash
 /tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
     --branch-location /tmp/sb --verify \
@@ -93,6 +102,8 @@ report:
   <Icon name="lucide:package-check" size={18} />
   <strong>Materialize environments</strong>
 </div>
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 cd /path/to/project
@@ -155,6 +166,8 @@ small volume.
   <Icon name="lucide:check-circle" size={18} />
   <strong>Offline assertions</strong>
 </div>
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 pixi install --frozen --offline                 # must be a no-op, must not touch the network

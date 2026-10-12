@@ -4,6 +4,7 @@ description: pixi-sandbox pack, doctor, publish, restore, unpack, plan, tools co
 ---
 
 import { Icon } from 'astro-icon/components';
+import ContextChips from '../../../components/ContextChips.astro';
 
 Because pixi discovers `pixi-<command>` on PATH, all verbs work as `pixi sandbox <verb>` too.
 Terms used here (transport, bundle, shard, budgets, tools lock) are defined once in the
@@ -20,6 +21,8 @@ pixi sandbox --help   # via pixi extension
 ## Pipeline diagnostics
 
 `pack`, `doctor`, and `publish` share two diagnostics controls:
+
+<ContextChips chips={["connected"]} />
 
 ```bash
 pixi-sandbox pack ... -v
@@ -41,6 +44,8 @@ evidence, not payload.
 ## pack
 
 Create transport directory from pixi envs.
+
+<ContextChips chips={["connected"]} />
 
 ```bash
 pixi-sandbox pack \
@@ -100,6 +105,8 @@ note — `doctor --verify` on the target host is the same guard there.
 
 Verify transport without writing.
 
+<ContextChips chips={["readonly"]} />
+
 ```bash
 pixi-sandbox doctor --branch-location .sandbox-out --verify
 pixi-sandbox doctor --branch-location .sandbox-out --verify --envs dev
@@ -116,6 +123,8 @@ hash report is not green (unverified bytes are never executed) or when the manif
 platform is not this host's; a failed probe makes doctor exit non-zero.
 
 Verify a **restored project** against the manifest's per-file list, not just the branch:
+
+<ContextChips chips={["readonly"]} />
 
 ```bash
 pixi-sandbox doctor --branch-location .sandbox-out --verify-restored /path/to/project
@@ -157,6 +166,8 @@ e2e gate runs it against the restored project and extracted transport.
 
 Publish transport as orphan branch.
 
+<ContextChips chips={["connected", "network"]} />
+
 ```bash
 pixi-sandbox publish \
   --input-dir .sandbox-out \
@@ -184,6 +195,8 @@ the N-1 previous ones are fetched shallow and `--filter=blob:none` (commits and 
 rotating does not download the payload it is rotating), re-committed as a fresh chain, and the
 new snapshot goes on top. The result is force-pushed like any other publish.
 
+<ContextChips chips={["connected", "network"]} />
+
 ```bash
 # a branch that carries the last three builds, oldest dropped on every publish
 pixi-sandbox publish --input-dir .sandbox-out --branch-name sandbox/dev-linux-64 --keep 3
@@ -204,6 +217,8 @@ Airlock restore — verify then materialize. `pixi-sandbox init` generates proje
 `restore` and `restore.ps1` launchers that archive the selected sandbox ref (fetching that one
 branch first when a connected clone lacks it, unless `PIXI_SANDBOX_FETCH=skip`) and call this
 explicit form using its nested binary:
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 /tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox restore \
@@ -252,6 +267,8 @@ home when vendored crates are restored in `--cargo-config auto` mode.
 
 Single-env primitive, used by restore.
 
+<ContextChips chips={["airlock"]} />
+
 ```bash
 pixi-sandbox unpack \
   --input-dir .sandbox-out \
@@ -270,6 +287,8 @@ Accepts transport dir, `.pixi-sandbox/envs/<env>/pack` dir, or bare pack dir. Le
 Generate the reviewed project configuration, a reusable GitHub Actions publisher, a lockfile
 relock bot, and exactly one launcher for the current platform (`restore.sh` on Unix,
 `restore.ps1` on Windows):
+
+<ContextChips chips={["connected", "network"]} />
 
 ```bash
 pixi-sandbox init
@@ -307,6 +326,8 @@ marker, naming the exact CLI release that rendered it.
 
 Render every owned file fresh, write nothing, and report drift:
 
+<ContextChips chips={["connected", "readonly"]} />
+
 ```bash
 pixi-sandbox init --check
 ```
@@ -333,6 +354,8 @@ anything.
 
 Validate `pixi-sandbox.toml` and emit matrix.
 
+<ContextChips chips={["connected"]} />
+
 ```bash
 pixi-sandbox plan --config pixi-sandbox.toml
 pixi-sandbox plan --config pixi-sandbox.toml --json
@@ -341,6 +364,8 @@ pixi-sandbox plan --config pixi-sandbox.toml --json
 Rejects unsafe/implicit runner selection, checks embedded tool coverage.
 
 ## tools
+
+<ContextChips chips={["connected"]} />
 
 ```bash
 pixi-sandbox tools list
@@ -371,6 +396,8 @@ reviewed data: read the diff before committing it.
 
 Replaces a **standalone** pixi-sandbox binary with a published release. Needs network; it is
 the one command that does.
+
+<ContextChips chips={["connected", "network"]} />
 
 ```bash
 # the latest release, replacing the running binary

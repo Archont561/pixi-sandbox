@@ -3,6 +3,8 @@ title: CI Publishing
 description: Publish sandbox branches with the generated direct CLI workflow.
 ---
 
+import ContextChips from '../../../components/ContextChips.astro';
+
 Run `pixi-sandbox init`, review the generated `.github/workflows/publish-sandbox.yml`, and commit it
 with `pixi-sandbox.toml`. The project-owned workflow installs pixi-sandbox from
 `https://prefix.dev/archont561/archont561`, computes the native matrix with `plan`, then calls
@@ -81,6 +83,8 @@ Review the diff like any other dependency bump — it is, after all, exactly the
 --force` would produce locally with the same binary — then merge it. Because a `github.token`
 commit or merge starts no `on: push` workflow (the same trap the relock workflow documents),
 merging this PR does **not** by itself trigger a new publish. Dispatch it explicitly:
+
+<ContextChips chips={["ci", "network"]} />
 
 ```bash
 gh workflow run .github/workflows/publish-sandbox.yml --ref main

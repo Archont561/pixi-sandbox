@@ -4,12 +4,15 @@ description: Durable, redacted evidence for pack, doctor, publish, and restore â
 ---
 
 import { Icon } from 'astro-icon/components';
+import ContextChips from '../../../components/ContextChips.astro';
 
 A failure on an airlocked machine is only half the story; the other half is evidence you can
 actually read. `pack`, `doctor`, and `publish` share two controls that produce durable,
 bounded, redacted logs â€” and none of it ever enters the transport branch.
 
 ## The two controls
+
+<ContextChips chips={["connected"]} />
 
 ```bash
 pixi-sandbox pack ... -v
@@ -50,6 +53,8 @@ Publish failures do not require access to the live Actions log CDN:
 ## On the airlock
 
 The same binary writes evidence without changing its normal report:
+
+<ContextChips chips={["airlock", "offline", "readonly"]} />
 
 ```bash
 /tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
