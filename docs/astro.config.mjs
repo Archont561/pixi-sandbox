@@ -144,6 +144,7 @@ export default defineConfig({
           items: [
             { label: "What is pixi-sandbox?", slug: "index" },
             { label: "How it works", slug: "how-it-works" },
+            { label: "Glossary and security boundaries", slug: "glossary" },
           ],
         },
         {
