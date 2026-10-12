@@ -1,0 +1,150 @@
+---
+title: Wrap a prebuilt payload into a conda package
+description: "Fetch a prebuilt binary tree on the connected host, wrap it as an installable conda package, publish it to a channel, and let an air-gapped project add and run it — and how this differs from a sandbox transport."
+---
+
+import ContextChips from '../../../components/ContextChips.astro';
+import GuideMeta from '../../../components/GuideMeta.astro';
+
+Some dependencies ship only as prebuilt binary trees — a program plus its libraries, resources and
+data files — rather than as source packages. `wrap-payload` fetches such a payload on the connected
+host and wraps it into a **platform-correct conda package**, so an air-gapped project can `pixi add`
+it and run it like any other package.
+
+<GuideMeta
+  outcome="A prebuilt payload republished as a conda package a consumer adds from a channel, with proven provenance and no payload byte in Git."
+  audience="Project owners who must carry one dependency into a lockfile but cannot reach its vendor CDN on the airlock."
+  prerequisites="A connected host with pixi and the pixi-sandbox standalone binary, and a channel you can publish to."
+  machine="Connected host for fetch, wrap and publish; the airlock for the frozen install."
+  maturity="Stable — the pure rules, the wrap verb and the rattler-build build are tested; the connected build was proved on rattler-build 0.76.1."
+/>
+
+## The boundary: a channel package, not a transport
+
+Reach for the right tool:
+
+- A **sandbox transport** (this project's `pack` → `publish` → `restore`) carries a *whole
+  environment* on an orphan branch. The airlock restores it without resolving anything.
+- A **channel package** carries *one dependency* into the manifest and lockfile, so it participates
+  in the solver and in an ordinary `pixi add` / `pixi install`.
+
+Neither replaces the other. A payload republished to a channel is resolved by pixi like any other
+package, which is exactly what you want when the payload has to appear in the lockfile alongside its
+dependencies.
+
+## 1. Declare the payload
+
+`wrap-payload` reads a dedicated declaration, `pixi-sandbox-payload.toml` by default. It names the
+package, the one platform subdir it is built for, the command that fetches the bytes, where that
+command leaves them, and the **SHA256 of the fetched artifact**:
+
+```toml
+schema = 1
+name = "example-payload"
+version = "1.0.0"
+platform = "linux-64"          # linux-64, linux-aarch64, osx-64, osx-arm64, win-64
+prepare = "./fetch-payload.sh" # runs on the connected host; pixi-sandbox never downloads
+artifact = "download/payload.tar.gz"
+payload = "unpacked"           # a directory, or a single file the artifact extracts to
+
+[source]
+url = "https://vendor.example/example-payload-1.0.0.tar.gz"
+sha256 = "0123…"               # 64 lowercase hex digits
+```
+
+`prepare` is the *only* step that fetches the payload, and it runs on the connected host. After it
+exits, pixi-sandbox checks the artifact it produced against `source.sha256`: a changed upstream
+**fails the run** instead of packing different bytes behind a green pipeline. Nothing under
+`payload` is ever committed — the workflow fetches and publishes, it never vendors.
+
+A payload that contains a native executable (ELF, Mach-O or PE, detected by magic bytes) cannot be
+declared `noarch`, and an executable whose format does not match the platform is refused by name.
+
+## 2. Wrap it on the connected host
+
+Dry-run first — identity, totals, source and the rendered recipe, with nothing written:
+
+<ContextChips chips={["connected"]} />
+
+```bash
+pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml --plan
+pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml --json   # CI form
+```
+
+Stage the reviewable recipe directory (recipe, provenance and a faithful payload copy):
+
+```bash
+pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml
+```
+
+Build the `.conda` and publish it into a filesystem channel:
+
+```bash
+pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml \
+  --build --channel /srv/channels/example
+```
+
+`--build` fetches `rattler-build` on demand into the tools cache (nothing is linked, embedded, or
+added to `tools.lock.json`), builds the staged recipe and publishes the package with
+rattler-build's own channel indexing. `--build-tool <path>` uses an existing `rattler-build` — for
+a mirror, an offline host, or CI. Budgets from `--budget-config <pixi-sandbox.toml>` fail the run
+with the measured size and a remedy before a package the channel would reject is produced.
+
+Every wrapped package carries its provenance at `$PREFIX/libexec/<name>/pixi-sandbox-payload.json`:
+the upstream URL, the fetched artifact's SHA256, and the file count and byte total. An optional
+`entry_point` in the declaration is exposed on `PATH` as a launcher that `exec`s the real file in
+place, so relative runtime lookups inside the payload keep working.
+
+## 3. Name the channel once, add on the airlock
+
+Commit the channel **once, as a real URL**, in `pixi.toml` and the lockfile — never a
+machine-specific path:
+
+```toml
+[workspace]
+channels = ["https://channel.example/example"]
+```
+
+On the airlock, with no network, the frozen install reads the URLs already in `pixi.lock`:
+
+<ContextChips chips={["airlock", "offline"]} />
+
+```bash
+pixi install --frozen
+```
+
+## Local iteration: mirrors, over HTTP
+
+To test before publishing, point the committed URL at a local channel with `[mirrors]` in the
+**uncommitted** `<project>/.pixi/config.toml` (already `.gitignore`d):
+
+```toml
+[mirrors]
+"https://channel.example/example" = ["http://127.0.0.1:8899"]
+```
+
+The mirror target must be an `http://` URL. A `file://` target is rewritten by pixi and then
+**rejected** ("URL scheme is not allowed") on pixi 0.81.0 — serve the local channel over HTTP
+instead. A direct `file://` entry in `channels` also works, but it is an absolute, machine-specific
+path and so cannot be committed. The written `pixi.lock` keeps the canonical `https://` URLs, not
+the mirror, so a local run never contaminates the committed lockfile. pixi-sandbox never rewrites
+your `pixi.toml`; `PIXI_CONFIG_FILE` and `PIXI_NO_CONFIG` select a config explicitly.
+
+## Ordering, and the standalone-binary rule
+
+The flow has a fixed order: **install the driver (`pixi` and the `pixi-sandbox` standalone binary)
+→ wrap the payload → publish it to the channel → `pixi add` the package on the consumer → install
+again.** The consumer cannot add a package that has not been published yet.
+
+`pack --self-bin` embeds the **standalone release binary**, not a `pixi global install` trampoline;
+if you installed pixi-sandbox through pixi's global installer, download the standalone release for
+`pack --self-bin` (issue #81).
+
+## Next steps
+
+- [Publish transport branches](/pixi-sandbox/reference/cli/publish/) — the whole-environment path
+  this guide is deliberately *not*.
+- [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/) — how a
+  payload's unpacked size is counted in a transport.
+- [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) — when a wrap or a
+  frozen install fails.

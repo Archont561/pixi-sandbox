@@ -125,6 +125,10 @@ export default defineConfig({
             { label: "Configure bundles", slug: "guides/configure-bundles" },
             { label: "Cargo vendoring", slug: "guides/cargo-vendoring" },
             { label: "Transport sizes, sharding, and budgets", slug: "guides/sizes-and-budgets" },
+            {
+              label: "Wrap a prebuilt payload into a conda package",
+              slug: "guides/payload-channels",
+            },
           ],
         },
         {
