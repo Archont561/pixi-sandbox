@@ -1,0 +1,65 @@
+---
+/**
+ * The standard opening block for every guide page (see "The guide template" in
+ * project/repository.mdx). Renders a compact, print-friendly, no-JS table:
+ * outcome, audience, prerequisites, machine context, and maturity.
+ *
+ * Values may be plain strings or inline JSX (so an MDX page can pass `<code>`
+ * and links). The box is deliberately border-and-text only — no background to
+ * lose when the page is printed.
+ */
+const { outcome, audience, prerequisites, machine, maturity } = Astro.props;
+
+const rows = [
+  ["Outcome", outcome],
+  ["Audience", audience],
+  ["Prerequisites", prerequisites],
+  ["Machine context", machine],
+  ["Maturity", maturity],
+];
+---
+
+<div class="guide-meta">
+  {
+    rows.map(([label, value]) => (
+      <div class="guide-meta-row">
+        <span class="guide-meta-label">{label}</span>
+        <span class="guide-meta-value">{value}</span>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .guide-meta {
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    padding: 0.7rem 1rem;
+    margin: 1rem 0 1.5rem;
+    break-inside: avoid;
+  }
+  .guide-meta-row {
+    display: grid;
+    grid-template-columns: 9.5rem 1fr;
+    gap: 0.6rem;
+    padding: 0.32rem 0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+  .guide-meta-row + .guide-meta-row {
+    border-top: 1px solid var(--sl-color-gray-6);
+  }
+  .guide-meta-label {
+    color: var(--sl-color-gray-2);
+    font-weight: 600;
+  }
+  .guide-meta-value {
+    margin: 0;
+  }
+  @media (max-width: 30rem) {
+    .guide-meta-row {
+      grid-template-columns: 1fr;
+      gap: 0.1rem;
+    }
+  }
+</style>

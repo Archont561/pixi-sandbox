@@ -4,6 +4,7 @@ description: Map every retired composite Action and the reusable publisher to th
 ---
 
 import ContextChips from '../../../components/ContextChips.astro';
+import GuideMeta from '../../../components/GuideMeta.astro';
 
 The public composite Actions and the repository's reusable publisher were retired after native
 packages became the canonical installation path. New refs do not contain the root, `setup`, or
@@ -13,6 +14,14 @@ yesterday breaks today.
 
 This page maps **every retired interface** to its replacement, with before/after commands, the
 generated workflow changes the migration requires, and the ordered upgrade checklist.
+
+<GuideMeta
+  outcome="Every retired interface replaced by the generated, project-owned publisher — nothing in this repository is called at runtime."
+  audience="Maintainers of projects still calling the retired composite Actions or the reusable publisher."
+  prerequisites="A v0.3.x consumer workflow and Pixi on a connected host."
+  machine="Connected host — the generated workflow runs on CI runners."
+  maturity="Stable — immutable old refs stay resolvable for historical builds."
+/>
 
 ## The migration matrix
 
@@ -121,9 +130,34 @@ An old pin is not an emergency: immutable tags and SHAs stay available for histo
 you give up by waiting is the upgrade lane, the budgets gate, and reviewable generated files — the
 [compatibility page](/pixi-sandbox/compatibility/) lists what each documented release supports.
 
-## Related
+## Verification
 
-- [CI publishing](/pixi-sandbox/guides/ci-publishing/) — the generated publisher, end to end
+`actionlint` is clean on the regenerated file, the old `uses:` steps are gone, and the first push
+runs the generated publisher to a green publish with the `publish-diagnostics-<platform>` artifact:
+
+<ContextChips chips={["ci", "network"]} />
+
+```bash
+actionlint .github/workflows/publish-sandbox.yml
+gh run list --workflow publish-sandbox.yml --limit 1
+```
+
+## Failure modes
+
+- **A v0.4.3, v0.4.4, or v0.5.0 generated workflow fails with `curl: (22)`** — the download URL was
+  built from the consumer's own repository; re-run `pixi-sandbox init --force` with a patched CLI
+  (see [CI publishing](/pixi-sandbox/guides/ci-publishing/), issue #80).
+- **The upgrade pull request is refused with a 403** — the token cannot write workflow files; the
+  job stays green and uploads the `git apply`-able patch instead.
+- **A publish leg fails after migrating** — the same failure surfaces as any generated publisher:
+  [Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/) and
+  [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/).
+
+## Next steps
+
+**Run the publisher** — [CI publishing](/pixi-sandbox/guides/ci-publishing/). Prerequisite: the
+generated workflow and `pixi-sandbox.toml` committed. Related:
+
 - [Compatibility and releases](/pixi-sandbox/compatibility/) — support matrix and versioning policy
 - [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) — `pack` and
   `doctor --verify` locally

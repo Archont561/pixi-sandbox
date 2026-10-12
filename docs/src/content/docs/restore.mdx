@@ -5,6 +5,7 @@ description: The operator checklist for a machine with no network.
 
 import { Icon } from 'astro-icon/components';
 import ContextChips from '../../components/ContextChips.astro';
+import GuideMeta from '../../components/GuideMeta.astro';
 
 This page is written for the person (or agent) standing in front of the disconnected
 machine. Nothing here needs network access — if any step tries to reach out, stop and
@@ -14,6 +15,14 @@ the [Glossary and security boundaries](/pixi-sandbox/glossary/).
 If a step fails, stop and find the symptom in
 [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) — it is organized by what
 you see, not by command.
+
+<GuideMeta
+  outcome="A verified, offline-clean restored project on a machine with no network."
+  audience="Airlock operators — the person or agent standing in front of the disconnected machine."
+  prerequisites="A Git bundle or clone containing the project branch and the sandbox branch; Git and tar on the machine."
+  machine="Airlock — no network, no credentials, nothing authenticates to anything."
+  maturity="Stable — the documented operator procedure."
+/>
 
 ## Operator checklist
 
@@ -271,3 +280,40 @@ Unpacking runs package post-link scripts, i.e. code from the bundle executes on 
 machine. That is inherent to conda environments — the bundle is signed/verified content and
 the branch should be protected accordingly. Ask for `--verify-only` runs and signed
 manifests if your site requires it.
+
+## Verification
+
+Section 4 above is the verification, and it is the last thing you do: `pixi install --frozen
+--offline` must be a no-op, `pixi run --frozen -- cargo build --offline` must build from the
+vendored crates only, and the registered user tools must resolve in a new shell. A restore is not
+proven until all three hold — if the install starts doing real work, re-run the restore rather
+than letting it continue.
+
+## Failure modes
+
+Every failure is a hard stop, and each symptom has its own recovery path in
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/):
+
+| What you see | Entry |
+|---|---|
+| A restore step reaches for the network | entry 1 |
+| `doctor --verify` reports a digest mismatch | entry 2 |
+| The sandbox branch is not in the transferred bundle | entry 3 |
+| The embedded binary cannot execute | entry 4 |
+| The host rejects an object as too large | entry 5 |
+| A missing GUI, font, or display server | entry 6 |
+| `cargo build --offline` still fetches | entry 8 |
+
+When an Actions or operator log cannot cross the boundary, ask the connected side to re-run the
+failing phase with a fresh `--log-file <PATH>` and transfer that bounded file beside the incident
+report — [Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/) is the collection
+procedure, and "Filing an incident" is the last section of the troubleshooting page.
+
+## Next steps
+
+**Run the workload** — with the offline assertions green, the restore is done: `pixi run --frozen
+<task>` in a new shell. When something failed instead, the next safe action is the symptom entry
+above, then [Filing an incident](/pixi-sandbox/troubleshooting/#filing-an-incident). Related:
+
+- [Compatibility and releases](/pixi-sandbox/compatibility/) — what the restored CLI and schema support
+- [Verification guarantees](/pixi-sandbox/security/verification-guarantees/) — what the checks prove

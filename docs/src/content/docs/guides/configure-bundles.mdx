@@ -6,8 +6,17 @@ description: "The project-owner guide: declare environments and platforms, gener
 import { Icon } from 'astro-icon/components';
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 import ContextChips from '../../../components/ContextChips.astro';
+import GuideMeta from '../../../components/GuideMeta.astro';
 
 This guide is for **project owners** who want to ship their pixi environments to airlocked machines.
+
+<GuideMeta
+  outcome="A reviewed pixi-sandbox.toml, the generated workflow and launcher, and a published sandbox branch."
+  audience="Project owners deciding what ships to the airlock."
+  prerequisites="pixi.toml and pixi.lock; Pixi and Git on the connected host; Git and tar on the airlock."
+  machine="Connected host to configure and publish; the airlock to restore."
+  maturity="Stable — the full project-owner walkthrough."
+/>
 
 ## The two product commands
 
@@ -249,3 +258,35 @@ CLI came from.
 > publisher's namespace root, which is a web page, not a channel — to
 > `[workspace].channels`, so `pixi lock` failed with a 404 on any project with at least one
 > dependency. Remove that entry from your `channels` array; nothing needs to replace it.
+
+## Verification
+
+`plan` prints exactly the matrix you intended, `doctor --verify` is green, and the remote carries
+the orphan branch:
+
+<ContextChips chips={["connected", "network"]} />
+
+```bash
+pixi-sandbox plan --config pixi-sandbox.toml --json
+pixi-sandbox doctor --branch-location .sandbox-out --verify
+git ls-remote origin 'sandbox/*'
+```
+
+## Failure modes
+
+- **The sandbox branch is missing from the transfer** — entry 3 in
+  [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/): the bundle must carry
+  both `main` and the sandbox branch.
+- **A push is rejected for an oversized object** — entry 5; the shard limit and budgets are in
+  [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/).
+- **The restore dies on a missing GUI, font, or display server** — entry 6; declare what the
+  workload needs in `[host_requirements]` ([Host requirements](/pixi-sandbox/security/host-requirements/)).
+
+## Next steps
+
+**Restore on the airlock** — [Restore on the airlock](/pixi-sandbox/restore/). Prerequisite: the
+project and its sandbox branch carried across the air gap in a Git bundle. Related:
+
+- [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/) — before you grow a bundle
+- [Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/) — for Rust workspaces
+- [Generated workflow policy](/pixi-sandbox/guides/workflow-policy/) — the `[workflow]` table

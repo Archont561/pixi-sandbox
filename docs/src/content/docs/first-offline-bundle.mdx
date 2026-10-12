@@ -5,11 +5,20 @@ description: "The complete happy path, proved: one documented Pixi project, from
 
 import { Icon } from 'astro-icon/components';
 import ContextChips from '../../components/ContextChips.astro';
+import GuideMeta from '../../components/GuideMeta.astro';
 
 This is the journey that defines the product: **a verified offline restore**. It has four stages,
 performed by different actors on machines in different network conditions. Each stage below names
 who performs it, where it runs, the exact command, the artifact or output to expect, and where to
 go when it fails.
+
+<GuideMeta
+  outcome="One verified offline restore, proved end to end — install, configure, publish, restore on a machine with no network."
+  audience="Anyone evaluating the product: the four stages are performed by different actors on different machines."
+  prerequisites="A Pixi project with pixi.toml and pixi.lock, and a Git remote you can push to."
+  machine="Connected host and CI for stages 1–3; the airlock for stage 4."
+  maturity="Stable — this is the documented happy path."
+/>
 
 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin: 1.5rem 0;">
   <div style="border: 2px solid #facc15; border-radius: 0.75rem; padding: 0.75rem; text-align: center; background: var(--sl-color-gray-6);">
@@ -188,13 +197,29 @@ missing branch in the bundle, an embedded binary that cannot execute) is in
 [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/); the operator's ordered
 checklist is in [Restore on the airlock](/pixi-sandbox/restore/).
 
-## You have proved
+## Verification
+
+You have proved:
 
 - a minimal transport built from one documented Pixi project, end to end;
 - the expected branch name — `sandbox/minimal-linux-64` — existed and was restorable;
 - a verified restore on a machine with no network, with the offline assertions green.
 
-From here: [Configure bundles](/pixi-sandbox/guides/configure-bundles/) for multi-environment and
-multi-platform plans, [Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/) for Rust projects,
-and [CI publishing](/pixi-sandbox/guides/ci-publishing/) for the publisher's failure surfaces and
-upgrade lane.
+The two assertions from stage 4 are the standing check: `pixi install --frozen --offline` and
+`pixi run --frozen -- cargo build --offline` must both be no-ops.
+
+## Failure modes
+
+Each stage above names its own "if it fails" pointer; the symptom-indexed recovery paths are in
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) — a missing branch in the
+bundle (entry 3), a digest mismatch (entry 2), a network attempt (entry 1), and a vendored build
+that still fetches (entry 8) are the four this journey can hit.
+
+## Next steps
+
+- **[Configure bundles](/pixi-sandbox/guides/configure-bundles/)** — multi-environment and
+  multi-platform plans. Prerequisite: the minimal bundle above published and restored.
+- **[Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/)** — for Rust workspaces. Prerequisite:
+  a `Cargo.toml` and `Cargo.lock` in the project.
+- **[CI publishing](/pixi-sandbox/guides/ci-publishing/)** — the publisher's failure surfaces and
+  upgrade lane. Prerequisite: the generated workflow committed.

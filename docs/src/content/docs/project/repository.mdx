@@ -148,6 +148,27 @@ rewrites zero documentation lines. Pages are MDX in `docs/src/content/docs/`, or
 role/lifecycle IA: propose structural changes as a backlog task first, and keep the airlock page
 actionable for someone with no network and no context.
 
+### The guide template
+
+Every page under `guides/` — and the operator pages that share their shape, `restore.mdx` and
+`first-offline-bundle.mdx` — opens and closes the same way, so a reader always knows where they
+are and what the page will ask of them:
+
+- **Opens with** a `GuideMeta` box (`docs/src/components/GuideMeta.astro`, imported from the
+  page): the **outcome**, the **audience**, the **prerequisites**, the **machine context**
+  (the same connected/airlock vocabulary the context chips use), and the **maturity** of the
+  feature. Values may be inline JSX, so `<code>` and links work inside the box.
+- **Body** carries the how, in lifecycle order.
+- **Closes with** three sections, in this order and under these exact headings:
+  `## Verification` (how to prove the outcome), `## Failure modes` (the symptom, linking the
+  matching [Troubleshooting](/pixi-sandbox/troubleshooting/) entry), and `## Next steps`
+  (the next safe action in the lifecycle, naming its prerequisite).
+- `restore.mdx` is the reference implementation: its printable operator checklist sits directly
+  under the meta box, and the page still ends with the three closing sections.
+
+A new guide is not done until its `Next steps` names the next lifecycle stage and that stage's
+prerequisite — the pages form a chain, not a set.
+
 ### Icons and the docs design system
 
 Icons render through [Astro Icon](https://www.astroicon.dev/) over

@@ -5,10 +5,19 @@ description: Ship crates, not a toolchain — what gets vendored, how it is wire
 
 import { Icon } from 'astro-icon/components';
 import ContextChips from '../../../components/ContextChips.astro';
+import GuideMeta from '../../../components/GuideMeta.astro';
 
 A restored transport is a complete Pixi environment and a complete crate source tree — but it is
 **not** a Rust toolchain. This page covers the vendoring half: what travels, how the restore wires
 it, and the one command that proves the far side never touches the network.
+
+<GuideMeta
+  outcome="A restored transport that builds Rust offline — the crates travel, the toolchain does not."
+  audience="Project owners shipping a Rust workspace to an airlocked machine."
+  prerequisites="A pixi project with a usable Cargo.toml and Cargo.lock; vendoring enabled on the bundle."
+  machine="Connected host to pack; the airlock to build offline."
+  maturity="Stable — cargo_vendor is schema 1 configuration."
+/>
 
 ## What gets vendored
 
@@ -80,7 +89,7 @@ activation hook and the offline contract stay in effect:
 pixi run --frozen -- cargo build --offline
 ```
 
-## Proving it is offline
+## Verification
 
 The restore ends with two assertions, and both must be no-ops that never touch the network:
 
@@ -91,9 +100,6 @@ pixi install --frozen --offline                 # environment matches pixi.lock
 pixi run --frozen -- cargo build --offline      # builds from the vendored crates only
 ```
 
-If the cargo build still tries to fetch, the vendor tree and `Cargo.lock` disagree — see
-[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) for the recovery path.
-
 ## What does not travel
 
 - **No rustc, no cargo.** The toolchain comes from the Pixi environment (a conda-forge rust env is
@@ -101,8 +107,18 @@ If the cargo build still tries to fetch, the vendor tree and `Cargo.lock` disagr
 - **No build artifacts.** The airlock compiles from scratch; only sources and the lockfile travel.
 - **No registry credentials.** Nothing in the transport authenticates to anything.
 
-## See also
+## Failure modes
+
+- **`cargo build` still tries to fetch** — the vendor tree and `Cargo.lock` disagree; that is entry 8
+  in [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/). Refresh the lock on
+  the connected side and re-pack; never hand-edit the vendor tree.
+- **A Rust command fails with a missing toolchain** — crates travel, `rustc` does not. Pack the
+  toolchain into an environment, or install it on the airlock machine.
+
+## Next steps
+
+**Restore on the airlock** — [Restore on the airlock](/pixi-sandbox/restore/). Prerequisite: a
+published `sandbox/<bundle>-<platform>` branch for the bundle. Related:
 
 - [Configure bundles](/pixi-sandbox/guides/configure-bundles/) — the full bundle declaration
 - [Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/) — every config field
-- [Restore on the airlock](/pixi-sandbox/restore/) — what the restore does, in order

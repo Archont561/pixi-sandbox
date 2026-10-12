@@ -4,6 +4,7 @@ description: Publish sandbox branches with the generated direct CLI workflow.
 ---
 
 import ContextChips from '../../../components/ContextChips.astro';
+import GuideMeta from '../../../components/GuideMeta.astro';
 
 Run `pixi-sandbox init`, review the generated `.github/workflows/publish-sandbox.yml`, and commit it
 with `pixi-sandbox.toml`. The project-owned workflow installs pixi-sandbox from
@@ -16,6 +17,14 @@ projects migrating from v0.3.x should replace root/setup/publish Action calls an
 calls with the newly generated file; immutable old refs remain available for historical jobs. The
 [Migration from composite Actions](/pixi-sandbox/guides/migration/) guide maps every retired
 interface to its replacement, with before/after commands and a checklist.
+
+<GuideMeta
+  outcome="A project-owned publisher that packs, verifies, and force-pushes the transport on native runners."
+  audience="CI maintainers owning the generated workflow."
+  prerequisites="pixi-sandbox init has run and the generated files are committed with pixi-sandbox.toml."
+  machine="Connected CI runners (GitHub Actions) — network to prefix.dev and GitHub."
+  maturity="Stable — the generated workflow, its diagnostics, and its upgrade lane all ship."
+/>
 
 ## Carrying CI policy in `pixi-sandbox.toml`
 
@@ -125,3 +134,36 @@ Publish failures inside the generated workflow (the `pipeline` step's `install` 
 - **Separation of concerns**: diagnostic logs remain in runner temporary storage and are uploaded as
   standard workflow artifacts; they are never committed into or published over the transport branch.
 
+## Verification
+
+A push to the project branch runs the `plan` job, then one `pipeline` step per matrix entry; a
+successful run leaves the orphan branch and the `publish-diagnostics-<platform>` artifact (7-day
+retention) in the run summary:
+
+<ContextChips chips={["ci", "network"]} />
+
+```bash
+gh run list --workflow publish-sandbox.yml --limit 1
+git ls-remote origin 'sandbox/*'
+```
+
+## Failure modes
+
+- **A phase fails before `publish`** — the existing transport is never replaced. Read the
+  `publish-diagnostics-<platform>` artifact (per-phase `pack.log` / `doctor.log` / `publish.log`)
+  and the `$GITHUB_STEP_SUMMARY` failure report; evidence collection is in
+  [Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/).
+- **The publish is over budget** — entry 7 in
+  [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/); the ceilings and the
+  remedy are in [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/).
+- **The upgrade job cannot open its pull request** — the Workflows-capable token is missing or
+  refused; the job stays green and uploads the `git apply`-able patch instead (above).
+
+## Next steps
+
+**Transfer and restore on the airlock** — [Restore on the airlock](/pixi-sandbox/restore/).
+Prerequisite: the published `sandbox/<bundle>-<platform>` branch, carried across the gap in a Git
+bundle. Related:
+
+- [Generated workflow policy](/pixi-sandbox/guides/workflow-policy/) — the `[workflow]` table
+- [Compatibility and releases](/pixi-sandbox/compatibility/) — what each release supports

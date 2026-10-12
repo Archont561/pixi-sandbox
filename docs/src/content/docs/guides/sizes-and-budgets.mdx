@@ -5,10 +5,19 @@ description: Measured transport sizes, why files are sharded, and the pre-push c
 
 import { Icon } from 'astro-icon/components';
 import ContextChips from '../../../components/ContextChips.astro';
+import GuideMeta from '../../../components/GuideMeta.astro';
 
 A transport is pushed to a Git host, so its size is not a preference — it is a set of enforced
 limits. This page covers the measured numbers, the sharding mechanism, and the budgets `doctor`
 checks before any branch is force-pushed.
+
+<GuideMeta
+  outcome="A transport that fits the enforced ceilings — sharding, budgets, and the remedy when one is exceeded."
+  audience="Project owners and CI maintainers sizing a transport."
+  prerequisites="A declared bundle in pixi-sandbox.toml; nothing else."
+  machine="Connected host — budgets are checked by doctor before any push."
+  maturity="Stable — budgets fail the publish read-only, before the force-push."
+/>
 
 ## Measured: a small project
 
@@ -85,8 +94,30 @@ response is to split the reviewed environment set into separate `[[bundle]]` ent
 the failed run never touches the existing branch. Symptom-level guidance is in
 [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/).
 
-## See also
+## Verification
+
+`doctor --verify --budget-config <config>` is green against the ceilings above, and
+`publish --dry-run` previews the push without touching the remote:
+
+<ContextChips chips={["connected"]} />
+
+```bash
+pixi-sandbox doctor --branch-location .sandbox-out --verify --budget-config pixi-sandbox.toml
+pixi-sandbox publish --input-dir .sandbox-out --branch-name sandbox/dev-linux-64 --dry-run
+```
+
+## Failure modes
+
+- **A ceiling is exceeded** — `doctor --budget-config` fails read-only and names the ceiling and its
+  remedy; the failed run never touches the existing branch. Entry 7 in
+  [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) covers the CI shape.
+- **The host rejects a push for an oversized object** — entry 5 (a single blob over the host's
+  limit): lower `max_blob_mib` or shard, and republish.
+
+## Next steps
+
+**Publish the transport** — [Publish transport branches](/pixi-sandbox/reference/cli/publish/).
+Prerequisite: a verified, within-budget transport from `pack` and `doctor --verify`. Related:
 
 - [Configure bundles](/pixi-sandbox/guides/configure-bundles/) — declaring bundles and platforms
-- [Publish transport branches](/pixi-sandbox/reference/cli/publish/) — `publish`, `--keep`, `--dry-run`
 - [Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/) — budgets, runners, workflow policy

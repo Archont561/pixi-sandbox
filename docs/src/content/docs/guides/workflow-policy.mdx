@@ -4,6 +4,7 @@ description: Carry publisher policy in pixi-sandbox.toml — no hand edits, ever
 ---
 
 import { Icon } from 'astro-icon/components';
+import GuideMeta from '../../../components/GuideMeta.astro';
 
 Every real repository wants to change something about the generated `publish-sandbox.yml`: a
 `paths:` allowlist so an unrelated change does not repack and force-push the transport, tighter
@@ -13,6 +14,14 @@ Every real repository wants to change something about the generated `publish-san
 **That policy belongs in config, not in the file.** An optional `[workflow]` table in
 `pixi-sandbox.toml` carries it, and `init` renders it straight into the workflow — no hand edits,
 ever.
+
+<GuideMeta
+  outcome="CI policy carried in pixi-sandbox.toml and rendered by init — the workflow is never hand-edited."
+  audience="CI maintainers who need to change the generated publisher."
+  prerequisites="A generated .github/workflows/publish-sandbox.yml from pixi-sandbox init."
+  machine="Connected host to run init; the policy renders into CI runners."
+  maturity="Stable — the [workflow] table is optional, schema 1 configuration."
+/>
 
 ## The table
 
@@ -72,8 +81,25 @@ what makes the upgrade job's pull requests trustworthy: they come from the same 
 `init` uses, with no local edit left to disagree with it. `pixi-sandbox init --check` audits the
 tree read-only and names any drift.
 
-## See also
+## Verification
 
-- [CI publishing](/pixi-sandbox/guides/ci-publishing/) — the pipeline, the failure surfaces, the upgrade lane
+`pixi-sandbox init --check` reports no drift — every owned file renders byte-identically to what the
+config describes — and `pixi-sandbox plan --config pixi-sandbox.toml --json` surfaces the derived
+`push_paths` under its own key, so you can diff the next render before running it.
+
+## Failure modes
+
+- **The committed workflow and the config disagree** — a hand edit, or policy added without
+  regenerating. `init --check` names each finding (missing / stale / foreign); re-run `pixi-sandbox
+  init` and commit the render.
+- **A publish runs on unrelated changes** — the `[workflow]` table is absent, so no `paths:`
+  allowlist renders: write `push_paths` explicitly, remembering that the table's presence moves the
+  two defaults documented above.
+
+## Next steps
+
+**Run the publisher** — [CI publishing](/pixi-sandbox/guides/ci-publishing/). Prerequisite: the
+generated workflow committed alongside `pixi-sandbox.toml`. Related:
+
 - [Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/) — every field and its default
 - [Migration from composite Actions](/pixi-sandbox/guides/migration/) — replacing the retired Actions
