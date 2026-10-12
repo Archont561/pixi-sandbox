@@ -95,6 +95,7 @@ export default defineConfig({
       // LastUpdated, and Pagination.
       components: {
         Footer: "./src/components/Footer.astro",
+        ContentPanel: "./src/components/ContentPanel.astro",
       },
       sidebar: [
         {
