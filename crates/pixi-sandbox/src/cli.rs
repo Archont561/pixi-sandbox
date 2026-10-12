@@ -582,7 +582,7 @@ pub struct WrapPayloadArgs {
     #[arg(long)]
     pub skip_prepare: bool,
 
-    /// Where the staged recipe directory is written (default: `<config dir>/payload-build`).
+    /// Where the staged recipe directory is written (default: `<config dir>/.pixi/payload-build`).
     #[arg(long, value_name = "PATH")]
     pub out: Option<PathBuf>,
 
@@ -595,7 +595,7 @@ pub struct WrapPayloadArgs {
     pub build: bool,
 
     /// The filesystem channel the built package is published into (default:
-    /// `<config dir>/channel`). Must resolve to an absolute path for pixi's `file://` channels.
+    /// `<config dir>/.pixi/payload-channel`). Must resolve to an absolute path for pixi's `file://` channels.
     #[arg(long, value_name = "PATH")]
     pub channel: Option<PathBuf>,
 

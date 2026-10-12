@@ -58,7 +58,7 @@ pub fn run(args: &WrapPayloadArgs) -> Result<()> {
     let out_dir = args
         .out
         .clone()
-        .unwrap_or_else(|| config_dir.join("payload-build"));
+        .unwrap_or_else(|| config_dir.join(".pixi/payload-build"));
     let staged = stage_recipe_dir(&plan, &prepared.payload_root, &out_dir)
         .with_context(|| format!("staging the recipe directory {}", out_dir.display()))?;
     println!(
@@ -98,7 +98,7 @@ fn build_and_publish(
     };
     let channel_dir = match &args.channel {
         Some(path) => support::absolute(path)?,
-        None => config_dir.join("channel"),
+        None => config_dir.join(".pixi/payload-channel"),
     };
 
     // Do not pre-create the channel: `rattler-build publish --to file://…` initialises a channel

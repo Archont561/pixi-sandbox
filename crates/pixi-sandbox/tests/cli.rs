@@ -2626,9 +2626,10 @@ fn init_preserves_reviewed_vendoring_policy(#[case] cargo_vendor: bool) {
 /// `prepare` is a shell no-op because the cases here drive `--skip-prepare`; the shell path is
 /// covered by a `#[cfg(unix)]` case below.
 fn write_payload_project(root: &Path, artifact_bytes: &[u8], digest: &str) -> PathBuf {
-    fs::create_dir_all(root.join("payload")).expect("payload dir");
-    fs::write(root.join("payload/tool"), b"#!/bin/sh\necho hi\n").expect("payload file");
-    fs::write(root.join("artifact.bin"), artifact_bytes).expect("artifact");
+    let work = root.join(".pixi/payload-work");
+    fs::create_dir_all(work.join("payload")).expect("payload dir");
+    fs::write(work.join("payload/tool"), b"#!/bin/sh\necho hi\n").expect("payload file");
+    fs::write(work.join("artifact.bin"), artifact_bytes).expect("artifact");
     let config = format!(
         "schema = 1\nname = \"demo\"\nversion = \"1.0.0\"\nplatform = \"linux-64\"\n\n\
          prepare = \"true\"\nartifact = \"artifact.bin\"\npayload = \"payload\"\n\n\
@@ -2661,7 +2662,7 @@ fn wrap_payload_plan_prints_the_recipe_the_totals_and_the_declared_digest() {
         .stdout(predicate::str::contains("recipe:"));
 
     assert!(
-        !project.path().join("payload-build").exists(),
+        !project.path().join(".pixi/payload-build").exists(),
         "--plan stages nothing"
     );
 }
@@ -2684,7 +2685,7 @@ fn wrap_payload_stages_a_reviewable_recipe_directory() {
         .success()
         .stdout(predicate::str::contains("staged demo 1.0.0"));
 
-    let build = project.path().join("payload-build");
+    let build = project.path().join(".pixi/payload-build");
     assert!(build.join("recipe.yaml").is_file(), "the recipe is staged");
     assert!(
         build.join("pixi-sandbox-payload.json").is_file(),
@@ -2693,6 +2694,13 @@ fn wrap_payload_stages_a_reviewable_recipe_directory() {
     assert!(
         build.join("payload/tool").is_file(),
         "the payload tree is staged beside the recipe"
+    );
+    assert!(
+        !project.path().join("payload-build").exists()
+            && !project.path().join("channel").exists()
+            && !project.path().join("artifact.bin").exists()
+            && !project.path().join("payload").exists(),
+        "payload bytes and build outputs do not appear in unignored project-root paths"
     );
 }
 
@@ -2746,7 +2754,7 @@ fn wrap_payload_json_prints_one_machine_readable_plan_and_stages_nothing() {
         "the report carries the digest the config pinned"
     );
     assert!(
-        !project.path().join("payload-build").exists(),
+        !project.path().join(".pixi/payload-build").exists(),
         "--json stages nothing"
     );
 }
@@ -2856,13 +2864,20 @@ esac
     assert!(
         project
             .path()
-            .join("payload-build/out/linux-64/demo-1.0.0-h0.conda")
+            .join(".pixi/payload-build/out/linux-64/demo-1.0.0-h0.conda")
             .is_file(),
         "the tool built into the staged recipe directory's out/"
     );
     assert!(
-        project.path().join("channel/repodata.json").is_file(),
-        "with no --channel the package lands in <config dir>/channel"
+        project
+            .path()
+            .join(".pixi/payload-channel/repodata.json")
+            .is_file(),
+        "with no --channel the package lands in Pixi's ignored project storage"
+    );
+    assert!(
+        !project.path().join("payload-build").exists() && !project.path().join("channel").exists(),
+        "the default build and channel outputs do not create unignored project-root directories"
     );
 }
 
@@ -2871,8 +2886,9 @@ esac
 fn wrap_payload_runs_the_declared_prepare_command_and_gates_its_digest() {
     let project = tempfile::tempdir().unwrap();
     let digest = pixi_sandbox_core::shard::sha256_bytes(b"fetched for real\n");
-    fs::create_dir_all(project.path().join("payload")).unwrap();
-    fs::write(project.path().join("payload/tool"), b"data").unwrap();
+    let work = project.path().join(".pixi/payload-work");
+    fs::create_dir_all(work.join("payload")).unwrap();
+    fs::write(work.join("payload/tool"), b"data").unwrap();
     let config = format!(
         "schema = 1\nname = \"demo\"\nversion = \"1.0.0\"\nplatform = \"linux-64\"\n\n\
          prepare = \"printf 'fetched for real\\n' > artifact.bin\"\n\
@@ -2892,4 +2908,14 @@ fn wrap_payload_runs_the_declared_prepare_command_and_gates_its_digest() {
         .assert()
         .success()
         .stdout(predicate::str::contains("demo 1.0.0 for linux-64"));
+
+    assert_eq!(
+        fs::read(project.path().join(".pixi/payload-work/artifact.bin")).unwrap(),
+        b"fetched for real\n",
+        "the default prepare work directory is under ignored .pixi/"
+    );
+    assert!(
+        !project.path().join("artifact.bin").exists(),
+        "the fetched artifact is not left in the unignored project root"
+    );
 }

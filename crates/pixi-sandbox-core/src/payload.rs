@@ -710,8 +710,9 @@ fn read_head(path: &Path) -> Result<Vec<u8>, PayloadError> {
 /// `$PREFIX/bin/<basename>`, a POSIX launcher that `exec`s the real file in place, so runtime
 /// lookups relative to the executable still resolve.
 ///
-/// The recipe refers to `$RECIPE_DIR`, and its `source:` semantics are not yet verified against
-/// a real build (ADR-28, open items).
+/// The recipe's `source: path:` and `$RECIPE_DIR` semantics were verified with `rattler-build`
+/// 0.76.1 on 2026-10-12 (ADR-28). That build check does not replace the AC#3/#5 package install
+/// round trip.
 #[must_use]
 pub fn render_recipe(spec: &PayloadSpec, _payload: &ValidatedPayload) -> String {
     let name = &spec.name;

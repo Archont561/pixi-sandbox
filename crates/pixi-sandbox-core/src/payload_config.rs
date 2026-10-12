@@ -52,6 +52,7 @@ pub struct PayloadConfig {
     /// never downloads the payload itself (AC#13).
     pub prepare: String,
     /// Directory the `prepare` command runs in, relative to the config file's directory.
+    /// Defaults to `.pixi/payload-work`, keeping fetched inputs out of the project working tree.
     #[serde(default = "default_working_dir")]
     pub working_dir: String,
     /// The file the `prepare` command leaves the fetched bytes at, relative to `working_dir`.
@@ -75,7 +76,7 @@ pub struct SourceDecl {
 }
 
 fn default_working_dir() -> String {
-    ".".to_string()
+    ".pixi/payload-work".to_string()
 }
 
 impl PayloadConfig {

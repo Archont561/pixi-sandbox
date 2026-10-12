@@ -4,7 +4,7 @@ title: Package arbitrary prebuilt binary payloads as installable conda packages
 status: In Progress
 assignee: []
 created_date: '2026-10-06 21:01'
-updated_date: '2026-10-12 18:45'
+updated_date: '2026-10-12 19:01'
 labels:
   - packaging
   - conda
@@ -76,4 +76,5 @@ Slices 0 and 1, local commits only, nothing pushed. Slice 0: ADR-28 is written a
 Still open, and not claimed by any box: the `pixi sandbox wrap-payload` CLI verb; the real rattler-build adapter, which is the first proof of AC#2 (a build from disk) and of the recipe's `source:` and `$RECIPE_DIR` semantics; AC#3's mode and link round trip, which needs CI; the `prepare` command with its SHA256 check (AC#13); AC#5 and AC#11, which need connected proofs; and the guide for AC#8 and AC#10. The `[mirrors]` `file://` question is still unverified (ADR-28, open items).
 
 Slices 2-4, still local commits only, nothing pushed. Slice 2 adds the `pixi sandbox wrap-payload` verb and `pixi-sandbox::wrap_payload::stage_recipe_dir` (the reviewable recipe directory: recipe, provenance and a payload copy that keeps modes, links and empty directories). Slice 3 adds `pixi-sandbox::rattler_build`, the real `PayloadToolchain`: it fetches `rattler-build` v0.76.1 from reviewed pins (five platforms) through the tool-fetch cache and never links or embeds it (AC#12), builds the staged recipe and publishes the `.conda` into a filesystem channel with rattler-build's own indexing. `wrap-payload --build --channel …` wires it, behind `--tools-cache` and `--build-tool`; a missing tool names the remedy. The core `PayloadToolchain::index` now receives the package path, so build scratch and the published channel stay apart. Slice 4 answers the `[mirrors]` question on the connected host (pixi 0.81.0): a `file://` mirror target is rejected, an `http://` one works, and a direct `file://` channel resolves but is machine-specific. AC#2's build is proven locally; AC#3, AC#5, AC#8, AC#10 and AC#11's committed-channel half still need CI or the guide.
+Current-state follow-up (2026-10-12): the earlier “still open” and “local commits only” notes above are historical snapshots; the CLI, `prepare`, rattler-build adapter and payload guide are now present on main. PR #144 records 1,119 passing tests / 1 skipped and 92.68% TASK-78-window coverage. This follow-up moves the default prepare workdir, staged recipe and default channel under Pixi's ignored `.pixi/` directory; CLI tests assert that the fetched bytes and outputs do not appear in unignored project-root paths. The guide now gives the safe paths and the `pixi add` / lockfile handoff, including the local HTTP mirror route. This is implementation and documentation evidence only: no acceptance box or task status is changed; ADR-28 remains proposed, and the actual package round trip and air-gapped install/execute proof remain open.
 <!-- SECTION:NOTES:END -->
