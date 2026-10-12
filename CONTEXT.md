@@ -2847,3 +2847,98 @@ Next session opening prompt:
 > `pixi sandbox wrap-payload` verb's argument and plan layer, both locally testable. Do not push,
 > open a PR, dispatch CI, or cut v0.6.3 without an explicit go-ahead. The `[mirrors]` `file://`
 > check and the rattler-build round trip are connected or CI proofs.
+
+### 2026-10-12 (second session) — the red on main was `codecov/patch`, and it was measuring real uncovered code
+
+The session opened as "diagnose red CI". Every GitHub Actions check on main's head `13d64ef` was
+green; the red was a **commit status**, `codecov/patch` = failure, *"79.09% of diff hit (target
+85.80%)"*. `rules/branches/main` returns `[]`, so nothing was blocked — main simply carried a red
+✗. Worth remembering: codecov posts a legacy *status* on direct pushes and a *check run* on pull
+requests, so the two endpoints disagree about the same context.
+
+**Why the window was five commits, not one.** TASK-78's five commits (`8832ba1`…`13d64ef`) reached
+main in a single push, and `commits/<sha>/pulls` returns `0` for each of the first four — none went
+through a pull request. A push fires the `push` workflow once, on the tip, so only `13d64ef` has a
+coverage report; codecov's patch base fell back to the newest report it had, `7d539c7` (PR #143's
+merge), and scored 21 files / 2 429 added lines / **531 instrumented** instead of the 2-file docs
+diff the commit looked like. The same push skipped `airlock`, which triggers on `pull_request` with
+`paths: crates/**` — the payload code never had its native airlock proof.
+
+**The number was genuine, and it reproduces.** Running CI's own command locally
+(`pixi run --frozen coverage` → `cargo llvm-cov nextest --workspace --lcov`, then intersecting the
+report with the diff's added lines) gives 420 hit / 111 missed = 79.096%, which is codecov's
+`round: down, precision: 2` → **79.09%**. Project coverage was 11 681/13 648 = 85.59%, against a
+`target: auto` 85.80% inherited from the base report. So this was a real coverage gap in the
+payload work, not a base-fallback artifact.
+
+Measurements worth keeping, because the intersection is cheap to redo and the arithmetic is the
+diagnosis:
+
+| | before | after PR #144 |
+| --- | --- | --- |
+| tests | 1110 passing / 1 skipped | 1119 passing / 1 skipped |
+| project coverage | 85.59% | **86.16%** |
+| TASK-78 window patch coverage | 79.09% | **92.68%** |
+
+Nine tests closed it, at seams the code already exposed: the `--json` plan shape moved from
+`commands/wrap_payload.rs` into `wrap_payload::plan_report` (a wire contract a consumer scripts
+against belongs in a promoted module, where `tests/` can reach it, not in a binary module that is
+only coverable black-box); the CLI drives `--build --build-tool <stand-in>` end to end, so the
+build, the single-package discovery and the publish into the default channel are proven with no
+network and no 31 MiB download; `--budget-config` is proven read by a budget small enough to refuse
+the payload; `find_package` names a platform directory a build never wrote and refuses to choose
+between two packages; `RealProcessRunner` returns a successful command's output and reports a
+failed one as a toolchain error.
+
+**Left uncovered on purpose**, and named rather than hidden, because each needs something this
+sandbox cannot produce:
+
+- `commands/wrap_payload.rs` L92–97 — the on-demand `tools_cache`/`resolve_tool` fetch branch. It
+  needs a connected host; `--build-tool` is the offline path and is now covered instead.
+- `rattler_build.rs` L188–189 — the `read_dir` *entry* error, as opposed to the directory error,
+  which is covered. Triggering it portably means a directory that fails mid-iteration.
+- `prepare.rs` L41 — the Windows `cmd /C` branch, on a Linux-only suite.
+- `payload.rs` / `payload_config.rs` — 24 error-construction sites (`path: path.display()…`) that
+  only run when `walkdir` or `read_dir` fails underneath a well-formed fixture tree.
+
+**Not done, and the reason it matters more than the coverage.** The process gap that caused the red
+is still open: five commits pushed straight to main means one `ci` run for five commits, no codecov
+report for four of them, and no `airlock` proof at all for code under `crates/**`. AGENTS.md and the
+session skill both say pull request, then squash-merge; nothing enforces it. A backlog task should
+decide between a branch-protection rule (needs a maintainer, `branches/main/protection` is 403 to
+this token), a `check-repository` finding, or a documented rule that direct pushes to main must be
+single commits so the tip's report is the whole change.
+
+Environment facts re-measured this session: `scripts/restore.sh` exits 0, verifies 21 044 blobs /
+976.2 MiB, restores 5520 entries and prints `user tools: registered pixi and pixi-sandbox in
+/home/user/.local/bin`. The transport it pulled names `source.commit 13d64ef`, pixi 0.81.0,
+pixi-sandbox 0.6.2, 361 vendored crates. Coverage costs about a minute warm (`cargo llvm-cov
+nextest`, 1119 tests in ~13 s once built). CI job logs are **not** readable from this sandbox —
+`actions/jobs/<id>/logs` 302s to `*.blob.core.windows.net`, which is outside the egress allowlist —
+so reproduce locally instead of trying to read a run.
+
+Next session opening prompt:
+
+> Restore the sandbox and baseline the suite (expect **1119 passing / 1 skipped** on `main`
+> `2524412c`; the restore verifies 5520 entries and registers `pixi` and `pixi-sandbox` in
+> `~/.local/bin`, and the transport carries pixi 0.81.0, pixi-sandbox 0.6.2 and 361 vendored crates
+> — but crates.io and prefix.dev are unreachable, so every cargo call goes through
+> `pixi run --frozen -- cargo … --offline`), then read `CONTEXT.md` § Session scratchpad — the
+> 2026-10-12 (second session) entry is this hand-off.
+>
+> First, one look at the repo state: `gh run list --branch main --limit 4`. The `publish sandbox`
+> run for `2524412c` must be green before the transport names that commit; if it is red, the next
+> restore pulls the older transport and the baseline will not match — say so before anything else.
+>
+> Two things need a decision before any code. **One:** TASK-78's AC#1 is still unchecked because
+> ADR-28 sits at `status: proposed` — accepting or rejecting it is a review call, not an
+> implementation one, and it gates the task. **Two:** the process gap that made main red — five
+> commits pushed straight to main, one `ci` run between them and no `airlock` proof at all. It
+> needs a task, and the decision is which lever: branch protection (needs a maintainer; the API is
+> 403 to this token), a `check-repository` finding, or a written rule that a direct push to main is
+> always a single commit. My recommendation is the written rule plus the xtask finding, because
+> those are the two this repository can enforce on itself.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
+> and its templates are in `.agents/skills/session/`.
