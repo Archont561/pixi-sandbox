@@ -7,9 +7,9 @@ import ContextChips from '../../../components/ContextChips.astro';
 
 Run `pixi-sandbox init`, review the generated `.github/workflows/publish-sandbox.yml`, and commit it
 with `pixi-sandbox.toml`. The project-owned workflow installs pixi-sandbox from
-`https://prefix.dev/archont561/archont561`, computes the native matrix with `plan`, then calls
-`pack`, `doctor --verify`, and `publish` directly. No pixi-sandbox composite Action or reusable
-workflow is involved.
+`https://prefix.dev/archont561/archont561`, computes the native matrix with `plan`, then runs one
+cross-platform `pipeline` step per matrix entry — install, `pack`, `doctor --verify`, and `publish`
+together, with per-phase logs. No pixi-sandbox composite Action or reusable workflow is involved.
 
 Regenerate after changing the init contract and validate the workflow with actionlint. Existing
 projects migrating from v0.3.x should replace root/setup/publish Action calls and reusable-workflow
@@ -28,11 +28,14 @@ present are in [Generated workflow policy](/pixi-sandbox/guides/workflow-policy/
 
 ## Where the published binary comes from
 
-The workflow's "Download released pixi-sandbox" step always downloads the standalone
+The workflow's "Fetch the pinned pixi-sandbox release" step always downloads the standalone
 `pixi-sandbox-<target>` asset and its `SHA256SUMS` manifest from this project's own
 repository (`github.com/Archont561/pixi-sandbox/releases/download/v<version>`) — never from
-the consumer repository the workflow runs in. The downloaded bytes are checksum-verified
-against `SHA256SUMS` before `chmod +x`/execution in every leg; a mismatch fails the job.
+the consumer repository the workflow runs in. The step runs `pixi-sandbox fetch-release` with
+the version pinned in the workflow, and the downloaded bytes are checksum-verified against
+`SHA256SUMS` before execution; a mismatch fails the job. The `pixi global install` step before
+it only provides `pixi` and the CLI that computes the plan — the checksum-verified binary that
+drives the publish is the downloaded one.
 
 > **Regenerate if you generated this workflow with v0.4.3, v0.4.4, or v0.5.0.** Those
 > versions built the download URL from `$GITHUB_REPOSITORY` (the consumer's own repository),
@@ -49,8 +52,9 @@ job that closes that gap without ever floating a production pin:
 
 - **Weekly, on its own** (`schedule:`), it bootstraps the standalone binary your workflow is
   currently pinned to (the same checksum-verified download the `publish` job uses), asks that
-  exact binary to `self-update` to the **latest** release, and runs `init --check` with the
-  updated binary against the exact paths, branch, and config this project was generated with.
+  exact binary to `self-update` to the **latest** release, and hands the regenerated paths to
+  `pixi-sandbox upgrade`, which runs `init --check` against the exact paths, branch, and config
+  this project was generated with.
 - **On demand** (`workflow_dispatch`, leaving the new `upgrade` input blank runs an ordinary
   publish exactly as before; naming an exact version there — `1.2.3` — makes the job
   self-update to that **exact** release instead of latest). This is also how you roll back: name
@@ -91,8 +95,8 @@ gh workflow run .github/workflows/publish-sandbox.yml --ref main
 ```
 
 After that run, the matrix's bootstrap step downloads the exact new release named in the
-merged `PIXI_SANDBOX_VERSION`, and `pack`/`doctor --verify`/`publish`/`--self-bin` all use that
-one verified binary — the published transport's manifest names that exact version. No
+merged `PIXI_SANDBOX_VERSION`, and every `pipeline` phase (`pack`/`doctor --verify`/`publish`)
+runs that one verified binary — the published transport's manifest names that exact version. No
 production step ever resolves `latest`; `latest` only ever decided what the *proposed* pull
 request contained.
 
@@ -102,12 +106,13 @@ depend on.
 
 ## Pipeline diagnostics and transport preservation
 
-Publish failures inside the generated workflow (`install` → `pack` → `doctor` → `publish`) do
-not require access to the live Actions log CDN to diagnose:
+Publish failures inside the generated workflow (the `pipeline` step's `install` → `pack` →
+`doctor` → `publish` phases) do not require access to the live Actions log CDN to diagnose:
 
-- **Durable diagnostics artifact**: every publish leg records bounded execution logs into
-  `$RUNNER_TEMP/pixi-sandbox-logs/` (with `--log-file` for `pack`, `doctor`, and `publish`) and
-  uploads them via `actions/upload-artifact` as `publish-diagnostics-<platform>` with 7-day retention.
+- **Durable diagnostics artifact**: `pipeline` records bounded per-phase logs (`pack.log`,
+  `doctor.log`, `publish.log`) into its `--log-dir` (`$RUNNER_TEMP/pixi-sandbox-logs/`), and the
+  workflow uploads them via `actions/upload-artifact` as `publish-diagnostics-<platform>` with
+  7-day retention.
 - **Secondary GitHub failure surface**: if any phase fails, the step formats an actionable failure
   report directly into `$GITHUB_STEP_SUMMARY` naming the failed phase, target branch, the uploaded
   diagnostic artifact name, and a bounded 50-line excerpt without leaking tokens or secrets.

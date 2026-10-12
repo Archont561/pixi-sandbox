@@ -58,7 +58,7 @@ publisher closes that gap without ever floating a production pin:
 
 - **Weekly, on its own** — the `upgrade` job bootstraps the standalone binary the workflow is
   currently pinned to, asks that exact binary to `self-update` to the latest release, and runs
-  `init --check` with it.
+  `init --check` with it (via `pixi-sandbox upgrade`).
 - **On demand** — `workflow_dispatch` names an exact version to propose (which is also the
   rollback path).
 - **Drift becomes a pull request** — when `init --check` finds drift, the job re-runs `init` and

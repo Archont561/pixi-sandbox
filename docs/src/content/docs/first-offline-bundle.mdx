@@ -121,8 +121,9 @@ git push
 ```
 
 The generated workflow installs the same native package, computes the matrix with `plan`, then
-runs `pack`, `doctor --verify`, and `publish` for each entry — `doctor --verify` is a gate that
-writes nothing, and the budgets are checked before any force-push.
+runs one cross-platform `pipeline` step per entry — install, `pack`, `doctor --verify`, and
+`publish` together. `doctor --verify` is a gate that writes nothing, and the budgets are checked
+before any force-push.
 
 **Expected:** the workflow's publish job completes, and the repository carries a new orphan branch:
 

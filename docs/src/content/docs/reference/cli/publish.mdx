@@ -71,8 +71,8 @@ to prune, or the branch to be deleted and re-created under a new name.
 ## In the generated workflow
 
 The project-owned `publish-sandbox.yml` installs the same native package, computes the matrix with
-`plan`, then calls `pack`, `doctor --verify`, and `publish` per entry. Two properties matter for
-reviewers:
+`plan`, then runs one cross-platform `pipeline` step per entry — install, `pack`,
+`doctor --verify`, and `publish` together. Two properties matter for reviewers:
 
 - **Failures halt before the push.** A rejected push or a publish error never commits over or
   corrupts an existing healthy orphan transport snapshot — the existing transport stays

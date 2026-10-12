@@ -41,9 +41,9 @@ the transport branch.
 
 Publish failures do not require access to the live Actions log CDN:
 
-- Every publish leg records bounded execution logs into `$RUNNER_TEMP/pixi-sandbox-logs/` (with
-  `--log-file` for `pack`, `doctor`, and `publish`) and uploads them as the
-  `publish-diagnostics-<platform>` artifact with 7-day retention.
+- Every publish leg records bounded per-phase logs (`pack.log`, `doctor.log`, `publish.log`)
+  into `$RUNNER_TEMP/pixi-sandbox-logs/` (the `pipeline` step's `--log-dir`) and uploads them as
+  the `publish-diagnostics-<platform>` artifact with 7-day retention.
 - On any failed phase, the step formats an actionable failure report into `$GITHUB_STEP_SUMMARY`
   naming the failed phase, the target branch, the diagnostic artifact name, and a bounded 50-line
   excerpt — without leaking tokens or secrets.
