@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use pixi_sandbox::prepare::{ShellRunner, prepare, read_prepared};
 use pixi_sandbox::rattler_build::{RattlerBuildToolchain, RealProcessRunner, resolve_tool};
 use pixi_sandbox::tool_fetch::{HttpDownload, tools_cache};
-use pixi_sandbox::wrap_payload::stage_recipe_dir;
+use pixi_sandbox::wrap_payload::{plan_report, stage_recipe_dir};
 use pixi_sandbox_core::payload::{PayloadToolchain, WrapPlan, WrapRequest, plan_wrap};
 use pixi_sandbox_core::payload_config::PayloadConfig;
 use pixi_sandbox_core::sandbox_config::SandboxConfig;
@@ -132,25 +132,6 @@ fn resolve_budgets(budget_config: Option<&Path>) -> Result<TransportBudgets> {
         }
         None => Ok(TransportBudgets::default()),
     }
-}
-
-fn plan_report(plan: &WrapPlan) -> serde_json::Value {
-    serde_json::json!({
-        "schema": 1,
-        "package": {
-            "name": plan.spec.name,
-            "version": plan.spec.version,
-            "platform": plan.spec.platform.as_str(),
-        },
-        "payload": {
-            "files": plan.payload.file_count,
-            "directories": plan.payload.directory_count,
-            "symlinks": plan.payload.symlink_count,
-            "bytes": plan.payload.total_bytes,
-        },
-        "provenance": plan.provenance,
-        "recipe": plan.recipe,
-    })
 }
 
 fn print_plan(plan: &WrapPlan) {

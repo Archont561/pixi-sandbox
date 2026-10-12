@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use pixi_sandbox::wrap_payload::{RECIPE_FILE, stage_recipe_dir};
+use pixi_sandbox::wrap_payload::{RECIPE_FILE, plan_report, stage_recipe_dir};
 use pixi_sandbox_core::payload::{
     PAYLOAD_DIR, PROVENANCE_FILE, PayloadSpec, WrapPlan, WrapRequest, plan_wrap, read_payload_tree,
 };
@@ -119,4 +119,37 @@ fn staging_removes_a_stale_payload_from_a_previous_run() {
         "a file the new plan dropped must not survive a restage"
     );
     assert!(out_dir.join("payload/data.bin").is_file());
+}
+
+#[test]
+fn the_json_plan_names_the_package_the_payload_totals_and_the_declared_digest() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let payload_root = dir.path().join("source-payload");
+    std::fs::create_dir_all(payload_root.join("bin")).expect("bin");
+    std::fs::write(payload_root.join("bin/tool"), b"hello").expect("tool");
+    let plan: WrapPlan = plan_wrap(&request(&payload_root)).expect("the fixture plans cleanly");
+
+    let report = plan_report(&plan);
+
+    assert_eq!(report["schema"], 1, "the report carries its own schema");
+    assert_eq!(
+        report["package"],
+        serde_json::json!({ "name": "demo-payload", "version": "1.0.0", "platform": "linux-64" }),
+        "the package block is the declared identity"
+    );
+    assert_eq!(
+        report["payload"],
+        serde_json::json!({ "files": 1, "directories": 1, "symlinks": 0, "bytes": 5 }),
+        "the payload block is the validated tree's totals"
+    );
+    assert_eq!(
+        report["provenance"]["source"]["sha256"], SHA256,
+        "the digest an auditor verifies is the declared one"
+    );
+    assert!(
+        report["recipe"]
+            .as_str()
+            .is_some_and(|recipe| recipe.contains("demo-payload")),
+        "the rendered recipe travels in the report"
+    );
 }

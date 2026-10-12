@@ -2715,6 +2715,157 @@ fn wrap_payload_refuses_a_skipped_prepare_whose_artifact_changed() {
         .stderr(predicate::str::contains("sha256"));
 }
 
+#[test]
+fn wrap_payload_json_prints_one_machine_readable_plan_and_stages_nothing() {
+    let project = tempfile::tempdir().unwrap();
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
+    write_payload_project(project.path(), b"the artifact", &digest);
+
+    let asserted = bin()
+        .current_dir(project.path())
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--skip-prepare",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(asserted.get_output().stdout.clone()).expect("utf-8 stdout");
+    let report: Value =
+        serde_json::from_str(stdout.trim()).expect("--json prints exactly one JSON value");
+    assert_eq!(
+        report["package"],
+        serde_json::json!({ "name": "demo", "version": "1.0.0", "platform": "linux-64" }),
+        "the report names the declared package"
+    );
+    assert_eq!(
+        report["provenance"]["source"]["sha256"], digest,
+        "the report carries the digest the config pinned"
+    );
+    assert!(
+        !project.path().join("payload-build").exists(),
+        "--json stages nothing"
+    );
+}
+
+#[test]
+fn wrap_payload_reads_the_declared_budgets_and_refuses_a_payload_they_reject() {
+    let project = tempfile::tempdir().unwrap();
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
+    write_payload_project(project.path(), b"the artifact", &digest);
+    let budgets = project.path().join("budgets.toml");
+    fs::write(
+        &budgets,
+        r#"
+schema = 1
+[budgets]
+max_blob_mib = 0.000001
+max_transport_mib = 2048
+max_repository_push_mib = 2048
+max_restore_required_mib = 8192
+
+[[bundle]]
+name = "developer"
+environments = ["demo"]
+platforms = ["linux-64"]
+"#,
+    )
+    .unwrap();
+
+    bin()
+        .current_dir(project.path())
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--skip-prepare",
+            "--budget-config",
+            budgets.to_str().unwrap(),
+            "--plan",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("budgets.max_blob_mib"));
+}
+
+#[cfg(unix)]
+#[test]
+fn wrap_payload_build_runs_the_named_tool_and_publishes_into_the_default_channel() {
+    let project = tempfile::tempdir().unwrap();
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
+    write_payload_project(project.path(), b"the artifact", &digest);
+    // A stand-in for `rattler-build` (`--build-tool` is the flag the docs name for exactly this):
+    // on `build` it writes the one `.conda` the flow looks for, on `publish` it creates the
+    // channel. Those are the artifacts the real tool leaves behind, so the command's own path
+    // runs end to end with no network and no 31 MiB download.
+    let tool = project.path().join("fake-rattler-build");
+    write_executable(
+        &tool,
+        r#"#!/bin/sh
+set -eu
+case "$1" in
+  build)
+    shift
+    out=''
+    plat=''
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --output-dir) out="$2"; shift 2 ;;
+        --target-platform) plat="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    mkdir -p "$out/$plat"
+    printf 'package' > "$out/$plat/demo-1.0.0-h0.conda"
+    ;;
+  publish)
+    shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --to) channel="${2#file://}"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    mkdir -p "$channel"
+    printf '{}' > "$channel/repodata.json"
+    ;;
+esac
+"#,
+    );
+
+    bin()
+        .current_dir(project.path())
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--skip-prepare",
+            "--build",
+            "--build-tool",
+            tool.to_str().expect("utf-8 tool path"),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("staged demo 1.0.0"))
+        .stdout(predicate::str::contains("built "))
+        .stdout(predicate::str::contains("published it to"));
+
+    assert!(
+        project
+            .path()
+            .join("payload-build/out/linux-64/demo-1.0.0-h0.conda")
+            .is_file(),
+        "the tool built into the staged recipe directory's out/"
+    );
+    assert!(
+        project.path().join("channel/repodata.json").is_file(),
+        "with no --channel the package lands in <config dir>/channel"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn wrap_payload_runs_the_declared_prepare_command_and_gates_its_digest() {

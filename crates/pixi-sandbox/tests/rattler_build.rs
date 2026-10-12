@@ -8,8 +8,8 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use pixi_sandbox::rattler_build::{
-    ProcessRunner, RattlerBuildToolchain, TOOL_NAME, TOOL_VERSION, build_args, find_package,
-    missing_tool_remedy, pins, publish_args, resolve_tool,
+    ProcessRunner, RattlerBuildToolchain, RealProcessRunner, TOOL_NAME, TOOL_VERSION, build_args,
+    find_package, missing_tool_remedy, pins, publish_args, resolve_tool,
 };
 use pixi_sandbox::tool_fetch::ToolDownload;
 use pixi_sandbox_core::payload::{
@@ -171,6 +171,73 @@ fn find_package_refuses_a_build_that_wrote_no_package() {
     assert!(
         matches!(&error, PayloadError::Toolchain(message) if message.contains("no .conda")),
         "the operator is told the build wrote nothing: {error}"
+    );
+}
+
+#[test]
+fn find_package_names_the_platform_directory_a_build_that_never_ran_left_missing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let error = find_package(dir.path(), Platform::Linux64).expect_err("no build ran");
+
+    assert!(
+        matches!(&error, PayloadError::Toolchain(message)
+            if message.contains("linux-64") && message.contains("no package directory")),
+        "the operator is pointed at the directory the build should have written: {error}"
+    );
+}
+
+#[test]
+fn find_package_refuses_to_choose_between_two_packages() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let platform_dir = dir.path().join("linux-64");
+    std::fs::create_dir_all(&platform_dir).expect("platform dir");
+    std::fs::write(platform_dir.join("demo-1.0.0-h0.conda"), b"one").expect("first");
+    std::fs::write(platform_dir.join("demo-1.0.0-h1.conda"), b"two").expect("second");
+
+    let error = find_package(dir.path(), Platform::Linux64).expect_err("two packages");
+
+    assert!(
+        matches!(&error, PayloadError::Toolchain(message)
+            if message.contains("2 packages") && message.contains("expected exactly one")),
+        "the caller must act, not guess which artifact was built: {error}"
+    );
+}
+
+#[test]
+fn the_adapter_names_the_program_it_was_given() {
+    let runner = FakeRunner::default();
+    let toolchain = RattlerBuildToolchain::new(PathBuf::from("/opt/tools/rattler-build"), &runner);
+
+    assert_eq!(toolchain.program(), Path::new("/opt/tools/rattler-build"));
+}
+
+#[cfg(unix)]
+#[test]
+fn the_real_runner_returns_the_output_of_a_command_that_succeeded() {
+    let output = RealProcessRunner
+        .run(
+            Path::new("/bin/sh"),
+            &["-c".to_string(), "printf built".to_string()],
+        )
+        .expect("sh runs");
+
+    assert!(output.contains("built"), "{output}");
+}
+
+#[cfg(unix)]
+#[test]
+fn the_real_runner_reports_a_command_that_failed_as_a_toolchain_error() {
+    let error = RealProcessRunner
+        .run(
+            Path::new("/bin/sh"),
+            &["-c".to_string(), "exit 3".to_string()],
+        )
+        .expect_err("exit 3 is a failure");
+
+    assert!(
+        matches!(&error, PayloadError::Toolchain(message) if message.contains("sh")),
+        "the failure names the program that failed: {error}"
     );
 }
 
