@@ -80,7 +80,7 @@ The before/after mapping and the migration checklist are in
 | Retired interface | Replacement |
 |---|---|
 | Repository `setup` composite Action | `pixi global install` from the ecosystem channel (in the generated workflow) |
-| Repository `publish` composite Action | direct `pixi-sandbox pack` / `doctor --verify` / `publish` calls |
+| Repository `publish` composite Action | the generated workflow's `pipeline` step (install, `pack`, `doctor --verify`, `publish`) |
 | Repository reusable publisher workflow | the generated, project-owned `publish-sandbox.yml` |
 
 ## Versioning policy
