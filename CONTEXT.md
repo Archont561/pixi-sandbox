@@ -2807,3 +2807,43 @@ open. These are deployment/evidence boundaries, not claims that the live starter
 > the landing/rollout slice and stop: push, PR, merge, release, dispatch, and live starter changes
 > still require explicit go-ahead. The owner must allow the publishing credential to force-update
 > starter main; no branch protections have been modified here.
+
+### 2026-10-12 — TASK-78 slices 0–1 landed locally; the mirror and build-tool questions are still open
+
+Restore and baseline were re-measured on this sandbox. github.com answered, `scripts/restore.sh`
+exited 0 and verified 5520 entries, and the suite is **997 passing / 1 skipped** (46 git, 222 core,
+530 CLI, 199 xtask). The `publish sandbox` run for merge `34e725f` (run 38181306948) is green, and
+its transport manifest names `source.commit 34e725f` and `tools.pixi-sandbox 0.6.2`. v0.6.2 is still
+Latest, and no v0.6.3 exists, so TASK-94 AC#4 and TASK-95 AC#5 stay In Progress.
+
+TASK-78 slice 0 added ADR-28 as a proposed file and repaired the three loose ends (SKILL.md's ADR
+range, TASK-78 and doc-12 pointing at a D-number). Slice 1 added `pixi_sandbox_core::payload`, with
+70 tests and a fake `PayloadToolchain`. None of TASK-78's acceptance boxes is checked yet. ADR-28
+records the design, and its open items are the things this entry must not forget.
+
+- **`[mirrors]` and `file://` is still unverified.** The pixi 0.81.0 configuration reference, read
+  from GitHub's raw file because prefix.dev is unreachable, describes mirrors as HTTP(S) URL
+  replacements that must be exact copies. It does not mention a `file://` target. The lever is
+  real (project `.pixi/config.toml`, `PIXI_CONFIG_FILE`, `PIXI_NO_CONFIG` are all documented), but the
+  design assumes the HTTP fallback until a test shows `file://` works.
+- **rattler-build cannot be fetched from GitHub either.** The release asset redirects to
+  `objects.githubusercontent.com`, which fails to connect from this sandbox (curl exit 35). So the
+  "no route" premise holds even for the release-asset route, and the first real build waits for CI.
+- **Unverified recipe semantics.** The recipe assumes `source: path:` and `$RECIPE_DIR`. Both
+  need a real build to prove them.
+- **Budget arithmetic is an estimate.** The transport is counted twice, as the channel package and
+  as the unpacked prefix files, which comes from the spec text and `record_file`'s per-path blobs.
+  It has not been measured. The blob bound uses uncompressed bytes, so it is conservative. The exact
+  built sizes belong to the slice that calls rattler-build.
+- **Deliberately excluded:** universal (fat) Mach-O, which shares its magic with Java class files;
+  architecture checks for ELF and Mach-O; `win-64` launchers, which are refused for now. The
+  install script is POSIX, so `win-64` payloads have not been exercised at all.
+
+Next session opening prompt:
+
+> Load the session skill; baseline 997 passing / 1 skipped on `main` 34e725f, and the core payload
+> module adds 70 cases. Read the 2026-10-12 TASK-78 entry. ADR-28 is `proposed` and needs review
+> before AC#1 is checked. Next slice: the `prepare` command with its SHA256 check (AC#13) and the
+> `pixi sandbox wrap-payload` verb's argument and plan layer, both locally testable. Do not push,
+> open a PR, dispatch CI, or cut v0.6.3 without an explicit go-ahead. The `[mirrors]` `file://`
+> check and the rattler-build round trip are connected or CI proofs.

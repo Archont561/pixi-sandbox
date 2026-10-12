@@ -1,10 +1,10 @@
 ---
 id: TASK-78
 title: Package arbitrary prebuilt binary payloads as installable conda packages
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-06 21:01'
-updated_date: '2026-10-11 21:48'
+updated_date: '2026-10-12 12:00'
 labels:
   - packaging
   - conda
@@ -33,7 +33,7 @@ Make an arbitrary prebuilt file or directory a first-class package payload: fetc
 
 This repository is already most of the way there in machinery and none of the way there in generality. crates/pixi-sandbox/pixi.toml builds a real conda package for five platforms, publish-conda uploads the set, xtask check-conda-platforms refuses a release where a platform contributed nothing, and xtask smoke-conda-package installs the built package and runs it. What is missing is a payload path: that manifest uses the pixi-build-rust backend, which compiles a crate, and nothing in the repository wraps bytes that were built elsewhere.
 
-Shape, settled 2026-10-11 and pending the reviewed D-number AC#1 requires: a new `pixi sandbox wrap-payload` verb in the shipped binary. An xtask subcommand was considered and rejected because `crates/xtask` is a workspace member that appears in no release artifact — the standalone assets are `pixi-sandbox-<target>` (`crates/xtask/src/release_assets.rs`) and the conda package builds only `crates/pixi-sandbox` — so a consumer who installed `pixi` and `pixi-sandbox` could not run it, and the feature would exist for this repository alone. The usual objection to a new verb, a connected fetch inside the offline binary, does not apply here: a config-declared `prepare` command does the fetching and pixi-sandbox only executes it, so `crates/pixi-sandbox/src/github.rs` stays the only socket-touching file.
+Shape, settled 2026-10-11 and recorded as the proposed `ADR-28` file (`backlog/docs/adr/ADR-28 - *.md`) that AC#1 requires: a new `pixi sandbox wrap-payload` verb in the shipped binary. An xtask subcommand was considered and rejected because `crates/xtask` is a workspace member that appears in no release artifact — the standalone assets are `pixi-sandbox-<target>` (`crates/xtask/src/release_assets.rs`) and the conda package builds only `crates/pixi-sandbox` — so a consumer who installed `pixi` and `pixi-sandbox` could not run it, and the feature would exist for this repository alone. The usual objection to a new verb, a connected fetch inside the offline binary, does not apply here: a config-declared `prepare` command does the fetching and pixi-sandbox only executes it, so `crates/pixi-sandbox/src/github.rs` stays the only socket-touching file.
 
 `rattler-build` is invoked as a subprocess and never linked. Cargo.lock is therefore untouched: no relock cycle and no vendored growth, which is the arithmetic ADR-12 turned down (this repository's transport costs ~1.79 MiB per vendored crate, and rattler pulls a ~28-crate tree plus tokio/reqwest/rayon). It is fetched on demand into the tools cache by the machinery behind `pixi sandbox tools` and `tool_fetch.rs`, and it must not enter the embedded `tools.lock.json`, which is packed into every transport — rattler-build v0.76.1 is 31.1 MiB static musl, more than double the 15.0 MiB of `pixi-unpack` that ADR-12 declined to absorb. `pixi-build` remains an upstream preview feature (`preview = ["pixi-build"]` in that manifest), which is a reason to generate a recipe rather than extend the backend.
 
@@ -46,7 +46,7 @@ Keep the boundary against the sandbox transport explicit. The transport carries 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A reviewed decision records the implementation shape before code lands: a new `pixi sandbox wrap-payload` verb. The alternatives are excluded with reasons rather than left open — an xtask subcommand, because xtask ships in no release artifact and a consumer could not run it; a documented-recipe-only answer, because AC#2, AC#3 and AC#6 need tested Rust. It names the upstream preview status of pixi-build, how rattler-build is fetched and why it is never linked or embedded, and confirms no new vendored crate is added without a relock cycle; the decision goes in backlog/docs/adr/README.md with a D-number.
+- [ ] #1 A reviewed decision records the implementation shape before code lands: a new `pixi sandbox wrap-payload` verb. The alternatives are excluded with reasons rather than left open — an xtask subcommand, because xtask ships in no release artifact and a consumer could not run it; a documented-recipe-only answer, because AC#2, AC#3 and AC#6 need tested Rust. It names the upstream preview status of pixi-build, how rattler-build is fetched and why it is never linked or embedded, and confirms no new vendored crate is added without a relock cycle; the decision goes in a new `ADR-N` file under backlog/docs/adr/ tagged `decision` (ADR-28 at the time of writing); the README there is only the anchor map.
 - [ ] #2 A payload directory or single file becomes a conda package for a named platform subdir such as linux-64 or linux-aarch64, built from inputs already on disk with no network access at build time; a native payload declared as noarch is refused with a named error rather than silently mispackaged.
 - [ ] #3 Executable bits, symlinks including relative and dangling ones, nested directories and empty directories survive the round trip, proven by packing a generated fixture tree, installing it into a temporary prefix, and comparing modes and link targets entry by entry.
 - [ ] #4 The payload installs at a deterministic prefix-relative location, and an optional entry point can be exposed on PATH as a launcher that resolves the real executable inside the payload rather than a copy of it, so relative runtime lookups inside the payload still work.
@@ -67,3 +67,11 @@ Keep the boundary against the sandbox transport explicit. The transport carries 
 - [ ] #2 pixi run --frozen lint
 - [ ] #3 pixi run --frozen test
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Slices 0 and 1, local commits only, nothing pushed. Slice 0: ADR-28 is written as `status: proposed`; AC#1 is checked only when that record is accepted. Slice 1: `pixi_sandbox_core::payload` holds the pure rules: `validate_payload` (names, safe paths, conflicts, link containment, native executables against `noarch` and the platform, the entry point), `budget_preflight` (blob on uncompressed bytes, transport counted twice), `provenance` and `write_provenance`, `render_recipe` (install under `libexec/<name>/`, optional POSIX launcher that execs in place), and `PayloadToolchain` with `plan_wrap` and `wrap`. Tests are in `crates/pixi-sandbox-core/tests/payload.rs` (70 cases, a fake toolchain, and a source guard for AC#9). Gates: fmt clean, clippy clean for core, lint and full test recorded in the commit.
+
+Still open, and not claimed by any box: the `pixi sandbox wrap-payload` CLI verb; the real rattler-build adapter, which is the first proof of AC#2 (a build from disk) and of the recipe's `source:` and `$RECIPE_DIR` semantics; AC#3's mode and link round trip, which needs CI; the `prepare` command with its SHA256 check (AC#13); AC#5 and AC#11, which need connected proofs; and the guide for AC#8 and AC#10. The `[mirrors]` `file://` question is still unverified (ADR-28, open items).
+<!-- SECTION:NOTES:END -->
