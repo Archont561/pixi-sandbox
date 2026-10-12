@@ -23,16 +23,16 @@ const PACKAGE_VERSION: &str = "1.0.0";
 #[ignore = "downloads pinned rattler-build; executed by CI's payload round-trip task"]
 #[allow(clippy::too_many_lines)]
 fn real_package_preserves_payload_and_installs_under_egress_denial() {
-    let temp = tempdir().expect("test tempdir");
-    let publisher = temp.path().join("publisher");
-    let consumer = temp.path().join("consumer");
-    let home = temp.path().join("home");
-    let tmp = temp.path().join("tmp");
-    let tools_cache = temp.path().join("tools-cache");
+    let scratch = tempdir().expect("test tempdir");
+    let publisher = scratch.path().join("publisher");
+    let consumer = scratch.path().join("consumer");
+    let home = scratch.path().join("home");
+    let temporary_dir = scratch.path().join("tmp");
+    let rattler_cache = scratch.path().join("tools-cache");
     fs::create_dir_all(&publisher).expect("publisher project");
     fs::create_dir_all(&consumer).expect("consumer project");
     fs::create_dir_all(&home).expect("isolated home");
-    fs::create_dir_all(&tmp).expect("isolated tmp");
+    fs::create_dir_all(&temporary_dir).expect("isolated tmp");
 
     // The default working directory, stage directory and channel all stay in ignored `.pixi/`.
     let work = publisher.join(".pixi/payload-work");
@@ -45,18 +45,15 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
     fs::write(work.join("artifact.tar.gz"), artifact).expect("fixture artifact");
     let message = b"relative-payload-data\n";
     fs::write(payload.join("share/message.txt"), message).expect("payload message");
+    fs::write(payload.join("share/binary.dat"), b"\x00\xff\x01\x7f\x00B")
+        .expect("payload binary data");
+    let payload_tool = payload.join("bin/tool");
     fs::write(
-        payload.join("share/binary.dat"),
-        &[0x00_u8, 0xff, 0x01, 0x7f, 0x00, 0x42],
-    )
-    .expect("payload binary data");
-    let tool = payload.join("bin/tool");
-    fs::write(
-        &tool,
+        &payload_tool,
         b"#!/bin/sh\nset -eu\ncat \"$(dirname \"$0\")/../share/message.txt\"\n",
     )
     .expect("payload entry point");
-    fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).expect("executable mode");
+    fs::set_permissions(&payload_tool, fs::Permissions::from_mode(0o755)).expect("executable mode");
     symlink("bin/tool", payload.join("tool-link")).expect("relative symlink");
     symlink("missing/target", payload.join("dangling-link")).expect("dangling symlink");
 
@@ -81,12 +78,12 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
     build
         .current_dir(&publisher)
         .args(["wrap-payload", "--config"])
-        .arg(&config_path)
+        .arg(config_path)
         .args(["--skip-prepare", "--build", "--tools-cache"])
-        .arg(&tools_cache)
+        .arg(rattler_cache)
         .env("HOME", &home)
         .env("USERPROFILE", &home)
-        .env("TMPDIR", &tmp);
+        .env("TMPDIR", &temporary_dir);
     let build_output = build.output().expect("run real payload build");
     assert_success(&build_output, "wrap-payload --build");
 
@@ -100,18 +97,17 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
         channel.join("linux-64/repodata.json").is_file(),
         "rattler-build published a real indexed channel"
     );
-    assert!(
-        channel
-            .join("linux-64")
-            .read_dir()
-            .expect("channel subdir")
-            .flatten()
-            .any(|entry| entry
+    let package_count = fs::read_dir(channel.join("linux-64"))
+        .expect("channel subdir")
+        .map(|entry| entry.expect("channel entry"))
+        .filter(|entry| {
+            entry
                 .path()
                 .extension()
-                .is_some_and(|extension| extension == "conda")),
-        "the indexed channel contains the built package"
-    );
+                .is_some_and(|extension| extension == "conda")
+        })
+        .count();
+    assert_eq!(package_count, 1, "the indexed channel contains one package");
 
     let manifest = format!(
         "[workspace]\nname = \"payload-roundtrip-consumer\"\n\
@@ -137,7 +133,7 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
         ],
         &consumer,
         &home,
-        &tmp,
+        &temporary_dir,
     );
     assert!(
         !probe.status.success(),
@@ -155,7 +151,7 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
         ],
         &consumer,
         &home,
-        &tmp,
+        &temporary_dir,
     );
     assert_success(&add, "pixi add from the local channel with egress denied");
     assert!(
@@ -178,7 +174,7 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
         ],
         &consumer,
         &home,
-        &tmp,
+        &temporary_dir,
     );
     assert_success(
         &install,
@@ -211,10 +207,13 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
     // Execute the installed launcher in the same egress-denied namespace. The script reads a
     // sibling payload file relative to its real path, checking launch and in-place semantics.
     let launcher = prefix.join("bin/tool");
-    let run = run_egress_denied(&launcher, &[], &consumer, &home, &tmp);
-    assert_success(&run, "installed payload launcher with egress denied");
+    let launcher_output = run_egress_denied(&launcher, &[], &consumer, &home, &temporary_dir);
+    assert_success(
+        &launcher_output,
+        "installed payload launcher with egress denied",
+    );
     assert_eq!(
-        String::from_utf8(run.stdout).expect("launcher output is UTF-8"),
+        String::from_utf8(launcher_output.stdout).expect("launcher output is UTF-8"),
         String::from_utf8(message.to_vec()).expect("fixture message is UTF-8"),
         "the launcher executed the original payload in place"
     );
@@ -225,7 +224,7 @@ fn run_egress_denied(
     args: &[String],
     working_dir: &Path,
     home: &Path,
-    tmp: &Path,
+    temporary_dir: &Path,
 ) -> Output {
     let user = env::var("USER").expect("the Linux CI runner sets USER");
     let path = env::var_os("PATH").expect("Pixi task PATH");
@@ -236,7 +235,7 @@ fn run_egress_denied(
         .args(["--", "/usr/bin/env"])
         .arg(format!("HOME={}", home.display()))
         .arg(format!("USERPROFILE={}", home.display()))
-        .arg(format!("TMPDIR={}", tmp.display()))
+        .arg(format!("TMPDIR={}", temporary_dir.display()))
         .arg(format!("XDG_CACHE_HOME={}", home.join(".cache").display()))
         .arg("PIXI_NO_CONFIG=true")
         .arg(format!("PATH={}", path.to_string_lossy()))
