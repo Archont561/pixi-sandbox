@@ -92,7 +92,10 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
 
     let stage = publisher.join(".pixi/payload-build");
     let channel = publisher.join(".pixi/payload-channel");
-    assert!(stage.join("recipe.yaml").is_file(), "the real recipe was staged");
+    assert!(
+        stage.join("recipe.yaml").is_file(),
+        "the real recipe was staged"
+    );
     assert!(
         channel.join("linux-64/repodata.json").is_file(),
         "rattler-build published a real indexed channel"
@@ -103,7 +106,10 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
             .read_dir()
             .expect("channel subdir")
             .flatten()
-            .any(|entry| entry.path().extension().is_some_and(|extension| extension == "conda")),
+            .any(|entry| entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "conda")),
         "the indexed channel contains the built package"
     );
 
@@ -174,7 +180,10 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
         &home,
         &tmp,
     );
-    assert_success(&install, "pixi install --frozen --offline with egress denied");
+    assert_success(
+        &install,
+        "pixi install --frozen --offline with egress denied",
+    );
 
     let prefix = consumer.join(".pixi/envs/default");
     let installed_payload = prefix.join(format!("libexec/{PACKAGE_NAME}"));
@@ -189,8 +198,7 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
         "the relative symlink target survived the package round trip"
     );
     assert_eq!(
-        fs::read_link(installed_payload.join("dangling-link"))
-            .expect("installed dangling link"),
+        fs::read_link(installed_payload.join("dangling-link")).expect("installed dangling link"),
         Path::new("missing/target"),
         "the dangling symlink target survived the package round trip"
     );
@@ -253,8 +261,7 @@ fn assert_payload_tree_matches(source: &Path, installed: &Path) {
         let source_path = source.join(&relative);
         let installed_path = installed.join(&relative);
         let source_metadata = fs::symlink_metadata(&source_path).expect("source metadata");
-        let installed_metadata =
-            fs::symlink_metadata(&installed_path).expect("installed metadata");
+        let installed_metadata = fs::symlink_metadata(&installed_path).expect("installed metadata");
         let source_type = source_metadata.file_type();
         let installed_type = installed_metadata.file_type();
         assert_eq!(
