@@ -70,11 +70,19 @@ into the lockfile. The transport branch carries a whole environment. Neither rep
 
 ## Open items, verified in later slices and not assumed here
 
-- **`[mirrors]` and `file://`.** The pixi 0.81.0 configuration reference describes mirrors as
-  HTTP(S) URL replacements that must be exact copies. It does not mention a `file://` target. Until
-  a test shows that one works, the design assumes the local channel is served over HTTP.
-- **rattler-build recipe semantics.** The `source: path:` behaviour and the `$RECIPE_DIR` variable
-  are assumed, not verified. The first real build in CI is the proof.
+- **`[mirrors]` and `file://`.** *Verified 2026-10-12 on pixi 0.81.0.* A `file://` mirror target
+  does not work: pixi rewrites the channel to the `file://` URL and then rejects it with "URL
+  scheme is not allowed". An `http://` target does work — a consumer whose `pixi.toml` names the
+  channel as `https://example.invalid/demo-channel` and whose uncommitted `.pixi/config.toml`
+  mirrors that to `http://127.0.0.1:8899` resolved the package, and the written `pixi.lock` kept
+  the canonical `https://` URLs rather than the mirror. A direct `file://` entry in
+  `[workspace].channels` also resolves, but it is a machine-specific absolute path and so cannot be
+  committed. Local iteration therefore serves the local channel over HTTP; the committed channel
+  URL stays a real URL.
+- **rattler-build recipe semantics.** *Verified 2026-10-12 on rattler-build 0.76.1.* `source:
+  path:` and `$RECIPE_DIR` behave as assumed: a payload staged beside `recipe.yaml` built to
+  `libexec/<name>/`, and `rattler-build build --output-dir` writes the `.conda` plus its own
+  repodata, which is the indexing step this decision relies on.
 - **Windows.** The install script is POSIX. `win-64` launchers are refused, and `win-64` payloads
   are not otherwise verified.
 - **Chromium.** Playwright's Chromium is the worked example in documentation and tests only. No code
