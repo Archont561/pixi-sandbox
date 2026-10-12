@@ -560,6 +560,9 @@ pub struct PlanArgs {
     pub cargo_vendor: bool,
 }
 
+// A CLI surface, not a data model: `plan`, `json`, `skip_prepare` and `build` are independent
+// flags an operator combines freely, so the struct reads better as four bools than as states.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args)]
 pub struct WrapPayloadArgs {
     /// The payload declaration. Its directory is the base `working_dir` resolves against.
@@ -586,6 +589,24 @@ pub struct WrapPayloadArgs {
     /// Read `[budgets]` from this `.pixi-sandbox.toml`; without it the built-in defaults apply.
     #[arg(long, value_name = "PATH")]
     pub budget_config: Option<PathBuf>,
+
+    /// After staging, fetch `rattler-build`, build the `.conda` and publish it into `--channel`.
+    #[arg(long)]
+    pub build: bool,
+
+    /// The filesystem channel the built package is published into (default:
+    /// `<config dir>/channel`). Must resolve to an absolute path for pixi's `file://` channels.
+    #[arg(long, value_name = "PATH")]
+    pub channel: Option<PathBuf>,
+
+    /// Tools cache for `rattler-build` (default: `$HOME/.cache/pixi-sandbox/tools`).
+    #[arg(long, value_name = "PATH")]
+    pub tools_cache: Option<PathBuf>,
+
+    /// Use this `rattler-build` instead of fetching the pinned one — for offline use, a mirror,
+    /// or a test double.
+    #[arg(long, value_name = "PATH")]
+    pub build_tool: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]

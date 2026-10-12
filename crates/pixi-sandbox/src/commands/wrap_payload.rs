@@ -12,8 +12,10 @@ use crate::cli::WrapPayloadArgs;
 use crate::commands::support;
 use anyhow::{Context, Result};
 use pixi_sandbox::prepare::{ShellRunner, prepare, read_prepared};
+use pixi_sandbox::rattler_build::{RattlerBuildToolchain, RealProcessRunner, resolve_tool};
+use pixi_sandbox::tool_fetch::{HttpDownload, tools_cache};
 use pixi_sandbox::wrap_payload::stage_recipe_dir;
-use pixi_sandbox_core::payload::{WrapPlan, WrapRequest, plan_wrap};
+use pixi_sandbox_core::payload::{PayloadToolchain, WrapPlan, WrapRequest, plan_wrap};
 use pixi_sandbox_core::payload_config::PayloadConfig;
 use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::transport_budget::TransportBudgets;
@@ -66,7 +68,55 @@ pub fn run(args: &WrapPayloadArgs) -> Result<()> {
         plan.spec.platform.as_str(),
         staged.recipe_dir.display()
     );
+
+    if args.build {
+        let _package = build_and_publish(args, &plan, &staged.recipe_dir, &config_dir)?;
+    }
     Ok(())
+}
+
+/// Build the staged recipe with `rattler-build` and publish the package into the channel.
+///
+/// The tool is fetched from its reviewed pins into the tools cache unless `--build-tool` names an
+/// existing one. This is the only step of `wrap-payload` that may touch the network, and it is the
+/// tool that is fetched — never the payload (AC#12, AC#13).
+fn build_and_publish(
+    args: &WrapPayloadArgs,
+    plan: &WrapPlan,
+    work_dir: &Path,
+    config_dir: &Path,
+) -> Result<std::path::PathBuf> {
+    let program = if let Some(path) = &args.build_tool {
+        support::absolute(path)?
+    } else {
+        let cache = tools_cache(
+            args.tools_cache.as_deref(),
+            std::env::var_os("HOME").as_deref(),
+        )
+        .context("choosing the tools cache")?;
+        resolve_tool(plan.spec.platform, &cache, &HttpDownload)?
+    };
+    let channel_dir = match &args.channel {
+        Some(path) => support::absolute(path)?,
+        None => config_dir.join("channel"),
+    };
+
+    // Do not pre-create the channel: `rattler-build publish --to file://…` initialises a channel
+    // that does not exist yet, but refuses an existing directory whose index it cannot find. The
+    // path is created by the tool, so a first wrap works and later wraps append.
+    let toolchain = RattlerBuildToolchain::new(program, &RealProcessRunner);
+    let package = toolchain
+        .build(plan, work_dir)
+        .context("building the payload package")?;
+    toolchain
+        .index(&channel_dir, &package)
+        .context("publishing the package into the channel")?;
+    println!(
+        "built {} and published it to {}",
+        package.display(),
+        channel_dir.display()
+    );
+    Ok(package)
 }
 
 fn resolve_budgets(budget_config: Option<&Path>) -> Result<TransportBudgets> {

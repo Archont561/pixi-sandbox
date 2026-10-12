@@ -804,20 +804,25 @@ pub fn plan_wrap(request: &WrapRequest) -> Result<WrapPlan, PayloadError> {
 
 /// The effectful seam: `rattler-build` and the channel indexer sit behind it, so the rules above
 /// are tested with a fake (ADR-9's shape, applied to the build tool).
+///
+/// The two directories are kept apart on purpose. `rattler-build` writes intermediate recipe
+/// scratch and its own build log beside the package it produces, so `work_dir` is disposable;
+/// `channel_dir` is the reviewable output that is published, and the indexer is the only thing
+/// that writes there.
 pub trait PayloadToolchain {
-    /// Build one `.conda` for `plan` into `channel_dir` and return its path.
+    /// Build one `.conda` for `plan` under `work_dir` and return its path.
     ///
     /// # Errors
     ///
     /// Any failure to produce the package.
-    fn build(&self, plan: &WrapPlan, channel_dir: &Path) -> Result<PathBuf, PayloadError>;
+    fn build(&self, plan: &WrapPlan, work_dir: &Path) -> Result<PathBuf, PayloadError>;
 
-    /// Make `channel_dir` a valid channel index after a package was added.
+    /// Add `package` to the filesystem `channel_dir` and (re)generate its index.
     ///
     /// # Errors
     ///
     /// Any failure to index the channel.
-    fn index(&self, channel_dir: &Path) -> Result<(), PayloadError>;
+    fn index(&self, channel_dir: &Path, package: &Path) -> Result<(), PayloadError>;
 }
 
 /// Plan the wrap, then build and index through the toolchain. A refused payload never reaches
@@ -830,11 +835,12 @@ pub trait PayloadToolchain {
 pub fn wrap(
     request: &WrapRequest,
     toolchain: &dyn PayloadToolchain,
+    work_dir: &Path,
     channel_dir: &Path,
 ) -> Result<PathBuf, PayloadError> {
     let plan = plan_wrap(request)?;
-    let package = toolchain.build(&plan, channel_dir)?;
-    toolchain.index(channel_dir)?;
+    let package = toolchain.build(&plan, work_dir)?;
+    toolchain.index(channel_dir, &package)?;
     Ok(package)
 }
 

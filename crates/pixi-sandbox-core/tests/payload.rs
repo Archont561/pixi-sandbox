@@ -543,7 +543,7 @@ struct FakeToolchain {
 }
 
 impl PayloadToolchain for FakeToolchain {
-    fn build(&self, plan: &WrapPlan, channel_dir: &Path) -> Result<PathBuf, PayloadError> {
+    fn build(&self, plan: &WrapPlan, work_dir: &Path) -> Result<PathBuf, PayloadError> {
         self.calls.borrow_mut().push(format!(
             "build {} {} {}",
             plan.spec.name, plan.spec.version, plan.spec.platform
@@ -553,15 +553,18 @@ impl PayloadToolchain for FakeToolchain {
                 "rattler-build exited 1".to_string(),
             ));
         }
-        Ok(channel_dir
+        Ok(work_dir
+            .join("out")
             .join(plan.spec.platform.as_str())
             .join(format!("{}-{}-0.conda", plan.spec.name, plan.spec.version)))
     }
 
-    fn index(&self, channel_dir: &Path) -> Result<(), PayloadError> {
-        self.calls
-            .borrow_mut()
-            .push(format!("index {}", channel_dir.display()));
+    fn index(&self, channel_dir: &Path, package: &Path) -> Result<(), PayloadError> {
+        self.calls.borrow_mut().push(format!(
+            "index {} from {}",
+            channel_dir.display(),
+            package.display()
+        ));
         Ok(())
     }
 }
@@ -575,6 +578,7 @@ fn a_refused_payload_never_reaches_the_toolchain() {
     let error = wrap(
         &request(declared, linux_tree()),
         &fake,
+        Path::new("work"),
         Path::new("channel"),
     )
     .expect_err("noarch native is refused before any build");
@@ -589,7 +593,8 @@ fn an_over_budget_payload_never_reaches_the_toolchain() {
     let mut too_big = request(spec(Platform::Linux64), sized(96));
     too_big.budgets.max_blob_bytes = 95 * MIB;
 
-    let error = wrap(&too_big, &fake, Path::new("channel")).expect_err("over budget");
+    let error =
+        wrap(&too_big, &fake, Path::new("work"), Path::new("channel")).expect_err("over budget");
 
     assert!(matches!(error, PayloadError::Budget(_)));
     assert!(
@@ -605,17 +610,21 @@ fn an_accepted_payload_is_built_then_indexed_and_the_package_is_returned() {
     let package = wrap(
         &request(spec(Platform::Linux64), linux_tree()),
         &fake,
+        Path::new("work"),
         Path::new("channel"),
     )
     .expect("accepted");
 
     assert_eq!(
         *fake.calls.borrow(),
-        ["build demo-payload 1.0.0 linux-64", "index channel"]
+        [
+            "build demo-payload 1.0.0 linux-64",
+            "index channel from work/out/linux-64/demo-payload-1.0.0-0.conda"
+        ]
     );
     assert_eq!(
         package,
-        Path::new("channel/linux-64/demo-payload-1.0.0-0.conda")
+        Path::new("work/out/linux-64/demo-payload-1.0.0-0.conda")
     );
 }
 
@@ -629,6 +638,7 @@ fn a_failed_build_is_reported_and_the_channel_is_not_indexed() {
     let error = wrap(
         &request(spec(Platform::Linux64), linux_tree()),
         &fake,
+        Path::new("work"),
         Path::new("channel"),
     )
     .expect_err("the build failed");
