@@ -226,3 +226,68 @@
   background: var(--sl-color-gray-5);
   border-radius: 0.25rem;
 }
+
+/* Role entry cards (homepage, audit doc-18): four audiences, four first pages.
+   Real anchors, icon + text (never color alone), keyboard reachable. */
+.role-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.role-card {
+  display: block;
+  background: var(--sl-color-bg);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.2s ease;
+}
+
+.role-card:hover {
+  border-color: var(--sl-color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.role-card:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 2px;
+}
+
+.role-card .role-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  background: var(--sl-color-accent-low);
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+  font-size: 1.15rem;
+}
+
+.role-card h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+}
+
+.role-card p {
+  font-size: 0.85rem;
+  color: var(--sl-color-gray-2);
+  line-height: 1.5;
+  margin: 0 0 0.75rem;
+}
+
+.role-card .role-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--sl-color-accent-high);
+}
