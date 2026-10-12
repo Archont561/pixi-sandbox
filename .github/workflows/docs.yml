@@ -29,6 +29,14 @@ jobs:
           environments: default
           cache: true
       - run: pixi run docs build
+      # The docs quality gates (task-110): each is a `pixi run` task under scripts/, so CI and
+      # a laptop run the same gate. A dead internal link, an unquoted frontmatter colon, an
+      # inaccessible page, or a documented flag the CLI does not accept fails here — before
+      # the site is published.
+      - run: pixi run docs-frontmatter-check
+      - run: pixi run docs-link-check
+      - run: pixi run docs-a11y-check
+      - run: pixi run docs-snippet-check
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
         with:
           enablement: true
