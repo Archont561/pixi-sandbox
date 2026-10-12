@@ -38,7 +38,7 @@ your job — each card opens that role's first page:
 `pixi-sandbox` packs one or more [pixi](https://pixi.sh) environments plus vendored Cargo crates into a directory, publishes it as an **orphan branch**, and restores it on a machine that cannot reach the internet.
 
 <div style="display: flex; align-items: center; gap: 0.5rem; margin: 1rem 0; padding: 0.75rem 1rem; background: var(--sl-color-accent-low); border-radius: 0.5rem; border-left: 4px solid var(--sl-color-accent);">
-  <Icon name="lucide:lightbulb" size={20} />
+  <Icon aria-hidden="true" name="lucide:lightbulb" size={20} />
   <span><strong>Because pixi discovers <code>pixi-&lt;command&gt;</code> on PATH</strong>, installing pixi-sandbox unlocks native subcommands: <code>pixi sandbox pack</code>, <code>doctor</code>, <code>publish</code>, <code>restore</code>.</span>
 </div>
 
@@ -52,7 +52,7 @@ your job — each card opens that role's first page:
     <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
   </div>
   <div>
-    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:package" size={16} /> Pack</strong>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:package" size={16} /> Pack</strong>
     <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">Resolves envs via <code>pixi-pack</code>, vendors crates, fetches pinned tools (sha256-verified), writes <code>manifest.json</code> with every blob's digest.</p>
   </div>
 
@@ -61,7 +61,7 @@ your job — each card opens that role's first page:
     <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
   </div>
   <div>
-    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:shield" size={16} /> Verify</strong>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:shield" size={16} /> Verify</strong>
     <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>doctor --verify</code> checks every sha256, reports all failures, writes nothing. Same code path as restore.</p>
   </div>
 
@@ -69,7 +69,7 @@ your job — each card opens that role's first page:
     <div style="width: 2rem; height: 2rem; background: #10b981; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">3</div>
   </div>
   <div>
-    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:upload-cloud" size={16} /> Publish & Restore</strong>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:upload-cloud" size={16} /> Publish & Restore</strong>
     <p style="margin: 0.25rem 0; color: var(--sl-color-gray-2); font-size: 0.9rem;">Force-push as orphan branch. Airlock does <code>git fetch</code> + <code>pixi-sandbox restore --output-path .</code> → offline <code>pixi install --frozen --offline</code> + <code>pixi run --frozen -- cargo build --offline</code>.</p>
   </div>
 </div>
@@ -93,15 +93,15 @@ reusable publisher have been retired from new refs.
 
 <div style="display: grid; gap: 0.5rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin: 1rem 0;">
   <a href="/pixi-sandbox/security/verification-guarantees/" style="display: flex; gap: 0.5rem; padding: 0.7rem 0.85rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; text-decoration: none; color: inherit;">
-    <Icon name="lucide:shield-check" size={18} />
+    <Icon aria-hidden="true" name="lucide:shield-check" size={18} />
     <span><strong>Verification guarantees</strong><br /><span style="color: var(--sl-color-gray-2); font-size: 0.9rem;">Every blob's sha256 is checked before anything is written — the same code path in <code>doctor</code> and in <code>restore</code>.</span></span>
   </a>
   <a href="/pixi-sandbox/compatibility/" style="display: flex; gap: 0.5rem; padding: 0.7rem 0.85rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; text-decoration: none; color: inherit;">
-    <Icon name="lucide:tag" size={18} />
+    <Icon aria-hidden="true" name="lucide:tag" size={18} />
     <span><strong>Compatibility and releases</strong><br /><span style="color: var(--sl-color-gray-2); font-size: 0.9rem;">Supported platforms, the documented release, and what each release supports.</span></span>
   </a>
   <a href="/pixi-sandbox/troubleshooting/" style="display: flex; gap: 0.5rem; padding: 0.7rem 0.85rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; text-decoration: none; color: inherit;">
-    <Icon name="lucide:life-buoy" size={18} />
+    <Icon aria-hidden="true" name="lucide:life-buoy" size={18} />
     <span><strong>Troubleshooting</strong><br /><span style="color: var(--sl-color-gray-2); font-size: 0.9rem;">Symptom-indexed recovery for the day something fails on the airlock.</span></span>
   </a>
 </div>
@@ -115,6 +115,6 @@ reusable publisher have been retired from new refs.
 - [Restore on the airlock](/pixi-sandbox/restore/) — the operator checklist
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin: 1.25rem 0 0.5rem; padding: 0.75rem 1rem; background: var(--sl-color-accent-low); border-radius: 0.5rem; border-left: 4px solid var(--sl-color-accent);">
-  <Icon name="lucide:rocket" size={20} />
+  <Icon aria-hidden="true" name="lucide:rocket" size={20} />
   <span><strong>Start now:</strong> run the two Quick Start commands above, then walk <a href="/pixi-sandbox/first-offline-bundle/">First verified offline bundle</a> — connected host to airlock, every command spelled out.</span>
 </div>

@@ -169,11 +169,40 @@ are and what the page will ask of them:
 A new guide is not done until its `Next steps` names the next lifecycle stage and that stage's
 prerequisite — the pages form a chain, not a set.
 
+### Docs quality gates
+
+`.github/workflows/docs.yml` runs four gates before the site is published, and each is a `pixi
+run` task you can run locally — the gate is the same gate in CI and on a laptop:
+
+| Task | What it proves |
+|---|---|
+| `pixi run docs-frontmatter-check` | No page's `title:`/`description:` breaks Starlight's YAML parser |
+| `pixi run docs-link-check` | Every internal link and fragment in the built site resolves |
+| `pixi run docs-a11y-check` | Structure (one `h1`, no skipped levels, alt text, accessible names, table headers, skip link), `:focus-visible` rules, print rules, the operator checklist's script-free markup, and WCAG contrast ratios for the site's color pairs in **both** themes |
+| `pixi run docs-snippet-check` | Every `pixi-sandbox …` command the docs tell a reader to run exists, and every documented flag is one the binary accepts (it builds the CLI with `cargo` when needed) |
+
+The browser-dependent half of the audit is a protocol, run by hand after a visual change and
+recorded in the pull request:
+
+- **Keyboard** — Tab from the address bar through the sidebar groups, the search button, the
+  theme control, and every code block's copy button; Enter/Space activate; Esc closes search.
+  Focus must be visible at every stop, in **both** themes.
+- **Responsive** — 375 px (single column, ToC collapses), 768 px (the transport diagram
+  stacks), 1280 and 1440 px (reference pages use their wider content mode; wide tables and
+  TOML blocks do not wrap excessively).
+- **Print and no JavaScript** — print the restore page: the operator checklist must stay on one
+  page with its tick boxes, and reload that page with JavaScript disabled: the checklist and
+  every command block must still be complete and static.
+
+Two things the automated gate deliberately does not cover: the badge strip on the homepage is
+third-party imagery from shields.io (contrast there is their design, checked by eye), and the
+keyboard walk above needs a real browser.
+
 ### Icons and the docs design system
 
 Icons render through [Astro Icon](https://www.astroicon.dev/) over
 [Iconify](https://iconify.design/): one import — `import { Icon } from 'astro-icon/components';` —
-and one call, `<Icon name="set:name" size={n} />`. The bundled sets are `lucide`, `mdi`,
+and one call, `<Icon aria-hidden="true" name="set:name" size={n} />`. The bundled sets are `lucide`, `mdi`,
 `tabler`, and `simple-icons` (all of each, declared in `docs/astro.config.mjs`); browse them at
 [icon-sets.iconify.design](https://icon-sets.iconify.design/) before reaching for a new
 dependency. Astro Icon emits the SVGs `aria-hidden`, so an icon never carries meaning on its own —

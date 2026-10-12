@@ -232,15 +232,15 @@ what is vendored, how the restore wires `CARGO_HOME`, and the offline build proo
 
 <div style="display: grid; gap: 0.75rem; margin: 1rem 0;">
   <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:lightbulb" size={20} />
+    <Icon aria-hidden="true" name="lucide:lightbulb" size={20} />
     <div><strong>Keep envs explicit</strong> — never infer every env from pixi.toml. Test/bench envs shouldn't be published.</div>
   </div>
   <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:hard-drive" size={20} />
+    <Icon aria-hidden="true" name="lucide:hard-drive" size={20} />
     <div><strong>Work dir on same filesystem</strong> — default <code>.pixi/.restore-work</code>. Never use small tmpfs <code>/tmp</code> (pixi-unpack stages into TMPDIR).</div>
   </div>
   <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:shield-check" size={20} />
+    <Icon aria-hidden="true" name="lucide:shield-check" size={20} />
     <div><strong>Verify before write</strong> — <code>doctor --verify</code> is the same code as restore's preflight. CI must run it.</div>
   </div>
 </div>

@@ -22,7 +22,7 @@ const known = chips.filter((c) => c in CHIPS);
   <div class="context-chips">
     {known.map((key) => (
       <span class={`context-chip ctx-${key}`}>
-        <Icon name={CHIPS[key].icon} size={13} />
+        <Icon aria-hidden="true" name={CHIPS[key].icon} size={13} />
         {CHIPS[key].label}
       </span>
     ))}

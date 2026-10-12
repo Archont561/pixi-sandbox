@@ -23,14 +23,14 @@ const version = resolveVersion();
   {
     config.credits && (
       <a class="kudos sl-flex" href="https://starlight.astro.build">
-        <Icon name={'starlight'} /> {Astro.locals.t('builtWithStarlight.label')}
+        <Icon aria-hidden="true" name={'starlight'} /> {Astro.locals.t('builtWithStarlight.label')}
       </a>
     )
   }
 </footer>
 
 <p class="version-line">
-  <Icon name="lucide:tag" size={13} />
+  <Icon aria-hidden="true" name="lucide:tag" size={13} />
   <span>
     Documented release: <strong>v{version}</strong> ·{' '}
     <a href="/pixi-sandbox/compatibility/">Compatibility and releases</a> ·{' '}

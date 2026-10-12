@@ -18,7 +18,7 @@ what lives on each machine, what crosses the gap, and what is proven at every st
     <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
   </div>
   <div>
-    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:download" size={16} /> Install and verify the CLI</strong>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:download" size={16} /> Install and verify the CLI</strong>
     <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">On the connected host, install <code>pixi-sandbox</code> from the canonical channel and run <code>pixi-sandbox init</code>. The CLI writes only the files it owns — never your <code>pixi.toml</code>.</p>
   </div>
 
@@ -27,42 +27,42 @@ what lives on each machine, what crosses the gap, and what is proven at every st
     <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
   </div>
   <div>
-    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:settings" size={16} /> Configure the bundle</strong>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:settings" size={16} /> Configure the bundle</strong>
     <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">Declare which environments and platforms ship in <code>pixi-sandbox.toml</code>. <code>pixi-sandbox plan</code> turns that into the publish matrix — one <code>bundle × platform</code> job per entry.</p>
   </div>
 
   <div style="display: flex; flex-direction: column; align-items: center;">
-    <div style="width: 2rem; height: 2rem; background: #3b82f6; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">3</div>
+    <div style="width: 2rem; height: 2rem; background: #1d4ed8; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">3</div>
     <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
   </div>
   <div>
-    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:package" size={16} /> Pack and verify</strong>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:package" size={16} /> Pack and verify</strong>
     <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>pack</code> resolves the environments with the pinned <code>pixi-pack</code>, vendors Cargo crates, fetches sha256-pinned helper tools, and writes <code>manifest.json</code> with every blob's digest. <code>doctor --verify</code> re-checks every digest and writes nothing.</p>
   </div>
 
   <div style="display: flex; flex-direction: column; align-items: center;">
-    <div style="width: 2rem; height: 2rem; background: #3b82f6; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">4</div>
+    <div style="width: 2rem; height: 2rem; background: #1d4ed8; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">4</div>
     <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
   </div>
   <div>
-    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:upload-cloud" size={16} /> Publish the orphan branch</strong>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:upload-cloud" size={16} /> Publish the orphan branch</strong>
     <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">The transport directory becomes a parentless commit force-pushed to <code>sandbox/&lt;bundle&gt;-&lt;platform&gt;</code>. Git dedupes identical blobs, so publishing a one-crate change costs the changed bytes.</p>
   </div>
 
   <div style="display: flex; flex-direction: column; align-items: center;">
-    <div style="width: 2rem; height: 2rem; background: #10b981; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">5</div>
+    <div style="width: 2rem; height: 2rem; background: #047857; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">5</div>
     <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
   </div>
   <div>
-    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:plane" size={16} /> Transfer across the gap</strong>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:plane" size={16} /> Transfer across the gap</strong>
     <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">A clone or a <code>git bundle</code> carrying the project branch and the sandbox branch crosses the air gap on physical media. Nothing is downloaded at any point.</p>
   </div>
 
   <div style="display: flex; flex-direction: column; align-items: center;">
-    <div style="width: 2rem; height: 2rem; background: #10b981; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">6</div>
+    <div style="width: 2rem; height: 2rem; background: #047857; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">6</div>
   </div>
   <div>
-    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon name="lucide:shield-check" size={16} /> Restore and prove it</strong>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:shield-check" size={16} /> Restore and prove it</strong>
     <p style="margin: 0.25rem 0; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>./restore.sh</code> verifies every byte, then materializes environments, vendored crates, and the pinned tools — and the proof is an offline no-op: <code>pixi install --frozen --offline</code>.</p>
   </div>
 </div>

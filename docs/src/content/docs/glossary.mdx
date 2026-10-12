@@ -53,19 +53,19 @@ The full model, including the standalone probe and the atomic join, is in
 
 <div style="display: grid; gap: 0.5rem; margin: 1rem 0;">
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:signature" size={18} />
+    <Icon aria-hidden="true" name="lucide:signature" size={18} />
     <span><strong>No signature chain or trust root</strong> — verification is integrity against the manifest; trusting the manifest is a Git-side property. Protect the branch like a release channel.</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:monitor" size={18} />
+    <Icon aria-hidden="true" name="lucide:monitor" size={18} />
     <span><strong>No host provisioning</strong> — fonts, a display server, D-Bus, GPU access, and the system C library stay on the machine. Declared in <code>[host_requirements]</code>, probed read-only, never installed.</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:hammer" size={18} />
+    <Icon aria-hidden="true" name="lucide:hammer" size={18} />
     <span><strong>No toolchain</strong> — crates ship, rustc does not. The airlock compiles from scratch, from the environment you packed.</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:file-warning" size={18} />
+    <Icon aria-hidden="true" name="lucide:file-warning" size={18} />
     <span><strong>No inert payload</strong> — unpacking runs package post-link scripts. That is inherent to conda environments; the mitigation is branch protection and review.</span>
   </div>
 </div>

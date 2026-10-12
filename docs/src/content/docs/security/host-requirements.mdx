@@ -116,15 +116,15 @@ contract per flag.
 
 <div style="display: grid; gap: 0.5rem; margin: 1rem 0;">
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:monitor" size={18} />
+    <Icon aria-hidden="true" name="lucide:monitor" size={18} />
     <span><strong>Grant GPU access</strong> — reportable, never grantable. Device passthrough is a host decision: for containers, pass through <code>/dev/dri</code> and the driver mounts, and run as a user in the <code>video</code>/<code>render</code> groups. A sandbox cannot widen its own device access, and <code>doctor</code> says so in the remedy instead of pretending.</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:terminal" size={18} />
+    <Icon aria-hidden="true" name="lucide:terminal" size={18} />
     <span><strong>Start Xvfb for you</strong> — the <code>headless</code> entries are checked for existence on <code>PATH</code> and never launched. Starting a display server to test whether one works would be a sandbox escaping its own boundary; you run the workload under <code>xvfb-run</code>, not <code>doctor</code>.</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:package" size={18} />
+    <Icon aria-hidden="true" name="lucide:package" size={18} />
     <span><strong>Install or enable anything</strong> — no host packages, no services, no config changes. Remedies are printed for a person to read; every pixi-sandbox command stays a read-only observer of the host.</span>
   </div>
 </div>

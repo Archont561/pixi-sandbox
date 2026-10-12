@@ -41,12 +41,12 @@ const roles = [
   {roles.map((r) => (
     <a class="role-card" href={r.link}>
       <div class="role-icon">
-        <Icon name={r.icon} size={20} />
+        <Icon aria-hidden="true" name={r.icon} size={20} />
       </div>
       <h3>{r.role}</h3>
       <p>{r.outcome}</p>
       <span class="role-cta">
-        {r.cta} <Icon name="lucide:arrow-right" size={14} />
+        {r.cta} <Icon aria-hidden="true" name="lucide:arrow-right" size={14} />
       </span>
     </a>
   ))}

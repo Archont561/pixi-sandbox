@@ -13,7 +13,7 @@ first page of that role's path.
 ## I am a project owner
 
 <div style="display: flex; gap: 0.75rem; padding: 1rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; margin-bottom: 1rem;">
-  <Icon name="lucide:user" size={20} />
+  <Icon aria-hidden="true" name="lucide:user" size={20} />
   <div>
     <strong>You configure the bundle and commit the generated assets.</strong>
     <p style="margin: 0.25rem 0 0; color: var(--sl-color-gray-2); font-size: 0.9rem;">Your project has <code>pixi.toml</code> + <code>pixi.lock</code> and you want its environments on machines that have no network. You work on the connected host.</p>
@@ -35,7 +35,7 @@ binary. Pack the checksum-verified release asset or a binary you built — see
 ## I am a CI maintainer
 
 <div style="display: flex; gap: 0.75rem; padding: 1rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; margin-bottom: 1rem;">
-  <Icon name="lucide:bot" size={20} />
+  <Icon aria-hidden="true" name="lucide:bot" size={20} />
   <div>
     <strong>You publish safely and keep workflow policy current.</strong>
     <p style="margin: 0.25rem 0 0; color: var(--sl-color-gray-2); font-size: 0.9rem;">You own <code>.github/workflows/publish-sandbox.yml</code>: the matrix, the permissions, the failure surfaces, and the upgrade lane that keeps generated files fresh.</p>
@@ -56,7 +56,7 @@ regeneration.
 ## I am an airlock operator
 
 <div style="display: flex; gap: 0.75rem; padding: 1rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; margin-bottom: 1rem;">
-  <Icon name="lucide:shield-check" size={20} />
+  <Icon aria-hidden="true" name="lucide:shield-check" size={20} />
   <div>
     <strong>You verify and restore locally, with zero network.</strong>
     <p style="margin: 0.25rem 0 0; color: var(--sl-color-gray-2); font-size: 0.9rem;">You stand in front of the disconnected machine. Nothing you run may reach the internet; if anything tries, stop and report it.</p>
@@ -75,7 +75,7 @@ If it starts doing real work, the tree does not match the lockfile — re-run th
 ## I am a security or platform reviewer
 
 <div style="display: flex; gap: 0.75rem; padding: 1rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; margin-bottom: 1rem;">
-  <Icon name="lucide:lock" size={20} />
+  <Icon aria-hidden="true" name="lucide:lock" size={20} />
   <div>
     <strong>You evaluate the guarantees, the constraints, and the host boundary.</strong>
     <p style="margin: 0.25rem 0 0; color: var(--sl-color-gray-2); font-size: 0.9rem;">You need to know exactly what is verified, what the transport proves, what it deliberately does not do, and what the host must provide.</p>
