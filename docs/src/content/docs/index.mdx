@@ -22,6 +22,7 @@ import Badges from '../../components/Badges.astro';
 import SandboxDiagram from '../../components/SandboxDiagram.astro';
 import FeatureGrid from '../../components/FeatureGrid.astro';
 import RoleCards from '../../components/RoleCards.astro';
+import ContextChips from '../../components/ContextChips.astro';
 
 <Badges />
 
@@ -77,6 +78,8 @@ your job — each card opens that role's first page:
 
 ## Quick Start
 
+<ContextChips chips={["connected", "network"]} />
+
 ```bash
 pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox
 pixi-sandbox init
@@ -86,20 +89,22 @@ Commit the generated configuration, restore launcher, and project-owned publishi
 workflow calls the installed CLI directly on native runners; composite Actions and the repository
 reusable publisher have been retired from new refs.
 
-## Icons & Stack
+## Security and support
 
-This docs site uses [Astro Icon](https://www.astroicon.dev/) with [Iconify](https://iconify.design/) — 300k+ open source icons, one framework.
-
-<div class="icon-showcase">
-  <div class="icon-item"><Icon name="lucide:package" size={24} /><span>lucide</span></div>
-  <div class="icon-item"><Icon name="mdi:package-variant-closed" size={24} /><span>mdi</span></div>
-  <div class="icon-item"><Icon name="tabler:brand-rust" size={24} /><span>tabler</span></div>
-  <div class="icon-item"><Icon name="simple-icons:github" size={24} /><span>simple</span></div>
-  <div class="icon-item"><Icon name="lucide:shield-check" size={24} /><span>shield</span></div>
-  <div class="icon-item"><Icon name="lucide:git-branch" size={24} /><span>git</span></div>
+<div style="display: grid; gap: 0.5rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin: 1rem 0;">
+  <a href="/pixi-sandbox/security/verification-guarantees/" style="display: flex; gap: 0.5rem; padding: 0.7rem 0.85rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; text-decoration: none; color: inherit;">
+    <Icon name="lucide:shield-check" size={18} />
+    <span><strong>Verification guarantees</strong><br /><span style="color: var(--sl-color-gray-2); font-size: 0.9rem;">Every blob's sha256 is checked before anything is written — the same code path in <code>doctor</code> and in <code>restore</code>.</span></span>
+  </a>
+  <a href="/pixi-sandbox/compatibility/" style="display: flex; gap: 0.5rem; padding: 0.7rem 0.85rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; text-decoration: none; color: inherit;">
+    <Icon name="lucide:tag" size={18} />
+    <span><strong>Compatibility and releases</strong><br /><span style="color: var(--sl-color-gray-2); font-size: 0.9rem;">Supported platforms, the documented release, and what each release supports.</span></span>
+  </a>
+  <a href="/pixi-sandbox/troubleshooting/" style="display: flex; gap: 0.5rem; padding: 0.7rem 0.85rem; background: var(--sl-color-gray-6); border-radius: 0.5rem; text-decoration: none; color: inherit;">
+    <Icon name="lucide:life-buoy" size={18} />
+    <span><strong>Troubleshooting</strong><br /><span style="color: var(--sl-color-gray-2); font-size: 0.9rem;">Symptom-indexed recovery for the day something fails on the airlock.</span></span>
+  </a>
 </div>
-
-Browse all: [icon-sets.iconify.design](https://icon-sets.iconify.design/) — sets like `lucide`, `mdi`, `tabler`, `simple-icons` are included.
 
 ## Next Steps
 
@@ -108,3 +113,8 @@ Browse all: [icon-sets.iconify.design](https://icon-sets.iconify.design/) — se
 - [First verified offline bundle](/pixi-sandbox/first-offline-bundle/) — one documented project, connected to airlock
 - [Installation](/pixi-sandbox/installation/) — install the CLI via cargo, pixi global, or release binary
 - [Restore on the airlock](/pixi-sandbox/restore/) — the operator checklist
+
+<div style="display: flex; gap: 0.5rem; align-items: center; margin: 1.25rem 0 0.5rem; padding: 0.75rem 1rem; background: var(--sl-color-accent-low); border-radius: 0.5rem; border-left: 4px solid var(--sl-color-accent);">
+  <Icon name="lucide:rocket" size={20} />
+  <span><strong>Start now:</strong> run the two Quick Start commands above, then walk <a href="/pixi-sandbox/first-offline-bundle/">First verified offline bundle</a> — connected host to airlock, every command spelled out.</span>
+</div>

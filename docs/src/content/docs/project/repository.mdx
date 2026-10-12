@@ -147,3 +147,13 @@ tag — the config substitutes `__VERSION__` from the workspace manifest, so a r
 rewrites zero documentation lines. Pages are MDX in `docs/src/content/docs/`, organized by the
 role/lifecycle IA: propose structural changes as a backlog task first, and keep the airlock page
 actionable for someone with no network and no context.
+
+### Icons and the docs design system
+
+Icons render through [Astro Icon](https://www.astroicon.dev/) over
+[Iconify](https://iconify.design/): one import — `import { Icon } from 'astro-icon/components';` —
+and one call, `<Icon name="set:name" size={n} />`. The bundled sets are `lucide`, `mdi`,
+`tabler`, and `simple-icons` (all of each, declared in `docs/astro.config.mjs`); browse them at
+[icon-sets.iconify.design](https://icon-sets.iconify.design/) before reaching for a new
+dependency. Astro Icon emits the SVGs `aria-hidden`, so an icon never carries meaning on its own —
+pair it with a text label or a heading.
