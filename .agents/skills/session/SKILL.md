@@ -130,7 +130,7 @@ Facts about this sandbox that shape every command:
    else. Never edit on a stale base.
 2. **Read the standing context** (skim, do not quote back): `AGENTS.md` (repo map, invariants,
    task commands), `CONTEXT.md`, and `backlog/docs/adr/README.md` — the decisions
-   ADR-1–ADR-15 are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
+   ADR-1–ADR-27 (every accepted file under `backlog/docs/adr/`) are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
 3. **List the open work**:
    `pixi run --frozen bunx backlog task list -s "To Do" --plain` — or read `backlog/tasks/*.md` directly;
    tasks are markdown files whose frontmatter carries `dependencies`, `priority`, `ordinal`,

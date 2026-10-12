@@ -265,7 +265,7 @@ comment instead of discovering it mid-refactor.
 1. **Decide and encode the lint policy** (Finding 1). Add `[workspace.lints.clippy]` with
    `pedantic` and the deliberate `allow`s (at minimum `literal_string_with_formatting_args`, each
    with a reason), have all four crates inherit it, and record the choice in
-   `backlog/docs/adr/README.md` as a new D-number. **Do this first**: it is what makes every later item
+   `backlog/docs/adr/` as a new `ADR-N` file (tagged `decision`; the next free number, now a file rather than a `D`-number). **Do this first**: it is what makes every later item
    permanent rather than cosmetic.
 2. **Sweep the 261 machine-applicable findings** with `cargo clippy --fix`, reviewed as a diff, in
    per-crate commits. No behaviour change; tests must be identical before and after.
