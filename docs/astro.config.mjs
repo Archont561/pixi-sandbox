@@ -194,7 +194,8 @@ export default defineConfig({
             { label: "Publish transport branches", slug: "reference/cli/publish" },
             { label: "Restore and inspect a transport", slug: "reference/cli/restore" },
             { label: "Tools and self-update", slug: "reference/cli/tools" },
-            { label: "Configuration", slug: "reference/configuration" },
+            { label: "Configuration overview", slug: "reference/configuration/overview" },
+            { label: "Bundle, CI, and host policy", slug: "reference/configuration/policy" },
           ],
         },
         {
