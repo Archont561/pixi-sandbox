@@ -49,8 +49,8 @@ fn a_valid_declaration_loads_and_yields_the_spec_the_pure_rules_take() {
     assert!(!spec.noarch);
     assert_eq!(spec.entry_point.as_deref(), Some("firefox/firefox"));
     assert_eq!(
-        config.working_dir, ".",
-        "the working directory defaults to the config dir"
+        config.working_dir, ".pixi/payload-work",
+        "fetched inputs default to Pixi's ignored project storage"
     );
     assert_eq!(config.artifact, "artifact.tar.gz");
     assert_eq!(config.payload, "firefox");

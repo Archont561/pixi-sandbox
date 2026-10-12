@@ -12,11 +12,11 @@ host and wraps it into a **platform-correct conda package**, so an air-gapped pr
 it and run it like any other package.
 
 <GuideMeta
-  outcome="A prebuilt payload republished as a conda package a consumer adds from a channel, with proven provenance and no payload byte in Git."
+  outcome="A prebuilt payload republished as a conda package a consumer adds from a channel, with reviewable provenance and generated payload bytes kept out of Git."
   audience="Project owners who must carry one dependency into a lockfile but cannot reach its vendor CDN on the airlock."
   prerequisites="A connected host with pixi and the pixi-sandbox standalone binary, and a channel you can publish to."
   machine="Connected host for fetch, wrap and publish; the airlock for the frozen install."
-  maturity="Stable — the pure rules, the wrap verb and the rattler-build build are tested; the connected build was proved on rattler-build 0.76.1."
+  maturity="Acceptance in progress — the pure rules and wrap flow are tested, and a connected rattler-build 0.76.1 build is recorded; package round-trip and air-gapped consumer proofs remain open."
 />
 
 ## The boundary: a channel package, not a transport
@@ -43,7 +43,8 @@ schema = 1
 name = "example-payload"
 version = "1.0.0"
 platform = "linux-64"          # linux-64, linux-aarch64, osx-64, osx-arm64, win-64
-prepare = "./fetch-payload.sh" # runs on the connected host; pixi-sandbox never downloads
+working_dir = ".pixi/payload-work" # ignored by Git; paths below are relative to this directory
+prepare = "mkdir -p download unpacked && curl -fsSL -o download/payload.tar.gz https://vendor.example/example-payload-1.0.0.tar.gz && tar -xzf download/payload.tar.gz -C unpacked"
 artifact = "download/payload.tar.gz"
 payload = "unpacked"           # a directory, or a single file the artifact extracts to
 
@@ -54,24 +55,31 @@ sha256 = "0123…"               # 64 lowercase hex digits
 
 `prepare` is the *only* step that fetches the payload, and it runs on the connected host. After it
 exits, pixi-sandbox checks the artifact it produced against `source.sha256`: a changed upstream
-**fails the run** instead of packing different bytes behind a green pipeline. Nothing under
-`payload` is ever committed — the workflow fetches and publishes, it never vendors.
+**fails the run** instead of packing different bytes behind a green pipeline. With the defaults,
+the downloaded artifact and unpacked payload stay under `.pixi/payload-work/`, which the project's
+`.gitignore` excludes. The staged recipe and default channel also go under `.pixi/`; if you override
+any paths, choose an ignored directory or a location outside the checkout. Older declarations that
+intentionally used the config directory can set `working_dir = "."` explicitly. The declaration
+itself can be committed; the fetched bytes should not be.
 
 A payload that contains a native executable (ELF, Mach-O or PE, detected by magic bytes) cannot be
 declared `noarch`, and an executable whose format does not match the platform is refused by name.
 
 ## 2. Wrap it on the connected host
 
-Dry-run first — identity, totals, source and the rendered recipe, with nothing written:
+Plan first — identity, totals, source and the rendered recipe, without staging a recipe or building
+a package. Unless `--skip-prepare` is set, the command still runs `prepare` and writes the fetched
+artifact and unpacked tree under `.pixi/payload-work/`:
 
 <ContextChips chips={["connected"]} />
 
 ```bash
 pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml --plan
-pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml --json   # CI form
+pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml --skip-prepare --json   # after prepare
 ```
 
-Stage the reviewable recipe directory (recipe, provenance and a faithful payload copy):
+Stage the reviewable recipe directory (recipe, provenance and a faithful payload copy) under the
+git-ignored `.pixi/payload-build/` default:
 
 ```bash
 pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml
@@ -84,6 +92,9 @@ pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml \
   --build --channel /srv/channels/example
 ```
 
+The staged recipe defaults to `.pixi/payload-build/`; if `--channel` is omitted, the filesystem
+channel defaults to `.pixi/payload-channel/`. Both are under the project's ignored `.pixi/`.
+
 `--build` fetches `rattler-build` on demand into the tools cache (nothing is linked, embedded, or
 added to `tools.lock.json`), builds the staged recipe and publishes the package with
 rattler-build's own channel indexing. `--build-tool <path>` uses an existing `rattler-build` — for
@@ -95,7 +106,7 @@ the upstream URL, the fetched artifact's SHA256, and the file count and byte tot
 `entry_point` in the declaration is exposed on `PATH` as a launcher that `exec`s the real file in
 place, so relative runtime lookups inside the payload keep working.
 
-## 3. Name the channel once, add on the airlock
+## 3. Name the channel once, resolve, then install offline
 
 Commit the channel **once, as a real URL**, in `pixi.toml` and the lockfile — never a
 machine-specific path:
@@ -105,7 +116,17 @@ machine-specific path:
 channels = ["https://channel.example/example"]
 ```
 
-On the airlock, with no network, the frozen install reads the URLs already in `pixi.lock`:
+When that channel is reachable, add the package and commit both solver inputs:
+
+```bash
+pixi add example-payload
+git add pixi.toml pixi.lock
+```
+
+Transfer the consumer project and lockfile with the channel package data needed by the airlock.
+With the channel served locally and mirrored as described below, `pixi add example-payload` can
+also run on the air-gapped host without external access. If the lock was already produced, the
+airlock needs only the frozen install:
 
 <ContextChips chips={["airlock", "offline"]} />
 
@@ -130,11 +151,24 @@ path and so cannot be committed. The written `pixi.lock` keeps the canonical `ht
 the mirror, so a local run never contaminates the committed lockfile. pixi-sandbox never rewrites
 your `pixi.toml`; `PIXI_CONFIG_FILE` and `PIXI_NO_CONFIG` select a config explicitly.
 
+With the copied channel served at the configured local HTTP mirror, the air-gapped consumer can
+resolve the package without external network access:
+
+```bash
+pixi add example-payload
+pixi install --frozen
+```
+
+The `add` step updates the manifest and lock against the local mirror; keep the canonical channel
+URL in the committed manifest and lock, and keep the mirror config uncommitted.
+
 ## Ordering, and the standalone-binary rule
 
 The flow has a fixed order: **install the driver (`pixi` and the `pixi-sandbox` standalone binary)
-→ wrap the payload → publish it to the channel → `pixi add` the package on the consumer → install
-again.** The consumer cannot add a package that has not been published yet.
+→ fetch, wrap and publish on the connected host → make the channel reachable to the consumer
+(canonically or through a local HTTP mirror) → `pixi add example-payload` → transfer/commit the
+manifest and lock → `pixi install --frozen` and run it.** The consumer cannot add a package that
+has not been published yet; a truly offline `pixi add` needs the channel data served locally.
 
 `pack --self-bin` embeds the **standalone release binary**, not a `pixi global install` trampoline;
 if you installed pixi-sandbox through pixi's global installer, download the standalone release for
