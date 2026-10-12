@@ -47,10 +47,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@...
-      - uses: Archont561/pixi-sandbox@v0.3.0        # root composite Action
-      - uses: Archont561/pixi-sandbox/setup@v0.3.0   # setup composite Action
-      - uses: Archont561/pixi-sandbox/publish@v0.3.0 # publish composite Action
-      # or: uses: Archont561/pixi-sandbox/.github/workflows/<reusable>@v0.3.0
+      - uses: Archont561/pixi-sandbox@v0.3.0        # root composite Action (stale-ref-allowed)
+      - uses: Archont561/pixi-sandbox/setup@v0.3.0   # setup composite Action (stale-ref-allowed)
+      - uses: Archont561/pixi-sandbox/publish@v0.3.0 # publish composite Action (stale-ref-allowed)
+      # or: uses: Archont561/pixi-sandbox/.github/workflows/<reusable>@v0.3.0 (stale-ref-allowed)
 ```
 
 ### After — one command set, on a connected host with Pixi installed
