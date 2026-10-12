@@ -6,6 +6,8 @@
 //! * [`manifest`] — the wire format (`manifest.json`, schema 2) and its validation rules;
 //! * [`payload`] — prebuilt binary payloads as conda packages: validation, budgets, provenance and the
 //!   recipe, behind a toolchain seam (TASK-78, ADR-28);
+//! * [`payload_config`] — the committed `pixi-sandbox-payload.toml` declaration a `wrap-payload`
+//!   run reads (TASK-78, ADR-28);
 //! * [`platform`] — the single source of truth for the five supported platform ids and
 //!   everything derived from them (target triple, release asset name, GitHub runner);
 //! * [`shard`] — the only two file operations in the project: `record_file` (split when
@@ -23,6 +25,7 @@ pub mod files_manifest;
 pub mod host_requirements;
 pub mod manifest;
 pub mod payload;
+pub mod payload_config;
 pub mod platform;
 pub mod sandbox_config;
 pub mod shard;

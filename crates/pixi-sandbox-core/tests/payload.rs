@@ -43,6 +43,14 @@ fn link(path: &str, target: &str) -> PayloadEntry {
     }
 }
 
+fn path_of(entry: &PayloadEntry) -> &str {
+    match entry {
+        PayloadEntry::File { path, .. }
+        | PayloadEntry::Directory { path }
+        | PayloadEntry::Symlink { path, .. } => path,
+    }
+}
+
 fn spec(platform: Platform) -> PayloadSpec {
     PayloadSpec {
         name: "demo-payload".to_string(),
@@ -663,4 +671,187 @@ fn the_implementation_names_no_browser_or_vendor_it_is_an_example_of() {
             "src/payload.rs names `{word}`; the example belongs in docs and tests"
         );
     }
+}
+
+// ---- reading a payload tree and checking a fetched artifact (Slice 1) -------------------------
+
+use pixi_sandbox_core::payload::{read_payload_tree, validate_source, verify_artifact};
+
+#[test]
+fn reading_a_directory_tree_records_files_directories_and_symlinks_with_posix_paths() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("payload");
+    std::fs::create_dir_all(root.join("bin")).expect("bin");
+    std::fs::create_dir_all(root.join("empty")).expect("empty");
+    std::fs::write(root.join("bin/tool"), b"\x7fELFhello").expect("tool");
+    std::fs::write(root.join("share.bin"), b"plain").expect("share");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(
+            root.join("bin/tool"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .expect("mode");
+        std::fs::set_permissions(
+            root.join("share.bin"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .expect("mode");
+        std::os::unix::fs::symlink("bin/tool", root.join("alias")).expect("symlink");
+    }
+
+    let mut entries = read_payload_tree(&root).expect("the tree is readable");
+    entries.sort_by(|left, right| path_of(left).cmp(path_of(right)));
+
+    let paths: Vec<&str> = entries.iter().map(path_of).collect();
+    let mut expected = vec!["bin", "bin/tool", "empty", "share.bin"];
+    #[cfg(unix)]
+    expected.push("alias");
+    expected.sort_unstable();
+    assert_eq!(paths, expected);
+
+    let tool = entries
+        .iter()
+        .find(|entry| path_of(entry) == "bin/tool")
+        .expect("the executable is recorded");
+    match tool {
+        PayloadEntry::File {
+            size,
+            executable,
+            head,
+            ..
+        } => {
+            assert_eq!(*size, 9);
+            assert_eq!(head, b"\x7fELF");
+            // The executable bit is recorded on Unix; on other hosts the mode is not consulted.
+            assert_eq!(*executable, cfg!(unix));
+        }
+        other => panic!("expected a file, got {other:?}"),
+    }
+    assert!(
+        entries
+            .iter()
+            .any(|entry| path_of(entry) == "empty"
+                && matches!(entry, PayloadEntry::Directory { .. })),
+        "an empty directory must survive: the round trip keeps it"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn reading_a_tree_records_a_symlink_verbatim_and_never_follows_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("payload");
+    std::fs::create_dir_all(&root).expect("root");
+    std::fs::write(root.join("real"), b"data").expect("real");
+    std::os::unix::fs::symlink("../../escape", root.join("dangling")).expect("symlink");
+
+    let entries = read_payload_tree(&root).expect("the tree is readable");
+
+    let dangling = entries
+        .iter()
+        .find(|entry| path_of(entry) == "dangling")
+        .expect("the link is recorded");
+    assert_eq!(
+        dangling,
+        &link("dangling", "../../escape"),
+        "the target travels verbatim even when it escapes the tree"
+    );
+}
+
+#[test]
+fn reading_a_single_file_root_yields_one_entry_named_by_its_file_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("firefox.bin");
+    std::fs::write(&file, b"\x7fELFpayload").expect("file");
+
+    let entries = read_payload_tree(&file).expect("a single file is a payload too");
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(path_of(&entries[0]), "firefox.bin");
+    assert!(matches!(entries[0], PayloadEntry::File { .. }));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_path_that_is_not_utf8_is_refused_rather_than_lossily_named() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("payload");
+    std::fs::create_dir_all(&root).expect("root");
+    let bad = root.join(OsStr::from_bytes(b"caf\xe9"));
+    std::fs::write(&bad, b"data").expect("write");
+
+    let error = read_payload_tree(&root).expect_err("a non-UTF-8 path cannot be named in a recipe");
+
+    assert!(matches!(error, PayloadError::NonUtf8Path(_)));
+}
+
+#[test]
+fn a_missing_tree_is_an_io_error_that_names_the_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let missing = dir.path().join("no-such-payload");
+
+    let error = read_payload_tree(&missing).expect_err("a missing payload is refused");
+
+    assert!(matches!(error, PayloadError::Io { path, .. } if path.contains("no-such-payload")));
+}
+
+#[test]
+fn verifying_an_artifact_accepts_the_declared_digest() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let artifact = dir.path().join("artifact.tar.gz");
+    std::fs::write(&artifact, b"the fetched bytes").expect("write");
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the fetched bytes");
+
+    verify_artifact(&artifact, &digest).expect("a matching artifact passes the gate");
+}
+
+#[test]
+fn verifying_an_artifact_refuses_a_changed_upstream_and_names_both_digests() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let artifact = dir.path().join("artifact.tar.gz");
+    std::fs::write(&artifact, b"the bytes that changed").expect("write");
+    let declared = pixi_sandbox_core::shard::sha256_bytes(b"what the config pinned");
+
+    let error = verify_artifact(&artifact, &declared).expect_err("a changed upstream must fail");
+
+    match error {
+        PayloadError::ArtifactMismatch {
+            expected,
+            actual,
+            path,
+            ..
+        } => {
+            assert_eq!(expected, declared);
+            assert_ne!(actual, declared);
+            assert!(path.contains("artifact.tar.gz"));
+        }
+        other => panic!("expected ArtifactMismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn verifying_a_missing_artifact_is_an_io_error_that_names_the_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let missing = dir.path().join("absent.tar.gz");
+
+    let error =
+        verify_artifact(&missing, SHA256).expect_err("a prepare that wrote nothing fails here");
+
+    assert!(matches!(error, PayloadError::Io { path, .. } if path.contains("absent.tar.gz")));
+}
+
+#[rstest]
+#[case("https://example.invalid/a.bin", SHA256, true)]
+#[case("http://example.invalid/a.bin", SHA256, false)]
+#[case("https://example.invalid/a.bin", "abc", false)]
+fn validate_source_accepts_only_https_and_a_full_lowercase_digest(
+    #[case] url: &str,
+    #[case] sha: &str,
+    #[case] ok: bool,
+) {
+    assert_eq!(validate_source(url, sha).is_ok(), ok);
 }

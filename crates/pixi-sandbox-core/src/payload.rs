@@ -160,8 +160,7 @@ pub fn validate_payload(
     spec: &PayloadSpec,
     entries: &[PayloadEntry],
 ) -> Result<ValidatedPayload, PayloadError> {
-    validate_name(&spec.name)?;
-    validate_version(&spec.version)?;
+    validate_spec_identity(spec)?;
 
     let index = index_entries(entries)?;
     for entry in entries {
@@ -215,6 +214,19 @@ fn validate_name(name: &str) -> Result<(), PayloadError> {
     } else {
         Err(PayloadError::InvalidName(name.to_string()))
     }
+}
+
+/// Validate the identity fields a spec carries (package name and version) without a payload tree.
+///
+/// A config declares these before any bytes exist, so a typo is refused at load time rather than
+/// after a multi-hundred-megabyte fetch (AC#13's early gate on the config side).
+///
+/// # Errors
+///
+/// [`PayloadError::InvalidName`] or [`PayloadError::InvalidVersion`].
+pub fn validate_spec_identity(spec: &PayloadSpec) -> Result<(), PayloadError> {
+    validate_name(&spec.name)?;
+    validate_version(&spec.version)
 }
 
 fn validate_version(version: &str) -> Result<(), PayloadError> {
@@ -460,21 +472,7 @@ pub fn provenance(
     source_url: &str,
     source_sha256: &str,
 ) -> Result<Provenance, PayloadError> {
-    let url_well = source_url.len() > "https://".len()
-        && source_url.starts_with("https://")
-        && !source_url
-            .chars()
-            .any(|c| c.is_whitespace() || c.is_control());
-    if !url_well {
-        return Err(PayloadError::InvalidSourceUrl(source_url.to_string()));
-    }
-    let digest_well = source_sha256.len() == 64
-        && source_sha256
-            .chars()
-            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
-    if !digest_well {
-        return Err(PayloadError::InvalidSha256(source_sha256.to_string()));
-    }
+    validate_source(source_url, source_sha256)?;
     Ok(Provenance {
         schema: PROVENANCE_SCHEMA,
         package: PackageIdentity {
@@ -491,6 +489,32 @@ pub fn provenance(
             bytes: payload.total_bytes,
         },
     })
+}
+
+/// Validate an upstream source declaration: an `https://` URL without whitespace, and a digest
+/// that is 64 lowercase hexadecimal digits. Shared by [`provenance`] and the config loader, so a
+/// hand-written config is refused before a fetch rather than after.
+///
+/// # Errors
+///
+/// [`PayloadError::InvalidSourceUrl`] or [`PayloadError::InvalidSha256`].
+pub fn validate_source(source_url: &str, source_sha256: &str) -> Result<(), PayloadError> {
+    let url_well = source_url.len() > "https://".len()
+        && source_url.starts_with("https://")
+        && !source_url
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control());
+    if !url_well {
+        return Err(PayloadError::InvalidSourceUrl(source_url.to_string()));
+    }
+    let digest_well = source_sha256.len() == 64
+        && source_sha256
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
+    if !digest_well {
+        return Err(PayloadError::InvalidSha256(source_sha256.to_string()));
+    }
+    Ok(())
 }
 
 /// The provenance document as it is written: pretty JSON with a trailing newline.
@@ -519,6 +543,164 @@ pub fn write_provenance(dir: &Path, provenance: &Provenance) -> Result<PathBuf, 
         message: error.to_string(),
     })?;
     Ok(path)
+}
+
+/// Compare the SHA256 of the artifact a `prepare` command produced against the digest the config
+/// declared (AC#13).
+///
+/// This is the gate that turns "the upstream changed under us" from a green pipeline packing
+/// different bytes into a named refusal. The digest is the fetched artifact's, not the tree's:
+/// the config declares where the command left the downloaded bytes.
+///
+/// # Errors
+///
+/// [`PayloadError::Io`] when the artifact cannot be read (a `prepare` command that exited 0 but
+/// wrote nothing lands here, naming the path), or [`PayloadError::ArtifactMismatch`] when the
+/// bytes differ from the declared digest.
+pub fn verify_artifact(path: &Path, expected_sha256: &str) -> Result<(), PayloadError> {
+    let actual = crate::shard::sha256_file(path).map_err(|error| PayloadError::Io {
+        path: path.display().to_string(),
+        message: error.to_string(),
+    })?;
+    if actual == expected_sha256 {
+        Ok(())
+    } else {
+        Err(PayloadError::ArtifactMismatch {
+            path: path.display().to_string(),
+            expected: expected_sha256.to_string(),
+            actual,
+        })
+    }
+}
+
+/// Read a payload tree from disk into [`PayloadEntry`] values, the form the pure rules judge.
+///
+/// `root` is a directory (walked recursively, children sorted for a stable recipe) or a single
+/// regular file (one entry, named by its file name). Paths are relative to `root` with `/`
+/// separators. Symlinks are recorded verbatim and never followed; the first four bytes of each
+/// regular file travel along so [`detect_native`] can judge it without re-reading.
+///
+/// # Errors
+///
+/// [`PayloadError::Io`] when the tree cannot be walked, or [`PayloadError::NonUtf8Path`] for a
+/// path the recipe could not name.
+pub fn read_payload_tree(root: &Path) -> Result<Vec<PayloadEntry>, PayloadError> {
+    let metadata = std::fs::symlink_metadata(root).map_err(|error| PayloadError::Io {
+        path: root.display().to_string(),
+        message: error.to_string(),
+    })?;
+    if !metadata.is_dir() {
+        let name = root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| PayloadError::NonUtf8Path(root.display().to_string()))?;
+        return Ok(vec![file_entry(name, root, &metadata)?]);
+    }
+
+    let mut entries = Vec::new();
+    let walker = walkdir::WalkDir::new(root)
+        .min_depth(1)
+        .follow_links(false)
+        .sort_by_file_name();
+    for item in walker {
+        let item = item.map_err(|error| PayloadError::Io {
+            path: error.path().map_or_else(
+                || root.display().to_string(),
+                |path| path.display().to_string(),
+            ),
+            message: error.to_string(),
+        })?;
+        let path = item.path();
+        let relative = path.strip_prefix(root).map_err(|error| PayloadError::Io {
+            path: path.display().to_string(),
+            message: error.to_string(),
+        })?;
+        let relative = relative
+            .to_str()
+            .ok_or_else(|| PayloadError::NonUtf8Path(path.display().to_string()))?
+            .replace('\\', "/");
+        let metadata = std::fs::symlink_metadata(path).map_err(|error| PayloadError::Io {
+            path: path.display().to_string(),
+            message: error.to_string(),
+        })?;
+        entries.push(entry_for(&relative, path, &metadata)?);
+    }
+    Ok(entries)
+}
+
+fn entry_for(
+    relative: &str,
+    path: &Path,
+    metadata: &std::fs::Metadata,
+) -> Result<PayloadEntry, PayloadError> {
+    if metadata.file_type().is_symlink() {
+        let target = std::fs::read_link(path).map_err(|error| PayloadError::Io {
+            path: path.display().to_string(),
+            message: error.to_string(),
+        })?;
+        let target = target
+            .to_str()
+            .ok_or_else(|| PayloadError::NonUtf8Path(path.display().to_string()))?;
+        return Ok(PayloadEntry::Symlink {
+            path: relative.to_string(),
+            target: target.to_string(),
+        });
+    }
+    if metadata.is_dir() {
+        return Ok(PayloadEntry::Directory {
+            path: relative.to_string(),
+        });
+    }
+    file_entry(relative, path, metadata)
+}
+
+fn file_entry(
+    relative: &str,
+    path: &Path,
+    metadata: &std::fs::Metadata,
+) -> Result<PayloadEntry, PayloadError> {
+    let executable = is_executable(metadata);
+    let head = read_head(path)?;
+    Ok(PayloadEntry::File {
+        path: relative.to_string(),
+        size: metadata.len(),
+        executable,
+        head,
+    })
+}
+
+#[cfg(unix)]
+fn is_executable(metadata: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt as _;
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn is_executable(_metadata: &std::fs::Metadata) -> bool {
+    false
+}
+
+fn read_head(path: &Path) -> Result<Vec<u8>, PayloadError> {
+    use std::io::Read as _;
+    let mut file = std::fs::File::open(path).map_err(|error| PayloadError::Io {
+        path: path.display().to_string(),
+        message: error.to_string(),
+    })?;
+    let mut head = [0u8; 4];
+    let mut read = 0;
+    while read < head.len() {
+        let count = file
+            .read(&mut head[read..])
+            .map_err(|error| PayloadError::Io {
+                path: path.display().to_string(),
+                message: error.to_string(),
+            })?;
+        if count == 0 {
+            break;
+        }
+        read += count;
+    }
+    Ok(head[..read].to_vec())
 }
 
 /// Render the `rattler-build` recipe for a validated payload.
@@ -705,6 +887,26 @@ pub enum PayloadError {
     InvalidSourceUrl(String),
     #[error("source sha256 `{0}` must be exactly 64 lowercase hexadecimal digits")]
     InvalidSha256(String),
+    #[error(
+        "fetched artifact {path} has sha256 {actual}, but the config declared {expected}; the upstream changed — verify the new bytes and update source.sha256, or pin a version that still matches"
+    )]
+    ArtifactMismatch {
+        path: String,
+        expected: String,
+        actual: String,
+    },
+    #[error(
+        "payload path {0} is not valid UTF-8; payload paths must be UTF-8 so the recipe can name them"
+    )]
+    NonUtf8Path(String),
+    #[error(
+        "the config-declared `prepare` command `{command}` failed: {detail}; it must fetch the payload and leave it at the configured artifact/payload paths"
+    )]
+    PrepareFailed { command: String, detail: String },
+    #[error("{0}")]
+    InvalidConfig(String),
+    #[error("payload platform `{0}` is not one of the five supported platform ids")]
+    InvalidPlatform(String),
     #[error("{}", budget_message(.0))]
     Budget(Vec<BudgetViolation>),
     #[error("the build toolchain failed: {0}")]

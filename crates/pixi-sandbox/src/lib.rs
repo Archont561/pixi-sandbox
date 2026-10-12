@@ -10,6 +10,7 @@ pub mod github;
 pub mod host_probe;
 pub mod pack;
 pub mod pipeline;
+pub mod prepare;
 pub mod release;
 pub mod self_update;
 pub mod standalone;
