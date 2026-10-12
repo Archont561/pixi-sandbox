@@ -102,3 +102,48 @@ in the workflow's `env:` block.
 `.pixi/`, `target/`, `vendor/`, `.pixi-sandbox/`, `node_modules/`, `docs/dist/` and
 `.sandbox-*`. The payload lives on the sandbox branch; the crate sources are vendored on
 demand; a fixture that grows past a quarter of a MiB fails a test.
+
+## Working on pixi-sandbox itself
+
+Clone and run the suite — it includes the fixture-backed
+doctor → publish → network-isolated restore lifecycle (on Linux the e2e suite re-runs the
+restore inside `unshare -rn`):
+
+```bash
+git clone https://github.com/Archont561/pixi-sandbox && cd pixi-sandbox
+pixi run --frozen test
+pixi run --frozen lint
+```
+
+Every task goes through the pixi binary — never bare `cargo`, `bun`, or `taplo`. The command CI
+runs is the command you run locally, so a red gate reproduces in one paste.
+
+## Shipping the tool
+
+The package is a conda package built from the workspace. The task runs in the empty `package`
+environment — which is how the release matrix builds one variant per native runner, `win-64`
+included:
+
+```bash
+pixi run -e package package                        # build the variant for this runner
+pixi run -e package xtask smoke-conda-package      # its smoke test, same environment
+```
+
+The canonical install is the ecosystem channel:
+
+```bash
+pixi global install -c https://prefix.dev/archont561/archont561 -c conda-forge pixi-sandbox
+```
+
+Measured: 34s to build a 594 KB package (1.26 MiB stripped binary); the channel write produces
+`repodata.json` + `.zst` + sharded repodata, so a plain static host works as a channel. Always
+combine with `-c conda-forge`.
+
+## Editing this documentation
+
+The site is Astro + Starlight under `docs/`, a bun workspace member. Build it with
+`pixi run docs build` (or `bun run build` inside `docs/`); the site never carries a literal release
+tag — the config substitutes `__VERSION__` from the workspace manifest, so a release commit
+rewrites zero documentation lines. Pages are MDX in `docs/src/content/docs/`, organized by the
+role/lifecycle IA: propose structural changes as a backlog task first, and keep the airlock page
+actionable for someone with no network and no context.
