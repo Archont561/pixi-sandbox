@@ -77,7 +77,7 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
     let config_path = publisher.join("pixi-sandbox-payload.toml");
     fs::write(&config_path, config).expect("payload config");
 
-    let mut build = Command::new(cargo_bin("pixi-sandbox").expect("built CLI"));
+    let mut build = Command::new(cargo_bin("pixi-sandbox"));
     build
         .current_dir(&publisher)
         .args(["wrap-payload", "--config"])
