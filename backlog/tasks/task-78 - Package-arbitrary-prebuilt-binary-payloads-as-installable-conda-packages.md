@@ -1,10 +1,10 @@
 ---
 id: TASK-78
 title: Package arbitrary prebuilt binary payloads as installable conda packages
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-06 21:01'
-updated_date: '2026-10-11 21:48'
+updated_date: '2026-10-12 12:00'
 labels:
   - packaging
   - conda
@@ -67,3 +67,11 @@ Keep the boundary against the sandbox transport explicit. The transport carries 
 - [ ] #2 pixi run --frozen lint
 - [ ] #3 pixi run --frozen test
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Slices 0 and 1, local commits only, nothing pushed. Slice 0: ADR-28 is written as `status: proposed`; AC#1 is checked only when that record is accepted. Slice 1: `pixi_sandbox_core::payload` holds the pure rules: `validate_payload` (names, safe paths, conflicts, link containment, native executables against `noarch` and the platform, the entry point), `budget_preflight` (blob on uncompressed bytes, transport counted twice), `provenance` and `write_provenance`, `render_recipe` (install under `libexec/<name>/`, optional POSIX launcher that execs in place), and `PayloadToolchain` with `plan_wrap` and `wrap`. Tests are in `crates/pixi-sandbox-core/tests/payload.rs` (70 cases, a fake toolchain, and a source guard for AC#9). Gates: fmt clean, clippy clean for core, lint and full test recorded in the commit.
+
+Still open, and not claimed by any box: the `pixi sandbox wrap-payload` CLI verb; the real rattler-build adapter, which is the first proof of AC#2 (a build from disk) and of the recipe's `source:` and `$RECIPE_DIR` semantics; AC#3's mode and link round trip, which needs CI; the `prepare` command with its SHA256 check (AC#13); AC#5 and AC#11, which need connected proofs; and the guide for AC#8 and AC#10. The `[mirrors]` `file://` question is still unverified (ADR-28, open items).
+<!-- SECTION:NOTES:END -->
