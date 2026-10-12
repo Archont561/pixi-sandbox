@@ -1,0 +1,165 @@
+---
+title: Migration from composite Actions
+description: Map every retired composite Action and the reusable publisher to the generated direct-CLI workflow, with before/after commands and a checklist.
+---
+
+import ContextChips from '../../../components/ContextChips.astro';
+import GuideMeta from '../../../components/GuideMeta.astro';
+
+The public composite Actions and the repository's reusable publisher were retired after native
+packages became the canonical installation path. New refs do not contain the root, `setup`, or
+`publish` Actions or the repository reusable workflow. Immutable older tags and commit SHAs remain
+available for historical builds, so a pin you already have keeps resolving — nothing you merged
+yesterday breaks today.
+
+This page maps **every retired interface** to its replacement, with before/after commands, the
+generated workflow changes the migration requires, and the ordered upgrade checklist.
+
+<GuideMeta
+  outcome="Every retired interface replaced by the generated, project-owned publisher — nothing in this repository is called at runtime."
+  audience="Maintainers of projects still calling the retired composite Actions or the reusable publisher."
+  prerequisites="A v0.3.x consumer workflow and Pixi on a connected host."
+  machine="Connected host — the generated workflow runs on CI runners."
+  maturity="Stable — immutable old refs stay resolvable for historical builds."
+/>
+
+## The migration matrix
+
+| Retired interface | What it did | Replacement |
+|---|---|---|
+| Root composite Action | Whole-job entrypoint: toolchain setup plus publish in one call | The generated `.github/workflows/publish-sandbox.yml` |
+| `setup` composite Action | Installed pixi and the pixi-sandbox CLI | `prefix-dev/setup-pixi` plus `pixi global install` from the ecosystem channel — both rendered into the generated workflow |
+| `publish` composite Action | Packed, verified, and force-pushed the transport | The generated workflow's `pipeline` step: install, `pack`, `doctor --verify`, `publish` |
+| Repository reusable publisher | A reusable workflow consumer repos called with `uses:` | The same generated, project-owned `publish-sandbox.yml` |
+
+Nothing in the retired set has a successor that lives in this repository: the replacement is a
+file your project owns and reviews.
+
+## Before and after
+
+### Before — a v0.3.x consumer workflow
+
+Your workflow called one or more retired interfaces by pinned ref:
+
+```yaml
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@...
+      - uses: Archont561/pixi-sandbox@v0.3.0        # root composite Action (stale-ref-allowed)
+      - uses: Archont561/pixi-sandbox/setup@v0.3.0   # setup composite Action (stale-ref-allowed)
+      - uses: Archont561/pixi-sandbox/publish@v0.3.0 # publish composite Action (stale-ref-allowed)
+      # or: uses: Archont561/pixi-sandbox/.github/workflows/<reusable>@v0.3.0 (stale-ref-allowed)
+```
+
+### After — one command set, on a connected host with Pixi installed
+
+<ContextChips chips={["connected", "network"]} />
+
+```bash
+pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox
+pixi-sandbox init
+```
+
+`init` writes `pixi-sandbox.toml`, the generated `.github/workflows/publish-sandbox.yml` and
+`.github/workflows/relock.yml`, and this platform's `restore.sh` launcher. Review them and commit:
+
+```bash
+git add pixi-sandbox.toml .github/workflows/publish-sandbox.yml .github/workflows/relock.yml restore.sh
+```
+
+Delete the steps that called the retired interfaces — the generated file replaces them end to end.
+
+## What the generated workflow gives you instead
+
+Every capability the retired Actions carried has a named successor in the generated workflow:
+
+| Retired capability | Where it lives now |
+|---|---|
+| Native publish matrix | `plan --json` feeds `strategy.matrix.include` — one job per bundle × platform |
+| Checksum-verified toolchain | The "Fetch the pinned pixi-sandbox release" step (`pixi-sandbox fetch-release`) verifies the binary against the release's `SHA256SUMS` |
+| Verification gate | `doctor --verify` inside `pipeline`, budgets enforced before any push |
+| Cargo vendoring | `--cargo-vendor` handed to `pipeline` from the plan matrix |
+| Orphan-branch publish | `publish` inside `pipeline` — `<prefix>/<bundle>-<platform>`, force-push, `--keep` rotation |
+| Upgrade lane | The generated workflow's own `upgrade` job proposes regenerated files as a pull request |
+
+The full walkthrough is in [CI publishing](/pixi-sandbox/guides/ci-publishing/); the `[workflow]`
+table that renders CI policy into the file is in
+[Generated workflow policy](/pixi-sandbox/guides/workflow-policy/).
+
+## Generated workflow changes — checklist
+
+Work through this once, per consumer repository:
+
+- [ ] `.github/workflows/publish-sandbox.yml` exists and is committed — generated, never hand-edited.
+- [ ] Every step that called a retired Action (`uses: Archont561/pixi-sandbox...`) is deleted.
+- [ ] The workflow pins `PIXI_SANDBOX_VERSION` to an exact release; no floating ref anywhere.
+- [ ] `pixi-sandbox.toml` is committed next to the workflow — config is reviewed data.
+- [ ] Customization that used to ride along in a retired Action's `with:` inputs now lives in the
+      `[workflow]` table of `pixi-sandbox.toml`.
+- [ ] Optional: the `PIXI_SANDBOX_UPGRADE_TOKEN` secret is added (Workflows-scoped) if you want the
+      weekly upgrade lane to open its own pull requests.
+- [ ] `actionlint` passes on the regenerated file.
+- [ ] Historical jobs keep resolving their old immutable refs; nothing about the migration rewrites
+      them.
+
+## Upgrade checklist — the migration as a runbook
+
+1. **Install the CLI** — the `pixi global install` command above, on a connected host.
+2. **Generate** — `pixi-sandbox init`; read the plan output before accepting the writes.
+3. **Review** — the generated workflow, the relock workflow, and `pixi-sandbox.toml`; adjust
+   `[workflow]` policy rather than the file.
+4. **Commit** — add the four generated paths in one commit, message noting the migration.
+5. **Delete the old calls** — remove the retired `uses:` steps (or the reusable-workflow job).
+6. **Push and verify** — the publish job runs `plan`, then one `pipeline` step per matrix entry;
+   confirm the `publish-diagnostics-<platform>` artifact and the new orphan branch
+   `sandbox/<bundle>-<platform>`.
+7. **Hand over to the upgrade lane** — from the next release on, the `upgrade` job proposes
+   regenerated files itself. Dispatch it with an exact version to migrate on demand:
+
+<ContextChips chips={["ci", "network"]} />
+
+```bash
+gh workflow run .github/workflows/publish-sandbox.yml --ref main -f upgrade=X.Y.Z
+```
+
+## If you cannot migrate yet
+
+An old pin is not an emergency: immutable tags and SHAs stay available for historical builds. What
+you give up by waiting is the upgrade lane, the budgets gate, and reviewable generated files — the
+[compatibility page](/pixi-sandbox/compatibility/) lists what each documented release supports.
+
+## Verification
+
+`actionlint` is clean on the regenerated file, the old `uses:` steps are gone, and the first push
+runs the generated publisher to a green publish with the `publish-diagnostics-<platform>` artifact:
+
+<ContextChips chips={["ci", "network"]} />
+
+```bash
+actionlint .github/workflows/publish-sandbox.yml
+gh run list --workflow publish-sandbox.yml --limit 1
+```
+
+## Failure modes
+
+- **A v0.4.3, v0.4.4, or v0.5.0 generated workflow fails with `curl: (22)`** — the download URL was
+  built from the consumer's own repository; re-run `pixi-sandbox init --force` with a patched CLI
+  (see [CI publishing](/pixi-sandbox/guides/ci-publishing/), issue #80).
+- **The upgrade pull request is refused with a 403** — the token cannot write workflow files; the
+  job stays green and uploads the `git apply`-able patch instead.
+- **A publish leg fails after migrating** — the same failure surfaces as any generated publisher:
+  [Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/) and
+  [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/).
+
+## Next steps
+
+**Run the publisher** — [CI publishing](/pixi-sandbox/guides/ci-publishing/). Prerequisite: the
+generated workflow and `pixi-sandbox.toml` committed. Related:
+
+- [Compatibility and releases](/pixi-sandbox/compatibility/) — support matrix and versioning policy
+- [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) — `pack` and
+  `doctor --verify` locally
+- [Publish transport branches](/pixi-sandbox/reference/cli/publish/) — branch naming and `--keep`
+- [First offline bundle](/pixi-sandbox/first-offline-bundle/) — the same journey from zero

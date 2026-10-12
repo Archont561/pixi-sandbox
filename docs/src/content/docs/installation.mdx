@@ -5,6 +5,7 @@ description: Install pixi-sandbox via cargo, pixi global, or verified release bi
 
 import { Icon } from 'astro-icon/components';
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import ContextChips from '../../components/ContextChips.astro';
 
 Pixi-sandbox is a pure Rust CLI with static musl binaries — no Python, no runtime deps.
 
@@ -12,6 +13,8 @@ Pixi-sandbox is a pure Rust CLI with static musl binaries — no Python, no runt
 
 <Tabs>
   <TabItem label="cargo install">
+    <ContextChips chips={["connected", "network"]} />
+
     ```bash
     cargo install pixi-sandbox
     pixi-sandbox --version
@@ -20,6 +23,8 @@ Pixi-sandbox is a pure Rust CLI with static musl binaries — no Python, no runt
     ```
   </TabItem>
   <TabItem label="cargo from git">
+    <ContextChips chips={["connected", "network"]} />
+
     ```bash
     cargo install --git https://github.com/Archont561/pixi-sandbox pixi-sandbox
     ```
@@ -62,6 +67,8 @@ Default template `pixi-sandbox-{target}{exe}` — verified by setup action befor
 
 ## From Source
 
+<ContextChips chips={["connected", "network"]} />
+
 ```bash
 git clone https://github.com/Archont561/pixi-sandbox
 cd pixi-sandbox
@@ -70,6 +77,8 @@ cargo build -p pixi-sandbox --release
 ```
 
 ## Verify Installation
+
+<ContextChips chips={["connected"]} />
 
 ```bash
 pixi-sandbox tools list
@@ -80,6 +89,6 @@ pixi sandbox --help  # via pixi extension
 ```
 
 <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem; padding: 1rem; background: var(--sl-color-accent-low); border-radius: 0.5rem;">
-  <Icon name="lucide:info" size={20} />
+  <Icon aria-hidden="true" name="lucide:info" size={20} />
   <span>All binaries are static: musl on Linux, native on macOS/Windows. No dynamic `PT_INTERP` — verified by `doctor` and `verify.rs`.</span>
 </div>

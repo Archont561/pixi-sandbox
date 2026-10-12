@@ -1,0 +1,211 @@
+---
+title: Troubleshooting and incident response
+description: "Symptom-first recovery for the airlock: what you see, why it happens, the safe immediate action, the evidence to collect, and how to recover."
+---
+
+import { Icon } from 'astro-icon/components';
+
+Under pressure nobody searches for a command — they search for the symptom. This page is organized
+that way: find what you are seeing, take the safe immediate action **first**, collect the evidence,
+then recover. The golden rule from the operator checklist applies to every entry: **if any step
+tries to reach the network, stop.**
+
+## Evidence to collect, always
+
+Before changing anything, capture the same kit for every incident:
+
+- the **durable log** — re-run the failing phase with `--log-file /path/to/new/<name>.log` (the
+  path must not exist; the log is flushed after every phase and carries the complete causal error
+  chain);
+- the **verification report** — `pixi-sandbox doctor --branch-location <checkout> --verify` (and
+  `--json` when you want to script it);
+- the **refs** — `git branch -a` on the airlock clone, `git ls-remote origin 'sandbox/*'` and the
+  workflow's publish job on the connected side;
+- for CI, the **`publish-diagnostics-<platform>` artifact** uploaded by the failed leg.
+
+Logs are bounded and redacted — a configured Git remote is recorded only as `<configured>`, and
+credentials never appear. Transfer the log **beside** the incident report, never inside the
+transport branch. Details: [Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/).
+
+---
+
+## 1. Restore attempted network access
+
+**Symptom.** A step during `./restore.sh` or `pixi-sandbox restore` tries to reach a remote — a
+`git fetch` appears, or pixi contacts a channel.
+
+**Likely cause.** The launcher fetches the sandbox branch when a connected clone lacks it (by
+design, as a convenience); the transfer did not carry the branch; or a command ran without
+`--offline`.
+
+**Safe immediate action.** Stop the command. Set `PIXI_SANDBOX_FETCH=skip` and re-run so only
+local Git objects are used — a fully local airlock must never attempt a remote.
+
+**Evidence.** The restore/doctor `--log-file`; `git branch -a` in the clone; whether
+`PIXI_SANDBOX_FETCH` was set; the bundle creation command.
+
+**Recovery.** Rebuild the transfer to include both refs —
+`git bundle create project-airlock.bundle main sandbox/<bundle>-<platform>` — re-clone, and restore
+with `PIXI_SANDBOX_FETCH=skip`.
+
+**Escalate when** any network attempt happens with `PIXI_SANDBOX_FETCH=skip` set: the restore is
+designed to be fully local, so that is a defect. File it with the log and the branch refs.
+
+## 2. Doctor found a digest mismatch
+
+**Symptom.** `doctor --verify` exits non-zero and names a blob whose SHA-256 differs from
+`manifest.json`.
+
+**Likely cause.** A truncated or corrupted transfer (partial bundle, failing disk), a branch
+republished with an inconsistent manifest, or an edited transport directory.
+
+**Safe immediate action.** Stop. Treat any verification failure as a hard stop — never restore over
+a failed verify, and never hand-patch a blob to make the hash match.
+
+**Evidence.** The doctor `--log-file`; the failing blob path with expected and actual digests; the
+branch SHA (`git rev-parse HEAD` inside the checkout).
+
+**Recovery.** Re-transfer — re-create the bundle or re-fetch the branch — and re-verify. If the
+branch itself is bad, repack and republish from the connected side.
+
+**Escalate when** a freshly published branch fails verification: that points at the pack/publish
+path, not the transfer. File it with `manifest.json` and the branch ref.
+
+## 3. The sandbox branch is not in the transfer bundle
+
+**Symptom.** `./restore.sh` cannot resolve a branch, or `git rev-parse sandbox/<bundle>-<platform>`
+fails on the airlock.
+
+**Likely cause.** The bundle or clone was created without the sandbox ref; the branch name does not
+match the config (a bundle or prefix was renamed); or the publish never ran.
+
+**Safe immediate action.** Stop and inventory what actually transferred — `git branch -a` on the
+airlock, `git ls-remote origin 'sandbox/*'` on the connected side.
+
+**Evidence.** The exact bundle creation command; `pixi-sandbox plan --config pixi-sandbox.toml
+--json` naming the expected branch; the publish job's verdict.
+
+**Recovery.** Include both refs in the bundle, or pin the selection explicitly with
+`PIXI_SANDBOX_BRANCH=<branch>` / `PIXI_SANDBOX_BUNDLE=<bundle>`.
+
+**Escalate when** the publisher ran green but the branch is absent — read the
+`publish-diagnostics-<platform>` artifact before re-running anything.
+
+## 4. Restore cannot execute the embedded binary
+
+**Symptom.** The restore dies executing the branch's own binary — for example
+`Couldn't open "…/trampoline_configuration/pixi-sandbox.json"` — or the embedded tool refuses to
+run.
+
+**Likely cause.** The transport embedded a `pixi global install` **launcher trampoline** instead of
+a standalone binary: it passes every hash check and dies at restore (issue #81). The other causes
+are a dynamically linked self-bin or a binary packed for the wrong platform.
+
+**Safe immediate action.** Stop. Do not copy binaries into the branch by hand.
+
+**Evidence.** The error text; `pack`'s probe output (it executes `--self-bin` under an empty
+environment and refuses a trampoline before embedding); the `doctor --verify` standalone probe
+result — the same guard, run on the target host after a green hash report.
+
+**Recovery.** Repack with the checksum-verified release asset (`pixi-sandbox-<target>` checked
+against the release's `SHA256SUMS`) or a binary you built yourself as `--self-bin`; republish;
+re-verify.
+
+**Escalate when** `pack` accepted the binary — the probe exists precisely to refuse this, so a
+bypass is a defect. File it with the pack command and the binary's origin.
+
+## 5. Git object is larger than the host's limit
+
+**Symptom.** The push is rejected: the host reports a file beyond its blob limit (GitHub's is
+100 MiB).
+
+**Likely cause.** A single whole file above the shard limit reached the branch unsharded — the
+shard limit was raised above the host's ceiling, or the file is one indivisible payload.
+
+**Safe immediate action.** Stop. Do not split the file by hand inside the transport, and do not
+move payload outside the self-contained branch.
+
+**Evidence.** The push error; the pack log; the size breakdown from `doctor --json`.
+
+**Recovery.** Lower `--shard-limit-mib` (default 95) and repack, or split the reviewed environment
+set into separate `[[bundle]]` entries and republish. Sharding is whole-file: git dedup then makes
+the incremental publishes cheap.
+
+**Escalate when** rejections repeat on a self-managed host — the ceilings and the rotation caveat
+are in [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/).
+
+## 6. Host lacks GUI, display, or font capability
+
+**Symptom.** The restore verified perfectly but the GUI application will not open; or `doctor`
+prints `missing` verdicts for `fontconfig`, `dbus`, or `display`.
+
+**Likely cause.** Host requirements are declared but unsatisfied on this machine — or were never
+declared, so nothing names the gap until the application fails (issue #109).
+
+**Safe immediate action.** Read the verdicts:
+`pixi-sandbox doctor --branch-location <checkout>` (add `--json` for a script). Nothing is
+auto-installed; following a remedy is a deliberate administrator action.
+
+**Evidence.** The verdict block (`satisfied` / `missing` / `unknown` / `not applicable`, each with
+its remedy); the `[host_requirements]` table in the project's config.
+
+**Recovery.** Install the named distro packages, start the named service, or run the workload under
+a headless provider (`xvfb-run`). To make the next transport self-describing, declare the
+requirements in config and repack.
+
+**Escalate when** verdicts are `unknown`: a host that cannot be inspected is not a broken host —
+verify by hand if it matters, and note that `unknown` never fails an exit code.
+
+## 7. CI publish is over budget
+
+**Symptom.** The generated workflow fails at the verification gate
+(`doctor --verify --budget-config`) naming an exceeded ceiling.
+
+**Likely cause.** The transport grew past one of the `[budgets]` ceilings — blob, transport,
+repository-push, or restore-disk.
+
+**Safe immediate action.** Stop. The failure is the design working: the gate runs before `publish`,
+so the last healthy orphan branch is untouched.
+
+**Evidence.** The gate output naming the ceiling; the `publish-diagnostics-<platform>` artifact; the
+sizes from `doctor --json`.
+
+**Recovery.** Split the reviewed environment set into separate `[[bundle]]` entries and republish.
+Budgets are changed in config, never by editing the transport.
+
+**Escalate when** a ceiling must legitimately move — that is a reviewed config change; see
+[Generated workflow policy](/pixi-sandbox/guides/workflow-policy/) and
+[Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/).
+
+## 8. Vendored Cargo build still fetches
+
+**Symptom.** `pixi run --frozen -- cargo build --offline` tries to download crates on the airlock.
+
+**Likely cause.** The vendor tree and `Cargo.lock` disagree (the lock moved after packing); the
+command ran outside `pixi run`, so the activation hook never set `CARGO_HOME` to the sandbox-owned
+cargo home; or a build script genuinely needs the network.
+
+**Safe immediate action.** Stop the build — do not let it "fix" itself by downloading.
+
+**Evidence.** The crate it reached for; whether `pixi install --frozen --offline` did real work
+(tree/lock drift); the restore's `--cargo-config` mode; `doctor --verify-restored` output.
+
+**Recovery.** Re-pack from a connected host with a matching `Cargo.lock` (the generated relock
+workflow keeps it fresh on pull requests), republish, and re-restore. Run crate commands through
+`pixi run --frozen --` so the hook wires `CARGO_HOME`.
+
+**Escalate when** the restored tree fails `--verify-restored`: the transport is inconsistent, not
+the vendor mode. File it with the per-file oracle diff.
+
+---
+
+## Filing an incident
+
+A reproducible report needs: the command that failed (with its flags), the platform, the transport
+manifest's tool versions, the branch ref, and the bounded log excerpt. Never attach raw credentials
+— they are not in the logs to begin with. Then:
+
+- restore-side incidents: [Restore on the airlock](/pixi-sandbox/restore/) for the full checklist;
+- publish-side incidents: [CI publishing](/pixi-sandbox/guides/ci-publishing/) for the failure
+  surfaces and the upgrade lane;
+- the guarantees behind every check: [Verification guarantees](/pixi-sandbox/security/verification-guarantees/).

@@ -1,18 +1,30 @@
 ---
-title: Using in your project
-description: User-facing guide to integrate pixi-sandbox into any pixi project.
+title: Configure bundles
+description: "The project-owner guide: declare environments and platforms, generate the workflow and launcher, and know exactly what crosses the air gap."
 ---
 
 import { Icon } from 'astro-icon/components';
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import ContextChips from '../../../components/ContextChips.astro';
+import GuideMeta from '../../../components/GuideMeta.astro';
 
 This guide is for **project owners** who want to ship their pixi environments to airlocked machines.
+
+<GuideMeta
+  outcome="A reviewed pixi-sandbox.toml, the generated workflow and launcher, and a published sandbox branch."
+  audience="Project owners deciding what ships to the airlock."
+  prerequisites="pixi.toml and pixi.lock; Pixi and Git on the connected host; Git and tar on the airlock."
+  machine="Connected host to configure and publish; the airlock to restore."
+  maturity="Stable — the full project-owner walkthrough."
+/>
 
 ## The two product commands
 
 Run the first command from the root of your Pixi project on the **connected side**:
 
 Connected hosts need Pixi installed. Install the native package from the canonical channel, then initialise:
+
+<ContextChips chips={["connected", "network"]} />
 
 ```bash
 pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox
@@ -33,6 +45,8 @@ Review and commit those files. Existing projects that carry `.pixi-sandbox.toml`
 an explicit `--config PATH` wins over both conventional names. Pushing the project runs the generated workflow and publishes the
 configured `sandbox/<bundle>-<platform>` branches. Transfer Git history containing the project and
 sandbox branch into the disconnected network. On the **airlock**, the second product command is:
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 ./restore.sh
@@ -82,6 +96,8 @@ cargo_vendor = false
 
 Validate:
 
+<ContextChips chips={["connected"]} />
+
 ```bash
 pixi-sandbox plan --config pixi-sandbox.toml
 pixi-sandbox plan --config pixi-sandbox.toml --json
@@ -93,11 +109,17 @@ This emits a GitHub Actions matrix — one job per `bundle × platform`.
 
 <Tabs>
   <TabItem label="Rust self-bin (recommended)">
+    <ContextChips chips={["connected"]} />
+
     ```bash
     # Build static self-binary
     cargo build -p pixi-sandbox --release
+    ```
 
-    # Pack
+    <ContextChips chips={["connected"]} />
+
+    ```bash
+    # Pack: envs + vendored crates + pinned tools
     pixi-sandbox pack \
       --repo-root . \
       --envs dev,docs \
@@ -106,11 +128,19 @@ This emits a GitHub Actions matrix — one job per `bundle × platform`.
       --cargo-vendor \
       --fetch-tools \
       --self-bin target/release/pixi-sandbox
+    ```
 
+    <ContextChips chips={["connected", "readonly"]} />
+
+    ```bash
     # Verify (writes nothing)
     pixi-sandbox doctor --branch-location .sandbox-out --verify
+    ```
 
-    # Publish
+    <ContextChips chips={["connected", "network"]} />
+
+    ```bash
+    # Publish as the orphan branch
     pixi-sandbox publish \
       --input-dir .sandbox-out \
       --branch-name sandbox/developer-linux-64 \
@@ -118,6 +148,8 @@ This emits a GitHub Actions matrix — one job per `bundle × platform`.
     ```
   </TabItem>
   <TabItem label="Release binary">
+    <ContextChips chips={["connected"]} />
+
     ```bash
     # Download verified release
     # (use setup action in CI, or manual curl + sha256sum check)
@@ -160,17 +192,9 @@ sandbox/developer-linux-64 (orphan branch)
 └── AGENTS.md                      # agent instructions
 ```
 
-Sizes (measured small project, 2 envs, 33 crates, linux-64):
-
-| Part | Size |
-|------|------|
-| conda envs (.conda) | 133 MB |
-| cargo vendor (loose) | 33 MB |
-| tools (pixi, pixi-unpack, self) | 96 MB |
-| **transport dir** | **262 MB** |
-| **orphan branch after git dedup** | **~110 MB** |
-
-Tools dominate small bundles — expected, git stores each tool blob once.
+Sizes depend on the environment set, the crates, and the tools. The measured breakdown, the
+sharding mechanism, and the pre-push budgets are in
+[Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/).
 
 ## 5. Restore on airlock
 
@@ -188,6 +212,8 @@ and restoration to the branch's `.pixi-sandbox/tools/<platform>/pixi-sandbox`. W
 cannot decide — no bundle covers this platform, or several do — it falls back to the branch
 baked in at `init` time. Override branch selection only when needed:
 
+<ContextChips chips={["airlock", "offline"]} />
+
 ```bash
 PIXI_SANDBOX_BRANCH=sandbox/developer-linux-64 ./restore.sh  # exact branch
 PIXI_SANDBOX_BUNDLE=developer ./restore.sh                   # pick among several bundles
@@ -197,38 +223,24 @@ See [Airlock Restore](/pixi-sandbox/restore/) for transfer options and the opera
 
 ## 6. Without cargo vendoring
 
-If you only need conda envs:
-
-```toml
-# pixi-sandbox.toml
-schema = 1
-cargo_vendor = false
-
-[[bundle]]
-name = "python"
-environments = ["dev", "test"]
-platforms = ["linux-64", "win-64"]
-```
-
-And pack without `--cargo-vendor`:
-
-```bash
-pixi-sandbox pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --fetch-tools --self-bin target/release/pixi-sandbox
-```
+Conda-only projects ship no crates at all. Set `cargo_vendor = false` on the bundle (or at the top
+level), pack without `--cargo-vendor`, and the far side never sees a vendor tree. The full story —
+what is vendored, how the restore wires `CARGO_HOME`, and the offline build proof — is in
+[Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/).
 
 ## 7. Tips
 
 <div style="display: grid; gap: 0.75rem; margin: 1rem 0;">
   <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:lightbulb" size={20} />
+    <Icon aria-hidden="true" name="lucide:lightbulb" size={20} />
     <div><strong>Keep envs explicit</strong> — never infer every env from pixi.toml. Test/bench envs shouldn't be published.</div>
   </div>
   <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:hard-drive" size={20} />
+    <Icon aria-hidden="true" name="lucide:hard-drive" size={20} />
     <div><strong>Work dir on same filesystem</strong> — default <code>.pixi/.restore-work</code>. Never use small tmpfs <code>/tmp</code> (pixi-unpack stages into TMPDIR).</div>
   </div>
   <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:shield-check" size={20} />
+    <Icon aria-hidden="true" name="lucide:shield-check" size={20} />
     <div><strong>Verify before write</strong> — <code>doctor --verify</code> is the same code as restore's preflight. CI must run it.</div>
   </div>
 </div>
@@ -246,3 +258,35 @@ CLI came from.
 > publisher's namespace root, which is a web page, not a channel — to
 > `[workspace].channels`, so `pixi lock` failed with a 404 on any project with at least one
 > dependency. Remove that entry from your `channels` array; nothing needs to replace it.
+
+## Verification
+
+`plan` prints exactly the matrix you intended, `doctor --verify` is green, and the remote carries
+the orphan branch:
+
+<ContextChips chips={["connected", "network"]} />
+
+```bash
+pixi-sandbox plan --config pixi-sandbox.toml --json
+pixi-sandbox doctor --branch-location .sandbox-out --verify
+git ls-remote origin 'sandbox/*'
+```
+
+## Failure modes
+
+- **The sandbox branch is missing from the transfer** — entry 3 in
+  [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/): the bundle must carry
+  both `main` and the sandbox branch.
+- **A push is rejected for an oversized object** — entry 5; the shard limit and budgets are in
+  [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/).
+- **The restore dies on a missing GUI, font, or display server** — entry 6; declare what the
+  workload needs in `[host_requirements]` ([Host requirements](/pixi-sandbox/security/host-requirements/)).
+
+## Next steps
+
+**Restore on the airlock** — [Restore on the airlock](/pixi-sandbox/restore/). Prerequisite: the
+project and its sandbox branch carried across the air gap in a Git bundle. Related:
+
+- [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/) — before you grow a bundle
+- [Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/) — for Rust workspaces
+- [Generated workflow policy](/pixi-sandbox/guides/workflow-policy/) — the `[workflow]` table

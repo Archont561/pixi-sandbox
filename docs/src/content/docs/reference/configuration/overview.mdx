@@ -1,0 +1,98 @@
+---
+title: Configuration overview
+description: Where pixi-sandbox.toml lives, the schema and top-level fields, and the minimal configuration for a first transport.
+---
+
+import ContextChips from '../../../../components/ContextChips.astro';
+
+**Use this when** you are setting up `pixi-sandbox.toml` for the first time, or need the schema
+version and top-level field defaults. The policy tables — `[budgets]`, `[runners]`, `[[bundle]]`,
+`[workflow]`, `[host_requirements]` — are in
+[Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/).
+
+## File location
+
+`pixi-sandbox.toml` at the repository root is preferred. `pixi-sandbox init` falls back to an
+existing `.pixi-sandbox.toml` for compatibility, and `--config PATH` selects any other location.
+Validate the selected file with `pixi-sandbox plan --config pixi-sandbox.toml`.
+
+## Schema
+
+```toml
+schema = 1
+branch_prefix = "sandbox"   # optional, default "sandbox"
+cargo_vendor = true         # optional, default true, top-level default for bundles
+
+[[bundle]]
+name = "developer"          # used in branch name: <prefix>/<name>-<platform>
+environments = ["dev", "docs"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+```
+
+## Top-level fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `schema` | int | **required** `1` | Config schema version. Readers refuse newer. |
+| `branch_prefix` | string | `"sandbox"` | Prefix for orphan branches: `<prefix>/<bundle>-<platform>` |
+| `cargo_vendor` | bool | `true` | Default for bundles if not set per-bundle |
+| `budgets` | table | reviewed defaults | Hard pre-publish size ceilings enforced by `doctor --budget-config` in the generated workflow |
+| `runners` | table | `{}` | Map platform → runner label override |
+
+The schema default above applies when the field is omitted. For a **new** config, `init` explicitly
+enables Cargo vendoring only when the project root contains `Cargo.toml`; otherwise it writes
+`cargo_vendor = false`. A Rust project still needs a usable `Cargo.lock` before packing. Existing
+reviewed config is preserved, including with `init --force`. The language-neutral starter
+explicitly disables Cargo vendoring.
+
+## Minimal configuration
+
+One bundle, one environment, one platform, no Cargo vendoring — the shape the
+[First verified offline bundle](/pixi-sandbox/first-offline-bundle/) guide walks through:
+
+```toml
+schema = 1
+cargo_vendor = false
+
+[[bundle]]
+name = "minimal"
+environments = ["default"]
+platforms = ["linux-64"]
+```
+
+## Validation
+
+<ContextChips chips={["connected"]} />
+
+```bash
+pixi-sandbox plan --config .pixi-sandbox.toml
+pixi-sandbox plan --config .pixi-sandbox.toml --json  # GitHub Actions matrix
+
+# Lint in CI (keeps the release matrix valid against the embedded catalogue)
+pixi run sandbox-plan --json
+```
+
+Errors, each named by `plan`:
+
+- Unknown platform
+- Empty environments
+- Runner override unused
+- Platform without embedded tool pins
+- Invalid runner label
+- `[host_requirements]`: unknown capability or family, malformed `libc` floor, duplicate or
+  whitespace-bearing entry, empty table or empty family section
+
+## The project Pixi manifest is not modified
+
+`pixi-sandbox init` does not parse or edit `pixi.toml`; it only requires the manifest to exist —
+run init from a Pixi project. The CLI is installed globally with explicit channels
+(`https://prefix.dev/archont561/archont561`, the namespace's ecosystem channel), and a project's
+channel list never needs to know where the CLI came from. A 0.4.3-era
+`https://prefix.dev/archont561` entry in your `channels` serves no repodata — remove it; nothing
+needs to replace it.
+
+## Related
+
+- [Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/) — every policy table
+- [Configure bundles](/pixi-sandbox/guides/configure-bundles/) — the project-owner guide
+- [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) — `init`, `plan`, `pack`, `doctor`

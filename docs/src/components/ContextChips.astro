@@ -1,0 +1,30 @@
+---
+import { Icon } from "astro-icon/components";
+
+// Machine/network context chips (audit doc-18): running a connected-host command on an
+// airlock is a high-cost mistake, so every command block states where it runs and whether
+// it needs the network or writes files. Icon + text — never color alone — so the state
+// survives greyscale, print, and screen readers.
+const CHIPS = {
+  connected: { icon: "lucide:laptop", label: "Connected host" },
+  airlock: { icon: "lucide:lock", label: "Airlock" },
+  ci: { icon: "lucide:bot", label: "CI" },
+  network: { icon: "lucide:wifi", label: "Network required" },
+  offline: { icon: "lucide:wifi-off", label: "Offline only" },
+  readonly: { icon: "lucide:eye", label: "Read-only verification" },
+};
+
+const { chips }: { chips: string[] } = Astro.props;
+const known = chips.filter((c) => c in CHIPS);
+---
+
+{known.length > 0 && (
+  <div class="context-chips">
+    {known.map((key) => (
+      <span class={`context-chip ctx-${key}`}>
+        <Icon aria-hidden="true" name={CHIPS[key].icon} size={13} />
+        {CHIPS[key].label}
+      </span>
+    ))}
+  </div>
+)}

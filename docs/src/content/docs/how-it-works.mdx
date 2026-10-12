@@ -1,0 +1,133 @@
+---
+title: How it works
+description: The transport lifecycle end to end — what exists on each machine, what crosses the air gap, and what is verified.
+---
+
+import { Icon } from 'astro-icon/components';
+import SandboxDiagram from '../../components/SandboxDiagram.astro';
+
+pixi-sandbox is a two-sided tool. One side has a network; the other side must never need one.
+Everything in the documentation hangs off that split, so this page defines it once: the lifecycle,
+what lives on each machine, what crosses the gap, and what is proven at every step.
+
+## The lifecycle at a glance
+
+<div style="display: grid; grid-template-columns: auto 1fr; gap: 1rem; margin: 1.5rem 0;">
+  <div style="display: flex; flex-direction: column; align-items: center;">
+    <div style="width: 2rem; height: 2rem; background: #facc15; color: #000; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">1</div>
+    <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
+  </div>
+  <div>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:download" size={16} /> Install and verify the CLI</strong>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">On the connected host, install <code>pixi-sandbox</code> from the canonical channel and run <code>pixi-sandbox init</code>. The CLI writes only the files it owns — never your <code>pixi.toml</code>.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; align-items: center;">
+    <div style="width: 2rem; height: 2rem; background: #facc15; color: #000; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">2</div>
+    <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
+  </div>
+  <div>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:settings" size={16} /> Configure the bundle</strong>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">Declare which environments and platforms ship in <code>pixi-sandbox.toml</code>. <code>pixi-sandbox plan</code> turns that into the publish matrix — one <code>bundle × platform</code> job per entry.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; align-items: center;">
+    <div style="width: 2rem; height: 2rem; background: #1d4ed8; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">3</div>
+    <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
+  </div>
+  <div>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:package" size={16} /> Pack and verify</strong>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>pack</code> resolves the environments with the pinned <code>pixi-pack</code>, vendors Cargo crates, fetches sha256-pinned helper tools, and writes <code>manifest.json</code> with every blob's digest. <code>doctor --verify</code> re-checks every digest and writes nothing.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; align-items: center;">
+    <div style="width: 2rem; height: 2rem; background: #1d4ed8; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">4</div>
+    <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
+  </div>
+  <div>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:upload-cloud" size={16} /> Publish the orphan branch</strong>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">The transport directory becomes a parentless commit force-pushed to <code>sandbox/&lt;bundle&gt;-&lt;platform&gt;</code>. Git dedupes identical blobs, so publishing a one-crate change costs the changed bytes.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; align-items: center;">
+    <div style="width: 2rem; height: 2rem; background: #047857; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">5</div>
+    <div style="width: 2px; flex: 1; background: var(--sl-color-gray-5); margin: 0.5rem 0;"></div>
+  </div>
+  <div>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:plane" size={16} /> Transfer across the gap</strong>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">A clone or a <code>git bundle</code> carrying the project branch and the sandbox branch crosses the air gap on physical media. Nothing is downloaded at any point.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; align-items: center;">
+    <div style="width: 2rem; height: 2rem; background: #047857; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem;">6</div>
+  </div>
+  <div>
+    <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:shield-check" size={16} /> Restore and prove it</strong>
+    <p style="margin: 0.25rem 0; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>./restore.sh</code> verifies every byte, then materializes environments, vendored crates, and the pinned tools — and the proof is an offline no-op: <code>pixi install --frozen --offline</code>.</p>
+  </div>
+</div>
+
+<SandboxDiagram />
+
+## What exists on each machine
+
+| | Connected host | Airlock |
+|---|---|---|
+| Network | Yes — prefix.dev, crates.io index, GitHub | None. If anything reaches out, stop. |
+| pixi-sandbox | Installed (canonical channel package or verified release binary) | Not required — the transport carries its own verified copy |
+| Pixi | Required (drives `pack`) | Required only to *run* the project; registered by the restore |
+| Git | Required (publishes the branch) | Required (clone/bundle + `git archive`) |
+| Writes | `pixi-sandbox.toml`, workflows, launchers | `.pixi/envs/*`, vendored crates, registered user tools |
+
+## What crosses the air gap
+
+The orphan branch and nothing else. Its root carries Markdown only; the payload lives under
+`.pixi-sandbox/`:
+
+```text
+sandbox/developer-linux-64 (orphan branch)
+├── .pixi-sandbox/
+│   ├── manifest.json              # SHA-256 catalog, source commit, tool versions
+│   ├── envs/<env>/pack/           # pixi-pack --directory-only output
+│   ├── tools/<platform>/          # pixi, pixi-pack, pixi-unpack, pixi-sandbox (static, verified)
+│   └── vendor/                    # cargo vendor tree (when vendoring is enabled)
+├── README.md                      # human restore instructions
+└── AGENTS.md                      # agent instructions
+```
+
+Credentials never cross: the transport authenticates to nothing, and diagnostic logs are
+redacted before they are written. See [Verification guarantees](/pixi-sandbox/security/verification-guarantees/).
+
+## What is verified, and when
+
+| Check | Runs | Writes |
+|---|---|---|
+| SHA-256 of every blob against `manifest.json` | `doctor --verify`, and again inside `restore` before any write | nothing |
+| Standalone probe of the embedded binary | `doctor --verify` (after a green hash report) | nothing |
+| Per-file oracle of the restored tree | `doctor --verify-restored` | nothing |
+| Budget ceilings | `doctor --budget-config`, before `publish` force-pushes | nothing |
+| Offline no-op assertions | after `restore` completes | the project prefix |
+
+## Which files are generated or committed
+
+`pixi-sandbox init` owns exactly these files, each carrying a `pixi-sandbox-version` marker and
+regenerable with `init --force` (or audited read-only with `init --check`):
+
+```text
+pixi-sandbox.toml                      # reviewed bundle/platform plan (created if absent)
+.github/workflows/publish-sandbox.yml  # project-owned publisher
+.github/workflows/relock.yml           # lockfile refresh bot
+restore.sh  (or restore.ps1)           # the one airlock-side entrypoint
+```
+
+Your `pixi.toml` is never modified — the CLI is installed globally with an explicit channel, so
+the project's channel list never needs to know where it came from.
+
+## Where to go next
+
+- New here? [First verified offline bundle](/pixi-sandbox/first-offline-bundle/) walks the whole
+  path with exact commands and expected artifacts.
+- [Choose your role](/pixi-sandbox/choose-your-role/) maps your job to the shortest path.
+- The [CLI reference](/pixi-sandbox/reference/cli/overview/) and
+  [configuration reference](/pixi-sandbox/reference/configuration/overview/) carry the flag-level detail
+  behind every step above.

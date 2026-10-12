@@ -1,0 +1,77 @@
+---
+title: Glossary and security boundaries
+description: The vocabulary defined once — connected host, airlock, transport, bundle, sandbox branch, doctor, budgets — plus what each guarantee means and what the tool does not provide.
+---
+
+import { Icon } from 'astro-icon/components';
+
+Every other page assumes these terms. They are defined here once, each linking to the page that
+carries the full detail — so a reader who lands in the reference, or who reads
+[Restore on the airlock](/pixi-sandbox/restore/) first, never has to infer a term from
+implementation detail.
+
+## The vocabulary
+
+| Term | Meaning | Full detail |
+|---|---|---|
+| **Connected host** | The machine with network access, where the CLI is installed and the transport is produced. | [Installation](/pixi-sandbox/installation/) |
+| **Airlock** | The disconnected machine. Nothing here may reach the network; if a step tries, stop. | [Restore on the airlock](/pixi-sandbox/restore/) |
+| **Transport** | The packed, self-contained directory a bundle becomes — payload plus `manifest.json`. | [How it works](/pixi-sandbox/how-it-works/) |
+| **Bundle** | A declared set of environments × platforms shipped as one branch (`[[bundle]]` in config). | [Configure bundles](/pixi-sandbox/guides/configure-bundles/) |
+| **Orphan branch / sandbox branch** | The parentless Git branch a transport is published to: `sandbox/<bundle>-<platform>`. | [Publish transport branches](/pixi-sandbox/reference/cli/publish/) |
+| **`pack`** | Resolves environments with the pinned `pixi-pack`, vendors crates, fetches pinned tools, writes `manifest.json`. | [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) |
+| **`doctor`** | Read-only verification: every digest, budget ceilings, host-requirement verdicts, the standalone probe. Writes nothing. | [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) |
+| **`publish`** | Force-pushes the transport as one orphan commit; `--keep N` retains the N most recent snapshots. | [Publish transport branches](/pixi-sandbox/reference/cli/publish/) |
+| **`restore`** | Verify-then-materialize on the airlock; the only command that writes the project prefix. | [Restore and inspect a transport](/pixi-sandbox/reference/cli/restore/) |
+| **`unpack`** | The single-environment primitive `restore` is built on. | [Restore and inspect a transport](/pixi-sandbox/reference/cli/restore/) |
+| **`plan`** | Validates the config and emits the `bundle × platform` matrix the publisher runs. | [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) |
+| **`init`** | Writes only the files it owns — config, publisher, relock bot, one launcher. Never your `pixi.toml`. | [Configure bundles](/pixi-sandbox/guides/configure-bundles/) |
+| **`manifest.json`** | The SHA-256 catalogue at the transport root: every blob's digest, the source commit, the tool versions. | [Verification guarantees](/pixi-sandbox/security/verification-guarantees/) |
+| **Shard / `.partNNN`** | A file above the shard limit (default 95 MiB) split into numbered parts, re-joined atomically after verification. | [Sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/) |
+| **Budgets** | `[budgets]` ceilings checked read-only before any force-push: blob, transport, push, restore-disk. | [Sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/) |
+| **Host requirements** | What a GUI workload needs from the *machine* — declared in `[host_requirements]`, probed read-only, never installed. | [Host and GUI requirements](/pixi-sandbox/security/host-requirements/) |
+| **Tools lock / embedded binary** | The pinned helper tools (`pixi`, `pixi-pack`, `pixi-unpack`) carried inside the branch, plus the verified `pixi-sandbox` bootstrap. | [Tools and self-update](/pixi-sandbox/reference/cli/tools/) |
+| **Vendor tree** | Crate sources keyed by `Cargo.lock`, wired to a sandbox-owned `CARGO_HOME` at restore. | [Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/) |
+| **Per-file oracle** | The packer's record of every restored file's digest, symlink target, and exec bit. | [Verification guarantees](/pixi-sandbox/security/verification-guarantees/) |
+
+## The guarantees, stated once
+
+- **Byte integrity is cryptographic.** Every blob is verified against `manifest.json` before
+  anything is written — in `doctor --verify`, and again inside `restore`.
+- **The order is the guarantee.** Hashes first; the embedded-binary probe only after a green hash
+  report; the restored tree verified against the per-file oracle before user tools are registered.
+- **A failed run changes nothing.** Verification is read-only; a failed restore leaves the work dir
+  for inspection and the target untouched; a failed publish leg never replaces a healthy branch.
+- **Nothing authenticates.** Credentials, tokens, and remote URLs never cross the gap, and logs are
+  redacted before they are written.
+- **Budgets fail before the push**, so an oversized transport cannot displace a working one.
+
+The full model, including the standalone probe and the atomic join, is in
+[Verification guarantees](/pixi-sandbox/security/verification-guarantees/).
+
+## What pixi-sandbox does not provide
+
+<div style="display: grid; gap: 0.5rem; margin: 1rem 0;">
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon aria-hidden="true" name="lucide:signature" size={18} />
+    <span><strong>No signature chain or trust root</strong> — verification is integrity against the manifest; trusting the manifest is a Git-side property. Protect the branch like a release channel.</span>
+  </div>
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon aria-hidden="true" name="lucide:monitor" size={18} />
+    <span><strong>No host provisioning</strong> — fonts, a display server, D-Bus, GPU access, and the system C library stay on the machine. Declared in <code>[host_requirements]</code>, probed read-only, never installed.</span>
+  </div>
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon aria-hidden="true" name="lucide:hammer" size={18} />
+    <span><strong>No toolchain</strong> — crates ship, rustc does not. The airlock compiles from scratch, from the environment you packed.</span>
+  </div>
+  <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
+    <Icon aria-hidden="true" name="lucide:file-warning" size={18} />
+    <span><strong>No inert payload</strong> — unpacking runs package post-link scripts. That is inherent to conda environments; the mitigation is branch protection and review.</span>
+  </div>
+</div>
+
+## Where to go next
+
+- [How it works](/pixi-sandbox/how-it-works/) — the lifecycle these terms describe
+- [Choose your role](/pixi-sandbox/choose-your-role/) — the shortest path for your job
+- [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) — when a check fails

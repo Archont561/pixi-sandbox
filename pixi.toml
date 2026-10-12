@@ -284,6 +284,8 @@ sandbox-restore = "bash scripts/restore.sh"
 # fresh CI runner (or a fresh clone) has no node_modules at all. `bun install --frozen-lockfile`
 # is a no-op once installed, so the dependency costs the pre-commit hook milliseconds.
 #
+# The paths are `docs scripts` rather than just `docs` since the docs quality gates
+# (scripts/docs-*.mjs, task-110) are committed JavaScript and belong under the same gate.
 # `pixi run lint-docs --write` is the hook's form. It takes no file list: every file the hook
 # could pass lives under `docs/`, so checking the directory is the same work and the task stays
 # one task instead of a check/write pair.
@@ -291,7 +293,7 @@ lint-docs = { args = [
   { arg = "flags", default = "" },
 ], depends-on = [
   "docs-install",
-], cmd = "bun node_modules/@biomejs/biome/bin/biome check {{ flags }} docs" }
+], cmd = "bun node_modules/@biomejs/biome/bin/biome check {{ flags }} docs scripts" }
 
 # docs. One bun workspace at the repo root (package.json workspaces: ["docs"]), so the install
 # runs there and hoists into the root node_modules; `docs/` has no lockfile of its own any more.
@@ -309,6 +311,30 @@ docs = { args = [
 ], depends-on = [
   "bun-install",
 ], cmd = "bun run docs:{{ mode }}" }
+
+# The docs quality gates (task-110), all run by .github/workflows/docs.yml before the site is
+# published and locally by the same names. Each is a bun script under scripts/ — no node_modules,
+# no browser: they read the built site and the MDX sources, so the gate is the same gate in CI
+# and on a laptop. `pixi run docs build` must run first for the two dist-based checks.
+#
+# frontmatter: an unquoted `title:`/`description:` containing ": " is a YAML mapping to
+# Starlight's parser — the build dies somewhere far from the cause. This fails first, naming
+# the page and the line.
+docs-frontmatter-check = { cmd = "bun scripts/docs-frontmatter-check.mjs docs/src/content/docs" }
+# Internal link integrity after every IA re-home: every internal link and fragment in the built
+# HTML must resolve inside the same build. This is the gate that keeps a split page's inbound
+# links honest.
+docs-link-check = { cmd = "bun scripts/docs-link-check.mjs docs/dist" }
+# Accessibility and print/no-script audit of the built site: structure (one h1, no skipped
+# heading levels, alt text, accessible names, table headers, skip link), :focus-visible rules,
+# print rules, the operator checklist's script-free markup, and WCAG contrast ratios computed
+# for the site's own color pairs in both themes.
+docs-a11y-check = { cmd = "bun scripts/docs-a11y-check.mjs docs/dist" }
+# Command-snippet test: every `pixi-sandbox …` command the documentation tells a reader to run
+# is checked against the real CLI's `--help` output — the subcommand must exist and every
+# documented flag must be one the binary accepts. It builds the CLI with cargo when no binary
+# is present (the default environment carries the Rust toolchain).
+docs-snippet-check = { cmd = "bun scripts/docs-snippet-check.mjs" }
 
 # ---------------------------------------------------------------------------
 # Bun itself, generically. The repo-wide dev tooling from the root bun workspace

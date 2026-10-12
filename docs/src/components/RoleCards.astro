@@ -1,0 +1,53 @@
+---
+import { Icon } from "astro-icon/components";
+
+// The audit's four entry paths (doc-18): every primary audience picks a role
+// and reaches a tailored first page in one click. Text plus icon, never color
+// alone; each card is a real link, so keyboard and screen-reader users get the
+// same path a pointer user does.
+const roles = [
+  {
+    icon: "lucide:user",
+    role: "A project owner",
+    outcome: "Configure and create my first transport bundle.",
+    link: "/pixi-sandbox/first-offline-bundle/",
+    cta: "First verified offline bundle",
+  },
+  {
+    icon: "lucide:bot",
+    role: "A CI maintainer",
+    outcome: "Publish safely and keep workflow policy current.",
+    link: "/pixi-sandbox/guides/ci-publishing/",
+    cta: "CI publishing",
+  },
+  {
+    icon: "lucide:shield-check",
+    role: "An airlock operator",
+    outcome: "Verify and restore locally, with zero network.",
+    link: "/pixi-sandbox/restore/",
+    cta: "Restore on the airlock",
+  },
+  {
+    icon: "lucide:lock",
+    role: "A security / platform reviewer",
+    outcome: "Understand the guarantees, constraints, and host requirements.",
+    link: "/pixi-sandbox/security/verification-guarantees/",
+    cta: "Verification guarantees",
+  },
+];
+---
+
+<div class="role-cards">
+  {roles.map((r) => (
+    <a class="role-card" href={r.link}>
+      <div class="role-icon">
+        <Icon aria-hidden="true" name={r.icon} size={20} />
+      </div>
+      <h3>{r.role}</h3>
+      <p>{r.outcome}</p>
+      <span class="role-cta">
+        {r.cta} <Icon aria-hidden="true" name="lucide:arrow-right" size={14} />
+      </span>
+    </a>
+  ))}
+</div>

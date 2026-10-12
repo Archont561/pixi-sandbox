@@ -1,0 +1,225 @@
+---
+title: First verified offline bundle
+description: "The complete happy path, proved: one documented Pixi project, from install on the connected host to a verified offline restore on the airlock."
+---
+
+import { Icon } from 'astro-icon/components';
+import ContextChips from '../../components/ContextChips.astro';
+import GuideMeta from '../../components/GuideMeta.astro';
+
+This is the journey that defines the product: **a verified offline restore**. It has four stages,
+performed by different actors on machines in different network conditions. Each stage below names
+who performs it, where it runs, the exact command, the artifact or output to expect, and where to
+go when it fails.
+
+<GuideMeta
+  outcome="One verified offline restore, proved end to end — install, configure, publish, restore on a machine with no network."
+  audience="Anyone evaluating the product: the four stages are performed by different actors on different machines."
+  prerequisites="A Pixi project with pixi.toml and pixi.lock, and a Git remote you can push to."
+  machine="Connected host and CI for stages 1–3; the airlock for stage 4."
+  maturity="Stable — this is the documented happy path."
+/>
+
+<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin: 1.5rem 0;">
+  <div style="border: 2px solid #facc15; border-radius: 0.75rem; padding: 0.75rem; text-align: center; background: var(--sl-color-gray-6);">
+    <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--sl-color-gray-2);">Stage 1</div>
+    <strong style="display: block; margin: 0.25rem 0;">Connected</strong>
+    <span style="font-size: 0.8rem; color: var(--sl-color-gray-2);">install + init</span>
+  </div>
+  <div style="border: 2px solid #facc15; border-radius: 0.75rem; padding: 0.75rem; text-align: center; background: var(--sl-color-gray-6);">
+    <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--sl-color-gray-2);">Stage 2</div>
+    <strong style="display: block; margin: 0.25rem 0;">Configure</strong>
+    <span style="font-size: 0.8rem; color: var(--sl-color-gray-2);">one minimal bundle</span>
+  </div>
+  <div style="border: 2px solid #3b82f6; border-radius: 0.75rem; padding: 0.75rem; text-align: center; background: var(--sl-color-gray-6);">
+    <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--sl-color-gray-2);">Stage 3</div>
+    <strong style="display: block; margin: 0.25rem 0;">CI</strong>
+    <span style="font-size: 0.8rem; color: var(--sl-color-gray-2);">pack · verify · publish</span>
+  </div>
+  <div style="border: 2px solid #10b981; border-radius: 0.75rem; padding: 0.75rem; text-align: center; background: var(--sl-color-gray-6);">
+    <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--sl-color-gray-2);">Stage 4</div>
+    <strong style="display: block; margin: 0.25rem 0;">Airlock</strong>
+    <span style="font-size: 0.8rem; color: var(--sl-color-gray-2);">transfer · restore · prove</span>
+  </div>
+</div>
+
+**The project used throughout:** one Pixi project with `pixi.toml` + `pixi.lock`, one environment
+(`default`), one platform (`linux-64`). The bundle is named `minimal`, so the branch that will
+exist at the end is **`sandbox/minimal-linux-64`** — `<branch_prefix>/<bundle>-<platform>`, the name
+`pixi-sandbox plan` gives the publisher and the launcher derives for its host.
+
+## Stage 1 — Connected host: install the CLI and initialise
+
+**Who:** the project owner. **Where:** the connected host, with Pixi installed. **Network:**
+required (prefix.dev).
+
+<ContextChips chips={["connected", "network"]} />
+
+```bash
+pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox
+pixi-sandbox init
+```
+
+**Expected:** `init` writes only the files it owns — your `pixi.toml` is left byte-identical:
+
+```text
+pixi-sandbox.toml                      # reviewed bundle/platform plan
+.github/workflows/publish-sandbox.yml  # project-owned publisher
+.github/workflows/relock.yml           # lockfile refresh bot
+restore.sh                             # the one airlock-side entrypoint
+```
+
+Confirm the CLI runs and the embedded tool pins resolve:
+
+<ContextChips chips={["connected"]} />
+
+```bash
+pixi-sandbox tools list
+```
+
+**If it fails:** the channel does not answer — see
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/); install variants (cargo,
+release binary) are on [Installation](/pixi-sandbox/installation/).
+
+## Stage 2 — Connected host: configure one minimal bundle
+
+**Who:** the project owner. **Where:** the connected host. **Network:** not needed.
+
+Edit `pixi-sandbox.toml` to declare exactly one bundle — one environment, one platform, no Cargo
+vendoring (add `cargo_vendor = true` and a `Cargo.lock` when the project is Rust):
+
+```toml
+schema = 1
+branch_prefix = "sandbox"
+cargo_vendor = false
+
+[[bundle]]
+name = "minimal"
+environments = ["default"]
+platforms = ["linux-64"]
+```
+
+Validate the plan — this is the same matrix the publisher will run:
+
+<ContextChips chips={["connected"]} />
+
+```bash
+pixi-sandbox plan --config pixi-sandbox.toml
+pixi-sandbox plan --config pixi-sandbox.toml --json
+```
+
+**Expected:** a valid plan and a matrix with exactly one entry — bundle `minimal` × platform
+`linux-64`. The publisher will force-push **`sandbox/minimal-linux-64`**.
+
+**If it fails:** `plan` rejects unsafe or implicit runner selection and names the offending entry;
+the declaration rules are in [Configure bundles](/pixi-sandbox/guides/configure-bundles/).
+
+## Stage 3 — CI: publish the transport branch
+
+**Who:** the CI maintainer (the project owner commits). **Where:** GitHub Actions, on a hosted
+runner. **Network:** required.
+
+Commit the generated files and push the project branch:
+
+<ContextChips chips={["ci", "network"]} />
+
+```bash
+git add pixi-sandbox.toml .github/workflows/publish-sandbox.yml .github/workflows/relock.yml restore.sh
+git commit -m "chore: add pixi-sandbox transport for the minimal bundle"
+git push
+```
+
+The generated workflow installs the same native package, computes the matrix with `plan`, then
+runs one cross-platform `pipeline` step per entry — install, `pack`, `doctor --verify`, and
+`publish` together. `doctor --verify` is a gate that writes nothing, and the budgets are checked
+before any force-push.
+
+**Expected:** the workflow's publish job completes, and the repository carries a new orphan branch:
+
+<ContextChips chips={["connected", "network"]} />
+
+```bash
+git ls-remote origin 'sandbox/*'
+# <sha>  refs/heads/sandbox/minimal-linux-64
+```
+
+To rehearse without pushing, `publish --dry-run` previews the git commands; the local
+pack → doctor → publish loop is in
+[Configure bundles](/pixi-sandbox/guides/configure-bundles/).
+
+**If it fails:** a failed leg halts before `publish` — the last healthy transport is never replaced.
+Durable logs are uploaded as `publish-diagnostics-<platform>`; see
+[Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/) and
+[CI publishing](/pixi-sandbox/guides/ci-publishing/).
+
+## Stage 4 — Airlock: transfer, restore, and prove it offline
+
+**Who:** the airlock operator. **Where:** the connected host prepares the transfer; the restore
+runs on the disconnected machine. **Network:** none — if any step reaches out, stop.
+
+On the connected host, put both refs into one Git bundle and carry it across the gap on physical
+media:
+
+<ContextChips chips={["connected", "network"]} />
+
+```bash
+git bundle create project-airlock.bundle main sandbox/minimal-linux-64
+```
+
+On the airlock, clone the bundle and restore:
+
+<ContextChips chips={["airlock", "offline"]} />
+
+```bash
+git clone project-airlock.bundle project
+cd project
+./restore.sh              # Linux/macOS — .\restore.ps1 on Windows
+```
+
+The launcher resolves `sandbox/minimal-linux-64` from the config, archives it with `git archive`,
+and delegates verification and restoration to the manifest-verified binary inside the branch. It
+never contacts a remote; `PIXI_SANDBOX_FETCH=skip` makes "local Git objects only" explicit.
+
+**Expected:** `.pixi/envs/default` materialized, vendored crates present when enabled, and the
+registered user tools reported. Now the proof — both commands must be no-ops that never touch the
+network:
+
+<ContextChips chips={["airlock", "offline"]} />
+
+```bash
+pixi install --frozen --offline                 # environment matches pixi.lock
+pixi run --frozen -- cargo build --offline      # Rust projects: builds from the vendor tree only
+```
+
+**If `pixi install` starts doing real work**, the tree does not match the lockfile — do not let it
+continue; re-run the restore. Symptom-level recovery (network attempts, digest mismatches, a
+missing branch in the bundle, an embedded binary that cannot execute) is in
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/); the operator's ordered
+checklist is in [Restore on the airlock](/pixi-sandbox/restore/).
+
+## Verification
+
+You have proved:
+
+- a minimal transport built from one documented Pixi project, end to end;
+- the expected branch name — `sandbox/minimal-linux-64` — existed and was restorable;
+- a verified restore on a machine with no network, with the offline assertions green.
+
+The two assertions from stage 4 are the standing check: `pixi install --frozen --offline` and
+`pixi run --frozen -- cargo build --offline` must both be no-ops.
+
+## Failure modes
+
+Each stage above names its own "if it fails" pointer; the symptom-indexed recovery paths are in
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) — a missing branch in the
+bundle (entry 3), a digest mismatch (entry 2), a network attempt (entry 1), and a vendored build
+that still fetches (entry 8) are the four this journey can hit.
+
+## Next steps
+
+- **[Configure bundles](/pixi-sandbox/guides/configure-bundles/)** — multi-environment and
+  multi-platform plans. Prerequisite: the minimal bundle above published and restored.
+- **[Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/)** — for Rust workspaces. Prerequisite:
+  a `Cargo.toml` and `Cargo.lock` in the project.
+- **[CI publishing](/pixi-sandbox/guides/ci-publishing/)** — the publisher's failure surfaces and
+  upgrade lane. Prerequisite: the generated workflow committed.

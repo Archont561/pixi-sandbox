@@ -1,5 +1,5 @@
 ---
-title: Repository layout
+title: Repository and contributing
 description: Where everything lives, what ships, and how to add a crate or a gate without breaking the invariants.
 ---
 
@@ -102,3 +102,108 @@ in the workflow's `env:` block.
 `.pixi/`, `target/`, `vendor/`, `.pixi-sandbox/`, `node_modules/`, `docs/dist/` and
 `.sandbox-*`. The payload lives on the sandbox branch; the crate sources are vendored on
 demand; a fixture that grows past a quarter of a MiB fails a test.
+
+## Working on pixi-sandbox itself
+
+Clone and run the suite — it includes the fixture-backed
+doctor → publish → network-isolated restore lifecycle (on Linux the e2e suite re-runs the
+restore inside `unshare -rn`):
+
+```bash
+git clone https://github.com/Archont561/pixi-sandbox && cd pixi-sandbox
+pixi run --frozen test
+pixi run --frozen lint
+```
+
+Every task goes through the pixi binary — never bare `cargo`, `bun`, or `taplo`. The command CI
+runs is the command you run locally, so a red gate reproduces in one paste.
+
+## Shipping the tool
+
+The package is a conda package built from the workspace. The task runs in the empty `package`
+environment — which is how the release matrix builds one variant per native runner, `win-64`
+included:
+
+```bash
+pixi run -e package package                        # build the variant for this runner
+pixi run -e package xtask smoke-conda-package      # its smoke test, same environment
+```
+
+The canonical install is the ecosystem channel:
+
+```bash
+pixi global install -c https://prefix.dev/archont561/archont561 -c conda-forge pixi-sandbox
+```
+
+Measured: 34s to build a 594 KB package (1.26 MiB stripped binary); the channel write produces
+`repodata.json` + `.zst` + sharded repodata, so a plain static host works as a channel. Always
+combine with `-c conda-forge`.
+
+## Editing this documentation
+
+The site is Astro + Starlight under `docs/`, a bun workspace member. Build it with
+`pixi run docs build` (or `bun run build` inside `docs/`); the site never carries a literal release
+tag — the config substitutes `__VERSION__` from the workspace manifest, so a release commit
+rewrites zero documentation lines. Pages are MDX in `docs/src/content/docs/`, organized by the
+role/lifecycle IA: propose structural changes as a backlog task first, and keep the airlock page
+actionable for someone with no network and no context.
+
+### The guide template
+
+Every page under `guides/` — and the operator pages that share their shape, `restore.mdx` and
+`first-offline-bundle.mdx` — opens and closes the same way, so a reader always knows where they
+are and what the page will ask of them:
+
+- **Opens with** a `GuideMeta` box (`docs/src/components/GuideMeta.astro`, imported from the
+  page): the **outcome**, the **audience**, the **prerequisites**, the **machine context**
+  (the same connected/airlock vocabulary the context chips use), and the **maturity** of the
+  feature. Values may be inline JSX, so `<code>` and links work inside the box.
+- **Body** carries the how, in lifecycle order.
+- **Closes with** three sections, in this order and under these exact headings:
+  `## Verification` (how to prove the outcome), `## Failure modes` (the symptom, linking the
+  matching [Troubleshooting](/pixi-sandbox/troubleshooting/) entry), and `## Next steps`
+  (the next safe action in the lifecycle, naming its prerequisite).
+- `restore.mdx` is the reference implementation: its printable operator checklist sits directly
+  under the meta box, and the page still ends with the three closing sections.
+
+A new guide is not done until its `Next steps` names the next lifecycle stage and that stage's
+prerequisite — the pages form a chain, not a set.
+
+### Docs quality gates
+
+`.github/workflows/docs.yml` runs four gates before the site is published, and each is a `pixi
+run` task you can run locally — the gate is the same gate in CI and on a laptop:
+
+| Task | What it proves |
+|---|---|
+| `pixi run docs-frontmatter-check` | No page's `title:`/`description:` breaks Starlight's YAML parser |
+| `pixi run docs-link-check` | Every internal link and fragment in the built site resolves |
+| `pixi run docs-a11y-check` | Structure (one `h1`, no skipped levels, alt text, accessible names, table headers, skip link), `:focus-visible` rules, print rules, the operator checklist's script-free markup, and WCAG contrast ratios for the site's color pairs in **both** themes |
+| `pixi run docs-snippet-check` | Every `pixi-sandbox …` command the docs tell a reader to run exists, and every documented flag is one the binary accepts (it builds the CLI with `cargo` when needed) |
+
+The browser-dependent half of the audit is a protocol, run by hand after a visual change and
+recorded in the pull request:
+
+- **Keyboard** — Tab from the address bar through the sidebar groups, the search button, the
+  theme control, and every code block's copy button; Enter/Space activate; Esc closes search.
+  Focus must be visible at every stop, in **both** themes.
+- **Responsive** — 375 px (single column, ToC collapses), 768 px (the transport diagram
+  stacks), 1280 and 1440 px (reference pages use their wider content mode; wide tables and
+  TOML blocks do not wrap excessively).
+- **Print and no JavaScript** — print the restore page: the operator checklist must stay on one
+  page with its tick boxes, and reload that page with JavaScript disabled: the checklist and
+  every command block must still be complete and static.
+
+Two things the automated gate deliberately does not cover: the badge strip on the homepage is
+third-party imagery from shields.io (contrast there is their design, checked by eye), and the
+keyboard walk above needs a real browser.
+
+### Icons and the docs design system
+
+Icons render through [Astro Icon](https://www.astroicon.dev/) over
+[Iconify](https://iconify.design/): one import — `import { Icon } from 'astro-icon/components';` —
+and one call, `<Icon aria-hidden="true" name="set:name" size={n} />`. The bundled sets are `lucide`, `mdi`,
+`tabler`, and `simple-icons` (all of each, declared in `docs/astro.config.mjs`); browse them at
+[icon-sets.iconify.design](https://icon-sets.iconify.design/) before reaching for a new
+dependency. Astro Icon emits the SVGs `aria-hidden`, so an icon never carries meaning on its own —
+pair it with a text label or a heading.

@@ -1,0 +1,63 @@
+---
+// Starlight's Footer, plus the compact version/release line the audit (doc-18)
+// asks for: every page states which release these docs describe and links the
+// compatibility page and the releases feed. Overriding the component (rather
+// than hand-rolling) keeps the edit link, last-updated line, and pagination.
+import EditLink from "virtual:starlight/components/EditLink";
+import LastUpdated from "virtual:starlight/components/LastUpdated";
+import Pagination from "virtual:starlight/components/Pagination";
+import config from "virtual:starlight/user-config";
+import { Icon } from "astro-icon/components";
+import { resolveVersion } from "../version.mjs";
+
+const version = resolveVersion();
+---
+
+<footer class="sl-flex">
+  <div class="meta sl-flex">
+    <EditLink />
+    <LastUpdated />
+  </div>
+  <Pagination />
+
+  {
+    config.credits && (
+      <a class="kudos sl-flex" href="https://starlight.astro.build">
+        <Icon aria-hidden="true" name={'starlight'} /> {Astro.locals.t('builtWithStarlight.label')}
+      </a>
+    )
+  }
+</footer>
+
+<p class="version-line">
+  <Icon aria-hidden="true" name="lucide:tag" size={13} />
+  <span>
+    Documented release: <strong>v{version}</strong> ·{' '}
+    <a href="/pixi-sandbox/compatibility/">Compatibility and releases</a> ·{' '}
+    <a href="https://github.com/Archont561/pixi-sandbox/releases">Release notes</a>
+  </span>
+</p>
+
+<style>
+  .version-line {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 1.5rem 0 0;
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+  }
+
+  .version-line strong {
+    color: var(--sl-color-gray-2);
+  }
+
+  .version-line a {
+    color: var(--sl-color-gray-3);
+    text-decoration: underline;
+  }
+
+  .version-line a:hover {
+    color: var(--sl-color-accent-high);
+  }
+</style>

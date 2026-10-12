@@ -1,0 +1,56 @@
+---
+/**
+ * Starlight `ContentPanel` override.
+ *
+ * Reference pages get a wider content column. Their TOML examples, CLI flag tables,
+ * and wide tables wrap badly at the default `--sl-content-width` (45rem) on a
+ * 1280–1440px desktop, so `reference/**` routes set a wider cap on the content
+ * panel itself.
+ *
+ * Why the property is set here and not on `:root`: the right-side ToC column and
+ * the header grid also read `--sl-content-width`, and both live *outside* the
+ * content panel. Scoping the override to `.content-panel` therefore widens only
+ * the content — the ToC keeps its exact current geometry and the mobile
+ * single-column layout is untouched (a `max-width` never widens a narrower
+ * viewport).
+ *
+ * The rule is deliberately *unlayered*: Starlight's defaults live in
+ * `@layer starlight.base`/`@layer starlight.core`, and unlayered styles beat
+ * layered ones regardless of source order.
+ */
+const id = Astro.locals.starlightRoute.entry.id;
+const referenceWide = id.startsWith("reference/");
+---
+
+<div class:list={["content-panel", { "reference-wide": referenceWide }]}>
+	<div class="sl-container"><slot /></div>
+</div>
+
+{/* Default ContentPanel styles, copied so the override stays drop-in. */}
+<style>
+	@layer starlight.core {
+		.content-panel {
+			padding: 1.5rem var(--sl-content-pad-x);
+		}
+		.content-panel + .content-panel {
+			border-top: 1px solid var(--sl-color-hairline);
+		}
+		.sl-container {
+			max-width: var(--sl-content-width);
+		}
+		.sl-container > :global(* + *) {
+			margin-top: 1.5rem;
+		}
+		@media (min-width: 72rem) {
+			.sl-container {
+				margin-inline: var(--sl-content-margin-inline, auto);
+			}
+		}
+	}
+</style>
+
+<style>
+	.reference-wide {
+		--sl-content-width: 56rem;
+	}
+</style>

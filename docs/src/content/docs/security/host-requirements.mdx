@@ -57,7 +57,7 @@ administrator installs. `doctor` knows the common GUI names (`fontconfig`, `font
 name for the machine it is on; anything else keeps the declared name with a "names differ between
 distributions" caveat. The declaration rules — per-family tables, how `headless` interacts with
 `display`, the closed capability set — are in the
-[configuration reference](/pixi-sandbox/reference/configuration/#host_requirements--host-level-declarations).
+[configuration reference](/pixi-sandbox/reference/configuration/policy/#host_requirements--host-level-declarations).
 
 ## Pack it, then ask the airlock
 
@@ -109,28 +109,28 @@ Prefer not to pass it on the publish runner: that machine packages the transport
 the workload runs, and a missing host font there says nothing about the airlock. The flag fails on
 `missing` alone; `unknown` verdicts are reported and never fail, because a machine that cannot be
 inspected is not a machine that is broken. The
-[CLI reference](/pixi-sandbox/reference/cli/#doctor) documents the probes and the exit-code
+[CLI reference](/pixi-sandbox/reference/cli/create-verify/#doctor) documents the probes and the exit-code
 contract per flag.
 
 ## What pixi-sandbox will not do for you
 
 <div style="display: grid; gap: 0.5rem; margin: 1rem 0;">
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:monitor" size={18} />
+    <Icon aria-hidden="true" name="lucide:monitor" size={18} />
     <span><strong>Grant GPU access</strong> — reportable, never grantable. Device passthrough is a host decision: for containers, pass through <code>/dev/dri</code> and the driver mounts, and run as a user in the <code>video</code>/<code>render</code> groups. A sandbox cannot widen its own device access, and <code>doctor</code> says so in the remedy instead of pretending.</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:terminal" size={18} />
+    <Icon aria-hidden="true" name="lucide:terminal" size={18} />
     <span><strong>Start Xvfb for you</strong> — the <code>headless</code> entries are checked for existence on <code>PATH</code> and never launched. Starting a display server to test whether one works would be a sandbox escaping its own boundary; you run the workload under <code>xvfb-run</code>, not <code>doctor</code>.</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:package" size={18} />
+    <Icon aria-hidden="true" name="lucide:package" size={18} />
     <span><strong>Install or enable anything</strong> — no host packages, no services, no config changes. Remedies are printed for a person to read; every pixi-sandbox command stays a read-only observer of the host.</span>
   </div>
 </div>
 
 ## See also
 
-- [Configuration: `[host_requirements]`](/pixi-sandbox/reference/configuration/#host_requirements--host-level-declarations) — the full field table, validation rules, and per-family resolution.
-- [CLI: `doctor`](/pixi-sandbox/reference/cli/#doctor) — the probes behind each verdict, the JSON shape, and `--require-host-requirements`.
+- [Configuration: `[host_requirements]`](/pixi-sandbox/reference/configuration/policy/#host_requirements--host-level-declarations) — the full field table, validation rules, and per-family resolution.
+- [CLI: `doctor`](/pixi-sandbox/reference/cli/create-verify/#doctor) — the probes behind each verdict, the JSON shape, and `--require-host-requirements`.
 - [Airlock Restore](/pixi-sandbox/restore/) — getting the transport onto the disconnected machine in the first place.

@@ -1,0 +1,231 @@
+---
+title: Create and verify a transport
+description: init, plan, pack, and doctor — the connected-side commands that produce a transport and prove it before anything is pushed.
+---
+
+import ContextChips from '../../../../components/ContextChips.astro';
+
+**Use this when** you are producing a transport on the connected host: scaffolding the project
+files, validating the bundle plan, packing environments and crates, and verifying the result
+read-only.
+
+## init
+
+Generate the reviewed project configuration, a reusable GitHub Actions publisher, a lockfile
+relock bot, and exactly one launcher for the current platform (`restore.sh` on Unix,
+`restore.ps1` on Windows):
+
+<ContextChips chips={["connected", "network"]} />
+
+```bash
+pixi-sandbox init
+pixi-sandbox init \
+  --github-workflow-path .github/workflows/publish-sandbox.yml \
+  --relock-workflow-path .github/workflows/relock.yml \
+  --relock-ci-workflow ci.yml \
+  --script-path restore.sh \
+  --config pixi-sandbox.toml
+pixi-sandbox init --branch sandbox/developer-linux-64 --force
+```
+
+`relock.yml` closes the one gap an airlock cannot close itself: a manifest edit is a text edit any
+disconnected host can make, but the solve behind it needs prefix.dev and the crates.io index. On a
+pull request its guard job runs `pixi lock --check` ahead of any environment install, and when the
+lock has drifted the second job refreshes `pixi.lock` (and `Cargo.lock`, when the plan vendors
+crates) onto the branch as `pixi-sandbox[bot]` with a conventional `chore(lock):` commit, then
+dispatches `--relock-ci-workflow` explicitly — a `GITHUB_TOKEN` push starts no workflow, so without
+that dispatch the lock commit would never be tested. It solves with the pixi version pinned in the
+embedded tool catalogue, so the lockfile it writes is one the pixi inside a transport can read. A
+fork pull request cannot be pushed to and the job says so instead of failing obscurely.
+
+Without `--config`, init prefers `pixi-sandbox.toml`, falls back to an existing
+`.pixi-sandbox.toml`, and creates the preferred name when neither exists. Generated workflow and
+launcher markers allow safe regeneration without `--force`; an unmarked user-owned destination
+requires the explicit flag. The launcher uses only local `git archive`, `tar`, and the verified
+binary stored under `.pixi-sandbox/tools/<platform>/` in the sandbox branch. It never downloads
+during restoration.
+
+Every file `init` writes carries a `pixi-sandbox-version: X.Y.Z` line beside its ownership marker,
+naming the exact CLI release that rendered it.
+
+### `init --check`
+
+Render every owned file fresh, write nothing, and report drift:
+
+<ContextChips chips={["connected", "readonly"]} />
+
+```bash
+pixi-sandbox init --check
+```
+
+Exits `0` when the generated workflow, the relock workflow, the launcher, and the sandbox config
+schema all match what `init` would produce right now. Otherwise it names each finding on its own
+line with the remedy that fixes it, and exits non-zero:
+
+- a **missing** owned file — remedy: `pixi-sandbox init`
+- a **stale** owned file, present and marked but no longer matching a fresh render — remedy:
+  `pixi-sandbox init`
+- a **foreign** file at an owned path, present but carrying no ownership marker — remedy:
+  `pixi-sandbox init --force`
+- a sandbox config whose `schema` this CLI no longer understands — remedy: upgrade the CLI (a
+  config older than the CLI's current schema is accepted silently; config is reviewed data and is
+  never rewritten by either `init` or `--check`)
+
+`--check` and `--force` are mutually exclusive: auditing a tree and replacing a foreign file on it
+are different operations on purpose. This is the same check the generated workflow's scheduled
+upgrade job runs against a freshly self-updated binary before it proposes anything.
+
+## plan
+
+Validate `pixi-sandbox.toml` and emit the publish matrix — one job per `bundle × platform`:
+
+<ContextChips chips={["connected"]} />
+
+```bash
+pixi-sandbox plan --config pixi-sandbox.toml
+pixi-sandbox plan --config pixi-sandbox.toml --json
+```
+
+Rejects unsafe or implicit runner selection, and checks that every platform has embedded tool
+pins. `--json` is what the generated publisher consumes, and it surfaces the derived `push_paths`
+allowlist under the same key.
+
+## pack
+
+Create the transport directory from pixi environments:
+
+<ContextChips chips={["connected"]} />
+
+```bash
+pixi-sandbox pack \
+  --repo-root . \
+  --envs dev,docs \
+  --output-dir .sandbox-out \
+  --platform linux-64 \
+  --shard-limit-mib 95 \
+  --cargo-vendor \
+  --cargo-vendor-mode loose|tarballs \
+  --fetch-tools \
+  --tools-lock /path/to/reviewed-tools.lock.json \
+  --tools-cache ~/.cache/pixi-sandbox/tools \
+  --self-bin target/release/pixi-sandbox \
+  --config pixi-sandbox.toml
+```
+
+| Flag | Description |
+|------|-------------|
+| `--repo-root` | Project root (default `.`) |
+| `--envs` | Comma-separated envs |
+| `--output-dir` | Output transport dir |
+| `--platform` | Platform (e.g., `linux-64`) |
+| `--shard-limit-mib` | Shard limit MiB (default 95) |
+| `--cargo-vendor` | Vendor Cargo deps |
+| `--cargo-vendor-mode` | `loose` (default) or `tarballs` |
+| `--fetch-tools` | Fetch pinned tools (sha256-verified) |
+| `--tools-lock` | Override tools.lock.json path |
+| `--tools-cache` | Tools cache dir |
+| `--self-bin` | **Standalone** binary to embed only under `.pixi-sandbox/tools/<platform>/pixi-sandbox` (`.exe` on Windows) — see below |
+| `--config` | Optional sandbox config; its `[host_requirements]` resolved for `--platform` are recorded in the manifest (relative to the current directory, like `plan --config`) |
+
+No override means embedded pins from `tools.lock.json` compiled into the binary.
+
+`--config` is optional and additive: with it, a project's `[host_requirements]` table — resolved
+for `--platform`'s host family — travels in `manifest.json`, so the restored branch still says what
+its workloads need from the machine (see
+[Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/)). Without it, no
+host-requirement section is written and the manifest is byte-identical to what earlier releases
+packed.
+
+**The self-bin must run standalone.** A transport is executed on machines that never saw your
+prefix — no `pixi global` installation, no conda activation, no shell profile — so pack probes the
+embedded copy with `--version` under an empty environment and refuses a binary that cannot answer.
+The classic trap is `$(command -v pixi-sandbox)` after `pixi global install`: that is a *launcher
+trampoline*, not the binary; it looks for `trampoline_configuration/pixi-sandbox.json` beside the
+executable and dies at restore, and it passes every other check (faithful copy, static linkage —
+the self-bin's content is not pinned into the manifest). Pack the checksum-verified release asset
+(`pixi-sandbox-<target>` from the release, checked against its `SHA256SUMS`) or a binary you built
+yourself. A `pixi global` trampoline and a managed launcher script (the `~/.local/bin/pixi-sandbox`
+indirection a restore registers) are refused outright, before any embedding. Packing for a platform
+other than the host skips the probe with a printed note — `doctor --verify` on the target host is
+the same guard there.
+
+## doctor
+
+Verify a transport without writing:
+
+<ContextChips chips={["readonly"]} />
+
+```bash
+pixi-sandbox doctor --branch-location .sandbox-out --verify
+pixi-sandbox doctor --branch-location .sandbox-out --verify --envs dev
+pixi-sandbox doctor --branch-location .sandbox-out --verify --budget-config pixi-sandbox.toml
+pixi-sandbox doctor --branch-location .sandbox-out --verify --json
+```
+
+With `--verify` and an embedded `pixi-sandbox` tool, doctor also runs the *standalone probe*: after
+— and only after — every declared byte matches the manifest, it executes the tool's `--version`
+under an empty environment, so a hash-green branch whose bootstrap cannot run (a packed
+`pixi global` trampoline, see `--self-bin` above) is diagnosed here with the remedy instead of on
+the airlock. The probe is skipped, with a printed reason, when the hash report is not green
+(unverified bytes are never executed) or when the manifest platform is not this host's; a failed
+probe makes doctor exit non-zero.
+
+Verify a **restored project** against the manifest's per-file list, not just the branch:
+
+<ContextChips chips={["readonly"]} />
+
+```bash
+pixi-sandbox doctor --branch-location .sandbox-out --verify-restored /path/to/project
+```
+
+| Flag | Description |
+|------|-------------|
+| `--branch-location` | Transport dir |
+| `--verify` | Verify all blobs |
+| `--verify-restored <PROJECT>` | Also compare the restored tree to the manifest's per-file digests (implies `--verify`) |
+| `--work-dir` | Work dir the restore used, if not the default `<project>/.pixi/.restore-work` |
+| `--envs` | Filter envs |
+| `--budget-config <PATH>` | Load `[budgets]` from `pixi-sandbox.toml` / `.pixi-sandbox.toml` and fail read-only if blob, transport, push, or restore-disk ceilings are exceeded |
+| `--require-host-requirements` | Exit non-zero when a declared host requirement is **missing** on this host. Without it host findings never change the exit code; `unknown` never fails either way |
+| `--json` | Machine-readable output |
+
+**Host requirements.** A transport may declare what its workloads need from the machine (see
+[Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/)). `doctor` probes this
+host read-only — `ldd`, the distro package query, `systemctl`, the display variables, `/dev/dri` —
+and prints every requirement as `satisfied`, `missing`, `unknown` or `not applicable`, with a
+copy-pasteable remedy for the first two where one exists, plus the boundary that conda-provided
+libraries travel *with* the transport and are not probed. The verdicts are reported, never
+enforced: the generated publisher runs `doctor` on a runner that is not where the workload runs, so
+a missing host package must not red-line a publish. Add `--require-host-requirements` where the
+host *is* the point (a CI job that runs a GUI test, a workstation check). `unknown` — a host with no
+package query, a distribution with no supported manager — never fails, because a machine that
+cannot be inspected is not a machine that is broken. See
+[Host and GUI requirements](/pixi-sandbox/security/host-requirements/) for a worked Tauri-style
+example.
+
+Reports all failures, not first. Checks size + sha256 + tool linkage (rejects dynamic).
+`--verify-restored` additionally checks every file of the restored prefix (content, symlink
+targets, exec bits, the fingerprint marker) against the `files.json` oracle the packer recorded,
+flags any file present that the transport never carried, and reports schema-1 environments as
+`unverifiable` rather than failed. The airlock workflow's archived `ci`-feature e2e gate runs it
+against the restored project and extracted transport.
+
+## Safety implications
+
+- `init` writes only files it owns; your `pixi.toml` is never modified.
+- `pack` refuses a self-bin that cannot run standalone **before** embedding it.
+- `doctor` writes nothing — it is safe to run on the airlock and in every CI leg.
+
+## Failure modes
+
+- A digest mismatch or a failed standalone probe → [Troubleshooting](/pixi-sandbox/troubleshooting/)
+  entries 2 and 4.
+- An over-budget transport fails the gate before any push → entry 7.
+- `plan` rejects the config with a named error → the declaration rules are in
+  [Configure bundles](/pixi-sandbox/guides/configure-bundles/).
+
+## Related
+
+- [Publish transport branches](/pixi-sandbox/reference/cli/publish/) — what happens after a green verify
+- [Sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/) — the ceilings in detail
+- [Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/) — the `--cargo-vendor` path end to end

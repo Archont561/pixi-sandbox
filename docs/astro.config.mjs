@@ -1,61 +1,16 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import icon from "astro-icon";
 
-// ---------------------------------------------------------------------------
-// The version these docs describe. Two sources, in order:
-//
-// 1. SANDBOX_VERSION from the environment — an explicit caller override
-//    (`cargo run -p xtask -- version` prints the same value). The version of
-//    what you are reading about is decided by the tree you built from, never
-//    restated in the site.
-// 2. The root Cargo.toml — the same single source of truth, read directly. This
-//    is the ordinary path for `pixi run docs build` and a bare `bun run build`
-//    in docs/ alike: the `web` environment carries no cargo, so the config
-//    reads the manifest itself instead of leaning on a wrapper script.
-//
-// If neither resolves, the build throws. A docs site that quietly documents
-// `v__VERSION__` is worse than one that refuses to build.
-//
-// Walking up from cwd rather than `new URL("../Cargo.toml", import.meta.url)`:
-// Astro loads this config through a bundler, at which point import.meta.url can
-// point at a compiled copy and the relative path resolves to a Cargo.toml that
-// does not exist. The working directory survives that trip, whether the caller
-// is a pixi task (cwd = docs/), CI, or a build from the repository root. The
-// `[workspace.package]` test makes "nearest ancestor" safe: a vendored crate's
-// Cargo.toml carries no such table and is skipped.
-// ---------------------------------------------------------------------------
-function workspaceVersion(startDir = process.cwd()) {
-  let dir = resolve(startDir);
-  for (;;) {
-    const candidate = join(dir, "Cargo.toml");
-    if (existsSync(candidate)) {
-      const manifest = readFileSync(candidate, "utf8");
-      if (/^\[workspace\.package\]$/m.test(manifest)) {
-        // Scoped to the table, not the first `version` key in the file: the
-        // workspace dependencies and member manifests carry their own.
-        const table = manifest.match(/^\[workspace\.package\]$([\s\S]*?)^\[/m)?.[1];
-        const version = table?.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
-        if (version) return version;
-        throw new Error(`no [workspace.package] version in ${candidate}`);
-      }
-    }
-    const parent = dirname(dir);
-    if (parent === dir) {
-      throw new Error(
-        "pixi-sandbox version unresolved: SANDBOX_VERSION is unset and no Cargo.toml " +
-          "with a [workspace.package] table exists above the working directory. " +
-          "Run the docs through `pixi run docs build`.",
-      );
-    }
-    dir = parent;
-  }
-}
+import { resolveVersion } from "./src/version.mjs";
 
-const version = process.env.SANDBOX_VERSION?.trim() || workspaceVersion();
+// The version these docs describe: SANDBOX_VERSION when the caller overrides it
+// explicitly (`cargo run -p xtask -- version` prints the same value), otherwise
+// the root Cargo.toml read directly. The resolver, and the reasoning behind
+// walking up from cwd, live in src/version.mjs so the custom Footer component
+// resolves the same value the page content substitutes.
+const version = process.env.SANDBOX_VERSION?.trim() || resolveVersion();
 
 // ---------------------------------------------------------------------------
 // Replace `__VERSION__` with the derived version, everywhere in the content —
@@ -134,38 +89,84 @@ export default defineConfig({
         baseUrl: "https://github.com/Archont561/pixi-sandbox/edit/main/docs/",
       },
       customCss: ["./src/styles/custom.css"],
+      // Starlight's footer plus the documented-release line (audit doc-18): the
+      // version every page describes, a link to the compatibility page, and the
+      // releases feed. The component reuses Starlight's own EditLink,
+      // LastUpdated, and Pagination.
+      components: {
+        Footer: "./src/components/Footer.astro",
+        ContentPanel: "./src/components/ContentPanel.astro",
+      },
       sidebar: [
         {
-          label: "Start here",
+          // The audit's eight-group IA (doc-18): roles and lifecycle phases, not
+          // artifact types. Groups gain their remaining audit-listed pages as the
+          // refactor tasks land (task-97, 99, 100, 102, 103, 104 wire their own
+          // sidebar entries), so every commit leaves a working, link-clean site.
+          label: "Overview",
           items: [
-            { label: "Introduction", slug: "index" },
-            { label: "Installation", slug: "installation" },
-            { label: "Quickstart", slug: "quickstart" },
+            { label: "What is pixi-sandbox?", slug: "index" },
+            { label: "How it works", slug: "how-it-works" },
+            { label: "Glossary and security boundaries", slug: "glossary" },
+            { label: "Compatibility and releases", slug: "compatibility" },
           ],
         },
         {
-          label: "Guides",
+          label: "Start here",
           items: [
-            { label: "Using in your project", slug: "guides/using-in-your-project" },
-            { label: "CI Publishing", slug: "guides/ci-publishing" },
-            { label: "Airlock Restore", slug: "restore" },
-            { label: "GUI and host requirements", slug: "guides/host-requirements" },
-            { label: "GitHub Actions", slug: "guides/actions" },
+            { label: "Install and verify the CLI", slug: "installation" },
+            { label: "First verified offline bundle", slug: "first-offline-bundle" },
+            { label: "Choose your role", slug: "choose-your-role" },
+          ],
+        },
+        {
+          label: "For project owners",
+          items: [
+            { label: "Configure bundles", slug: "guides/configure-bundles" },
+            { label: "Cargo vendoring", slug: "guides/cargo-vendoring" },
+            { label: "Transport sizes, sharding, and budgets", slug: "guides/sizes-and-budgets" },
+          ],
+        },
+        {
+          label: "For CI maintainers",
+          items: [
+            { label: "CI publishing", slug: "guides/ci-publishing" },
+            { label: "Generated workflow policy", slug: "guides/workflow-policy" },
+            { label: "Migration from composite Actions", slug: "guides/migration" },
+          ],
+        },
+        {
+          label: "For airlock operators",
+          items: [
+            { label: "Restore on the airlock", slug: "restore" },
+            { label: "Troubleshooting and incident response", slug: "troubleshooting" },
+          ],
+        },
+        {
+          label: "Security and operations",
+          items: [
+            { label: "Verification guarantees", slug: "security/verification-guarantees" },
+            { label: "Host and GUI requirements", slug: "security/host-requirements" },
+            { label: "Diagnostics and evidence logs", slug: "security/diagnostics" },
           ],
         },
         {
           label: "Reference",
           items: [
-            { label: "Configuration", slug: "reference/configuration" },
-            { label: "CLI", slug: "reference/cli" },
-            { label: "Actions API", slug: "reference/actions" },
+            { label: "CLI overview and shared diagnostics", slug: "reference/cli/overview" },
+            { label: "Create and verify a transport", slug: "reference/cli/create-verify" },
+            { label: "Publish transport branches", slug: "reference/cli/publish" },
+            { label: "Restore and inspect a transport", slug: "reference/cli/restore" },
+            { label: "Tools and self-update", slug: "reference/cli/tools" },
+            { label: "Configuration overview", slug: "reference/configuration/overview" },
+            { label: "Bundle, CI, and host policy", slug: "reference/configuration/policy" },
           ],
         },
         {
-          label: "Design",
+          label: "Project",
           items: [
-            { label: "Architecture", slug: "design" },
-            { label: "Repository", slug: "repository" },
+            { label: "Architecture", slug: "project/architecture" },
+            { label: "Repository and contributing", slug: "project/repository" },
           ],
         },
       ],

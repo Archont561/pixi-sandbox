@@ -4,17 +4,92 @@ description: The operator checklist for a machine with no network.
 ---
 
 import { Icon } from 'astro-icon/components';
+import ContextChips from '../../components/ContextChips.astro';
+import GuideMeta from '../../components/GuideMeta.astro';
 
 This page is written for the person (or agent) standing in front of the disconnected
 machine. Nothing here needs network access — if any step tries to reach out, stop and
-report it.
+report it. Terms used here (transport, sandbox branch, doctor, manifest) are defined once in
+the [Glossary and security boundaries](/pixi-sandbox/glossary/).
+
+If a step fails, stop and find the symptom in
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) — it is organized by what
+you see, not by command.
+
+<GuideMeta
+  outcome="A verified, offline-clean restored project on a machine with no network."
+  audience="Airlock operators — the person or agent standing in front of the disconnected machine."
+  prerequisites="A Git bundle or clone containing the project branch and the sandbox branch; Git and tar on the machine."
+  machine="Airlock — no network, no credentials, nothing authenticates to anything."
+  maturity="Stable — the documented operator procedure."
+/>
+
+## Operator checklist
+
+<div style="border: 1.5px solid var(--sl-color-gray-5); border-radius: 0.5rem; padding: 0.85rem 1.1rem; margin: 1rem 0 1.75rem; break-inside: avoid;">
+
+<p style="margin: 0 0 0.55rem; font-size: 0.92rem; color: var(--sl-color-gray-2);">
+The whole restore, compact. No network, no JavaScript — this box is static markup and prints with
+the page. Tick each box in order; a failure is a hard stop.
+</p>
+
+<p style="margin: 0.55rem 0 0.2rem;"><strong>1 · Transfer</strong></p>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span>On the connected host, bundle both refs into one file — <code>git bundle create project-airlock.bundle main sandbox/dev-linux-64</code> — and move that single file across the gap. <a href="#1-get-the-branch">§1</a> · <a href="/pixi-sandbox/troubleshooting/#3-the-sandbox-branch-is-not-in-the-transfer-bundle">symptom 3</a> · <a href="/pixi-sandbox/troubleshooting/#5-git-object-is-larger-than-the-hosts-limit">symptom 5</a></span>
+</div>
+
+<p style="margin: 0.55rem 0 0.2rem;"><strong>2 · Verify</strong> <span style="color: var(--sl-color-gray-3); font-weight: normal;">(writes nothing)</span></p>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span><code>pixi-sandbox doctor --branch-location /tmp/sb --verify</code> — checks every sha256 in the manifest; any mismatch is a hard stop. <a href="#2-look-before-you-leap">§2</a> · <a href="/pixi-sandbox/troubleshooting/#2-doctor-found-a-digest-mismatch">symptom 2</a> · <a href="/pixi-sandbox/troubleshooting/#4-restore-cannot-execute-the-embedded-binary">symptom 4</a></span>
+</div>
+
+<p style="margin: 0.55rem 0 0.2rem;"><strong>3 · Restore</strong></p>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span>Clone the bundle and run <code>./restore.sh</code> — or <code>pixi-sandbox restore --branch-location /tmp/sb --output-path . --force</code> directly. <a href="#3-restore">§3</a> · <a href="/pixi-sandbox/troubleshooting/#1-restore-attempted-network-access">symptom 1</a></span>
+</div>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span>Open a <strong>new shell</strong> (or run the <code>export PATH=…</code> line the restore prints) so the registered user tools resolve. <a href="#3-restore">§3</a></span>
+</div>
+
+<p style="margin: 0.55rem 0 0.2rem;"><strong>4 · Prove it is offline-clean</strong></p>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span><code>pixi install --frozen --offline</code> — must be a no-op; real work means the tree drifted from <code>pixi.lock</code>, so re-run the restore. <a href="#4-prove-it-is-offline-clean">§4</a> · <a href="/pixi-sandbox/troubleshooting/#1-restore-attempted-network-access">symptom 1</a></span>
+</div>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span><code>pixi run --frozen -- cargo build --offline</code> — builds from the vendored crates only. <a href="#4-prove-it-is-offline-clean">§4</a> · <a href="/pixi-sandbox/troubleshooting/#8-vendored-cargo-build-still-fetches">symptom 8</a></span>
+</div>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span>Run the workload. A missing GUI, font, or display server is a <a href="/pixi-sandbox/security/host-requirements/"><code>[host_requirements]</code></a> finding, not a broken restore. <a href="#4-prove-it-is-offline-clean">§4</a> · <a href="/pixi-sandbox/troubleshooting/#6-host-lacks-gui-display-or-font-capability">symptom 6</a></span>
+</div>
+
+<p style="margin: 0.6rem 0 0; font-size: 0.92rem; color: var(--sl-color-gray-2);">
+Stop rule: nothing on this page may reach the network. If a step tries to, stop and report it.
+</p>
+
+</div>
 
 ## 1. Get the branch
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
-  <Icon name="lucide:git-branch" size={18} />
+  <Icon aria-hidden="true" name="lucide:git-branch" size={18} />
   <strong>Fetch orphan branch</strong>
 </div>
+
+<ContextChips chips={["connected", "network"]} />
 
 ```bash
 # on the connected host, include both refs in the transferred Git bundle
@@ -22,13 +97,16 @@ git bundle create project-airlock.bundle main sandbox/dev-linux-64
 ```
 
 The sandbox branch carries its static tooling under `.pixi-sandbox/tools/<platform>/`; its root
-contains Markdown only. The normal project branch carries the minimal launchers generated by
+contains Markdown only. A transfer that [lacks the branch](/pixi-sandbox/troubleshooting/#3-the-sandbox-branch-is-not-in-the-transfer-bundle)
+fails here, not at the restore. The normal project branch carries the minimal launchers generated by
 `pixi-sandbox init`.
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin: 1rem 0; padding: 0.75rem; background: var(--sl-color-accent-low); border-radius: 0.5rem;">
-  <Icon name="lucide:zap" size={18} />
+  <Icon aria-hidden="true" name="lucide:zap" size={18} />
   <span><strong>One-command offline reconstruction</strong></span>
 </div>
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 git clone project-airlock.bundle project
@@ -48,9 +126,11 @@ require local Git objects only. Set `PIXI_SANDBOX_BRANCH` to pin an exact branch
 ## 2. Look before you leap
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
-  <Icon name="lucide:shield-check" size={18} />
+  <Icon aria-hidden="true" name="lucide:shield-check" size={18} />
   <strong>Verify every byte</strong>
 </div>
+
+<ContextChips chips={["airlock", "offline", "readonly"]} />
 
 ```bash
 /tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
@@ -58,7 +138,9 @@ require local Git objects only. Set `PIXI_SANDBOX_BRANCH` to pin an exact branch
 ```
 
 This checks every sha256 in `manifest.json` and reports the payload breakdown. It writes
-nothing. Treat any failure as a hard stop.
+nothing. Treat any failure as a hard stop — a [digest mismatch](/pixi-sandbox/troubleshooting/#2-doctor-found-a-digest-mismatch)
+or an embedded binary that [cannot execute](/pixi-sandbox/troubleshooting/#4-restore-cannot-execute-the-embedded-binary)
+has its own recovery path.
 
 ### Keep evidence when the primary log is unreachable
 
@@ -73,6 +155,8 @@ credentials and common token/password query values are not recorded.
 For a local airlock check, the same binary can write evidence without changing doctor’s normal
 report:
 
+<ContextChips chips={["airlock", "offline", "readonly"]} />
+
 ```bash
 /tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
     --branch-location /tmp/sb --verify \
@@ -82,9 +166,11 @@ report:
 ## 3. Restore
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
-  <Icon name="lucide:package-check" size={18} />
+  <Icon aria-hidden="true" name="lucide:package-check" size={18} />
   <strong>Materialize environments</strong>
 </div>
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 cd /path/to/project
@@ -144,9 +230,11 @@ small volume.
 ## 4. Prove it is offline-clean
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
-  <Icon name="lucide:check-circle" size={18} />
+  <Icon aria-hidden="true" name="lucide:check-circle" size={18} />
   <strong>Offline assertions</strong>
 </div>
+
+<ContextChips chips={["airlock", "offline"]} />
 
 ```bash
 pixi install --frozen --offline                 # must be a no-op, must not touch the network
@@ -158,7 +246,9 @@ registration was skipped, call the manifest-owned binary explicitly:
 `./.pixi/tools/<platform>/pixi run --frozen <task>`.
 
 If `pixi install --frozen --offline` starts doing real work, the environment on disk does
-not match `pixi.lock` — do not let it continue; re-run the restore instead. If your project
+not match `pixi.lock` — do not let it continue; re-run the restore instead. A Rust project whose
+[cargo build still fetches](/pixi-sandbox/troubleshooting/#8-vendored-cargo-build-still-fetches) has
+the same shape of drift. If your project
 already tracks `.cargo/config.toml` for aliases, rustflags, target runners, or `[env]`, the
 default restore leaves it byte-for-byte intact; Cargo's vendor replacement lives in
 `.pixi-sandbox/cargo-home/config.toml` and is selected by Pixi's environment activation.
@@ -167,20 +257,20 @@ default restore leaves it byte-for-byte intact; Cargo's vendor replacement lives
 
 <div style="display: grid; gap: 0.5rem; margin: 1rem 0;">
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="tabler:brand-rust" size={18} />
+    <Icon aria-hidden="true" name="tabler:brand-rust" size={18} />
     <span><strong>Rust toolchain</strong> — ships crates, not rustc. Pack rust into env or have it on machine (conda-forge rust env ~1.8 GB unpacked).</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:hammer" size={18} />
+    <Icon aria-hidden="true" name="lucide:hammer" size={18} />
     <span><strong>Build artifacts</strong> — airlock compiles from scratch.</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:key" size={18} />
+    <Icon aria-hidden="true" name="lucide:key" size={18} />
     <span><strong>Credentials</strong> — nothing authenticates to anything.</span>
   </div>
   <div style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
-    <Icon name="lucide:monitor" size={18} />
-    <span><strong>Host system dependencies</strong> — fonts, a display server, D-Bus, GPU drivers stay on the machine; declare what a GUI workload needs in <a href="/pixi-sandbox/guides/host-requirements/"><code>[host_requirements]</code></a> and let <code>doctor</code> name what is missing.</span>
+    <Icon aria-hidden="true" name="lucide:monitor" size={18} />
+    <span><strong>Host system dependencies</strong> — fonts, a display server, D-Bus, GPU drivers stay on the machine; declare what a GUI workload needs in <a href="/pixi-sandbox/security/host-requirements/"><code>[host_requirements]</code></a> and let <code>doctor</code> name what is missing.</span>
   </div>
 </div>
 
@@ -190,3 +280,40 @@ Unpacking runs package post-link scripts, i.e. code from the bundle executes on 
 machine. That is inherent to conda environments — the bundle is signed/verified content and
 the branch should be protected accordingly. Ask for `--verify-only` runs and signed
 manifests if your site requires it.
+
+## Verification
+
+Section 4 above is the verification, and it is the last thing you do: `pixi install --frozen
+--offline` must be a no-op, `pixi run --frozen -- cargo build --offline` must build from the
+vendored crates only, and the registered user tools must resolve in a new shell. A restore is not
+proven until all three hold — if the install starts doing real work, re-run the restore rather
+than letting it continue.
+
+## Failure modes
+
+Every failure is a hard stop, and each symptom has its own recovery path in
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/):
+
+| What you see | Entry |
+|---|---|
+| A restore step reaches for the network | entry 1 |
+| `doctor --verify` reports a digest mismatch | entry 2 |
+| The sandbox branch is not in the transferred bundle | entry 3 |
+| The embedded binary cannot execute | entry 4 |
+| The host rejects an object as too large | entry 5 |
+| A missing GUI, font, or display server | entry 6 |
+| `cargo build --offline` still fetches | entry 8 |
+
+When an Actions or operator log cannot cross the boundary, ask the connected side to re-run the
+failing phase with a fresh `--log-file <PATH>` and transfer that bounded file beside the incident
+report — [Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/) is the collection
+procedure, and "Filing an incident" is the last section of the troubleshooting page.
+
+## Next steps
+
+**Run the workload** — with the offline assertions green, the restore is done: `pixi run --frozen
+<task>` in a new shell. When something failed instead, the next safe action is the symptom entry
+above, then [Filing an incident](/pixi-sandbox/troubleshooting/#filing-an-incident). Related:
+
+- [Compatibility and releases](/pixi-sandbox/compatibility/) — what the restored CLI and schema support
+- [Verification guarantees](/pixi-sandbox/security/verification-guarantees/) — what the checks prove
