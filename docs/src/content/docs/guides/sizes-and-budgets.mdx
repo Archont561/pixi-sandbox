@@ -1,0 +1,89 @@
+---
+title: Transport sizes, sharding, and budgets
+description: Measured transport sizes, why files are sharded, and the pre-push ceilings that keep a branch healthy.
+---
+
+import { Icon } from 'astro-icon/components';
+
+A transport is pushed to a Git host, so its size is not a preference — it is a set of enforced
+limits. This page covers the measured numbers, the sharding mechanism, and the budgets `doctor`
+checks before any branch is force-pushed.
+
+## Measured: a small project
+
+2 environments, 33 crates, `linux-64`, tools included:
+
+| Part | Size |
+|------|------|
+| conda envs (`.conda` channel) | 133 MB |
+| cargo vendor tree (loose) | 33 MB |
+| bundled tools (pixi, pixi-unpack, self) | 96 MB |
+| **transport dir** | **262 MB** |
+| **orphan branch after git dedup** | **~110 MB** |
+
+Tools dominate small bundles — expected, because Git stores each tool blob once and the tools are
+identical across bundles. A second bundle that reuses the same tool versions adds only its own
+environment bytes.
+
+## Sharding: why no single file is oversized
+
+GitHub rejects a blob larger than 100 MiB, and other hosts impose their own limits. `pack`
+therefore shards whole files above the shard limit — default **95 MiB** — into `.partNNN` parts,
+and `restore` re-joins them atomically (`join_parts`) after verification:
+
+```bash
+pixi-sandbox pack ... --shard-limit-mib 95
+```
+
+Sharding is whole-file and content-addressed: Git deduplicates unchanged shards across publishes,
+so a one-crate bump republishes only the changed bytes (measured: +0.07 MiB). Nothing is split
+inside a single environment — a growing transport is split by *bundle*, never by cutting an
+environment in half.
+
+## Budgets: checked before the push
+
+`[budgets]` in `pixi-sandbox.toml` sets hard ceilings. The generated publisher runs
+`doctor --verify --budget-config <config>` after `pack` and **before** `publish`, so an over-budget
+transport fails without replacing the last healthy orphan branch:
+
+| Field | Default | Measures |
+|-------|---------|----------|
+| `max_blob_mib` | `95` | Largest stored Git object: an unsplit blob, split part, embedded tool, or oracle file |
+| `max_transport_mib` | `2048` | Declared bytes verified by `doctor`: env pack blobs, oracle blobs, tools, vendored crates |
+| `max_repository_push_mib` | `2048` | File bytes staged into the orphan snapshot before Git compression |
+| `max_restore_required_mib` | `8192` | Restore preflight estimate: packed + unpacked env bytes plus two vendor copies |
+
+```toml
+[budgets]
+max_blob_mib = 95
+max_transport_mib = 2048
+max_repository_push_mib = 2048
+max_restore_required_mib = 8192
+```
+
+Budgets never change the transport format. When a bundle grows past a ceiling, the remedy is always
+the same shape: **publish fewer environments per `[[bundle]]`**. Do not split one environment, and
+do not move payload outside the self-contained branch — a branch that is not self-contained cannot
+be restored offline.
+
+## Rotation is not a shrink
+
+`publish --keep N` keeps the N most recent snapshots on a branch. Dropping a snapshot makes its
+objects *unreferenced, not deleted*: a force-push followed by `git gc --aggressive` on the server
+has been measured **not** to reclaim the space, and a hosted server may keep unreferenced objects
+for a long time. `--keep N` bounds what the branch *serves* — which bounds what an airlock fetches —
+but reclaiming disk on the remote still needs an administrator to prune, or the branch to be
+recreated under a new name.
+
+## When a ceiling is exceeded
+
+`doctor --budget-config` fails read-only and names the exceeded ceiling and its remedy. The safe
+response is to split the reviewed environment set into separate `[[bundle]]` entries and republish;
+the failed run never touches the existing branch. Symptom-level guidance is in
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/).
+
+## See also
+
+- [Configure bundles](/pixi-sandbox/guides/configure-bundles/) — declaring bundles and platforms
+- [Publish transport branches](/pixi-sandbox/reference/cli/publish/) — `publish`, `--keep`, `--dry-run`
+- [Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/) — budgets, runners, workflow policy

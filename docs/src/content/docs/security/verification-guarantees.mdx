@@ -1,0 +1,65 @@
+---
+title: Verification guarantees
+description: What is cryptographically verified, what the transport proves, and the threat boundaries it does not cross.
+---
+
+import { Icon } from 'astro-icon/components';
+
+For a tool that carries executable content across an air gap, "verified" has to mean something
+exact. This page states the integrity model, the order checks run in, and the boundaries — what
+pixi-sandbox proves, and what only your Git-side policy can provide.
+
+## The integrity model
+
+Every blob that enters a transport is catalogued in `manifest.json` by SHA-256 digest, together
+with the source commit and the exact helper-tool versions. Verification is not advisory: a
+transport that does not verify is never written to disk.
+
+| Guarantee | Mechanism | Enforced by |
+|---|---|---|
+| **Byte integrity** | Every blob's SHA-256 matches `manifest.json` | `doctor --verify`, re-run inside `restore` before any write |
+| **Whole-file sharding** | Files above the shard limit split into `.partNNN`, re-joined atomically after verification | `pack` / `restore` (`join_parts`) |
+| **Executable bootstrap** | The embedded binary is probed with `--version` under an empty environment — a hash-green branch whose bootstrap cannot run is diagnosed before restore | `doctor --verify` standalone probe; `pack` refuses a trampoline as `--self-bin` |
+| **Restored-tree fidelity** | Every file of the restored prefix — content, symlink targets, exec bits, fingerprint marker — is compared to the packer's per-file oracle | `doctor --verify-restored` |
+| **Verify before write** | Nothing is materialized until every check passes; a failed restore leaves the work dir for inspection and the target untouched | `restore` |
+| **Budget ceilings** | Blob, transport, push, and restore-disk limits fail read-only before a force-push | `doctor --budget-config` |
+
+The check order is the point: hashes first, the executable probe only after a green hash report
+(unverified bytes are never executed), and the restore's own verification before the first
+environment moves into place.
+
+## What the transport proves
+
+A verified restore proves the environment on disk **matches the manifest the packer wrote** —
+which, transitively, means it matches the reviewed `pixi.lock`. It also proves the tool binaries
+inside it are the pinned, checksum-verified ones. `pixi install --frozen --offline` then has to be a
+no-op; if it starts doing real work, the tree does not match the lockfile and the restore is
+re-run, not patched.
+
+## What it does not prove
+
+- **Authenticity of the branch.** Verification is integrity against the manifest. Trust that the
+  manifest is *yours* comes from the Git side: who can push the sandbox branch, and whether the
+  branch is protected. Treat the transport branch as a release artifact and protect it accordingly.
+- **That the host can run the payload.** A restored transport is a complete Pixi environment, not a
+  complete machine: fonts, a display server, D-Bus, GPU access, and the system C library stay on
+  the host. See [Host and GUI requirements](/pixi-sandbox/security/host-requirements/).
+- **That the payload is inert.** Unpacking runs package post-link scripts — code from the bundle
+  executes on your machine. That is inherent to conda environments; the mitigation is branch
+  protection and review, not a flag.
+- **A signature chain.** There is no separate signing ceremony: the manifest digests plus the
+  pinned tool checksums are the trust anchor, and the branch that carries them must be as
+  protected as a release channel.
+
+## What never crosses the gap
+
+Credentials, tokens, and remote URLs. Diagnostics record a configured Git remote only as
+`<configured>`, and URL credentials plus common token/password query fields are redacted from
+nested process errors before a log is written. See
+[Diagnostics and evidence logs](/pixi-sandbox/security/diagnostics/).
+
+## See also
+
+- [Restore on the airlock](/pixi-sandbox/restore/) — the operator's ordered checklist
+- [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) — when a check fails
+- [CLI overview and shared diagnostics](/pixi-sandbox/reference/cli/) — flag-level reference

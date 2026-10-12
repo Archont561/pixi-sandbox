@@ -1,0 +1,103 @@
+---
+title: Cargo vendoring
+description: Ship crates, not a toolchain — what gets vendored, how it is wired, and how to prove an offline build.
+---
+
+import { Icon } from 'astro-icon/components';
+
+A restored transport is a complete Pixi environment and a complete crate source tree — but it is
+**not** a Rust toolchain. This page covers the vendoring half: what travels, how the restore wires
+it, and the one command that proves the far side never touches the network.
+
+## What gets vendored
+
+When vendoring is enabled, `pack` copies the workspace's crate sources into the transport:
+
+```text
+sandbox/<bundle>-<platform>
+└── .pixi-sandbox/
+    └── vendor/          # cargo vendor --versioned-dirs, keyed by Cargo.lock
+```
+
+The tree is keyed by `Cargo.lock`: every crate at the exact recorded version, shared by all
+environments in the bundle. A Rust project needs a usable `Cargo.lock` **before** packing — pack
+does not solve one for you. (The generated `relock.yml` workflow refreshes `Cargo.lock` on pull
+requests, so a manifest edit never leaves the lock stale on the connected side.)
+
+Measured for the documented small project (33 crates): the loose vendor tree is **33 MB** of the
+262 MB transport. See [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/)
+for the full breakdown.
+
+## Enabling it
+
+Vendoring is controlled per bundle in `pixi-sandbox.toml`:
+
+```toml
+schema = 1
+cargo_vendor = true        # top-level default for every bundle
+
+[[bundle]]
+name = "developer"
+environments = ["dev", "docs"]
+platforms = ["linux-64"]
+cargo_vendor = true        # per-bundle override wins
+
+[[bundle]]
+name = "python-only"
+environments = ["default"]
+platforms = ["linux-64"]
+cargo_vendor = false       # conda envs only — no crates travel
+```
+
+`init` enables it explicitly only when the project root contains a `Cargo.toml`; the
+language-neutral starter writes `cargo_vendor = false`. The local pack flag mirrors the config:
+
+```bash
+pixi-sandbox pack --repo-root . --envs dev,docs --output-dir .sandbox-out \
+  --platform linux-64 --cargo-vendor --cargo-vendor-mode loose \
+  --fetch-tools --self-bin target/release/pixi-sandbox
+```
+
+`--cargo-vendor-mode` is `loose` (default) or `tarballs`. Skip the flag entirely to ship conda
+environments without crates.
+
+## How the restore wires it
+
+The restore never touches your project's `.cargo/config.toml`. In the default
+`--cargo-config auto` mode it writes a sandbox-owned
+`.pixi-sandbox/cargo-home/config.toml` carrying the vendor source replacement, and per-environment
+Conda/Pixi activation hooks that set `CARGO_HOME` to that directory. If your project already
+tracks `.cargo/config.toml` for aliases, rustflags, target runners, or `[env]`, it stays
+byte-for-byte intact.
+
+There is one supported entrypoint after a restore: **pixi**. Run crate commands through it so the
+activation hook and the offline contract stay in effect:
+
+```bash
+pixi run --frozen -- cargo build --offline
+```
+
+## Proving it is offline
+
+The restore ends with two assertions, and both must be no-ops that never touch the network:
+
+```bash
+pixi install --frozen --offline                 # environment matches pixi.lock
+pixi run --frozen -- cargo build --offline      # builds from the vendored crates only
+```
+
+If the cargo build still tries to fetch, the vendor tree and `Cargo.lock` disagree — see
+[Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) for the recovery path.
+
+## What does not travel
+
+- **No rustc, no cargo.** The toolchain comes from the Pixi environment (a conda-forge rust env is
+  ~1.8 GB unpacked) or from the machine. Pack it into an environment if the far side has none.
+- **No build artifacts.** The airlock compiles from scratch; only sources and the lockfile travel.
+- **No registry credentials.** Nothing in the transport authenticates to anything.
+
+## See also
+
+- [Configure bundles](/pixi-sandbox/guides/configure-bundles/) — the full bundle declaration
+- [Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/) — every config field
+- [Restore on the airlock](/pixi-sandbox/restore/) — what the restore does, in order

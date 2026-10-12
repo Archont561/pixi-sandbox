@@ -1,0 +1,75 @@
+---
+title: Diagnostics and evidence logs
+description: Durable, redacted evidence for pack, doctor, publish, and restore — what is written, where, and how to transfer it.
+---
+
+import { Icon } from 'astro-icon/components';
+
+A failure on an airlocked machine is only half the story; the other half is evidence you can
+actually read. `pack`, `doctor`, and `publish` share two controls that produce durable,
+bounded, redacted logs — and none of it ever enters the transport branch.
+
+## The two controls
+
+```bash
+pixi-sandbox pack ... -v
+pixi-sandbox doctor ... -vv --log-file /var/tmp/pixi-sandbox-doctor.log
+pixi-sandbox publish ... --log-file ./publish-attempt.log
+```
+
+- **`-v`** writes phase boundaries to stderr.
+- **`-vv`** adds reviewed context: local paths, platform, environment count, helper-tool paths.
+- **`--log-file <PATH>`** creates a durable plain-text log, flushed after every phase plus the
+  complete causal error chain before exit. It works with or without `-v`, so CI keeps normal
+  stdout unchanged while retaining evidence.
+
+The destination **must not already exist**: pixi-sandbox refuses to overwrite the only copy of an
+earlier failure, so the first failure is never silently destroyed. Choose a path outside the
+transport output — the log is operator evidence, not payload.
+
+## What is never recorded
+
+Diagnostics never dump argv or the environment. A configured Git remote is recorded only as
+`<configured>`, and URL credentials plus common token/password query fields are redacted from
+nested process errors. Transfer the bounded text file **beside** the incident report — never inside
+the transport branch.
+
+## Inside the generated publisher
+
+Publish failures do not require access to the live Actions log CDN:
+
+- Every publish leg records bounded execution logs into `$RUNNER_TEMP/pixi-sandbox-logs/` (with
+  `--log-file` for `pack`, `doctor`, and `publish`) and uploads them as the
+  `publish-diagnostics-<platform>` artifact with 7-day retention.
+- On any failed phase, the step formats an actionable failure report into `$GITHUB_STEP_SUMMARY`
+  naming the failed phase, the target branch, the diagnostic artifact name, and a bounded 50-line
+  excerpt — without leaking tokens or secrets.
+- Failures during `install`, `pack`, or `doctor` halt **before** `publish` is called: a rejected
+  push never commits over or corrupts an existing healthy orphan transport snapshot.
+
+## On the airlock
+
+The same binary writes evidence without changing its normal report:
+
+```bash
+/tmp/sb/.pixi-sandbox/tools/linux-64/pixi-sandbox doctor \
+    --branch-location /tmp/sb --verify \
+    --log-file /path/to/new/doctor-attempt.log
+```
+
+Transfer that file back across the gap beside the incident report. If an Actions or operator log
+cannot cross the boundary, ask the connected side to rerun the failing phase with a fresh
+`--log-file` — the file is flushed after every phase, so even a re-run that fails again leaves a
+complete causal chain.
+
+## From evidence to recovery
+
+Each symptom in [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) names the
+evidence to collect and the safe next action. The flag-level reference is in the
+[CLI reference](/pixi-sandbox/reference/cli/).
+
+## See also
+
+- [Verification guarantees](/pixi-sandbox/security/verification-guarantees/) — what the checks prove
+- [Restore on the airlock](/pixi-sandbox/restore/) — the operator checklist
+- [CI publishing](/pixi-sandbox/guides/ci-publishing/) — the publisher's failure surfaces

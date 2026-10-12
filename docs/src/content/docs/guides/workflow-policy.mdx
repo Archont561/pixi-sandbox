@@ -1,0 +1,79 @@
+---
+title: Generated workflow policy
+description: Carry publisher policy in pixi-sandbox.toml — no hand edits, ever.
+---
+
+import { Icon } from 'astro-icon/components';
+
+Every real repository wants to change something about the generated `publish-sandbox.yml`: a
+`paths:` allowlist so an unrelated change does not repack and force-push the transport, tighter
+`permissions:`, a `concurrency:` guard against two publishes racing, `timeout-minutes:` so a hung
+`pack` does not hold a runner for six hours, or a pinned `pixi-version:` with caching disabled.
+
+**That policy belongs in config, not in the file.** An optional `[workflow]` table in
+`pixi-sandbox.toml` carries it, and `init` renders it straight into the workflow — no hand edits,
+ever.
+
+## The table
+
+```toml
+[workflow]
+push_paths = ["pixi-sandbox.toml", "pixi.toml", "pixi.lock"]
+permissions = true
+pixi_version = "0.81.0"
+setup_pixi_cache = true
+
+[workflow.concurrency]
+group = "publish-sandbox"
+cancel_in_progress = false
+
+[workflow.timeouts]
+plan = 15
+publish = 60
+```
+
+| Field | Default | What it controls |
+|-------|---------|------------------|
+| `push_paths` | derived once `[workflow]` is present; otherwise no filter | `on.push.paths:` allowlist. `!`-prefixed entries are GitHub negation syntax; no `..` component or leading `/` |
+| `permissions` | `false` | `true` scopes `contents: write` to the `publish` job; `false` keeps the historical unconditional top-level grant |
+| `concurrency.group` | unset | Prevents two publishes racing to force-push the same orphan branch |
+| `concurrency.cancel_in_progress` | `false` | Paired with the group |
+| `timeouts.plan` / `timeouts.publish` | unset | `timeout-minutes:` per job — the publish default is six hours |
+| `pixi_version` | unset | Pins `setup-pixi`'s own `pixi-version:` input on every step |
+| `setup_pixi_cache` | `false` once `[workflow]` is present | `setup-pixi`'s `cache:` input — see the hazard below |
+
+:::caution[The presence of the table moves two defaults]
+No `[workflow]` table at all renders byte-identically to the historical template — nothing changes
+for an existing project until it opts in. Once the table is present **at all**, even empty,
+`setup_pixi_cache` defaults to `false` and `push_paths` defaults to a derivation. Write both
+explicitly when you add the table.
+:::
+
+## Why the cache defaults off
+
+pixi-sandbox owns the native `pixi install` while packing. A `setup-pixi` cache keyed on the
+consumer manifest can restore a solve the pack will not reuse — a correctness hazard, not mere
+staleness. Set `setup_pixi_cache = true` explicitly to keep the old best-effort caching.
+
+## The `push_paths` derivation
+
+Unset (with `[workflow]` present), `init` derives the allowlist from the transport inputs `plan`
+already depends on: the sandbox config itself, `pixi.toml`, `pixi.lock` (always), plus whichever of
+`package.json`, `bun.lock`, `Cargo.toml`, `Cargo.lock` actually exist in the project.
+`pixi-sandbox plan --config pixi-sandbox.toml --json` surfaces the same derivation under its
+`push_paths` key, so you can diff what the next `init` would write before running it. An explicit
+`push_paths` always overrides the derivation.
+
+## Regeneration is the upgrade path
+
+Run `pixi-sandbox init` any time policy changes — or let the generated workflow's scheduled upgrade
+job do it. Either way the output always matches exactly what the config describes, which is also
+what makes the upgrade job's pull requests trustworthy: they come from the same renderer your local
+`init` uses, with no local edit left to disagree with it. `pixi-sandbox init --check` audits the
+tree read-only and names any drift.
+
+## See also
+
+- [CI publishing](/pixi-sandbox/guides/ci-publishing/) — the pipeline, the failure surfaces, the upgrade lane
+- [Bundle, CI, and host policy](/pixi-sandbox/reference/configuration/policy/) — every field and its default
+- [Migration from composite Actions](/pixi-sandbox/guides/migration/) — replacing the retired Actions

@@ -1,6 +1,6 @@
 ---
-title: Using in your project
-description: User-facing guide to integrate pixi-sandbox into any pixi project.
+title: Configure bundles
+description: "The project-owner guide: declare environments and platforms, generate the workflow and launcher, and know exactly what crosses the air gap."
 ---
 
 import { Icon } from 'astro-icon/components';
@@ -160,17 +160,9 @@ sandbox/developer-linux-64 (orphan branch)
 └── AGENTS.md                      # agent instructions
 ```
 
-Sizes (measured small project, 2 envs, 33 crates, linux-64):
-
-| Part | Size |
-|------|------|
-| conda envs (.conda) | 133 MB |
-| cargo vendor (loose) | 33 MB |
-| tools (pixi, pixi-unpack, self) | 96 MB |
-| **transport dir** | **262 MB** |
-| **orphan branch after git dedup** | **~110 MB** |
-
-Tools dominate small bundles — expected, git stores each tool blob once.
+Sizes depend on the environment set, the crates, and the tools. The measured breakdown, the
+sharding mechanism, and the pre-push budgets are in
+[Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/).
 
 ## 5. Restore on airlock
 
@@ -197,24 +189,10 @@ See [Airlock Restore](/pixi-sandbox/restore/) for transfer options and the opera
 
 ## 6. Without cargo vendoring
 
-If you only need conda envs:
-
-```toml
-# pixi-sandbox.toml
-schema = 1
-cargo_vendor = false
-
-[[bundle]]
-name = "python"
-environments = ["dev", "test"]
-platforms = ["linux-64", "win-64"]
-```
-
-And pack without `--cargo-vendor`:
-
-```bash
-pixi-sandbox pack --repo-root . --envs dev --output-dir .sandbox-out --platform linux-64 --fetch-tools --self-bin target/release/pixi-sandbox
-```
+Conda-only projects ship no crates at all. Set `cargo_vendor = false` on the bundle (or at the top
+level), pack without `--cargo-vendor`, and the far side never sees a vendor tree. The full story —
+what is vendored, how the restore wires `CARGO_HOME`, and the offline build proof — is in
+[Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/).
 
 ## 7. Tips
 

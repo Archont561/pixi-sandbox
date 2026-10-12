@@ -136,21 +136,50 @@ export default defineConfig({
       customCss: ["./src/styles/custom.css"],
       sidebar: [
         {
-          label: "Start here",
+          // The audit's eight-group IA (doc-18): roles and lifecycle phases, not
+          // artifact types. Groups gain their remaining audit-listed pages as the
+          // refactor tasks land (task-97, 99, 100, 102, 103, 104 wire their own
+          // sidebar entries), so every commit leaves a working, link-clean site.
+          label: "Overview",
           items: [
-            { label: "Introduction", slug: "index" },
-            { label: "Installation", slug: "installation" },
-            { label: "Quickstart", slug: "quickstart" },
+            { label: "What is pixi-sandbox?", slug: "index" },
+            { label: "How it works", slug: "how-it-works" },
           ],
         },
         {
-          label: "Guides",
+          label: "Start here",
           items: [
-            { label: "Using in your project", slug: "guides/using-in-your-project" },
-            { label: "CI Publishing", slug: "guides/ci-publishing" },
-            { label: "Airlock Restore", slug: "restore" },
-            { label: "GUI and host requirements", slug: "guides/host-requirements" },
-            { label: "GitHub Actions", slug: "guides/actions" },
+            { label: "Install and verify the CLI", slug: "installation" },
+            { label: "First verified offline bundle", slug: "first-offline-bundle" },
+            { label: "Choose your role", slug: "choose-your-role" },
+          ],
+        },
+        {
+          label: "For project owners",
+          items: [
+            { label: "Configure bundles", slug: "guides/configure-bundles" },
+            { label: "Cargo vendoring", slug: "guides/cargo-vendoring" },
+            { label: "Transport sizes, sharding, and budgets", slug: "guides/sizes-and-budgets" },
+          ],
+        },
+        {
+          label: "For CI maintainers",
+          items: [
+            { label: "CI publishing", slug: "guides/ci-publishing" },
+            { label: "Generated workflow policy", slug: "guides/workflow-policy" },
+            { label: "Migration from composite Actions", slug: "guides/migration" },
+          ],
+        },
+        {
+          label: "For airlock operators",
+          items: [{ label: "Restore on the airlock", slug: "restore" }],
+        },
+        {
+          label: "Security and operations",
+          items: [
+            { label: "Verification guarantees", slug: "security/verification-guarantees" },
+            { label: "Host and GUI requirements", slug: "security/host-requirements" },
+            { label: "Diagnostics and evidence logs", slug: "security/diagnostics" },
           ],
         },
         {
@@ -158,14 +187,13 @@ export default defineConfig({
           items: [
             { label: "Configuration", slug: "reference/configuration" },
             { label: "CLI", slug: "reference/cli" },
-            { label: "Actions API", slug: "reference/actions" },
           ],
         },
         {
-          label: "Design",
+          label: "Project",
           items: [
-            { label: "Architecture", slug: "design" },
-            { label: "Repository", slug: "repository" },
+            { label: "Architecture", slug: "project/architecture" },
+            { label: "Repository and contributing", slug: "project/repository" },
           ],
         },
       ],
