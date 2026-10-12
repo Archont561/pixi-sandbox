@@ -20,6 +20,7 @@ mod support;
 mod tools;
 mod unpack;
 mod upgrade;
+mod wrap_payload;
 
 pub use doctor::run as doctor;
 pub use fetch_release::run as fetch_release;
@@ -33,6 +34,7 @@ pub use self_update::run as self_update;
 pub use tools::run as tools;
 pub use unpack::run as unpack;
 pub use upgrade::run as upgrade;
+pub use wrap_payload::run as wrap_payload;
 
 use tracing_subscriber::{EnvFilter, fmt};
 

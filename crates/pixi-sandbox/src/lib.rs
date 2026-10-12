@@ -19,3 +19,4 @@ pub mod tools_update;
 pub mod upgrade;
 pub mod user_tools;
 pub mod vendor;
+pub mod wrap_payload;

@@ -33,6 +33,8 @@ pub enum Command {
     Init(InitArgs),
     /// Validate `.pixi-sandbox.toml` and emit native publish jobs.
     Plan(PlanArgs),
+    /// Fetch a prebuilt payload on the connected host and stage its conda package recipe (ADR-28).
+    WrapPayload(WrapPayloadArgs),
     /// Manage the pinned helper tools (`pixi-pack`, `pixi-unpack`, `pixi`).
     Tools(ToolsArgs),
     /// Replace this standalone binary with a published release (ADR-26).
@@ -559,6 +561,34 @@ pub struct PlanArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct WrapPayloadArgs {
+    /// The payload declaration. Its directory is the base `working_dir` resolves against.
+    #[arg(long, default_value = "pixi-sandbox-payload.toml")]
+    pub config: PathBuf,
+
+    /// Print the plan — package identity, payload totals, source and the rendered recipe — and
+    /// stage nothing.
+    #[arg(long)]
+    pub plan: bool,
+
+    /// Emit the plan as a single JSON value. Takes precedence over `--plan`'s human summary.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Skip running the config's `prepare` command; gate and read a payload already on disk.
+    #[arg(long)]
+    pub skip_prepare: bool,
+
+    /// Where the staged recipe directory is written (default: `<config dir>/payload-build`).
+    #[arg(long, value_name = "PATH")]
+    pub out: Option<PathBuf>,
+
+    /// Read `[budgets]` from this `.pixi-sandbox.toml`; without it the built-in defaults apply.
+    #[arg(long, value_name = "PATH")]
+    pub budget_config: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
 pub struct ToolsArgs {
     #[command(subcommand)]
     pub command: ToolsCommand,
@@ -646,6 +676,7 @@ pub fn run() -> Result<()> {
         Command::Doctor(args) => commands::doctor(&args),
         Command::Init(args) => commands::init(&args),
         Command::Plan(args) => commands::plan(&args),
+        Command::WrapPayload(args) => commands::wrap_payload(&args),
         Command::Tools(args) => commands::tools(args),
         Command::SelfUpdate(args) => commands::self_update(args),
         Command::FetchRelease(args) => commands::fetch_release(&args),

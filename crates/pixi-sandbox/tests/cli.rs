@@ -2619,3 +2619,126 @@ fn init_preserves_reviewed_vendoring_policy(#[case] cargo_vendor: bool) {
         );
     }
 }
+
+// ---- wrap-payload (TASK-78 Slice 2) -----------------------------------------------------------
+
+/// A payload declaration plus an on-disk artifact and payload tree, written into a tempdir.
+/// `prepare` is a shell no-op because the cases here drive `--skip-prepare`; the shell path is
+/// covered by a `#[cfg(unix)]` case below.
+fn write_payload_project(root: &Path, artifact_bytes: &[u8], digest: &str) -> PathBuf {
+    fs::create_dir_all(root.join("payload")).expect("payload dir");
+    fs::write(root.join("payload/tool"), b"#!/bin/sh\necho hi\n").expect("payload file");
+    fs::write(root.join("artifact.bin"), artifact_bytes).expect("artifact");
+    let config = format!(
+        "schema = 1\nname = \"demo\"\nversion = \"1.0.0\"\nplatform = \"linux-64\"\n\n\
+         prepare = \"true\"\nartifact = \"artifact.bin\"\npayload = \"payload\"\n\n\
+         [source]\nurl = \"https://example.invalid/demo-1.0.0.bin\"\nsha256 = \"{digest}\"\n"
+    );
+    let path = root.join("pixi-sandbox-payload.toml");
+    fs::write(&path, config).expect("config");
+    path
+}
+
+#[test]
+fn wrap_payload_plan_prints_the_recipe_the_totals_and_the_declared_digest() {
+    let project = tempfile::tempdir().unwrap();
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
+    write_payload_project(project.path(), b"the artifact", &digest);
+
+    bin()
+        .current_dir(project.path())
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--skip-prepare",
+            "--plan",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("demo 1.0.0 for linux-64"))
+        .stdout(predicate::str::contains(digest.as_str()))
+        .stdout(predicate::str::contains("recipe:"));
+
+    assert!(
+        !project.path().join("payload-build").exists(),
+        "--plan stages nothing"
+    );
+}
+
+#[test]
+fn wrap_payload_stages_a_reviewable_recipe_directory() {
+    let project = tempfile::tempdir().unwrap();
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
+    write_payload_project(project.path(), b"the artifact", &digest);
+
+    bin()
+        .current_dir(project.path())
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--skip-prepare",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("staged demo 1.0.0"));
+
+    let build = project.path().join("payload-build");
+    assert!(build.join("recipe.yaml").is_file(), "the recipe is staged");
+    assert!(
+        build.join("pixi-sandbox-payload.json").is_file(),
+        "the provenance is staged"
+    );
+    assert!(
+        build.join("payload/tool").is_file(),
+        "the payload tree is staged beside the recipe"
+    );
+}
+
+#[test]
+fn wrap_payload_refuses_a_skipped_prepare_whose_artifact_changed() {
+    let project = tempfile::tempdir().unwrap();
+    let declared = pixi_sandbox_core::shard::sha256_bytes(b"what the config pinned");
+    write_payload_project(project.path(), b"the upstream changed", &declared);
+
+    bin()
+        .current_dir(project.path())
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--skip-prepare",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("sha256"));
+}
+
+#[cfg(unix)]
+#[test]
+fn wrap_payload_runs_the_declared_prepare_command_and_gates_its_digest() {
+    let project = tempfile::tempdir().unwrap();
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"fetched for real\n");
+    fs::create_dir_all(project.path().join("payload")).unwrap();
+    fs::write(project.path().join("payload/tool"), b"data").unwrap();
+    let config = format!(
+        "schema = 1\nname = \"demo\"\nversion = \"1.0.0\"\nplatform = \"linux-64\"\n\n\
+         prepare = \"printf 'fetched for real\\n' > artifact.bin\"\n\
+         artifact = \"artifact.bin\"\npayload = \"payload\"\n\n\
+         [source]\nurl = \"https://example.invalid/demo-1.0.0.bin\"\nsha256 = \"{digest}\"\n"
+    );
+    fs::write(project.path().join("pixi-sandbox-payload.toml"), config).unwrap();
+
+    bin()
+        .current_dir(project.path())
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--plan",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("demo 1.0.0 for linux-64"));
+}

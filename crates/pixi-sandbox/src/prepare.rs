@@ -102,6 +102,21 @@ pub fn prepare(
             detail: format!("{error:#}"),
         })?;
 
+    read_prepared(config, config_dir)
+}
+
+/// Verify and read a payload that is already on disk, without running the `prepare` command.
+///
+/// This is the `--skip-prepare` path: an operator who already fetched the artifact (or a rerun
+/// after a downstream failure) reuses the bytes, but the digest gate and the tree read are the
+/// same as a fresh run — a stale or tampered artifact is still refused.
+///
+/// # Errors
+///
+/// [`PayloadError::Io`] when the artifact is missing, [`PayloadError::ArtifactMismatch`] when it
+/// differs from the declared digest, or a tree-read/identity error.
+pub fn read_prepared(config: &PayloadConfig, config_dir: &Path) -> Result<PreparedPayload> {
+    let working_dir = config_dir.join(&config.working_dir);
     let artifact = working_dir.join(&config.artifact);
     verify_artifact(&artifact, &config.source.sha256)?;
 
