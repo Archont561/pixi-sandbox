@@ -15,6 +15,64 @@ If a step fails, stop and find the symptom in
 [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/) — it is organized by what
 you see, not by command.
 
+## Operator checklist
+
+<div style="border: 1.5px solid var(--sl-color-gray-5); border-radius: 0.5rem; padding: 0.85rem 1.1rem; margin: 1rem 0 1.75rem; break-inside: avoid;">
+
+<p style="margin: 0 0 0.55rem; font-size: 0.92rem; color: var(--sl-color-gray-2);">
+The whole restore, compact. No network, no JavaScript — this box is static markup and prints with
+the page. Tick each box in order; a failure is a hard stop.
+</p>
+
+<p style="margin: 0.55rem 0 0.2rem;"><strong>1 · Transfer</strong></p>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span>On the connected host, bundle both refs into one file — <code>git bundle create project-airlock.bundle main sandbox/dev-linux-64</code> — and move that single file across the gap. <a href="#1-get-the-branch">§1</a> · <a href="/pixi-sandbox/troubleshooting/#3-the-sandbox-branch-is-not-in-the-transfer-bundle">symptom 3</a> · <a href="/pixi-sandbox/troubleshooting/#5-git-object-is-larger-than-the-hosts-limit">symptom 5</a></span>
+</div>
+
+<p style="margin: 0.55rem 0 0.2rem;"><strong>2 · Verify</strong> <span style="color: var(--sl-color-gray-3); font-weight: normal;">(writes nothing)</span></p>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span><code>pixi-sandbox doctor --branch-location /tmp/sb --verify</code> — checks every sha256 in the manifest; any mismatch is a hard stop. <a href="#2-look-before-you-leap">§2</a> · <a href="/pixi-sandbox/troubleshooting/#2-doctor-found-a-digest-mismatch">symptom 2</a> · <a href="/pixi-sandbox/troubleshooting/#4-restore-cannot-execute-the-embedded-binary">symptom 4</a></span>
+</div>
+
+<p style="margin: 0.55rem 0 0.2rem;"><strong>3 · Restore</strong></p>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span>Clone the bundle and run <code>./restore.sh</code> — or <code>pixi-sandbox restore --branch-location /tmp/sb --output-path . --force</code> directly. <a href="#3-restore">§3</a> · <a href="/pixi-sandbox/troubleshooting/#1-restore-attempted-network-access">symptom 1</a></span>
+</div>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span>Open a <strong>new shell</strong> (or run the <code>export PATH=…</code> line the restore prints) so the registered user tools resolve. <a href="#3-restore">§3</a></span>
+</div>
+
+<p style="margin: 0.55rem 0 0.2rem;"><strong>4 · Prove it is offline-clean</strong></p>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span><code>pixi install --frozen --offline</code> — must be a no-op; real work means the tree drifted from <code>pixi.lock</code>, so re-run the restore. <a href="#4-prove-it-is-offline-clean">§4</a> · <a href="/pixi-sandbox/troubleshooting/#1-restore-attempted-network-access">symptom 1</a></span>
+</div>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span><code>pixi run --frozen -- cargo build --offline</code> — builds from the vendored crates only. <a href="#4-prove-it-is-offline-clean">§4</a> · <a href="/pixi-sandbox/troubleshooting/#8-vendored-cargo-build-still-fetches">symptom 8</a></span>
+</div>
+
+<div style="display: flex; gap: 0.45em; margin: 0.28rem 0; align-items: flex-start;">
+<span style="display: inline-block; width: 0.8em; height: 0.8em; border: 1.5px solid currentColor; border-radius: 2px; margin-top: 0.28em; flex-shrink: 0;" aria-hidden="true"></span>
+<span>Run the workload. A missing GUI, font, or display server is a <a href="/pixi-sandbox/security/host-requirements/"><code>[host_requirements]</code></a> finding, not a broken restore. <a href="#4-prove-it-is-offline-clean">§4</a> · <a href="/pixi-sandbox/troubleshooting/#6-host-lacks-gui-display-or-font-capability">symptom 6</a></span>
+</div>
+
+<p style="margin: 0.6rem 0 0; font-size: 0.92rem; color: var(--sl-color-gray-2);">
+Stop rule: nothing on this page may reach the network. If a step tries to, stop and report it.
+</p>
+
+</div>
+
 ## 1. Get the branch
 
 <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;">
