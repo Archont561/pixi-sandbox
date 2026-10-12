@@ -23,6 +23,24 @@ const PACKAGE_VERSION: &str = "1.0.0";
 #[ignore = "downloads pinned rattler-build; executed by CI's payload round-trip task"]
 #[allow(clippy::too_many_lines)]
 fn real_package_preserves_payload_and_installs_under_egress_denial() {
+    if env::var_os("GITHUB_ACTIONS").is_some() {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic| {
+            default_hook(panic);
+            let message = panic
+                .payload()
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.payload().downcast_ref::<&str>().copied())
+                .unwrap_or("non-string panic");
+            let message = message
+                .replace('%', "%25")
+                .replace('\r', "%0D")
+                .replace('\n', "%0A");
+            eprintln!("::error title=payload-round-trip::{message}");
+        }));
+    }
+
     let scratch = tempdir().expect("test tempdir");
     let publisher = scratch.path().join("publisher");
     let consumer = scratch.path().join("consumer");
