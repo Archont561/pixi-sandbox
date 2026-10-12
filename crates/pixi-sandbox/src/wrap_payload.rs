@@ -63,6 +63,31 @@ pub fn stage_recipe_dir(
     })
 }
 
+/// The `--json` plan report: the declared package identity, the validated payload totals, the
+/// provenance document and the rendered recipe, as one serialisable value.
+///
+/// The shape is a wire contract a consumer scripts against, so it lives here rather than in the
+/// command: the command prints it, and this is where it is testable without spawning a binary.
+#[must_use]
+pub fn plan_report(plan: &WrapPlan) -> serde_json::Value {
+    serde_json::json!({
+        "schema": 1,
+        "package": {
+            "name": plan.spec.name,
+            "version": plan.spec.version,
+            "platform": plan.spec.platform.as_str(),
+        },
+        "payload": {
+            "files": plan.payload.file_count,
+            "directories": plan.payload.directory_count,
+            "symlinks": plan.payload.symlink_count,
+            "bytes": plan.payload.total_bytes,
+        },
+        "provenance": plan.provenance,
+        "recipe": plan.recipe,
+    })
+}
+
 fn remove_dir_if_present(path: &Path) -> Result<(), PayloadError> {
     match std::fs::symlink_metadata(path) {
         Ok(_) => std::fs::remove_dir_all(path).map_err(|error| io_error(path, &error)),
