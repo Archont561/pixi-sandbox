@@ -173,7 +173,10 @@ export default defineConfig({
         },
         {
           label: "For airlock operators",
-          items: [{ label: "Restore on the airlock", slug: "restore" }],
+          items: [
+            { label: "Restore on the airlock", slug: "restore" },
+            { label: "Troubleshooting and incident response", slug: "troubleshooting" },
+          ],
         },
         {
           label: "Security and operations",
