@@ -122,6 +122,42 @@ fn staging_removes_a_stale_payload_from_a_previous_run() {
 }
 
 #[test]
+fn staging_a_single_file_payload_places_it_inside_the_payload_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let payload_root = dir.path().join("demo-tool");
+    std::fs::write(&payload_root, b"#!/bin/sh\necho hi\n").expect("single file payload");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&payload_root, std::fs::Permissions::from_mode(0o755))
+            .expect("mode");
+    }
+    let plan = plan_wrap(&request(&payload_root)).expect("a single file plans cleanly");
+    let out_dir = dir.path().join("build");
+
+    let staged = stage_recipe_dir(&plan, &payload_root, &out_dir).expect("staging succeeds");
+
+    assert_eq!(staged.payload_dir, out_dir.join(PAYLOAD_DIR));
+    assert!(
+        staged.payload_dir.is_dir(),
+        "a single-file payload stages as a directory, because the recipe installs `payload/`"
+    );
+    assert_eq!(
+        std::fs::read(staged.payload_dir.join("demo-tool")).expect("the file is staged"),
+        b"#!/bin/sh\necho hi\n"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(staged.payload_dir.join("demo-tool"))
+            .expect("staged file")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o111, 0o111, "the executable bit survives staging");
+    }
+}
+
+#[test]
 fn the_json_plan_names_the_package_the_payload_totals_and_the_declared_digest() {
     let dir = tempfile::tempdir().expect("tempdir");
     let payload_root = dir.path().join("source-payload");

@@ -97,8 +97,22 @@ fn remove_dir_if_present(path: &Path) -> Result<(), PayloadError> {
 }
 
 /// Copy a payload tree, preserving directories, regular files with their mode, and symlinks.
+///
+/// A single-file payload (AC#2) is copied as the one member of `destination`, so the recipe's
+/// `$RECIPE_DIR/payload/` is always a directory.
 fn copy_tree(source: &Path, destination: &Path) -> Result<(), PayloadError> {
     std::fs::create_dir_all(destination).map_err(|error| io_error(destination, &error))?;
+    let root = std::fs::symlink_metadata(source).map_err(|error| io_error(source, &error))?;
+    if !root.is_dir() {
+        let name = source.file_name().ok_or_else(|| {
+            PayloadError::InvalidConfig(format!(
+                "payload path has no file name: {}",
+                source.display()
+            ))
+        })?;
+        std::fs::copy(source, destination.join(name)).map_err(|error| io_error(source, &error))?;
+        return Ok(());
+    }
     let entries = std::fs::read_dir(source).map_err(|error| io_error(source, &error))?;
     for entry in entries {
         let entry = entry.map_err(|error| io_error(source, &error))?;
