@@ -153,6 +153,25 @@ this one. Carried in `CONTEXT.md` § Session scratchpad.
 
 Suite: 928 → 935 passing / 1 skipped. `pixi run --frozen lint` 11/11,
 `xtask check-repository` clean, `pixi run --frozen fmt` clean.
+
+### 2026-10-13 — the local gap is closed; AC#8 is now only the connected proof
+
+The third regenerated file identified above, `*.dist-info/direct_url.json`, is modelled on `main`:
+`files_manifest::UV_INSTALL_METADATA` is now `["uv_cache.json", "direct_url.json"]`, so both are
+presence-only in `scan_prefix` and both matching `RECORD` rows are collapsed through the shared
+`canonical_file_sha256` entry point. This task's own fixture was updated with it —
+`uv_installed_dist_info` (`crates/pixi-sandbox-core/tests/verify.rs`) writes `direct_url.json`
+verbatim with its `RECORD` row, and `a_uv_reinstalled_pypi_environment_matches_the_oracle` passes
+with a restore-time wheel path that differs from the pack-time one. The local model therefore now
+reproduces the connected observation (exactly two regenerated `RECORD` rows, `direct_url.json` and
+`uv_cache.json`). That work landed as **TASK-93** (AC#1–#3, on main), so the earlier note that
+TASK-93 "would actually close this AC" describes history, not open work.
+
+**AC#8 itself stays open, unchanged, and for one reason only: it names a real `pixi-unpack`
+reinstall.** This airlocked host has no `pixi-pack` on `PATH`, no pypi wheel on disk, no `curl`,
+and cannot resolve against `prefix.dev`/`pypi.org`, so the real round trip cannot be produced here.
+The missing proof is the same one TASK-93 AC#4 records, on the same connected host. Nothing local
+remains for this AC.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
