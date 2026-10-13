@@ -99,17 +99,17 @@ fn remove_dir_if_present(path: &Path) -> Result<(), PayloadError> {
 /// Copy a payload tree, preserving directories, regular files with their mode, and symlinks.
 ///
 /// A single-file payload (AC#2) is copied as the one member of `destination`, so the recipe's
-/// `$RECIPE_DIR/payload/` is always a directory.
+/// `$RECIPE_DIR/payload/` is always a directory. The name must be UTF-8 to match the one the
+/// recipe can write, exactly as [`read_payload_tree`](pixi_sandbox_core::payload::read_payload_tree)
+/// already requires.
 fn copy_tree(source: &Path, destination: &Path) -> Result<(), PayloadError> {
     std::fs::create_dir_all(destination).map_err(|error| io_error(destination, &error))?;
     let root = std::fs::symlink_metadata(source).map_err(|error| io_error(source, &error))?;
     if !root.is_dir() {
-        let name = source.file_name().ok_or_else(|| {
-            PayloadError::InvalidConfig(format!(
-                "payload path has no file name: {}",
-                source.display()
-            ))
-        })?;
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| PayloadError::NonUtf8Path(source.display().to_string()))?;
         std::fs::copy(source, destination.join(name)).map_err(|error| io_error(source, &error))?;
         return Ok(());
     }
