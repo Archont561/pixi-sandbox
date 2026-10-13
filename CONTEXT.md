@@ -3075,3 +3075,68 @@ Next session opening prompt:
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
 > and its templates are in `.agents/skills/session/`.
+
+### 2026-10-13 (third session) — this session is a GitHub Codespaces container, not the Arena AI airlocked sandbox
+
+Every prior session — and the session procedure itself — assumed the *Arena AI sandbox*: egress
+filtered to `github.com` plus the npm registry, crates.io and prefix.dev dead, so every cargo call
+went `--offline` against the vendored tree. This session is a different machine of a different
+kind: a **GitHub Codespaces dev container with unfiltered outbound internet**. The two worlds need
+different commands, and the previous entry's "crates.io and prefix.dev are unreachable" line is
+true only of the Arena AI sandbox — do not carry it into a Codespaces session without re-probing.
+
+Identity and access, probed 2026-10-13:
+
+- `/.codespaces` and `/.dockerenv` present; `uname` → `codespaces-e3d5ff … Linux 6.8.0-1064-azure`;
+  checkout at `/workspaces/pixi-sandbox`; `HOME=/root`.
+- **TLS/HTTP reachable everywhere**, real CA-signed certificates, no MITM, no proxy env:
+  `github.com`/`api`/`codeload`/`objects.githubusercontent.com` (`git ls-remote` → the local tip,
+  `gh api rate_limit` 50000/50000), `index.crates.io` and `static.crates.io`
+  (`serde-1.0.219.crate` → `206 Partial Content`, first bytes `1f 8b 08 08` = real gzip),
+  `static.rust-lang.org`, `pypi.org` + `files.pythonhosted.org`, `registry.npmjs.org`,
+  `prefix.dev`, `conda.anaconda.org`, and the open internet (`example.com`, `google.com`,
+  `httpbin.org`, `8.8.8.8:443`). A bare TCP connect is meaningless here — a listener answers
+  everywhere — so the probe used `openssl s_client` and real object fetches, not `/dev/tcp`.
+- **No privilege.** `sudo` is absent; `unshare -rn` → `Operation not permitted` even though
+  `unprivileged_userns_clone=1` — user namespaces are blocked at runtime. The egress-denied airlock
+  tier stays CI-only; nothing here can run it.
+- **Tools on PATH:** `pixi 0.81.0`, `pixi-sandbox 0.6.2`, `git 2.56.0`, `gh 2.102.0`, `tar`, `gzip`,
+  `openssl`, `unshare`, `getent`, `awk`, `timeout`. **Absent:** `curl`, `wget`, `python3`, `node`,
+  `npm`, `bun`, `cargo`/`rustc`/`rustup`, `unzip`, `zip`, `zstd`, `xz`, `jq`, `file`, `nc`, `ssh`
+  (cargo/bun/node still arrive through `pixi run --frozen -- …`).
+
+Consequences for the backlog:
+
+- The "connected-host" ACs are **producible here**, not only in CI. `pixi-pack 0.7.11` and
+  `pixi-unpack 0.7.11` are pinned in the embedded tools lock (`pixi sandbox tools list`) and
+  conda-forge/pypi answer, so TASK-88 AC#8 and TASK-93 AC#4 — the shared real `pixi-pack` →
+  `pixi-unpack` round trip of a uv pypi wheel — are in reach. They were recorded as impossible only
+  on the Arena AI sandbox.
+- `--offline` and the vendored tree are no longer *forced*. Keep using them for reproducibility, but
+  a fetch failure is no longer evidence of an offline bug, and a plain crates.io fetch now succeeds.
+- The egress-denied tier, `sudo`, and workflow dispatch remain unavailable; a consumer-publisher
+  proof (TASK-94/95) and the App-credential tasks (TASK-73/74) are still gated on GitHub
+  Actions/owner credentials, not on connectivity.
+
+Next session opening prompt:
+
+> Restore the sandbox and baseline the suite (expect **1,125 passing / 2 skipped** on `main`
+> `c3d09beb`). **Probe the environment before trusting any offline assumption:** this repository
+> runs in two different worlds — the **Arena AI sandbox** (egress filtered to github.com + npm;
+> crates.io and prefix.dev dead; every cargo call is `pixi run --frozen -- cargo … --offline`) and a
+> **connected GitHub Codespaces container** (full internet; the vendored tree optional). One cheap
+> probe: `gh api rate_limit` succeeds and `openssl s_client -connect static.crates.io:443
+> -servername static.crates.io` returns a real cert — then crates.io is reachable. Then read
+> `CONTEXT.md` § Session scratchpad — the **2026-10-13 (third session)** entry records this probe
+> and its consequences.
+>
+> If the network is open, the highest-leverage slice is the connected pypi round trip: a real
+> `pixi-pack` → `pixi-unpack` of a uv-installed pypi wheel, verified by the per-file oracle with 0
+> failures, closing **TASK-88 AC#8 and TASK-93 AC#4** (both tools are pinned in the embedded tools
+> lock; conda-forge and pypi answer). Then the rest of the queue: land the Dependabot PRs, then
+> **TASK-111** (the main-integration decision + guard) and **TASK-78 AC#11/#12**, all local.
+>
+> If instead you are on the Arena AI sandbox, the connected proofs are out of reach and the session
+> is TASK-111 and TASK-78 AC#11/#12 only. Do not check a box you cannot point at a green proof for.
+> House rules are in `AGENTS.md` (invariant 10), the session procedure and its templates are in
+> `.agents/skills/session/`.
