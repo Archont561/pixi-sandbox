@@ -48,6 +48,14 @@ extend the backend.
 - **Launcher.** An optional entry point is exposed as `$PREFIX/bin/<basename>`. It is a POSIX shell
   script that `exec`s the real executable in place, so relative runtime lookups inside the payload
   keep working. A copy of the executable is never made.
+- **Empty directories.** A conda package carries files and symlinks only, so an empty source
+  directory cannot survive the round trip and is deliberately absent from the installed tree.
+  TASK-78 AC#3 is scoped to files and symlinks for this reason. Measured on rattler-build 0.76.1
+  (2026-10-13): `info/paths.json` records only `hardlink` and `softlink` entries, and even an
+  explicit `$RATTLER_BUILD_PACKAGE_FILES` list drops the directories. Upstream
+  `prefix-dev/rattler-build#371` was closed as won't-fix; the suggested workaround is a hidden
+  placeholder file, which would leave a non-payload byte in the consumer's prefix and so is not
+  used.
 - **Native payloads.** A payload is native when it contains an ELF, Mach-O or PE file, detected by
   magic bytes. Declaring such a payload `noarch` is refused. So is an executable whose format does
   not match the platform's operating system. Architecture is not checked yet.

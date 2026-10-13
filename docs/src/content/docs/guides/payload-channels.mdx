@@ -106,6 +106,11 @@ the upstream URL, the fetched artifact's SHA256, and the file count and byte tot
 `entry_point` in the declaration is exposed on `PATH` as a launcher that `exec`s the real file in
 place, so relative runtime lookups inside the payload keep working.
 
+One limitation comes from the package format: a conda package carries files and symlinks only, so an
+**empty directory** in the payload does not survive the round trip and is absent from the installed
+prefix. Every directory that contains a file is recreated as needed, so only genuinely empty
+directories are affected — if a tool needs one at runtime, create it in the tool's own setup.
+
 ## 3. Name the channel once, resolve, then install offline
 
 Commit the channel **once, as a real URL**, in `pixi.toml` and the lockfile — never a

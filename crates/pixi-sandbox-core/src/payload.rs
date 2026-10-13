@@ -103,7 +103,9 @@ pub enum PayloadEntry {
         executable: bool,
         head: Vec<u8>,
     },
-    /// A directory, kept so that empty directories survive the round trip.
+    /// A directory. Tracked so validation can refuse a file or link placed beneath one, but not
+    /// part of the package: a conda package carries files and symlinks only, so an empty
+    /// directory cannot survive the round trip (ADR-28).
     Directory { path: String },
     /// A symbolic link. `target` is stored verbatim, relative or dangling.
     Symlink { path: String, target: String },
