@@ -2942,3 +2942,68 @@ Next session opening prompt:
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
 > and its templates are in `.agents/skills/session/`.
+
+### 2026-10-13 — the red on main was the payload round-trip oracle, and conda cannot carry a directory
+
+The session opened on red `ci` after PR #146 merged. It was not a flake: `test-payload-roundtrip`
+failed with `assertion left == right` in `assert_payload_tree_matches`. PR #146's own `ci` had
+already failed on the head, and `ci` is not a required check, so it merged anyway — the *same*
+process gap the 2026-10-12 entry names, still open.
+
+**Two independent causes, both in the oracle, not the packer.**
+
+1. **Provenance.** `render_recipe` copies `pixi-sandbox-payload.json` into `$PREFIX/libexec/<name>/`
+   (AC#7), so the installed tree legitimately carries one entry the source lacks. The oracle now
+   removes `PROVENANCE_FILE` before the exact comparison.
+2. **Empty directories.** AC#3 demanded empty directories survive the round trip, but a conda
+   package carries files and symlinks only. Measured on the pinned `rattler-build 0.76.1` (2026-10-13)
+   by building the staged recipe locally and reading the package's `info/paths.json`: it records only
+   `hardlink`/`softlink` entries, and an explicit `$RATTLER_BUILD_PACKAGE_FILES` list (a v0.71+ knob)
+   also drops the directories. Upstream `prefix-dev/rattler-build#371` was closed as won't-fix; the
+   suggested workaround — a hidden `.empty` placeholder — would leave a stray non-payload byte in the
+   consumer's prefix and was rejected.
+
+Owner decision: **amend AC#3 to files and symlinks**, empty directories out of scope. The oracle now
+compares files and symlinks; the ignored round-trip fixture asserts the empty directory is absent;
+three non-ignored tests pin the contract; ADR-28 and `docs/.../payload-channels.mdx` record the
+consumer-visible limitation. Landed as PR #149, squash `b2150a2e`, `ci` fully green (including
+`codecov/patch`), and the post-merge `ci`, `docs` and `publish sandbox` runs all green. That was the
+first green `test-payload-roundtrip` on main, so **AC#3 and AC#5 are now checked**; TASK-78 stays
+`In Progress` because AC#1 still waits on ADR-28's review and the remaining ACs are untouched.
+
+**Cheap measurement recipe worth keeping**, because it needs no unzip/zstd/python (none are on PATH
+here, and there is no `sudo`, so the egress-denied tier stays CI-only): run `wrap-payload --build`
+(the on-demand fetch works — it is a github.com release download), then `pixi install` the package
+into an isolated `HOME`/`XDG_CACHE_HOME` from a `file://` channel, and read
+`$XDG_CACHE_HOME/rattler/cache/pkgs/<name>-<build>/info/paths.json`. Pixi extracts the package
+before installing, so the package's own metadata is a plain file in its cache.
+
+Next session opening prompt:
+
+> Restore the sandbox and baseline the suite (expect **1,122 passing / 2 skipped** on `main`
+> `b2150a2e`; the restore verifies 5,520 entries and registers `pixi` and `pixi-sandbox` in
+> `~/.local/bin`, and the transport carries pixi 0.81.0, pixi-sandbox 0.6.2 and 361 vendored crates
+> — but crates.io and prefix.dev are unreachable, so every cargo call goes through
+> `pixi run --frozen -- cargo … --offline`), then read `CONTEXT.md` § Session scratchpad — the
+> 2026-10-13 entry is this hand-off.
+>
+> First, one look at the repo state: `gh run list --branch main --limit 4`. The `publish sandbox`
+> run for `b2150a2e` must be green before the transport names that commit; if it is red, the next
+> restore pulls the older transport and the baseline will not match — say so before anything else.
+>
+> Two decisions, unchanged from the last hand-off. **One:** TASK-78's AC#1 is still unchecked
+> because ADR-28 sits at `status: proposed` — accepting or rejecting it is a review call that gates
+> the task, and AC#3/#5 only just went green (PR #149). **Two:** the process gap that made main red
+> twice — direct pushes and a non-required `ci` — still needs a task and a lever: branch protection
+> (needs a maintainer; the API is 403 to this token), a `check-repository` finding, or a written rule
+> that a direct push to main is always a single commit. My recommendation stays the written rule
+> plus the xtask finding.
+>
+> TASK-78 is now the closest open feature: AC#2, AC#4, AC#6, AC#7, AC#8, AC#10, AC#11, AC#12 and
+> AC#13 all have code and tests on main but unchecked boxes. Auditing which are genuinely proven and
+> checking only those is a good, self-contained slice — do not check a box you cannot point at a
+> green proof for.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
+> and its templates are in `.agents/skills/session/`.
