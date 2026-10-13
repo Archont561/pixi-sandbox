@@ -8,6 +8,7 @@
 #![cfg(target_os = "linux")]
 
 use assert_cmd::cargo::cargo_bin;
+use pixi_sandbox_core::payload::PROVENANCE_FILE;
 use std::collections::BTreeSet;
 use std::env;
 use std::fs;
@@ -269,6 +270,13 @@ fn assert_payload_tree_matches(source: &Path, installed: &Path) {
     let mut installed_entries = BTreeSet::new();
     collect_entries(source, source, &mut source_entries);
     collect_entries(installed, installed, &mut installed_entries);
+    // `render_recipe` copies the provenance document beside the payload (TASK-78 AC#7), so it is
+    // the one expected extra in the installed tree. Removing it first keeps the comparison
+    // exhaustive: any *other* installed entry still fails the assertion below.
+    assert!(
+        installed_entries.remove(&PathBuf::from(PROVENANCE_FILE)),
+        "the installed payload must carry the provenance document {PROVENANCE_FILE}"
+    );
     assert_eq!(
         source_entries, installed_entries,
         "the installed path set must exactly match the source payload"
@@ -342,6 +350,48 @@ fn executable_on_path(name: &str) -> Option<PathBuf> {
     env::split_paths(&env::var_os("PATH")?)
         .map(|directory| directory.join(name))
         .find(|path| path.is_file())
+}
+
+// The round-trip above needs the network to fetch `rattler-build`, so CI is its tier. These two
+// pin the oracle's own contract without a build: the provenance document is the one allowed extra,
+// and any other installed entry still fails an exhaustive comparison.
+#[test]
+fn the_installed_tree_is_the_source_tree_plus_the_provenance_file() {
+    let scratch = tempdir().expect("test tempdir");
+    let source = scratch.path().join("payload");
+    let installed = scratch.path().join("libexec/demo-payload");
+    build_fixture_tree(&source);
+    build_fixture_tree(&installed);
+    fs::write(installed.join(PROVENANCE_FILE), b"{\"schema\": 1}\n").expect("installed provenance");
+    assert_payload_tree_matches(&source, &installed);
+}
+
+#[test]
+fn an_unexpected_installed_entry_fails_the_comparison() {
+    let scratch = tempdir().expect("test tempdir");
+    let source = scratch.path().join("payload");
+    let installed = scratch.path().join("libexec/demo-payload");
+    build_fixture_tree(&source);
+    build_fixture_tree(&installed);
+    fs::write(installed.join(PROVENANCE_FILE), b"{\"schema\": 1}\n").expect("installed provenance");
+    fs::write(installed.join("share/stray.txt"), b"stray\n").expect("stray installed file");
+    let outcome = std::panic::catch_unwind(|| assert_payload_tree_matches(&source, &installed));
+    assert!(
+        outcome.is_err(),
+        "an unexpected installed entry must fail the exact-match oracle"
+    );
+}
+
+fn build_fixture_tree(root: &Path) {
+    fs::create_dir_all(root.join("bin")).expect("bin directory");
+    fs::create_dir_all(root.join("share")).expect("share directory");
+    fs::create_dir_all(root.join("empty/nested")).expect("empty nested directory");
+    fs::write(root.join("share/message.txt"), b"relative-payload-data\n").expect("payload message");
+    let tool = root.join("bin/tool");
+    fs::write(&tool, b"#!/bin/sh\nset -eu\n").expect("payload tool");
+    fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).expect("executable mode");
+    symlink("bin/tool", root.join("tool-link")).expect("relative symlink");
+    symlink("missing/target", root.join("dangling-link")).expect("dangling symlink");
 }
 
 fn assert_success(output: &Output, operation: &str) {
