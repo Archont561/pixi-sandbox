@@ -3007,3 +3007,71 @@ Next session opening prompt:
 > Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
 > implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
 > and its templates are in `.agents/skills/session/`.
+
+### 2026-10-13 (second session) — TASK-78's single-file payload staged, TASK-111 names the process gap
+
+Ran the previous hand-off: three locally-actionable slices, then landed them as PR #150. **Merged,
+not squashed** (owner's call), so the branch's five commits are preserved and the merge commit is
+`5635e4d2`. Post-merge runs green: `ci` 2m39s, `docs` 1m23s, `publish sandbox` 3m47s — the last
+repacks the transport, which now names `5635e4d` (pixi-sandbox 0.6.2, pixi 0.81.0, `static`). Suite
+on merged main: **1,125 passing / 2 skipped** (was 1,122/2).
+
+**Slice 1 — TASK-78's single-file payload.** `wrap_payload::copy_tree` copied a directory with
+`std::fs::read_dir`, so a payload root that is a single file failed `Not a directory (os error 20)`
+— while `read_payload_tree` (core) and the payload-channels guide both accept a one-file payload.
+Fix: a non-directory root is copied as the one member of `payload/`, so the recipe's
+`$RECIPE_DIR/payload/` is always a directory. Two red→green tests, at the library seam
+(`tests/wrap_payload.rs`) and the CLI seam (`tests/cli.rs`). The first cut derived the member name
+with an inline `InvalidConfig` closure no real path can reach (a non-directory path always has a
+file name), so `codecov/patch` failed at 54.55%; the follow-up commit derives the name the way
+`read_payload_tree` does — require UTF-8, return `NonUtf8Path` — and a non-UTF-8-name test reaches
+it. Then audited TASK-78's remaining ACs against code and tests: **AC#2, #4, #6, #7, #8, #9, #10,
+#13 checked (10/13)**.
+
+**Slice 2 — TASK-88 AC#8.** The local fix already landed as TASK-93: `UV_INSTALL_METADATA` is
+`["uv_cache.json", "direct_url.json"]` and TASK-88's own fixture writes `direct_url.json` verbatim
+with its `RECORD` row. So the local model reproduces the connected observation; AC#8 stays open for
+one reason only — a real `pixi-unpack` reinstall needs a connected host (no `pixi-pack`, no wheel,
+no `curl`, pypi/prefix.dev blocked here). Recorded in the task.
+
+**Slice 3 — the process gap.** Created **TASK-111** (chore, high) to decide and implement the lever:
+branch protection (maintainer; the API is 403 to this token), a repository-enforceable guard, or the
+written single-commit rule, with the recommendation recorded (the written rule plus the guard). This
+session's own route — a five-commit branch pushed as a PR and merge-committed — is the shape it
+names.
+
+Open items this entry leaves, newest last:
+
+- **TASK-111** (To Do) — the decision plus the guard. Local.
+- **TASK-78** (In Progress, 10/13) — AC#1 needs ADR-28 accepted or rejected (a review call); AC#11
+  ("the channel is named once") has no in-repo fixture; AC#12 ("`tools.lock.json` unchanged by a
+  wrap") is untested, and the on-demand fetch is connected-only.
+- **TASK-88** (7/8) and **TASK-93** (AC#4) — the same connected-host reinstall proof; also TASK-66,
+  TASK-73, TASK-74, TASK-94, TASK-95.
+- **TASK-85 AC#6** — an owner click (a dispatch), not a connected host.
+
+Next session opening prompt:
+
+> Restore the sandbox and baseline the suite (expect **1,125 passing / 2 skipped** on `main`
+> `5635e4d2`; the restore registers `pixi` and `pixi-sandbox` in `~/.local/bin`, and the transport
+> names `5635e4d` — pixi-sandbox 0.6.2, pixi 0.81.0, `static` — but crates.io and prefix.dev are
+> unreachable, so every cargo call goes through `pixi run --frozen -- cargo … --offline`). Then read
+> `CONTEXT.md` § Session scratchpad — the **2026-10-13 (second session)** entry is this hand-off.
+>
+> First, one look at the repo state: `gh run list --branch main --limit 4`. The `publish sandbox`
+> run for `5635e4d2` must be green before the transport names that commit; if it is red, the next
+> restore pulls the older transport and the baseline will not match — say so before anything else.
+>
+> Two decisions are still open, and both are review calls rather than work. **One:** TASK-78's AC#1
+> waits on ADR-28 (`status: proposed`) — accepting or rejecting it gates the task. **Two:** TASK-111
+> is new — pick the lever for enforcing main integration (branch protection needs a maintainer and
+> the API is 403 to this token; a repository-enforceable guard; or the written single-commit rule)
+> and record it before implementing.
+>
+> TASK-111 is the natural next slice: it is local, its first AC is the decision itself, and it names
+> the gap that put red main in front of two sessions. TASK-78's AC#11 and AC#12 are the other local
+> candidates. Do not check a box you cannot point at a green proof for.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md` (invariant 10: anything you do not
+> implement goes in `CONTEXT.md`, not into the files it speculates about), the session procedure
+> and its templates are in `.agents/skills/session/`.
