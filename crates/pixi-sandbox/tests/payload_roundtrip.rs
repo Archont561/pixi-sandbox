@@ -4,10 +4,15 @@
 //! `.conda`, publishes a filesystem channel, then uses Pixi against that local channel inside a
 //! fresh Linux network namespace with no egress. The fixture and both Pixi projects live only in
 //! a test-owned temporary directory (ADR-10); no payload bytes enter this checkout.
+//!
+//! AC#3 compares files and symlinks, not directories: a conda package carries files and symlinks
+//! only, so an empty source directory cannot survive the round trip and is deliberately absent
+//! from the installed tree (ADR-28).
 
 #![cfg(target_os = "linux")]
 
 use assert_cmd::cargo::cargo_bin;
+use pixi_sandbox_core::payload::PROVENANCE_FILE;
 use std::collections::BTreeSet;
 use std::env;
 use std::fs;
@@ -203,6 +208,10 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
     let installed_payload = prefix.join(format!("libexec/{PACKAGE_NAME}"));
     assert_payload_tree_matches(&payload, &installed_payload);
     assert!(
+        !installed_payload.join("empty").exists(),
+        "a conda package cannot carry a directory, so the source's empty directory is absent from the installed tree (ADR-28)"
+    );
+    assert!(
         prefix.join("bin/tool").is_file(),
         "the package exposes the requested entry point on PATH"
     );
@@ -267,11 +276,18 @@ fn run_egress_denied(
 fn assert_payload_tree_matches(source: &Path, installed: &Path) {
     let mut source_entries = BTreeSet::new();
     let mut installed_entries = BTreeSet::new();
-    collect_entries(source, source, &mut source_entries);
-    collect_entries(installed, installed, &mut installed_entries);
+    collect_payload_paths(source, source, &mut source_entries);
+    collect_payload_paths(installed, installed, &mut installed_entries);
+    // `render_recipe` copies the provenance document beside the payload (TASK-78 AC#7), so it is
+    // the one expected extra in the installed tree. Removing it first keeps the comparison
+    // exhaustive: any *other* installed file or symlink still fails the assertion below.
+    assert!(
+        installed_entries.remove(&PathBuf::from(PROVENANCE_FILE)),
+        "the installed payload must carry the provenance document {PROVENANCE_FILE}"
+    );
     assert_eq!(
         source_entries, installed_entries,
-        "the installed path set must exactly match the source payload"
+        "the installed file and symlink set must exactly match the source payload"
     );
 
     for relative in source_entries {
@@ -281,12 +297,6 @@ fn assert_payload_tree_matches(source: &Path, installed: &Path) {
         let installed_metadata = fs::symlink_metadata(&installed_path).expect("installed metadata");
         let source_type = source_metadata.file_type();
         let installed_type = installed_metadata.file_type();
-        assert_eq!(
-            source_type.is_dir(),
-            installed_type.is_dir(),
-            "directory type for {}",
-            relative.display()
-        );
         assert_eq!(
             source_type.is_symlink(),
             installed_type.is_symlink(),
@@ -300,7 +310,7 @@ fn assert_payload_tree_matches(source: &Path, installed: &Path) {
                 "symlink target for {}",
                 relative.display()
             );
-        } else if source_type.is_file() {
+        } else {
             assert_eq!(
                 fs::read(&source_path).expect("source bytes"),
                 fs::read(&installed_path).expect("installed bytes"),
@@ -317,7 +327,10 @@ fn assert_payload_tree_matches(source: &Path, installed: &Path) {
     }
 }
 
-fn collect_entries(root: &Path, directory: &Path, entries: &mut BTreeSet<PathBuf>) {
+/// Collect a payload's files and symlinks. Directories are skipped: a conda package carries files
+/// and symlinks only, so an empty directory is absent from the installed tree by design (ADR-28,
+/// TASK-78 AC#3).
+fn collect_payload_paths(root: &Path, directory: &Path, entries: &mut BTreeSet<PathBuf>) {
     let directory_entries = fs::read_dir(directory)
         .unwrap_or_else(|error| panic!("read {}: {error}", directory.display()));
     for entry in directory_entries {
@@ -327,13 +340,14 @@ fn collect_entries(root: &Path, directory: &Path, entries: &mut BTreeSet<PathBuf
             .strip_prefix(root)
             .expect("entry is below payload root")
             .to_path_buf();
-        entries.insert(relative);
         if fs::symlink_metadata(&path)
             .expect("entry metadata")
             .file_type()
             .is_dir()
         {
-            collect_entries(root, &path, entries);
+            collect_payload_paths(root, &path, entries);
+        } else {
+            entries.insert(relative);
         }
     }
 }
@@ -342,6 +356,62 @@ fn executable_on_path(name: &str) -> Option<PathBuf> {
     env::split_paths(&env::var_os("PATH")?)
         .map(|directory| directory.join(name))
         .find(|path| path.is_file())
+}
+
+// The round-trip above needs the network to fetch `rattler-build`, so CI is its tier. These pin
+// the oracle's own contract without a build: the provenance document is the one allowed extra,
+// the source's empty directory is not required (a conda package cannot carry a directory, ADR-28),
+// and any other installed file or symlink still fails an exhaustive comparison.
+#[test]
+fn the_installed_tree_is_the_source_tree_plus_the_provenance_file() {
+    let scratch = tempdir().expect("test tempdir");
+    let source = scratch.path().join("payload");
+    let installed = scratch.path().join("libexec/demo-payload");
+    build_fixture_tree(&source);
+    build_fixture_tree(&installed);
+    fs::write(installed.join(PROVENANCE_FILE), b"{\"schema\": 1}\n").expect("installed provenance");
+    assert_payload_tree_matches(&source, &installed);
+}
+
+#[test]
+fn an_empty_source_directory_is_not_required_in_the_installed_tree() {
+    let scratch = tempdir().expect("test tempdir");
+    let source = scratch.path().join("payload");
+    let installed = scratch.path().join("libexec/demo-payload");
+    build_fixture_tree(&source);
+    build_fixture_tree(&installed);
+    // The conda round trip cannot carry a directory, so the installed tree legitimately lacks it.
+    fs::remove_dir_all(installed.join("empty")).expect("drop the installed empty directory");
+    fs::write(installed.join(PROVENANCE_FILE), b"{\"schema\": 1}\n").expect("installed provenance");
+    assert_payload_tree_matches(&source, &installed);
+}
+
+#[test]
+fn an_unexpected_installed_entry_fails_the_comparison() {
+    let scratch = tempdir().expect("test tempdir");
+    let source = scratch.path().join("payload");
+    let installed = scratch.path().join("libexec/demo-payload");
+    build_fixture_tree(&source);
+    build_fixture_tree(&installed);
+    fs::write(installed.join(PROVENANCE_FILE), b"{\"schema\": 1}\n").expect("installed provenance");
+    fs::write(installed.join("share/stray.txt"), b"stray\n").expect("stray installed file");
+    let outcome = std::panic::catch_unwind(|| assert_payload_tree_matches(&source, &installed));
+    assert!(
+        outcome.is_err(),
+        "an unexpected installed entry must fail the exact-match oracle"
+    );
+}
+
+fn build_fixture_tree(root: &Path) {
+    fs::create_dir_all(root.join("bin")).expect("bin directory");
+    fs::create_dir_all(root.join("share")).expect("share directory");
+    fs::create_dir_all(root.join("empty/nested")).expect("empty nested directory");
+    fs::write(root.join("share/message.txt"), b"relative-payload-data\n").expect("payload message");
+    let tool = root.join("bin/tool");
+    fs::write(&tool, b"#!/bin/sh\nset -eu\n").expect("payload tool");
+    fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).expect("executable mode");
+    symlink("bin/tool", root.join("tool-link")).expect("relative symlink");
+    symlink("missing/target", root.join("dangling-link")).expect("dangling symlink");
 }
 
 fn assert_success(output: &Output, operation: &str) {
