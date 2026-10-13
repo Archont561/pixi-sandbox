@@ -2705,6 +2705,41 @@ fn wrap_payload_stages_a_reviewable_recipe_directory() {
 }
 
 #[test]
+fn wrap_payload_stages_a_single_file_payload_as_a_directory() {
+    let project = tempfile::tempdir().unwrap();
+    let work = project.path().join(".pixi/payload-work");
+    fs::create_dir_all(&work).expect("work dir");
+    fs::write(work.join("tool.bin"), b"#!/bin/sh\necho hi\n").expect("payload file");
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
+    fs::write(work.join("artifact.bin"), b"the artifact").expect("artifact");
+    let config = format!(
+        "schema = 1\nname = \"demo\"\nversion = \"1.0.0\"\nplatform = \"linux-64\"\n\n\
+         prepare = \"true\"\nartifact = \"artifact.bin\"\npayload = \"tool.bin\"\n\n\
+         [source]\nurl = \"https://example.invalid/demo-1.0.0.bin\"\nsha256 = \"{digest}\"\n"
+    );
+    fs::write(project.path().join("pixi-sandbox-payload.toml"), config).expect("config");
+
+    bin()
+        .current_dir(project.path())
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--skip-prepare",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("staged demo 1.0.0"));
+
+    let build = project.path().join(".pixi/payload-build");
+    assert!(build.join("recipe.yaml").is_file(), "the recipe is staged");
+    assert!(
+        build.join("payload/tool.bin").is_file(),
+        "a single-file payload is staged as one member of payload/"
+    );
+}
+
+#[test]
 fn wrap_payload_refuses_a_skipped_prepare_whose_artifact_changed() {
     let project = tempfile::tempdir().unwrap();
     let declared = pixi_sandbox_core::shard::sha256_bytes(b"what the config pinned");

@@ -8,7 +8,8 @@ use std::path::Path;
 
 use pixi_sandbox::wrap_payload::{RECIPE_FILE, plan_report, stage_recipe_dir};
 use pixi_sandbox_core::payload::{
-    PAYLOAD_DIR, PROVENANCE_FILE, PayloadSpec, WrapPlan, WrapRequest, plan_wrap, read_payload_tree,
+    PAYLOAD_DIR, PROVENANCE_FILE, PayloadError, PayloadSpec, WrapPlan, WrapRequest, plan_wrap,
+    read_payload_tree,
 };
 use pixi_sandbox_core::platform::Platform;
 use pixi_sandbox_core::transport_budget::TransportBudgets;
@@ -119,6 +120,64 @@ fn staging_removes_a_stale_payload_from_a_previous_run() {
         "a file the new plan dropped must not survive a restage"
     );
     assert!(out_dir.join("payload/data.bin").is_file());
+}
+
+#[test]
+fn staging_a_single_file_payload_places_it_inside_the_payload_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let payload_root = dir.path().join("demo-tool");
+    std::fs::write(&payload_root, b"#!/bin/sh\necho hi\n").expect("single file payload");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&payload_root, std::fs::Permissions::from_mode(0o755))
+            .expect("mode");
+    }
+    let plan = plan_wrap(&request(&payload_root)).expect("a single file plans cleanly");
+    let out_dir = dir.path().join("build");
+
+    let staged = stage_recipe_dir(&plan, &payload_root, &out_dir).expect("staging succeeds");
+
+    assert_eq!(staged.payload_dir, out_dir.join(PAYLOAD_DIR));
+    assert!(
+        staged.payload_dir.is_dir(),
+        "a single-file payload stages as a directory, because the recipe installs `payload/`"
+    );
+    assert_eq!(
+        std::fs::read(staged.payload_dir.join("demo-tool")).expect("the file is staged"),
+        b"#!/bin/sh\necho hi\n"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(staged.payload_dir.join("demo-tool"))
+            .expect("staged file")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o111, 0o111, "the executable bit survives staging");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn staging_refuses_a_single_file_payload_whose_name_the_recipe_cannot_write() {
+    use std::os::unix::ffi::OsStrExt as _;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let payload_dir = dir.path().join("source-payload");
+    build_fixture_payload(&payload_dir);
+    let plan = plan_wrap(&request(&payload_dir)).expect("the fixture plans cleanly");
+
+    let non_utf8 = dir.path().join(std::ffi::OsStr::from_bytes(b"tool-\xff"));
+    std::fs::write(&non_utf8, b"bytes").expect("non-utf8 file");
+    let out_dir = dir.path().join("build");
+
+    let error = stage_recipe_dir(&plan, &non_utf8, &out_dir).expect_err("non-utf8 refused");
+
+    assert!(
+        matches!(error, PayloadError::NonUtf8Path(_)),
+        "a payload name the recipe cannot write is refused, not copied under a lossy name: {error:?}"
+    );
 }
 
 #[test]
