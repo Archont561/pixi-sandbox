@@ -18,6 +18,7 @@ use crate::util::{github_summary, is_strict_semver, read};
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_git::{BOT_EMAIL, BOT_NAME, CommitFacts, ShellGit};
 use std::fmt;
+use std::io::BufRead;
 use std::path::Path;
 
 /// The workflow whose `pull_request.paths` filter names what the airlock proves.
@@ -341,5 +342,47 @@ pub fn check_main_push(root: &Path, before: &str, after: &str) -> Result<()> {
             Ok(())
         }
         Verdict::Fail(why) => bail!("main integration: {why}"),
+    }
+}
+
+/// Print a best-effort warning for a local pre-push update to `main`.
+///
+/// Git supplies one line per ref update in `<local ref> <local oid> <remote ref> <remote oid>`
+/// form. Other remote refs are ignored. Unlike [`check_main_push`], a violation or an inability
+/// to judge is only a warning: ADR-29's CI guard remains authoritative, and a local hook must not
+/// become an enforcement boundary.
+pub fn warn_pre_push<R: BufRead>(root: &Path, before: &str, after: &str, updates: R) {
+    let mut pushes_main = false;
+    for line in updates.lines() {
+        let line = match line {
+            Ok(line) => line,
+            Err(error) => {
+                eprintln!("warning: main push preflight could not read push refs: {error}");
+                return;
+            }
+        };
+        let mut fields = line.split_whitespace();
+        let local_ref = fields.next();
+        let local_oid = fields.next();
+        let remote_ref = fields.next();
+        let remote_oid = fields.next();
+        if local_ref.is_some()
+            && local_oid.is_some()
+            && remote_ref == Some("refs/heads/main")
+            && remote_oid.is_some()
+        {
+            pushes_main = true;
+        }
+    }
+    if !pushes_main {
+        return;
+    }
+
+    match judge_push(root, before, after) {
+        Ok(verdict @ Verdict::Pass(_)) => println!("main push preflight: {verdict}"),
+        Ok(verdict @ Verdict::Fail(_)) => eprintln!("warning: main push preflight: {verdict}"),
+        Err(error) => {
+            eprintln!("warning: main push preflight could not judge the update: {error:#}");
+        }
     }
 }

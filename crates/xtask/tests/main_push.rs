@@ -4,8 +4,9 @@
 //! commits it — the committer identity and the parent list are the evidence the guard reads.
 
 use pixi_sandbox_git::{BOT_EMAIL, BOT_NAME};
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use xtask::main_push::{Sanctioned, Verdict, Violation, judge_push};
 
 mod support;
@@ -427,4 +428,85 @@ fn the_command_judges_head_against_origin_main_by_default() {
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("the push moved nothing"), "{stdout}");
+}
+
+fn check_main_push_pre_push(dir: &Path, args: &[&str], input: &str) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_xtask"))
+        .arg("--root")
+        .arg(dir)
+        .arg("check-main-push")
+        .arg("--pre-push")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn xtask");
+    child
+        .stdin
+        .take()
+        .expect("stdin piped")
+        .write_all(input.as_bytes())
+        .expect("write pre-push refs");
+    child.wait_with_output().expect("wait for xtask")
+}
+
+#[test]
+fn a_main_pre_push_violation_warns_without_blocking_the_push() {
+    let (dir, before) = main_repo();
+    run_git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/main", &before],
+    );
+    commit_as(DEV, dir.path(), &[("docs/a.md", "a\n")], "docs: a");
+    let after = commit_as(DEV, dir.path(), &[("docs/b.md", "b\n")], "docs: b");
+    let input = format!("refs/heads/main {after} refs/heads/main {before}\n");
+
+    let output = check_main_push_pre_push(dir.path(), &["origin/main", "HEAD"], &input);
+
+    assert!(output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("warning: main push preflight"), "{stderr}");
+    assert!(stderr.contains("squash"), "{stderr}");
+    assert!(!stderr.contains("::error::"), "{stderr}");
+}
+
+#[test]
+fn a_pre_push_to_a_non_main_ref_skips_the_main_diagnostic() {
+    let (dir, _) = main_repo();
+    let local_oid = run_git(dir.path(), &["rev-parse", "HEAD"]);
+    let input = format!(
+        "refs/heads/main {local_oid} refs/heads/feature 0000000000000000000000000000000000000000\n"
+    );
+
+    let output = check_main_push_pre_push(dir.path(), &["origin/main", "HEAD"], &input);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        output.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn a_main_pre_push_without_a_remote_tracking_tip_warns_but_does_not_block() {
+    let (dir, _) = main_repo();
+    let local_oid = run_git(dir.path(), &["rev-parse", "HEAD"]);
+    let input = format!("refs/heads/main {local_oid} refs/heads/main {local_oid}\n");
+
+    let output = check_main_push_pre_push(dir.path(), &["origin/main", "HEAD"], &input);
+
+    assert!(output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: main push preflight could not judge"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("origin/main"), "{stderr}");
 }

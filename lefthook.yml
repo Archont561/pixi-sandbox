@@ -14,8 +14,10 @@
 # Pre-push jobs are deliberately NOT glob-filtered. lefthook builds a pre-push file list from
 # `git diff --name-only HEAD @{push}` and skips a job whose list comes back empty — which
 # happens on a delete-only push and on a branch whose upstream has moved — so a glob here
-# would make the heavy gates silently optional exactly when a push is unusual. These four run
-# on every push, in order, stopping at the first failure (`piped`).
+# would make the heavy gates silently optional exactly when a push is unusual. The four gates
+# run on every push, in order, stopping at the first failure (`piped`). The final main-push
+# preflight is a separate, warning-only convenience: it reads Git's ref updates and never
+# replaces ADR-29's CI enforcement.
 
 min_version: "2.0.0"
 
@@ -76,3 +78,12 @@ pre-push:
       # pre-commit job (`cargo test -p pixi-sandbox-core --test manifest`): the wire format is
       # still guarded, just not by compiling cargo twice per commit.
       run: pixi run test
+
+    - name: main-push-warning
+      # Optional local reminder only: ADR-29's CI guard remains authoritative. Git's push ref
+      # updates arrive on stdin; xtask filters to refs/heads/main and reports failures as warnings.
+      # The fallback also keeps Pixi/task startup failures from blocking this advisory hook.
+      use_stdin: true
+      run: >-
+        pixi run --frozen xtask check-main-push -- --pre-push origin/main HEAD ||
+        echo 'warning: local main-push preflight failed; continuing (CI remains authoritative)'

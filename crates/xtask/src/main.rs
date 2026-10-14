@@ -375,14 +375,15 @@ enum Command {
         #[arg(long, default_value = "origin")]
         remote: String,
     },
-    /// Judge how the last push reached main: a pull request merged on GitHub, the release
-    /// commit, or one direct commit outside the airlock's paths (ci's post-push guard, ADR-29).
+    /// Judge how the last push reached main (ci's post-push guard, ADR-29).
     CheckMainPush {
-        /// The tip before the push (`github.event.before` in ci). Positional, like the tag
-        /// above, because pixi task args take one token per placeholder.
+        /// Run as an optional, warning-only local pre-push hook for updates to refs/heads/main.
+        #[arg(long)]
+        pre_push: bool,
+        /// The tip before the push (`github.event.before` in ci), or the local remote-tracking ref.
         #[arg(default_value = "origin/main")]
         before: String,
-        /// The pushed tip (`github.sha` in ci).
+        /// The pushed tip (`github.sha` in ci), or the local tip being pushed.
         #[arg(default_value = "HEAD")]
         after: String,
     },
@@ -552,8 +553,17 @@ fn run_args(args: Args) -> Result<()> {
             dry_run,
             remote,
         } => commit_release::commit_release(&root, &tag, dry_run, &remote),
-        Command::CheckMainPush { before, after } => {
-            main_push::check_main_push(&root, &before, &after)
+        Command::CheckMainPush {
+            before,
+            after,
+            pre_push,
+        } => {
+            if pre_push {
+                main_push::warn_pre_push(&root, &before, &after, std::io::stdin().lock());
+                Ok(())
+            } else {
+                main_push::check_main_push(&root, &before, &after)
+            }
         }
         Command::AirlockMatrix {
             bin,
