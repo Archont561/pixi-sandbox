@@ -126,7 +126,7 @@ jobs:
       # runner this proof runs on, so it must be the plan this commit ships. The proof job
       # separately installs the *released* binary, because a real airlock starts from a
       # released asset.
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
           # The project is checked out into project/, not the job root. This is
           # setup-pixi's own input: the step-level `working-directory` key is only
@@ -199,7 +199,7 @@ jobs:
       # egress is denied. The pack/doctor/fetch/restore xtask steps below still run in the empty
       # `package` environment: those paths need only the Rust toolchain the runner carries, while
       # the gate archive needs cargo-nextest from the reviewed lockfile.
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
           working-directory: project
           environments: default
