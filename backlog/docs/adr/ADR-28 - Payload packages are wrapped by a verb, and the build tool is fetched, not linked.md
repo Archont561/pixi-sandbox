@@ -1,24 +1,25 @@
 ---
 id: ADR-28
 title: "Payload packages are wrapped by a verb, and the build tool is fetched, not linked"
-status: proposed
+date: '2026-10-14'
+status: accepted
 tags:
   - decision
 ---
 
 # ADR-28 — Payload packages are wrapped by a verb, and the build tool is fetched, not linked
 
-**Decision (proposed; not accepted until reviewed).** A prebuilt binary payload (TASK-78) becomes
-an installable conda package through a new verb on the shipped binary, `pixi sandbox wrap-payload`.
-Its pure rules (payload validation, budget preflight, recipe rendering, provenance) live in
+**Decision.** A prebuilt binary payload (TASK-78) becomes an installable conda package through a
+new verb on the shipped binary, `pixi sandbox wrap-payload`. Its pure rules (payload validation, budget preflight, recipe rendering, provenance) live in
 `pixi-sandbox-core::payload` and are tested without I/O. Building the package runs `rattler-build`
 as a subprocess. It is fetched on demand into the tools cache by the existing tool-fetch machinery,
 and it is never linked and never embedded. It stays out of `tools.lock.json`, and `Cargo.lock` does
 not change. Channel resolution stays in pixi's own configuration, through `[mirrors]`,
 `PIXI_CONFIG_FILE` or `PIXI_NO_CONFIG` (ADR-17), and the consumer's `pixi.toml` is never rewritten.
 pixi-sandbox never downloads the payload. A config-declared `prepare` command does, and its declared
-source SHA256 is checked against what it produced, so `crates/pixi-sandbox/src/github.rs` remains the
-only socket-touching file.
+source SHA256 is checked against what it produced. The feature therefore adds no network code of its
+own: its one download is `rattler-build` itself, through the existing tool-fetch adapter
+(`tool_fetch::HttpDownload`).
 
 ## Alternatives excluded
 
@@ -58,11 +59,12 @@ extend the backend.
   used.
 - **Native payloads.** A payload is native when it contains an ELF, Mach-O or PE file, detected by
   magic bytes. Declaring such a payload `noarch` is refused. So is an executable whose format does
-  not match the platform's operating system. Architecture is not checked yet.
+  not match the platform's operating system. Architecture is not checked.
 - **Budgets.** The preflight is conservative. Uncompressed bytes are an upper bound for the `.conda`
   blob. The transport is counted twice, once as the channel package and once as the unpacked prefix
-  files, because `record_file` keeps a blob per path. The exact built sizes are checked after the
-  build, in a later slice.
+  files, because `record_file` keeps a blob per path. `wrap-payload` does not re-measure the built
+  `.conda`. Its exact bytes meet the same budgets when the environment holding it is published: the
+  publish pipeline's `doctor --budget-config` phase measures the packed transport before `publish`.
 - **Provenance.** `libexec/<name>/pixi-sandbox-payload.json` (schema 1) records the upstream source
   URL, the SHA256 of the fetched artifact, and the payload's file count and byte total. The source
   URL must be `https://`.
@@ -76,7 +78,7 @@ records `.pixi/envs/<name>/pack` verbatim, so a wrapped package flows through th
 restore and verify path without a change to the transport. A channel package carries one dependency
 into the lockfile. The transport branch carries a whole environment. Neither replaces the other.
 
-## Open items, verified in later slices and not assumed here
+## Verified assumptions and known limits
 
 - **`[mirrors]` and `file://`.** *Verified 2026-10-12 on pixi 0.81.0.* A `file://` mirror target
   does not work: pixi rewrites the channel to the `file://` URL and then rejects it with "URL
@@ -96,7 +98,13 @@ into the lockfile. The transport branch carries a whole environment. Neither rep
 - **Chromium.** Playwright's Chromium is the worked example in documentation and tests only. No code
   path names it.
 
-## Not in this decision
+## Where it lives
 
-The `wrap-payload` CLI verb, the real rattler-build adapter, and the `prepare` command with its
-SHA256 check are later slices of TASK-78. TASK-78 AC#1 is checked when this record is accepted.
+- **The verb.** `crates/pixi-sandbox/src/commands/wrap_payload.rs` (black-box from `tests/`) over
+  the promoted `crates/pixi-sandbox/src/wrap_payload.rs`.
+- **The pure rules.** `pixi-sandbox-core::payload`: validation, the budget preflight, recipe
+  rendering, provenance, and `verify_artifact`, the `prepare` command's SHA256 gate.
+- **The `prepare` command.** `crates/pixi-sandbox/src/prepare.rs` runs it and calls
+  `verify_artifact` on the artifact it declared.
+- **The build tool.** `crates/pixi-sandbox/src/rattler_build.rs` pins `rattler-build` in code
+  (`pins()`) and fetches it through `tool_fetch`; it is never in `tools.lock.json`.

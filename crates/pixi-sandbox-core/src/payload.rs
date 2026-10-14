@@ -54,7 +54,7 @@ impl NativeFormat {
     }
 
     /// Whether a file of this format can run on the platform's operating system. The
-    /// architecture is not checked yet (ADR-28, open items).
+    /// architecture is not checked (ADR-28, native payloads).
     const fn runs_on(self, platform: Platform) -> bool {
         match self {
             NativeFormat::Elf => matches!(platform, Platform::Linux64 | Platform::LinuxAarch64),
@@ -382,7 +382,9 @@ fn validate_entry_point(
 /// Both figures are conservative. The blob is compared with the uncompressed total, an upper
 /// bound on the compressed `.conda`. The transport is compared with twice that total, because
 /// the transport stores the package and the unpacked prefix files, and `record_file` keeps a
-/// blob per path. The exact built sizes are checked after the build, in a later slice.
+/// blob per path. The built `.conda` is not re-measured here: its exact bytes meet the same
+/// budgets when the environment holding it is published, in the pipeline's `doctor
+/// --budget-config` phase before `publish` (ADR-28, budgets).
 ///
 /// # Errors
 ///
