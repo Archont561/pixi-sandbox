@@ -15,7 +15,9 @@ use pixi_sandbox::prepare::{ShellRunner, prepare, read_prepared};
 use pixi_sandbox::rattler_build::{RattlerBuildToolchain, RealProcessRunner, resolve_tool};
 use pixi_sandbox::tool_fetch::{HttpDownload, tools_cache};
 use pixi_sandbox::wrap_payload::{plan_report, stage_recipe_dir};
-use pixi_sandbox_core::payload::{PayloadToolchain, WrapPlan, WrapRequest, plan_wrap};
+use pixi_sandbox_core::payload::{
+    PayloadToolchain, WrapPlan, WrapRequest, check_built_package_blob_budget, plan_wrap,
+};
 use pixi_sandbox_core::payload_config::PayloadConfig;
 use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::transport_budget::TransportBudgets;
@@ -70,21 +72,29 @@ pub fn run(args: &WrapPayloadArgs) -> Result<()> {
     );
 
     if args.build {
-        let _package = build_and_publish(args, &plan, &staged.recipe_dir, &config_dir)?;
+        let _package = build_and_publish(
+            args,
+            &plan,
+            &staged.recipe_dir,
+            &config_dir,
+            budgets.max_blob_bytes,
+        )?;
     }
     Ok(())
 }
 
-/// Build the staged recipe with `rattler-build` and publish the package into the channel.
+/// Build the staged recipe with `rattler-build`, check its actual size, and publish it.
 ///
 /// The tool is fetched from its reviewed pins into the tools cache unless `--build-tool` names an
 /// existing one. This is the only step of `wrap-payload` that may touch the network, and it is the
-/// tool that is fetched — never the payload (AC#12, AC#13).
+/// tool that is fetched — never the payload (AC#12, AC#13). The built `.conda` is checked against
+/// `max_blob_bytes` before the channel is indexed.
 fn build_and_publish(
     args: &WrapPayloadArgs,
     plan: &WrapPlan,
     work_dir: &Path,
     config_dir: &Path,
+    max_blob_bytes: u64,
 ) -> Result<std::path::PathBuf> {
     let program = if let Some(path) = &args.build_tool {
         support::absolute(path)?
@@ -108,6 +118,7 @@ fn build_and_publish(
     let package = toolchain
         .build(plan, work_dir)
         .context("building the payload package")?;
+    check_built_package_blob_budget(&package, max_blob_bytes)?;
     toolchain
         .index(&channel_dir, &package)
         .context("publishing the package into the channel")?;
