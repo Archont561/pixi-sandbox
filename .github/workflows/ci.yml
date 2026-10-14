@@ -13,8 +13,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A pull request's newer push supersedes its older run, so that run is cancelled. A push to main
+# never is: each tip is proven once, by its own run, and a cancelled main run would leave a tip
+# nothing judged (decision ADR-29). Grouping pushes by commit, not by ref, is what guarantees
+# it — one group per ref would still cancel a pending main run when a third push queues.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
 env:
@@ -29,8 +33,12 @@ jobs:
     name: ci (lint · test · coverage)
     runs-on: ubuntu-latest
     steps:
+      # Depth 2: the pushed tip and its parents, which is the evidence the main-integration
+      # guard at the end of this job reads.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          fetch-depth: 2
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
           environments: default
           cache: true
@@ -53,11 +61,17 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
       - run: pixi run docs build
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-site
           path: docs/dist
           retention-days: 7
+      # The main-integration guard (decision ADR-29): how did this push reach main — a pull
+      # request merged on GitHub, the release commit, or one direct commit outside the
+      # airlock's paths? Last, and on `!cancelled()`, so a red step above still gets the verdict;
+      # it runs after the push, so it reports a violation in red and cannot refuse one.
+      - if: ${{ !cancelled() && github.event_name == 'push' }}
+        run: pixi run xtask check-main-push -- ${{ github.event.before }} ${{ github.sha }}
 
   # task-47 AC#2: the one thing the job above cannot prove. `self-update` replaces the binary
   # that is currently executing, and Windows forbids what Unix permits — a mapped image cannot
@@ -77,7 +91,7 @@ jobs:
       # `run-install: false` for the same reason release.yml's matrix sets it: no environment
       # can be installed on win-64, so the empty `package` one is what runs — against the Rust
       # toolchain the runner image already ships, exactly as the release build leg does.
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
           run-install: false
           cache: false

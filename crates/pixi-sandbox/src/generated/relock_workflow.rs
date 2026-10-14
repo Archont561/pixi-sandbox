@@ -26,14 +26,9 @@ use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::tools_lock::ToolsLock;
 use std::path::Path;
 
-/// The identity automation commits carry.
-///
-/// GitHub's bot convention is that the *name* holds the tool identity while the address
-/// is the github-actions app's noreply, which is what makes a commit render with the bot
-/// avatar instead of a broken-looking unknown author.
-pub const BOT_NAME: &str = "pixi-sandbox[bot]";
-/// Noreply address of the github-actions app, paired with [`BOT_NAME`].
-pub const BOT_EMAIL: &str = "41898282+github-actions[bot]@users.noreply.github.com";
+/// The identity automation commits carry, owned by the git layer so the relock bot, the
+/// transport publish and the release commit cannot drift apart.
+pub use pixi_sandbox_git::{BOT_EMAIL, BOT_NAME};
 
 /// Inputs whose values vary independently of the reviewed workflow template.
 #[derive(Debug, Clone, Copy)]
@@ -143,7 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
           pixi-version: v__PIXI_VERSION__
           run-install: false
@@ -176,7 +171,7 @@ __CARGO_GUARD__
         with:
           ref: ${{ github.head_ref }}
           persist-credentials: true
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
           pixi-version: v__PIXI_VERSION__
           run-install: false

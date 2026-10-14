@@ -1,8 +1,8 @@
 //! The real implementation: a `git` binary driven through a [`Runner`].
 
 use crate::{
-    DEFAULT_SCRATCH_NAME, Error, FileCommit, FileCommitted, GitProtocol, Published, Result,
-    Snapshot, snapshot_bytes, snapshot_files,
+    BOT_EMAIL, BOT_NAME, CommitFacts, DEFAULT_SCRATCH_NAME, Error, FileCommit, FileCommitted,
+    GitProtocol, Published, Result, Snapshot, snapshot_bytes, snapshot_files,
 };
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
@@ -260,14 +260,8 @@ impl ShellGit {
         ShellGit {
             runner: Box::new(ProcessRunner),
             program: "git".to_string(),
-            // Transport commits are tool-authored, and GitHub's convention for that is the
-            // `[bot]` suffix (github-actions[bot], dependabot[bot]). The email is the
-            // github-actions app's noreply address — the same one auto-release.yml configures —
-            // so a CI push renders the bot avatar while the name keeps the pixi-sandbox
-            // identity; a locally published transport carries the same authorship instead of
-            // silently falling back to the publishing human's git config.
-            name: "pixi-sandbox[bot]".to_string(),
-            email: "41898282+github-actions[bot]@users.noreply.github.com".to_string(),
+            name: BOT_NAME.to_string(),
+            email: BOT_EMAIL.to_string(),
             scratch_name: DEFAULT_SCRATCH_NAME.to_string(),
             log: Mutex::new(Vec::new()),
         }
@@ -350,6 +344,20 @@ impl ShellGit {
                 command: command.rendered(),
             }),
         }
+    }
+
+    /// Run a command that prints NUL-terminated paths (`-z`) and collect them. Not trimmed:
+    /// a path may begin or end with a space.
+    fn run_paths(&self, command: &Command) -> Result<Vec<String>> {
+        let output = self.run(command)?;
+        let text = String::from_utf8(output.stdout).map_err(|_| Error::NonUtf8 {
+            command: command.rendered(),
+        })?;
+        Ok(text
+            .split('\0')
+            .filter(|line| !line.is_empty())
+            .map(ToString::to_string)
+            .collect())
     }
 
     fn commands_since(&self, from: usize) -> Vec<String> {
@@ -587,15 +595,7 @@ impl ShellGit {
         let command = self
             .git(["diff", "--cached", "--name-only", "-z"])
             .cwd(root);
-        let output = self.run(&command)?;
-        let text = String::from_utf8(output.stdout).map_err(|_| Error::NonUtf8 {
-            command: command.rendered(),
-        })?;
-        Ok(text
-            .split('\0')
-            .filter(|line| !line.is_empty())
-            .map(ToString::to_string)
-            .collect())
+        self.run_paths(&command)
     }
 
     /// Commit the staged changes under the instance's identity.
@@ -861,6 +861,82 @@ impl ShellGit {
         .map(|_| ())
     }
 
+    /// Who committed `rev`, what it sits on, and its subject — the facts the main-integration
+    /// guard judges a push by (decision ADR-29).
+    ///
+    /// One `git log -1` with NUL-separated fields, because a subject may carry any printable
+    /// character but never a NUL. `%cn`/`%ce` rather than `%cN`/`%cE`: the guard needs the
+    /// identity recorded in the object, not one a `.mailmap` rewrote. `--no-show-signature`
+    /// keeps a `log.showSignature` setting from printing verification lines into the fields.
+    /// The format fixes the field count, so an absent field can only be an empty one (a root
+    /// commit's parent list) and is read as such rather than as a parse error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `rev` does not name a commit or git's output is not UTF-8.
+    pub fn commit_facts(&self, root: &Path, rev: &str) -> Result<CommitFacts> {
+        let command = self
+            .git([
+                "log",
+                "-1",
+                "--no-show-signature",
+                "--format=%H%x00%P%x00%cn%x00%ce%x00%s",
+            ])
+            .arg(rev)
+            .arg("--")
+            .cwd(root);
+        let text = self.run_text(&command)?;
+        let mut fields = text.splitn(5, '\0').map(str::to_string);
+        let mut next = || fields.next().unwrap_or_default();
+        Ok(CommitFacts {
+            sha: next(),
+            parents: next().split_whitespace().map(str::to_string).collect(),
+            committer_name: next(),
+            committer_email: next(),
+            subject: next(),
+        })
+    }
+
+    /// The paths `rev` changed against its first parent, relative to the repository root, in
+    /// git's path order: for a merge, what it brought into the branch it was made on; for a
+    /// root commit, every path it holds.
+    ///
+    /// `diff-tree` detects no renames unless asked (plumbing ignores `diff.renames`), so a move
+    /// lists both sides: a file moved out of a watched directory still names the path it left
+    /// (decision ADR-29).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `rev` does not name a commit or a path is not UTF-8.
+    pub fn changed_paths(&self, root: &Path, rev: &str) -> Result<Vec<String>> {
+        let command = self
+            .git([
+                "diff-tree",
+                "--no-commit-id",
+                "--name-only",
+                "-r",
+                "-z",
+                "--root",
+                "--diff-merges=first-parent",
+            ])
+            .arg(rev)
+            .cwd(root);
+        self.run_paths(&command)
+    }
+
+    /// The object name `rev` spells: a ref or `HEAD` resolved to the full SHA it points at, and
+    /// a full SHA returned as given. Git does not look a full object name up, which lets the
+    /// guard compare the `before` of a push that rewrote history — a commit the depth-2
+    /// checkout does not hold.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `rev` names nothing.
+    pub fn rev_parse(&self, root: &Path, rev: &str) -> Result<String> {
+        let command = self.git(["rev-parse", "--verify"]).arg(rev).cwd(root);
+        self.run_text(&command)
+    }
+
     /// Every path `git add -A` would put in the next commit: what the index already holds, plus
     /// what is untracked and *not* ignored.
     ///
@@ -883,15 +959,7 @@ impl ShellGit {
                 "-z",
             ])
             .cwd(root);
-        let output = self.run(&command)?;
-        let text = String::from_utf8(output.stdout).map_err(|_| Error::NonUtf8 {
-            command: command.rendered(),
-        })?;
-        Ok(text
-            .split('\0')
-            .filter(|line| !line.is_empty())
-            .map(ToString::to_string)
-            .collect())
+        self.run_paths(&command)
     }
 }
 

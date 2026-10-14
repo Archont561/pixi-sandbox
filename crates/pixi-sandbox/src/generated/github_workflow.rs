@@ -121,7 +121,7 @@ __PLAN_TIMEOUT_BLOCK__    outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
           run-install: false
 __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
@@ -148,7 +148,7 @@ __PUBLISH_TIMEOUT_BLOCK__    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
           run-install: false
 __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
@@ -192,7 +192,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
 
       - name: Upload publish diagnostic log
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: publish-diagnostics-${{ matrix.platform }}
           path: ${{ runner.temp }}/pixi-sandbox-logs
@@ -216,7 +216,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
           # still useful for checkout and the artifact-only fallback, but cannot deliver this PR.
           token: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN || github.token }}
           persist-credentials: true
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
           run-install: false
 __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
@@ -281,7 +281,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
 
       - name: Upload upgrade patch and delivery report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pixi-sandbox-upgrade-artifacts
           path: ${{ runner.temp }}/pixi-sandbox-upgrade
