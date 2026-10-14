@@ -129,8 +129,8 @@ Facts about this sandbox that shape every command:
    working branch is based on `origin/main`'s tip — if it is behind, say so before anything
    else. Never edit on a stale base.
 2. **Read the standing context** (skim, do not quote back): `AGENTS.md` (repo map, invariants,
-   task commands), `CONTEXT.md`, and `backlog/docs/adr/README.md` — the decisions
-   ADR-1–ADR-27 (every accepted file under `backlog/docs/adr/`) are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
+   task commands), `CONTEXT.md`, and `backlog/docs/adr/README.md` — the accepted decisions
+   (every file under `backlog/docs/adr/` with `status: accepted`) are load-bearing; if you think one is wrong, bring a measurement, not an opinion.
 3. **List the open work**:
    `pixi run --frozen bunx backlog task list -s "To Do" --plain` — or read `backlog/tasks/*.md` directly;
    tasks are markdown files whose frontmatter carries `dependencies`, `priority`, `ordinal`,
@@ -173,17 +173,21 @@ between sessions, and the loop only closes because the last artifact is the firs
   Summary — following the task's exact existing section markers (no PLAN edits).
 - **Tests target fixtures and tempdirs, never this repository or a real HOME**
   (ADR-10; isolate `HOME`/`USERPROFILE`/`SHELL` per test).
-- **Pull requests**: push the working branch, squash-merge, conventional title ending
-  `(#N)`. Watch the required checks; when a platform job fails, read that job's log before
-  changing code. What happens after the merge is § 5, not an afterthought.
+- **Pull requests**: push the working branch and merge on GitHub once `ci` is green — squash,
+  or a merge commit when the branch carries several focused commits — with a conventional title
+  ending `(#N)`. That is the only way `main` takes more than one commit (AGENTS.md invariant 12,
+  ADR-29); `pixi run --frozen xtask check-main-push` judges a direct push before you make it.
+  Watch the required checks; when a platform job fails, read that job's log before changing
+  code. What happens after the merge is § 5, not an afterthought.
 
 ## 5. After the work lands on main — report, then hand the next session its prompt
 
 A merge is not the end of a session; it is the first moment you can tell the truth about it.
-The close is the same whether the work arrived by squash-merge or by a direct push to `main`
-(a release fix, an amend into the release commit, a tag move — §5 step 1 covers the runs either
-way; the report says `Merged: PR #N …` or `Pushed straight to main at <sha>`). Do these in
-order, and do not skip to the report:
+The close is the same whether the work arrived by a pull request merge or by one of the direct
+pushes `main` still takes (the release commit, or one commit outside the airlock's paths —
+AGENTS.md invariant 12; `ci`'s last step judges which). §5 step 1 covers the runs either way;
+the report says `Merged: PR #N …` or `Pushed straight to main at <sha>`. Do these in order, and
+do not skip to the report:
 
 1. **Watch the post-merge runs.** `gh run list --branch main --limit 5`, then read the verdict
    of every workflow the merge triggered (`ci`, `docs`, and — since 2026-10-01 —

@@ -26,14 +26,9 @@ use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::tools_lock::ToolsLock;
 use std::path::Path;
 
-/// The identity automation commits carry.
-///
-/// GitHub's bot convention is that the *name* holds the tool identity while the address
-/// is the github-actions app's noreply, which is what makes a commit render with the bot
-/// avatar instead of a broken-looking unknown author.
-pub const BOT_NAME: &str = "pixi-sandbox[bot]";
-/// Noreply address of the github-actions app, paired with [`BOT_NAME`].
-pub const BOT_EMAIL: &str = "41898282+github-actions[bot]@users.noreply.github.com";
+/// The identity automation commits carry, owned by the git layer so the relock bot, the
+/// transport publish and the release commit cannot drift apart.
+pub use pixi_sandbox_git::{BOT_EMAIL, BOT_NAME};
 
 /// Inputs whose values vary independently of the reviewed workflow template.
 #[derive(Debug, Clone, Copy)]

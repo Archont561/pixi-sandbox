@@ -17,8 +17,9 @@ use pixi_sandbox_git::ShellGit;
 use std::fs;
 use std::path::Path;
 
-/// The release commit message; `chore(release):` so convco accepts it on main.
-const COMMIT_MESSAGE_PREFIX: &str = "chore(release): ";
+/// The release commit message; `chore(release):` so convco accepts it on main, and so the
+/// main-integration guard can tell the release commit from a hand-pushed one (ADR-29).
+pub const COMMIT_MESSAGE_PREFIX: &str = "chore(release): ";
 /// One release lane, and it is main: the branch the workflow checks out and pushes back to.
 const BRANCH_REF: &str = "HEAD:main";
 

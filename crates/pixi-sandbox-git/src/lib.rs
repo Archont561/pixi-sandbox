@@ -46,6 +46,18 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Scratch directory name used inside the transport while publishing (removed afterwards).
 pub const DEFAULT_SCRATCH_NAME: &str = ".pixi-sandbox-publish";
 
+/// The name every automation commit carries: [`ShellGit`]'s (the transport publish, the release
+/// commit) and the generated relock workflow's. Tool-authored, so GitHub's `[bot]` suffix
+/// convention (github-actions[bot], dependabot[bot]).
+pub const BOT_NAME: &str = "pixi-sandbox[bot]";
+
+/// The email paired with [`BOT_NAME`]: the github-actions app's noreply address, which is what
+/// makes a commit render with the bot avatar instead of a broken-looking unknown author. A
+/// locally published transport carries the same authorship instead of silently falling back to
+/// the publishing human's git config, and the release commit is recognisable on `main` by this
+/// identity (decision ADR-29).
+pub const BOT_EMAIL: &str = "41898282+github-actions[bot]@users.noreply.github.com";
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("io error at {path}: {source}")]
@@ -166,6 +178,23 @@ pub struct FileCommitted {
     /// `git diff HEAD^ HEAD --binary` — the patch artifact for the delivery fallback. Empty
     /// when `changed` is `false`.
     pub patch: Vec<u8>,
+}
+
+/// One commit as git records it: enough to tell how it reached a branch, which is what the
+/// main-integration guard judges a push by (TASK-111, decision ADR-29).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitFacts {
+    /// The commit's full object name.
+    pub sha: String,
+    /// Parents in git's order. The order is itself a fact: a merge's first parent is the
+    /// branch the merge was made on.
+    pub parents: Vec<String>,
+    /// Who wrote the commit object — for a pull-request merge, GitHub itself.
+    pub committer_name: String,
+    /// The committer's email.
+    pub committer_email: String,
+    /// The first line of the message.
+    pub subject: String,
 }
 
 /// The operations this project needs from git — and not one more.

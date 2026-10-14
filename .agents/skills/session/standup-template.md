@@ -84,7 +84,7 @@ Left undone: <anything an AC does not cover, or "nothing">.
 ```
 Session report — <date>
 
-Merged: PR #<N> "<squash title>" → main at <sha>.
+Merged: PR #<N> "<pull request title>" → main at <sha>.
 Post-merge runs: ci <verdict, duration>, docs <verdict>, <any path-triggered workflow> <verdict>.
 Landed: <commit subject> (<task-id>), …
 

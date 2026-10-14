@@ -11,8 +11,8 @@
 //! drive against tempdir fixtures, never against this checkout (ADR-10).
 
 use xtask::{
-    airlock, commit_release, conda_platforms, consumer_proof, prepare_release, release_assets,
-    release_refs, repo_checks, smoke, starter, util, version, workflow,
+    airlock, commit_release, conda_platforms, consumer_proof, main_push, prepare_release,
+    release_assets, release_refs, repo_checks, smoke, starter, util, version, workflow,
 };
 
 use anyhow::Result;
@@ -375,6 +375,17 @@ enum Command {
         #[arg(long, default_value = "origin")]
         remote: String,
     },
+    /// Judge how the last push reached main: a pull request merged on GitHub, the release
+    /// commit, or one direct commit outside the airlock's paths (ci's post-push guard, ADR-29).
+    CheckMainPush {
+        /// The tip before the push (`github.event.before` in ci). Positional, like the tag
+        /// above, because pixi task args take one token per placeholder.
+        #[arg(default_value = "origin/main")]
+        before: String,
+        /// The pushed tip (`github.sha` in ci).
+        #[arg(default_value = "HEAD")]
+        after: String,
+    },
 }
 
 fn main() {
@@ -541,6 +552,9 @@ fn run_args(args: Args) -> Result<()> {
             dry_run,
             remote,
         } => commit_release::commit_release(&root, &tag, dry_run, &remote),
+        Command::CheckMainPush { before, after } => {
+            main_push::check_main_push(&root, &before, &after)
+        }
         Command::AirlockMatrix {
             bin,
             config,
