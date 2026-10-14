@@ -1,11 +1,12 @@
 //! The real GitHub HTTP adapters.
 //!
-//! This module is deliberately the only socket-touching code in `pixi-sandbox`: the release
-//! and upgrade traits keep their decision logic in their respective `mod.rs` homes, where
-//! offline fakes exercise it. `pixi run coverage` excludes this exact filename; counting it
-//! would either depress the number permanently or invite a mock-HTTP test that proves nothing
-//! about GitHub. Keep this file thin — a second consumer (such as xtask) or a third GitHub API
-//! call is the trigger to reconsider its in-crate home.
+//! This module owns the real GitHub HTTP adapters for the release and upgrade traits, but it is
+//! not the only socket-touching path in `pixi-sandbox`: `tool_fetch::HttpDownload` directly opens
+//! the URLs for pinned helper assets. The traits keep their decision logic in their respective
+//! `mod.rs` homes, where offline fakes exercise it. `pixi run coverage` excludes this exact
+//! filename for the real GitHub adapter boundary, not for all network I/O. Keep this file thin —
+//! a second consumer (such as xtask) or a third GitHub API call is the trigger to reconsider its
+//! in-crate home.
 
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;

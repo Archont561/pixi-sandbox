@@ -51,7 +51,7 @@ decisions are load-bearing; if you think one is wrong, bring a measurement, not 
 | `crates/pixi-sandbox/src/pack.rs` | pack preflight and the per-file oracle (ADR-13), with shared process/filesystem primitives re-exported by `commands/support.rs` instead of duplicated |
 | `crates/pixi-sandbox/src/lib.rs` | what `tests/` and `xtask` can reach: `branch_docs`, `generated`, `host_probe`, `pack`, `pipeline`, `prepare`, `rattler_build`, `release`, `self_update`, `standalone`, `tool_fetch`, `tools_update`, `upgrade`, `user_tools`, `vendor`, `wrap_payload`. A module that needs tests is promoted here — the binary target's own modules (`cli.rs`, `commands/`) are only coverable black-box |
 | `crates/pixi-sandbox/src/release/mod.rs` + `crates/pixi-sandbox/src/upgrade/mod.rs` | the `ReleaseSource` and `PullRequestSource` traits every network-touching command injects (ADR-9's shape, applied to HTTP); release also owns `Asset` and `parse_sha256_manifest`. Their decisions stay coverage-counted and fakeable from tests. |
-| `crates/pixi-sandbox/src/github.rs` | both real HTTP adapters — `GitHubReleaseSource` and `GitHubPullRequestSource` — plus their shared GitHub request headers. This is deliberately the only socket-touching file and `pixi run coverage` excludes its exact filename; keep it thin, anything with a decision belongs in the trait modules. A second consumer (such as xtask) or a third GitHub API call is the trigger to revisit extracting a crate. |
+| `crates/pixi-sandbox/src/github.rs` | both real GitHub HTTP adapters — `GitHubReleaseSource` and `GitHubPullRequestSource` — plus their shared GitHub request headers. `tool_fetch::HttpDownload` is a separate direct `ureq::get` adapter for pinned helper assets, so `github.rs` is not the only socket-touching file. `pixi run coverage` excludes this exact filename; keep it thin, with decisions in the trait modules. A second consumer (such as xtask) or a third GitHub API call is the trigger to revisit extracting a crate. |
 | `crates/pixi-sandbox/src/self_update/*` | the updater's trust boundary (ADR-26), in enforcement order: `resolver` (latest vs exact), `assets` (the canonical host→asset map, mirroring `xtask/src/release_assets.rs`), `checksums` (`SHA256SUMS`), `ownership` (the refusal ladder — a Pixi-managed binary is never overwritten), `replace` (stage beside the destination, then swap; see task-37 AC#3 for why Unix renames over a running binary) |
 | `crates/pixi-sandbox-git` | **all** git access: `GitProtocol` + `ShellGit` (real git, with a swappable `Runner`) + `FakeGit` (in-memory mock). Never run `git` from anywhere else |
 | `.github/workflows/relock.yml` | **generated, not written**: the committed render of `generated/relock_workflow.rs`, the lockfile bot `pixi-sandbox init` also hands consumers. `check-repository` (check 10) fails when it drifts from a fresh render, so it is edited through the template and `pixi run --frozen xtask render-relock`, never by hand. Unlike the publisher template it is house-shaped — one-line steps throughout — which is what makes committing it possible |
@@ -219,8 +219,9 @@ reaching privates hides what the module's real callable surface is. So:
   `pack`, `pipeline`, `prepare`, `rattler_build`, `standalone`, `tool_fetch`, `tools_update`,
   `upgrade`, `user_tools`, `vendor` and `wrap_payload` already have. One test file per module, named after it
   (`tests/self_update_replace.rs`).
-- The coverage-excluded socket-only `github` adapter is also **promoted** for command wiring, but
-  `tests/fixtures.rs` checks its exact coverage exclusion and module shape rather than mock HTTP.
+- The coverage-excluded `github` adapter module is also **promoted** for command wiring, but
+  `tests/fixtures.rs` checks its exact `github.rs` coverage exclusion and module shape rather
+  than mock HTTP; `tool_fetch::HttpDownload` is a separate HTTP path.
 - A handful of internals a test legitimately needs (a private helper whose failure branch has no
   public route, a marker constant) are exported `#[doc(hidden)] pub` — visible to `tests/`,
   marked as a test boundary rather than API.
