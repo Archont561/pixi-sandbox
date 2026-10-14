@@ -2640,6 +2640,86 @@ fn write_payload_project(root: &Path, artifact_bytes: &[u8], digest: &str) -> Pa
     path
 }
 
+#[cfg(unix)]
+fn write_payload_budget_config(root: &Path, max_blob_bytes: u32) -> PathBuf {
+    let max_blob_mib = f64::from(max_blob_bytes) / (1024.0 * 1024.0);
+    let config = format!(
+        "schema = 1\n[budgets]\nmax_blob_mib = {max_blob_mib}\nmax_transport_mib = 2048\n\
+         max_repository_push_mib = 2048\nmax_restore_required_mib = 8192\n\n\
+         [[bundle]]\nname = \"developer\"\nenvironments = [\"demo\"]\nplatforms = [\"linux-64\"]\n"
+    );
+    let path = root.join("budgets.toml");
+    fs::write(&path, config).expect("budget config");
+    path
+}
+
+#[cfg(unix)]
+fn write_fake_rattler_build(root: &Path, package_bytes: &[u8]) -> (PathBuf, PathBuf) {
+    let package_source = root.join("fake-package.conda");
+    fs::write(&package_source, package_bytes).expect("fake package");
+    let tool = root.join("fake-rattler-build");
+    write_executable(
+        &tool,
+        r#"#!/bin/sh
+set -eu
+case "$1" in
+  build)
+    shift
+    out=''
+    plat=''
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --output-dir) out="$2"; shift 2 ;;
+        --target-platform) plat="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    mkdir -p "$out/$plat"
+    cp "$FAKE_PACKAGE" "$out/$plat/demo-1.0.0-h0.conda"
+    ;;
+  publish)
+    shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --to) channel="${2#file://}"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    mkdir -p "$channel"
+    printf '{}' > "$channel/repodata.json"
+    ;;
+esac
+"#,
+    );
+    (tool, package_source)
+}
+
+#[cfg(unix)]
+fn run_wrap_payload_with_fake_build(
+    root: &Path,
+    max_blob_bytes: u32,
+    built_package: &[u8],
+) -> std::process::Output {
+    let budgets = write_payload_budget_config(root, max_blob_bytes);
+    let (tool, package_source) = write_fake_rattler_build(root, built_package);
+    bin()
+        .current_dir(root)
+        .env("FAKE_PACKAGE", package_source)
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--skip-prepare",
+            "--build",
+            "--build-tool",
+        ])
+        .arg(tool)
+        .arg("--budget-config")
+        .arg(budgets)
+        .output()
+        .expect("wrap-payload runs")
+}
+
 #[test]
 fn wrap_payload_plan_prints_the_recipe_the_totals_and_the_declared_digest() {
     let project = tempfile::tempdir().unwrap();
@@ -2840,47 +2920,13 @@ fn wrap_payload_build_runs_the_named_tool_and_publishes_into_the_default_channel
     let project = tempfile::tempdir().unwrap();
     let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
     write_payload_project(project.path(), b"the artifact", &digest);
-    // A stand-in for `rattler-build` (`--build-tool` is the flag the docs name for exactly this):
-    // on `build` it writes the one `.conda` the flow looks for, on `publish` it creates the
-    // channel. Those are the artifacts the real tool leaves behind, so the command's own path
-    // runs end to end with no network and no 31 MiB download.
-    let tool = project.path().join("fake-rattler-build");
-    write_executable(
-        &tool,
-        r#"#!/bin/sh
-set -eu
-case "$1" in
-  build)
-    shift
-    out=''
-    plat=''
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --output-dir) out="$2"; shift 2 ;;
-        --target-platform) plat="$2"; shift 2 ;;
-        *) shift ;;
-      esac
-    done
-    mkdir -p "$out/$plat"
-    printf 'package' > "$out/$plat/demo-1.0.0-h0.conda"
-    ;;
-  publish)
-    shift
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --to) channel="${2#file://}"; shift 2 ;;
-        *) shift ;;
-      esac
-    done
-    mkdir -p "$channel"
-    printf '{}' > "$channel/repodata.json"
-    ;;
-esac
-"#,
-    );
+    // A stand-in for `rattler-build` writes the package supplied by the test and, on publish,
+    // creates the channel. That exercises the command path without a network or a tool download.
+    let (tool, package_source) = write_fake_rattler_build(project.path(), b"package");
 
     bin()
         .current_dir(project.path())
+        .env("FAKE_PACKAGE", package_source)
         .args([
             "wrap-payload",
             "--config",
@@ -2913,6 +2959,71 @@ esac
     assert!(
         !project.path().join("payload-build").exists() && !project.path().join("channel").exists(),
         "the default build and channel outputs do not create unignored project-root directories"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn wrap_payload_allows_a_built_package_exactly_at_the_blob_limit() {
+    let project = tempfile::tempdir().unwrap();
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
+    write_payload_project(project.path(), b"the artifact", &digest);
+    let payload_file = project.path().join(".pixi/payload-work/payload/tool");
+    let max_blob_bytes = u32::try_from(fs::metadata(&payload_file).unwrap().len())
+        .expect("fixture payload fits in u32 bytes");
+    let package_bytes = vec![b'x'; usize::try_from(max_blob_bytes).expect("fits usize")];
+
+    let output = run_wrap_payload_with_fake_build(project.path(), max_blob_bytes, &package_bytes);
+
+    assert!(
+        output.status.success(),
+        "a package equal to the limit is accepted: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        project
+            .path()
+            .join(".pixi/payload-channel/repodata.json")
+            .is_file(),
+        "an at-limit package is indexed"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn wrap_payload_refuses_an_oversized_built_package_before_publishing() {
+    let project = tempfile::tempdir().unwrap();
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
+    write_payload_project(project.path(), b"the artifact", &digest);
+    let payload_file = project.path().join(".pixi/payload-work/payload/tool");
+    let max_blob_bytes = u32::try_from(fs::metadata(&payload_file).unwrap().len())
+        .expect("fixture payload fits in u32 bytes");
+    let package_bytes = vec![b'x'; usize::try_from(max_blob_bytes + 1).expect("fits usize")];
+
+    let output = run_wrap_payload_with_fake_build(project.path(), max_blob_bytes, &package_bytes);
+
+    assert!(!output.status.success(), "an over-limit package is refused");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("demo-1.0.0-h0.conda"), "{stderr}");
+    assert!(stderr.contains("budgets.max_blob_mib"), "{stderr}");
+    assert!(
+        stderr.contains(&format!("{} bytes", max_blob_bytes + 1)),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("{max_blob_bytes} bytes")),
+        "{stderr}"
+    );
+    assert!(
+        project
+            .path()
+            .join(".pixi/payload-build/out/linux-64/demo-1.0.0-h0.conda")
+            .is_file(),
+        "the built artifact remains available for diagnosis"
+    );
+    assert!(
+        !project.path().join(".pixi/payload-channel").exists(),
+        "a refused package is not published or indexed"
     );
 }
 

@@ -379,12 +379,12 @@ fn validate_entry_point(
 
 /// Judge the payload against the blob and transport budgets.
 ///
-/// Both figures are conservative. The blob is compared with the uncompressed total, an upper
-/// bound on the compressed `.conda`. The transport is compared with twice that total, because
-/// the transport stores the package and the unpacked prefix files, and `record_file` keeps a
-/// blob per path. The built `.conda` is not re-measured here: its exact bytes meet the same
-/// budgets when the environment holding it is published, in the pipeline's `doctor
-/// --budget-config` phase before `publish` (ADR-28, budgets).
+/// Both figures are conservative. The blob is compared with the uncompressed total before the
+/// build, and the transport is compared with twice that total because it stores the package and
+/// the unpacked prefix files, with `record_file` keeping a blob per path. Once `rattler-build`
+/// produces the `.conda`, `wrap-payload` checks its exact size against the same blob budget before
+/// indexing it. The final transport and repository-push measurements still run in the pipeline's
+/// `doctor --budget-config` phase before `publish` (ADR-28, budgets).
 ///
 /// # Errors
 ///
@@ -830,13 +830,43 @@ pub trait PayloadToolchain {
     fn index(&self, channel_dir: &Path, package: &Path) -> Result<(), PayloadError>;
 }
 
-/// Plan the wrap, then build and index through the toolchain. A refused payload never reaches
-/// the toolchain, so a refused package is never built or published (AC#2, AC#6).
+/// Check the built package's on-disk size against `budgets.max_blob_mib`.
+///
+/// This closes the gap between the uncompressed preflight and the actual compressed `.conda`:
+/// even when a payload passes preflight, package metadata can push the built blob over the
+/// channel's limit. The package name and both byte counts are included in that refusal.
 ///
 /// # Errors
 ///
-/// A refusal from [`plan_wrap`], or the toolchain's own failure. The channel is not indexed when
-/// the build fails.
+/// [`PayloadError::Io`] when the built package cannot be measured, or
+/// [`PayloadError::BuiltPackageTooLarge`] when it exceeds the configured blob limit.
+pub fn check_built_package_blob_budget(
+    package: &Path,
+    max_blob_bytes: u64,
+) -> Result<(), PayloadError> {
+    let metadata = std::fs::metadata(package).map_err(|error| PayloadError::Io {
+        path: package.display().to_string(),
+        message: error.to_string(),
+    })?;
+    let measured_bytes = metadata.len();
+    if measured_bytes > max_blob_bytes {
+        return Err(PayloadError::BuiltPackageTooLarge {
+            package: package.display().to_string(),
+            measured_bytes,
+            limit_bytes: max_blob_bytes,
+        });
+    }
+    Ok(())
+}
+
+/// Plan the wrap, then build and index through the toolchain. A refused payload never reaches
+/// the toolchain, so a refused package is never built or published (AC#2, AC#6). The built
+/// package is measured against the blob budget before the toolchain indexes it.
+///
+/// # Errors
+///
+/// A refusal from [`plan_wrap`], an oversized built package, or the toolchain's own failure. The
+/// channel is not indexed when the build fails or the built package exceeds its blob budget.
 pub fn wrap(
     request: &WrapRequest,
     toolchain: &dyn PayloadToolchain,
@@ -845,6 +875,7 @@ pub fn wrap(
 ) -> Result<PathBuf, PayloadError> {
     let plan = plan_wrap(request)?;
     let package = toolchain.build(&plan, work_dir)?;
+    check_built_package_blob_budget(&package, request.budgets.max_blob_bytes)?;
     toolchain.index(channel_dir, &package)?;
     Ok(package)
 }
@@ -920,6 +951,14 @@ pub enum PayloadError {
     InvalidPlatform(String),
     #[error("{}", budget_message(.0))]
     Budget(Vec<BudgetViolation>),
+    #[error(
+        "built package `{package}` exceeded budgets.max_blob_mib: measured {measured_bytes} bytes, limit {limit_bytes} bytes; remove files the consumer does not need or confirm the channel's upload limit before raising the budget"
+    )]
+    BuiltPackageTooLarge {
+        package: String,
+        measured_bytes: u64,
+        limit_bytes: u64,
+    },
     #[error("the build toolchain failed: {0}")]
     Toolchain(String),
     #[error("io error at {path}: {message}")]

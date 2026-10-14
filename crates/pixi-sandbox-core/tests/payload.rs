@@ -540,6 +540,7 @@ fn write_provenance_writes_the_rendered_document_beside_the_recipe() {
 struct FakeToolchain {
     calls: RefCell<Vec<String>>,
     fail_build: bool,
+    package_bytes: usize,
 }
 
 impl PayloadToolchain for FakeToolchain {
@@ -553,10 +554,22 @@ impl PayloadToolchain for FakeToolchain {
                 "rattler-build exited 1".to_string(),
             ));
         }
-        Ok(work_dir
+        let package = work_dir
             .join("out")
             .join(plan.spec.platform.as_str())
-            .join(format!("{}-{}-0.conda", plan.spec.name, plan.spec.version)))
+            .join(format!("{}-{}-0.conda", plan.spec.name, plan.spec.version));
+        let parent = package.parent().expect("the package has a parent");
+        std::fs::create_dir_all(parent).map_err(|error| PayloadError::Io {
+            path: parent.display().to_string(),
+            message: error.to_string(),
+        })?;
+        std::fs::write(&package, vec![0; self.package_bytes]).map_err(|error| {
+            PayloadError::Io {
+                path: package.display().to_string(),
+                message: error.to_string(),
+            }
+        })?;
+        Ok(package)
     }
 
     fn index(&self, channel_dir: &Path, package: &Path) -> Result<(), PayloadError> {
@@ -604,28 +617,58 @@ fn an_over_budget_payload_never_reaches_the_toolchain() {
 }
 
 #[test]
-fn an_accepted_payload_is_built_then_indexed_and_the_package_is_returned() {
-    let fake = FakeToolchain::default();
+fn an_oversized_built_package_is_not_indexed() {
+    let fake = FakeToolchain {
+        package_bytes: 1801,
+        ..FakeToolchain::default()
+    };
+    let work = tempfile::tempdir().expect("work dir");
+    let mut request = request(spec(Platform::Linux64), linux_tree());
+    request.budgets.max_blob_bytes = 1800;
 
-    let package = wrap(
-        &request(spec(Platform::Linux64), linux_tree()),
-        &fake,
-        Path::new("work"),
-        Path::new("channel"),
-    )
-    .expect("accepted");
+    let error = wrap(&request, &fake, work.path(), Path::new("channel"))
+        .expect_err("the built package exceeds the blob limit");
+
+    match error {
+        PayloadError::BuiltPackageTooLarge {
+            package,
+            measured_bytes,
+            limit_bytes,
+        } => {
+            assert!(package.ends_with("demo-payload-1.0.0-0.conda"));
+            assert_eq!(measured_bytes, 1801);
+            assert_eq!(limit_bytes, 1800);
+        }
+        other => panic!("expected built-package budget refusal, got {other:?}"),
+    }
+    assert_eq!(
+        *fake.calls.borrow(),
+        ["build demo-payload 1.0.0 linux-64"],
+        "an over-limit package is built but never indexed"
+    );
+}
+
+#[test]
+fn an_accepted_payload_is_built_then_indexed_and_the_package_is_returned() {
+    let fake = FakeToolchain {
+        package_bytes: 1800,
+        ..FakeToolchain::default()
+    };
+    let work = tempfile::tempdir().expect("work dir");
+    let package_path = work.path().join("out/linux-64/demo-payload-1.0.0-0.conda");
+    let mut request = request(spec(Platform::Linux64), linux_tree());
+    request.budgets.max_blob_bytes = 1800;
+
+    let package = wrap(&request, &fake, work.path(), Path::new("channel")).expect("accepted");
 
     assert_eq!(
         *fake.calls.borrow(),
         [
-            "build demo-payload 1.0.0 linux-64",
-            "index channel from work/out/linux-64/demo-payload-1.0.0-0.conda"
+            "build demo-payload 1.0.0 linux-64".to_string(),
+            format!("index channel from {}", package_path.display()),
         ]
     );
-    assert_eq!(
-        package,
-        Path::new("work/out/linux-64/demo-payload-1.0.0-0.conda")
-    );
+    assert_eq!(package, package_path);
 }
 
 #[test]
