@@ -3140,3 +3140,99 @@ Next session opening prompt:
 > is TASK-111 and TASK-78 AC#11/#12 only. Do not check a box you cannot point at a green proof for.
 > House rules are in `AGENTS.md` (invariant 10), the session procedure and its templates are in
 > `.agents/skills/session/`.
+
+### 2026-10-14 — ci now judges how every push reached main (TASK-111, PR #151)
+
+An Arena AI sandbox session (egress filtered; `--offline` throughout). It landed TASK-111, cleared
+both Dependabot PRs and accepted ADR-28.
+
+What landed:
+
+- **PR #151**, merged as merge commit `7d30bfe0`. It has three commits:
+  - `fec5fd72`, the TASK-111 guard and ADR-29;
+  - `93b5c3cb`, the actions-patch pins in the workflows *and* the generator templates. It
+    supersedes #147, which failed check 10 because it bumped only the committed workflows.
+    Dependabot closed #147 by itself after the merge.
+  - `ab62ff43`, ADR-28 accepted and TASK-78 AC#1 checked.
+- **#148** (docs-patch `bun.lock`): rebased with `@dependabot rebase`, then squash-merged as
+  `b2424fc9`. Its `test-payload-roundtrip` failure had been the stale pre-#149 oracle, and it was
+  green after the rebase.
+- **The guard's first live verdicts** came on both merges. `check-main-push` succeeded in ci runs
+  38555521412 (#151's merge commit) and 38556286687 (#148's squash), with no error annotation.
+  Replayed against main's history, it fails the push behind #144 (`7d539c72` → `13d64ef8`) and
+  passes every pull-request merge and release since.
+- **Post-merge runs.** ci, docs and publish sandbox were green for both merges, and the transport
+  was repacked twice. TASK-111 is Done. TASK-78 is 11/13; AC#11 and AC#12 are deferred.
+- **Suite** 1,125 → 1,148 passing / 2 skipped (+8 pixi-sandbox-git, +15 xtask).
+
+Open items, not implemented here:
+
+1. **Maintainer action (ADR-29).** In the repository settings, protect `main` with a ruleset that
+   requires `ci (lint · test · coverage)`. Give it a bypass for the admin role and for the owner of
+   `RELEASE_PUSH_TOKEN`: a required check also refuses unchecked *direct* pushes, so without the
+   bypasses the release commit and documentation pushes would be refused too. Also untick "Allow
+   rebase merging". The automation's token gets 403 on the protection API. Until this is done the
+   guard reports after a push and refuses nothing.
+2. **Ubuntu 26.** `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19 (actions/runner-images
+   #14748; every ci job carries the notice). The first ci, airlock and publish runs after that date
+   are where an image change will show. Pinning `ubuntu-24.04` is the fallback if one breaks.
+3. **TASK-78 AC#11 and AC#12 need a connected machine.** AC#12's proof is a real fetch through
+   `rattler_build::resolve_tool`, whose `pins()` carry the real SHA256s. Release assets
+   (`objects.githubusercontent.com`) are blocked here. AC#11 needs a real resolve against a channel.
+4. **`AGENTS.md` overstates `github.rs`.** Its row calls `github.rs` "deliberately the only
+   socket-touching file", but `tool_fetch::HttpDownload` calls `ureq::get` directly, and it
+   predates TASK-78. ADR-28's matching sentence is corrected; the row is not. Either fix the row,
+   or move `HttpDownload` behind `github.rs` so the coverage exclusion's rationale holds again.
+5. **Idea: a post-build size check in `wrap-payload`.** Measure the built `.conda` against
+   `max_blob_mib` right after rattler-build, so an over-large payload is refused at wrap time with
+   its own name instead of at publish time. Today `budget_preflight` is an uncompressed upper
+   bound, and the real bytes meet the budgets only in the pipeline's `doctor --budget-config`
+   phase.
+6. **Idea: a pre-push convenience.** A lefthook `pre-push` step could run
+   `xtask check-main-push origin/main HEAD` when the push targets `main`. ADR-29 rejects a hook as
+   *enforcement*, because it binds only the clones that install it. As a fast local warning it
+   costs nothing.
+
+Measurements worth keeping:
+
+- **Pixi re-parses task arguments.** `pixi run -- bun …` resolves the pixi *task* named `bun` and
+  re-parses the arguments through pixi's task shell. A backtick span in an argument is a parse
+  error, and `(squash or merge commit)` ran `squash` as a command. The `bunx` task does the same.
+  `pixi run --frozen -- env bun x --bun backlog task edit …` passes argv verbatim, so use it for
+  backlog notes containing shell metacharacters.
+- **Completed job logs are out of reach.** For a completed job, `gh api …/actions/jobs/<id>/logs`
+  redirects to `productionresultssa*.blob.core.windows.net`, which the Arena sandbox cannot reach.
+  Step conclusions (`…/jobs/<id>`) and annotations (`…/check-runs/<id>/annotations`) answer.
+  The guard's verdict is deterministic, so a local replay of the same SHAs gives its text.
+- **The clone is shallow.** It has depth 1. `git fetch --deepen=80 origin main` brings main's
+  history without touching the sandbox branch. That is how the guard was replayed against #143–#150.
+- **`github.event.before` is empty on `pull_request` events.** The guard step renders with an empty
+  first argument there and is skipped by its `github.event_name == 'push'` condition.
+
+Next session opening prompt:
+
+> Restore the sandbox and baseline the suite (expect **1,148 passing / 2 skipped** on `main`; the
+> transport on `sandbox/developer-linux-64` was repacked from `b2424fc9`, and nothing new needs
+> vendoring — `Cargo.lock` is unchanged since v0.6.2). **Probe the environment first**: the Arena AI
+> sandbox (egress filtered; `pixi run --frozen -- cargo … --offline`) and a connected Codespaces
+> container need different commands — `gh api rate_limit` plus
+> `openssl s_client -connect static.crates.io:443 -servername static.crates.io` tells them apart.
+> Then read `CONTEXT.md` § Session scratchpad — the **2026-10-14** entry lists 6 open items.
+>
+> First, one look at the repo state: `gh api repos/Archont561/pixi-sandbox/rulesets`. If a ruleset
+> requiring `ci (lint · test · coverage)` exists, ADR-29's maintainer action is done — say so, and
+> check that its bypasses cover the admin role and `RELEASE_PUSH_TOKEN`'s owner before the next
+> release. If not, it is still the owner's click; do not try to apply it (403).
+>
+> If the network is open, take the connected proofs, all locally runnable there: **TASK-78 AC#11
+> and AC#12** (a real channel resolve; the real rattler-build fetch through `resolve_tool`'s pinned
+> SHA256s, `tools.lock.json` unchanged, the missing-tool remedy), then **TASK-88 AC#8 / TASK-93
+> AC#4** (a real `pixi-pack` → `pixi-unpack` round trip of a uv pypi wheel, 0 oracle failures).
+> If instead you are on the Arena AI sandbox, none of those proofs is in reach: propose a locally
+> provable slice from the In Progress list or this entry's open items 4–6, and stop.
+>
+> `main` now moves only by a pull request merged on GitHub (squash or merge commit) on a green ci,
+> or by one direct commit outside the airlock's paths — `AGENTS.md` invariant 12, ADR-29; run
+> `pixi run --frozen xtask check-main-push` before any direct push. Propose the slice and stop.
+> House rules are in `AGENTS.md` (invariant 10), the session procedure and its templates are in
+> `.agents/skills/session/`.
