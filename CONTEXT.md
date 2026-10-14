@@ -3236,3 +3236,95 @@ Next session opening prompt:
 > `pixi run --frozen xtask check-main-push` before any direct push. Propose the slice and stop.
 > House rules are in `AGENTS.md` (invariant 10), the session procedure and its templates are in
 > `.agents/skills/session/`.
+
+### 2026-10-14 (second session) — wrap-payload enforces the built blob budget (PR #153)
+
+An Arena AI sandbox session; Pixi/Cargo work was offline. The `static.crates.io` TLS probe returned
+no peer certificate, zero bytes and `unexpected eof while reading`, so the connected-host proofs
+remain deferred.
+
+**Merged:** PR #153, merge commit `ac07bd0e110f99eaf8df811892167a54360a56ff` (2026-10-14
+13:00:39 UTC). It carried two focused commits:
+
+- `54ff983f`, `docs: clarify HTTP adapter boundaries`: the `AGENTS.md` coverage row now describes
+the GitHub HTTP adapter boundary without implying that `tool_fetch::HttpDownload` (which uses
+`ureq` directly) is routed through `github.rs`.
+- `1942e712`, `feat(wrap-payload): enforce built package blob budget`: after rattler-build emits
+the `.conda`, both core `wrap` and the CLI `wrap-payload` check its actual bytes against
+`max_blob_mib`, before indexing or channel publication. The earlier pre-build, uncompressed
+payload preflight remains in place. Exact-limit and over-limit tests cover both paths; the CLI
+refusal retains its diagnostic `.conda` and proves nothing was published.
+
+**Post-merge evidence:** `ci` run `38568277085`, `docs` run `38568277071`, and `publish sandbox`
+run `38568277060` all succeeded. CI covered formatting, lint, tests, the payload round trip,
+coverage, docs build, `xtask check-main-push`, and Windows. The full suite and coverage each
+reported 1,151 passed / 2 skipped before merge. The post-merge local `pixi run --frozen test`
+returned success on the merged tree, but Pixi reported `FULL TURBO` (cached); post-merge CI ran
+the tests and coverage successfully. `Cargo.lock` is unchanged.
+
+The first look at the transport appeared stale only because this clone's `remote.origin.fetch`
+tracks `main` and the Arena branch, not `sandbox/*`. `git ls-remote` showed the actual transport
+branch at `a8d7ec3c`; its local tracking ref was still `3ce535d4`. An explicit forced fetch of
+`sandbox/developer-linux-64` advanced the tracking ref, and the fetched manifest confirms a fresh
+repack: `created_at` `2026-10-14T13:03:31Z`, source commit `ac07bd0`, lock SHA256
+`7ab9bb32768d185b180e92c9f5a1b03d3a33db1cb037dd60a9e0a15821b98d1a`. The successful publish run
+did update the remote; the initial mismatch was not a publishing incident. When checking this
+branch in future, fetch it explicitly:
+
+```bash
+git fetch origin +refs/heads/sandbox/developer-linux-64:refs/remotes/origin/sandbox/developer-linux-64
+```
+
+Scratchpad items **4 and 5** from the preceding entry are resolved on `main`: the HTTP-boundary
+documentation correction and the post-build `.conda` size enforcement. Items **1, 2, 3 and 6**
+remain open:
+
+1. **Maintainer action (ADR-29).** `gh api repos/Archont561/pixi-sandbox/rulesets` returned `[]`.
+The owner must configure a ruleset requiring `ci (lint · test · coverage)`, with bypass for the
+admin role and `RELEASE_PUSH_TOKEN`'s owner, and disable rebase merging. Do not try to apply it from
+the sandbox.
+2. **Ubuntu 26.** `ubuntu-latest` moves on 2026-10-19; inspect the first `ci`, airlock, and publish
+runs after the migration notice.
+3. **Connected proofs.** TASK-78 AC#11/#12 remain open: prove the committed channel resolves
+without machine-specific paths, and perform the real `rattler_build::resolve_tool` fetch through
+its pinned SHA256s with `tools.lock.json` unchanged and the named missing-tool remedy. TASK-88
+AC#8 / TASK-93 AC#4 also remain: round-trip a real uv PyPI wheel through `pixi-pack` →
+`pixi-unpack` with zero oracle failures. These need the connected host; do not claim them from the
+filtered sandbox.
+6. **Pre-push convenience idea.** No local hook was added; ADR-29's guard remains CI enforcement,
+not a hook-dependent policy.
+
+### Next session opening prompt
+
+> Restore the sandbox and baseline the suite on `main` `ac07bd0e` (expect **1,151 passing / 2
+> skipped**). Then read `CONTEXT.md` § Session scratchpad — the **2026-10-14 (second session)**
+> entry lists four open items. The transport is repacked from `ac07bd0`; its manifest is on remote branch
+> `sandbox/developer-linux-64` at `a8d7ec3c`, and `Cargo.lock` is unchanged. This clone's fetch
+> refspec omits `sandbox/*`, so use the explicit forced fetch in this entry when inspecting the
+> transport. Items 4 and 5 are already resolved by PR #153 — do not redo them.
+>
+> **Probe the environment first:** `gh api rate_limit` and
+> `openssl s_client -connect static.crates.io:443 -servername static.crates.io`. Use the result to
+> distinguish the filtered Arena sandbox from a connected Codespaces host; in the filtered
+> sandbox, keep Pixi/Cargo offline and do not retry the blocked crates.io host. Then check
+> `gh api repos/Archont561/pixi-sandbox/rulesets`: it was `[]` at this closeout, so the ADR-29
+> ruleset remains the owner's action. If one now exists, verify bypass for the admin role and
+> `RELEASE_PUSH_TOKEN`'s owner before the next release; do not try to apply the rule from the
+> sandbox.
+>
+> If connected, propose the outstanding proofs in this order: TASK-78 AC#11 and AC#12 (real
+> channel resolve; real `rattler_build::resolve_tool` fetch through pinned SHA256s, unchanged
+> `tools.lock.json`, and the missing-tool remedy), then TASK-88 AC#8 / TASK-93 AC#4 (a real uv
+> PyPI wheel round trip through `pixi-pack` → `pixi-unpack`, zero oracle failures). If filtered,
+> propose one locally provable slice from the In Progress list or open item 6 above. State the
+> recommended slice and stop for my approval; do not broaden scope.
+>
+> At this closeout, the documentation-only PR #154 carrying this entry is open with CI, Windows,
+> and lock-guard checks green. Check its state first; do not merge it without explicit user
+> authorization.
+>
+> Watch the first `ci`, airlock and publish runs after the 2026-10-19 Ubuntu 26 migration. `main`
+> advances by a PR merged on green CI or one direct commit outside airlock paths; run
+> `pixi run --frozen xtask check-main-push` before any direct push. Work only on
+> `arena/d477a4ac-pixi-sandbox`. House rules are in `AGENTS.md` (invariant 10), and the session
+> procedure/templates are in `.agents/skills/session/`.
