@@ -1460,6 +1460,67 @@ fn pack_refuses_a_pixi_global_trampoline_self_bin_before_embedding() {
     );
 }
 
+#[test]
+fn pack_refuses_a_non_wheel_pypi_dependency_before_creating_output() {
+    // Issue #157: pixi-pack carries a PyPI dependency only as a wheel, and refuses anything
+    // else late, from a subprocess, after the install phase. pack must name the dependency up
+    // front and leave no output directory behind. The refusal happens in the plan phase, before
+    // tools are resolved, so this test needs no fake packer on PATH.
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path().join("project-source");
+    let transport = temp.path().join("transport");
+    fs::create_dir_all(&repo).unwrap();
+    fs::write(
+        repo.join("pixi.lock"),
+        "\
+version: 7
+environments:
+  orchestration:
+    channels:
+    - url: https://conda.anaconda.org/conda-forge/
+    packages:
+      linux-64:
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.2-h25fd6f3_3.conda
+      - pypi: ./runtimes/engine
+packages:
+- conda: https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.2-h25fd6f3_3.conda
+  sha256: 00
+- pypi: ./runtimes/engine
+  name: polyglot-runtime
+  version: 0.1.0
+",
+    )
+    .unwrap();
+
+    let assert = bin()
+        .args([
+            "pack",
+            "--repo-root",
+            repo.to_str().unwrap(),
+            "--envs",
+            "orchestration",
+            "--output-dir",
+            transport.to_str().unwrap(),
+            "--platform",
+            "linux-64",
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(
+        stderr.contains("environment `orchestration`") && stderr.contains("`polyglot-runtime`"),
+        "the refusal names the environment and package: {stderr}"
+    );
+    assert!(
+        stderr.contains("`./runtimes/engine`"),
+        "the refusal names the locked location: {stderr}"
+    );
+    assert!(
+        !transport.exists(),
+        "a refused pack must leave no output directory behind"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn pack_refuses_a_self_bin_that_cannot_leave_its_prefix() {

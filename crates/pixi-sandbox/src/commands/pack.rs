@@ -119,6 +119,17 @@ impl PackPlan {
             validate_vendorable_lockfile(&root)?;
         }
 
+        // Issue #157: a PyPI dependency pixi-pack cannot carry (anything but a wheel) is a
+        // property of the selected environments, and the failure pixi-pack gives for it arrives
+        // after the install phase, from a subprocess, naming neither the environment nor what to
+        // change. Refuse it here, with the other pre-flight guards, so a refused pack leaves no
+        // output directory behind and says exactly which dependency to move out.
+        pixi_sandbox::pixi_lock::refuse_non_wheel_pypi(
+            &root.join("pixi.lock"),
+            &args.envs,
+            &args.platform,
+        )?;
+
         // Resolved here, with the other pre-flight guards: a config that cannot be read or
         // does not validate is a refusal that must leave no output directory behind.
         let host_requirements =
