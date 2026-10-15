@@ -4,8 +4,9 @@
 //! commits it — the committer identity and the parent list are the evidence the guard reads.
 
 use pixi_sandbox_git::{BOT_EMAIL, BOT_NAME};
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use xtask::main_push::{Sanctioned, Verdict, Violation, judge_push};
 
 mod support;
@@ -427,4 +428,104 @@ fn the_command_judges_head_against_origin_main_by_default() {
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("the push moved nothing"), "{stdout}");
+}
+
+/// Run the public hook entrypoint with Git's pre-push protocol on stdin.
+fn check_main_push_hook(dir: &Path, input: &str) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_xtask"))
+        .arg("--root")
+        .arg(dir)
+        .arg("check-main-push-hook")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run xtask");
+    child
+        .stdin
+        .take()
+        .expect("hook stdin")
+        .write_all(input.as_bytes())
+        .expect("write hook input");
+    child.wait_with_output().expect("wait for xtask")
+}
+
+#[test]
+fn the_pre_push_entrypoint_rejects_an_unproven_main_update() {
+    let (dir, before) = main_repo();
+    let after = commit_as(
+        DEV,
+        dir.path(),
+        &[("crates/change.rs", "// unproven change\n")],
+        "docs: direct crate change",
+    );
+    run_git(dir.path(), &["branch", "feature", &after]);
+    let input = format!("refs/heads/feature {after} refs/heads/main {before}\n");
+
+    let output = check_main_push_hook(dir.path(), &input);
+
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("main integration"), "{stderr}");
+    assert!(stderr.contains("pull request"), "{stderr}");
+}
+
+#[test]
+fn an_empty_pre_push_input_is_a_no_op() {
+    let (dir, _) = main_repo();
+
+    let output = check_main_push_hook(dir.path(), "");
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no ref updates; skipped"), "{stdout}");
+}
+
+#[test]
+fn the_pre_push_entrypoint_allows_a_sanctioned_main_update() {
+    let (dir, before) = main_repo();
+    let after = commit_as(
+        DEV,
+        dir.path(),
+        &[("docs/guide.md", "A guide.\n")],
+        "docs: add a guide",
+    );
+    run_git(dir.path(), &["branch", "feature", &after]);
+    let input = format!("refs/heads/feature {after} refs/heads/main {before}\n");
+
+    let output = check_main_push_hook(dir.path(), &input);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("one direct commit"), "{stdout}");
+}
+
+#[test]
+fn the_pre_push_entrypoint_skips_non_main_updates() {
+    let (dir, before) = main_repo();
+    commit_as(DEV, dir.path(), &[("docs/a.md", "a\n")], "docs: a");
+    let after = commit_as(DEV, dir.path(), &[("docs/b.md", "b\n")], "docs: b");
+    let input = format!("refs/heads/main {after} refs/heads/feature {before}\n");
+
+    let output = check_main_push_hook(dir.path(), &input);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("does not target refs/heads/main; skipped"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn deleting_main_is_refused_with_an_explicit_reason() {
+    let (dir, before) = main_repo();
+    let zero = "0".repeat(before.len());
+    let input = format!("(delete) {zero} refs/heads/main {before}\n");
+
+    let output = check_main_push_hook(dir.path(), &input);
+
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("deletes refs/heads/main"), "{stderr}");
 }
