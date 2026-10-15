@@ -1,9 +1,10 @@
 ---
 id: TASK-88
 title: Stop recording uv-regenerated install metadata in the per-file oracle
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-10 14:20'
+updated_date: '2026-10-15 16:45'
 labels:
   - bug
   - verification
@@ -60,7 +61,7 @@ transport to lean on.
 - [x] #5 A regression test reproduces issue #128 at the `verify_restored` seam: a prefix scanned at pack time, a wheel reinstalled with a different timestamp, and a clean verdict. Its complement — tampering with the package payload the wheel shipped — is still caught, so the exemption is not wider than the two files.
 - [x] #6 No manifest or `files.json` schema change: a list written by an older tool still parses and still verifies under the digests it recorded, and a list written by this one is still readable by an older binary.
 - [x] #7 ADR-13's honest-limits record in `backlog/docs/adr/README.md` names the new exemption, why presence is the sound check for it, and the consumer-facing consequence: **an already-packed transport still fails until it is re-packed**, because its recorded digest was computed over bytes the restore path regenerates by design.
-- [ ] #8 The fix is exercised against a real `pixi-unpack` reinstall of a pypi wheel. Recorded as evidence; if it cannot be produced on this machine, the AC stays open with the missing proof named rather than satisfied by the fixture.
+- [x] #8 The fix is exercised against a real `pixi-unpack` reinstall of a pypi wheel. Recorded as evidence; if it cannot be produced on this machine, the AC stays open with the missing proof named rather than satisfied by the fixture.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -172,6 +173,42 @@ reinstall.** This airlocked host has no `pixi-pack` on `PATH`, no pypi wheel on 
 and cannot resolve against `prefix.dev`/`pypi.org`, so the real round trip cannot be produced here.
 The missing proof is the same one TASK-93 AC#4 records, on the same connected host. Nothing local
 remains for this AC.
+
+### 2026-10-15 — AC#8 satisfied on a connected host (real pack → unpack of a pypi wheel)
+
+The round trip this AC names was produced end to end on a connected container
+(`pixi 0.81.0`, linux-64). Consumer project `/tmp/pypi-proof`: `pixi.toml` with
+`python = "3.12.*"` (conda-forge) and pypi `six = ">=1.16"`; `pixi install` resolved
+`six 1.17.0`. The `pixi install` prefix carries **no** `uv_cache.json`/`direct_url.json` — those
+are written only by `pixi-unpack`'s uv reinstall, which is the whole bug shape.
+
+Packed with the fixed local build:
+`pixi-sandbox pack --repo-root /tmp/pypi-proof --envs default --output-dir /tmp/pypi-transport --platform linux-64 --fetch-tools --tools-cache /tmp/tools-cache`.
+`--fetch-tools` pulled `pixi-pack 0.7.11` and `pixi-unpack 0.7.11` (x86_64-unknown-linux-musl)
+from the embedded pins on demand; result `default: 27 files · 42.9 MiB packed · 153.2 MiB unpacked · 6416 file entries recorded`.
+
+The recorded oracle (`/tmp/pypi-transport/.pixi-sandbox/envs/default/files.json`) shows the fix's
+shape exactly: `six-1.17.0.dist-info/direct_url.json` and `.../uv_cache.json` are **presence-only**
+(no `"h"`), while `.../six-1.17.0.dist-info/RECORD` carries the collapsed digest
+`dddd17af044c6c96bc70854fa99d93418a91dccce44836d487fc600167c2dcf5`.
+
+Restore, real `pixi-unpack 0.7.11` reinstall:
+`pixi-sandbox restore --branch-location /tmp/pypi-transport --output-path /tmp/pypi-restored --user-tools skip`
+→ `env default: checked against the manifest's file list — 6416 entry(ies), 0 failure(s)` /
+`OK — the restored tree matches the manifest`, exit 0. The restored
+`direct_url.json` names the restore-time wheel path
+`file:///tmp/pypi-restored/.pixi/.restore-work/pack-default/pypi/six-1.17.0-py2.py3-none-any.whl`,
+which cannot equal the pack-time path, and its `RECORD` row hashes those un-canonicalised bytes —
+the deterministic mismatch #128 describes.
+
+Red→green on the same transport proved the fix is load-bearing. The pre-fix released binary
+`v0.6.1` (asset `pixi-sandbox-x86_64-unknown-linux-musl`, downloaded from the GitHub release)
+restored the same transport into a fresh prefix and **failed**, exit 1:
+`lib/python3.12/site-packages/six-1.17.0.dist-info/RECORD: integrity: env default: content does not match the manifest's file list (expected dddd17af…, got 8993270e…)` /
+`Error: the restored project does not match the manifest (1 failure(s))`. The released `v0.6.2`
+(tagged 2026-10-11 18:18, after the fix `8a17a26f` landed at 15:57) and the local main build both
+restore it with 0 failures, exit 0. So the fix is both proven on a real reinstall and already in a
+release; the `expected` digest in the v0.6.1 failure is the collapsed one the fixed packer wrote.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
