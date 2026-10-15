@@ -14,8 +14,11 @@
 # Pre-push jobs are deliberately NOT glob-filtered. lefthook builds a pre-push file list from
 # `git diff --name-only HEAD @{push}` and skips a job whose list comes back empty — which
 # happens on a delete-only push and on a branch whose upstream has moved — so a glob here
-# would make the heavy gates silently optional exactly when a push is unusual. These four run
-# on every push, in order, stopping at the first failure (`piped`).
+# would make the heavy gates silently optional exactly when a push is unusual. The first job
+# consumes Git's pre-push ref-update protocol; it is only a local convenience, while CI's
+# main-integration verdict remains authoritative. Only that one job may use stdin because
+# lefthook gives the input to one command. All five jobs run in order, stopping at first failure
+# (`piped`).
 
 min_version: "2.0.0"
 
@@ -56,6 +59,11 @@ pre-push:
   # binaries after clippy has already said no.
   piped: true
   jobs:
+    - name: main-integration
+      # This reuses CI's ADR-29 judgment for local feedback; it is not repository enforcement.
+      run: pixi run xtask check-main-push-hook
+      use_stdin: true
+
     - name: rust-clippy
       # `clippy -D warnings` is a full check of the workspace *and* its tests, so a separate
       # `cargo check` would only re-walk the same graph.

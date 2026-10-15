@@ -162,11 +162,12 @@ between sessions, and the loop only closes because the last artifact is the firs
   rhythm to them:
   - while committing: `pixi run --frozen fmt`. `pre-commit` adds taplo, biome and actionlint
     over staged files only — no cargo, by design.
-  - before pushing: `pre-push` runs clippy, the repo-consistency and generated-workflow xtask
-    checks, and the whole-workspace test suite, in that order, stopping at the first failure.
-    Run `pixi run --frozen lint && pixi run --frozen test` yourself first when you want the
-    answer sooner, or when the change touches what only the full `lint` covers (`deny`,
-    `sandbox-plan --json`, `lint-toml`, `lint-docs`).
+  - before pushing: `pre-push` first runs the local ADR-29 main-integration convenience (CI
+    remains the repository-wide authority), then clippy, the repo-consistency and
+    generated-workflow xtask checks, and the whole-workspace test suite, in that order, stopping
+    at the first failure. Run `pixi run --frozen lint && pixi run --frozen test` yourself first
+    when you want the answer sooner, or when the change touches what only the full `lint` covers
+    (`deny`, `sandbox-plan --json`, `lint-toml`, `lint-docs`).
   - message check: `pixi run --frozen -- convco check HEAD~1..HEAD`.
 - **Complete the task file in its own format**: every AC `[x]`, status `Done`, bump
   `updated_date`, append `SECTION:NOTES` Implementation Notes and `SECTION:SUMMARY` Final

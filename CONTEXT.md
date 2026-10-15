@@ -3236,3 +3236,32 @@ Next session opening prompt:
 > `pixi run --frozen xtask check-main-push` before any direct push. Propose the slice and stop.
 > House rules are in `AGENTS.md` (invariant 10), the session procedure and its templates are in
 > `.agents/skills/session/`.
+
+### 2026-10-15 — TASK-112 local pre-push convenience (implementation in progress)
+
+An Arena AI sandbox session. Pixi tools were restored from the existing transport; Rust commands
+used the vendored dependencies and `--offline` where required.
+
+- Implemented `xtask check-main-push-hook` over Git's pre-push stdin and added Lefthook's
+  `main-integration` job with `use_stdin: true`. It delegates only updates to
+  `refs/heads/main` to the existing ADR-29 judgment; CI remains the repository-wide authority.
+- The public CLI tests use temporary Git fixtures for a rejected main update, an allowed main
+  update, an ignored feature remote ref even when its local ref is `main`, empty input, and main
+  deletion. The focused target passes 20/20; the full workspace test command passes.
+- `fmt`, Lefthook validation, and offline workspace clippy pass. The full `pixi run --frozen lint`
+  is blocked by cargo-deny findings on the unchanged `rustls 0.23.45` lock entry:
+  RUSTSEC-2026-0346, -0347, -0348, and -0349, each recommending `rustls >=0.23.46`. No advisory
+  was suppressed and no dependency changes were made. The missing-version remediation is tracked
+  as TASK-113; TASK-112 depends on it and remains In Progress with AC#5 and DOD#2 open until the
+  repository lint gate passes.
+
+Next session opening prompt:
+
+> Continue TASK-112 on `arena/c47c54e7-pixi-sandbox`; inspect `git status` first. The feature is
+> implemented and the CLI/temp-Git tests, full tests, format, Lefthook validation, and workspace
+> clippy pass. The only open gate is full `pixi run --frozen lint`, which currently fails because
+> cargo-deny flags the unchanged `rustls 0.23.45` dependency under RUSTSEC-2026-0346 through
+> RUSTSEC-2026-0349. Do not ignore the advisories or silently add a dependency update to TASK-112;
+> TASK-113 tracks the narrow Rustls lock/vendor refresh and requires a connected package source. If
+> TASK-113 is completed and lint turns green, close TASK-112; otherwise keep TASK-112 In Progress.
+> House rules are in `AGENTS.md` and `.agents/skills/session/SKILL.md`.

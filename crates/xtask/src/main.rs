@@ -386,6 +386,8 @@ enum Command {
         #[arg(default_value = "HEAD")]
         after: String,
     },
+    /// Check Git's pre-push ref updates, applying the main-integration guard only to main.
+    CheckMainPushHook,
 }
 
 fn main() {
@@ -554,6 +556,9 @@ fn run_args(args: Args) -> Result<()> {
         } => commit_release::commit_release(&root, &tag, dry_run, &remote),
         Command::CheckMainPush { before, after } => {
             main_push::check_main_push(&root, &before, &after)
+        }
+        Command::CheckMainPushHook => {
+            main_push::check_main_push_hook(&root, std::io::stdin().lock())
         }
         Command::AirlockMatrix {
             bin,

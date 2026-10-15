@@ -18,6 +18,7 @@ use crate::util::{github_summary, is_strict_semver, read};
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_git::{BOT_EMAIL, BOT_NAME, CommitFacts, ShellGit};
 use std::fmt;
+use std::io::BufRead;
 use std::path::Path;
 
 /// The workflow whose `pull_request.paths` filter names what the airlock proves.
@@ -342,4 +343,54 @@ pub fn check_main_push(root: &Path, before: &str, after: &str) -> Result<()> {
         }
         Verdict::Fail(why) => bail!("main integration: {why}"),
     }
+}
+
+/// Check Git's pre-push ref updates, applying the main-integration guard only to `main`.
+///
+/// Git supplies one whitespace-separated line per ref: local ref, local object ID, remote ref,
+/// and remote object ID. Other branches remain untouched by this optional local convenience.
+/// The CI check remains the repository-wide authority (ADR-29).
+///
+/// # Errors
+///
+/// Fails when a nonempty input line is malformed, a main deletion is attempted, or a main
+/// update is not in a sanctioned shape.
+pub fn check_main_push_hook(root: &Path, input: impl BufRead) -> Result<()> {
+    let mut saw_update = false;
+    let mut saw_main_update = false;
+    for (index, line) in input.lines().enumerate() {
+        let line =
+            line.with_context(|| format!("reading Git pre-push update line {}", index + 1))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        saw_update = true;
+        let fields: Vec<_> = line.split_whitespace().collect();
+        if fields.len() != 4 {
+            bail!(
+                "Git pre-push update line {} has {} field(s), expected 4",
+                index + 1,
+                fields.len()
+            );
+        }
+        let local_sha = fields[1];
+        let remote_ref = fields[2];
+        let remote_sha = fields[3];
+        if remote_ref != "refs/heads/main" {
+            continue;
+        }
+        saw_main_update = true;
+        if local_sha.bytes().all(|byte| byte == b'0') {
+            bail!(
+                "Git pre-push update deletes refs/heads/main; the ADR-29 guard can only judge a commit update"
+            );
+        }
+        check_main_push(root, remote_sha, local_sha)?;
+    }
+    if !saw_update {
+        println!("main integration: no ref updates; skipped");
+    } else if !saw_main_update {
+        println!("main integration: push does not target refs/heads/main; skipped");
+    }
+    Ok(())
 }
