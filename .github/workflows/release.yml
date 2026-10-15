@@ -285,6 +285,12 @@ jobs:
             dist/conda/**/*.conda
             dist/SHA256SUMS
           generate_release_notes: true
+          # TASK-74 AC#10: the notes and the starter README cross-link, so a consumer can tell
+          # which release generated the scaffold they cloned. GitHub prepends a supplied body to
+          # the notes it generates, so the changelog above still arrives. The link points at the
+          # evidence tag rather than at `main`, which will describe a later release by then.
+          body: |
+            **Starter template:** [Archont561/pixi-sandbox-starter](https://github.com/Archont561/pixi-sandbox-starter) — this release generates the scaffold, sealed on the starter as the immutable `pixi-sandbox-${{ inputs.version || github.ref_name }}` tag once its publication run succeeds.
           fail_on_unmatched_files: true
 
       # The full consumer proof already gated this release above. What is left to prove is the

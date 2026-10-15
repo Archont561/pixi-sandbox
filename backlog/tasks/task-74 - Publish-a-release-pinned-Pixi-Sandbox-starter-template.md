@@ -4,7 +4,7 @@ title: Publish a release-pinned Pixi Sandbox starter template
 status: In Progress
 assignee: []
 created_date: '2026-10-05'
-updated_date: '2026-10-15 22:00'
+updated_date: '2026-10-15 22:45'
 labels:
   - onboarding
   - template
@@ -147,4 +147,36 @@ that `main` carries no prebuilt transport while the starter keeps its
 `sandbox/developer-linux-64` branch. Issue #101 is fixed by TASK-71 (PR #102, shipped in v0.6.0);
 closing it from this sandbox was refused with 403 (`Resource not accessible by integration`), so
 the closure itself needs an owner click.
+2026-10-15 — starter-lane failure reporting implemented test-first (slice 2, owner-sanctioned this
+session). AC#8's reporting half and AC#10's release-notes half are implemented and locally
+proven; both stay unchecked because neither has been observed live.
+- **Credential preflight.** `xtask starter-check-token` (`starter::check_token`) runs in the
+  dispatch job before the release is resolved and before the starter job exists, and fails closed
+  on an empty `PIXI_SANDBOX_STARTER_TOKEN`, naming the secret, the repository it must be limited to
+  and both scopes (`Contents: read and write`, `Workflows: read and write`). The
+  `secrets.PIXI_SANDBOX_STARTER_TOKEN || github.token` fallback is gone from all three write sites
+  (`starter-check-main`, the starter checkout, `starter-publish`), so a missing secret can no
+  longer degrade into a token that can push to neither another repository nor a workflow file —
+  the refusal v0.7.0's run 38800327950 reported as a branch problem after the scaffold had run.
+- **Failure report.** Every step in `starter.yml` now declares an id, and a trailing
+  `if: failure()` step hands the job's own `${{ toJSON(steps) }}` to `xtask
+  starter-report-failure`, which writes a bounded summary naming the failed phase, the release tag,
+  the source commit and that phase's remediation, and pointing at the `starter-<tag>` artifact the
+  job already uploads. `STARTER_PHASES` holds the ids in execution order, one remediation each; two
+  tests in `tests/starter.rs` hold the table and the workflow together in both directions (no step
+  without an id, no phase without a remediation, the reporter last), the same drift guard check 13
+  applies to the consumer proof. The values of `STARTER_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` are
+  redacted out of the text before it reaches `$GITHUB_STEP_SUMMARY`.
+- **Release-notes cross-link (AC#10's notes half).** `release.yml`'s release step now supplies a
+  body linking the starter repository and naming the immutable `pixi-sandbox-<tag>` evidence tag
+  for the release being cut. GitHub prepends a supplied body to the notes it generates, so
+  `generate_release_notes: true` still delivers the changelog. Held by `tests/release_notes.rs`.
+- **Evidence.** 15 new tests: xtask 227 → 242, workspace 1,176 → 1,191 passing / 2 skipped.
+  `pixi run --frozen fmt`, `pixi run --frozen lint` (11/11 tasks, actionlint included) and
+  `pixi run --frozen test` are green on the branch; `pixi run --frozen xtask check-repository` is
+  clean with the workflow edits in place.
+- **Still open, all needing a live run or a release.** AC#7: the configured token's delivery (the
+  secret is unreadable from here; AC#7 now names the scopes it must carry). AC#8's live half: a
+  failing starter run producing this summary. AC#2/#9 and DoD#4: a repository created from the
+  template and its fetch → offline-restore lifecycle. AC#10's live half: the next release's notes.
 <!-- SECTION:NOTES:END -->
