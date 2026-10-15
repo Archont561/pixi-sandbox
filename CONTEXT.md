@@ -3524,6 +3524,15 @@ source commit).
   body to the notes it generates, so `generate_release_notes: true` still delivers the changelog —
   checked against the API documentation rather than assumed.
 
+**Landed on main.** PR #168 merged as `21a238ae`, a merge commit because the branch carried the
+work and this record as two focused commits (the pattern #165/#166 already used; single-commit
+pull requests are squashed). Post-merge runs green: `ci` 2m27s, `docs` 1m21s and
+`publish sandbox` 4m15s, which repacked the transport to `fbb7471e` from source commit `21a238a`
+with the same tool versions (`pixi` 0.81.0, `pixi-sandbox` 0.7.0 static, `pixi-unpack` 0.7.11), so
+the next restore is unchanged in kind. Both post-merge jobs carried GitHub's own annotation that
+`ubuntu-latest` migrates to Ubuntu 26 from 2026-10-19 — the watch item below, already visible on
+this repository's runs.
+
 **Alternatives weighed and not taken.** The summarizer could have lived inside each xtask
 subcommand; that would have covered the Rust-driven steps only and left the `pixi lock`/`init`/
 actionlint steps silent, so the phase list would still have been a guess. It could have used a
@@ -3549,9 +3558,9 @@ starts. No release and no starter dispatch this session — the code lands, the 
 Next session opening prompt:
 
 > Restore only if the tree or `.pixi/` is missing (`bash scripts/restore.sh`; then
-> `export PATH="$HOME/.local/bin:$PATH"`). Baseline: **1,191 passing / 2 skipped** on the v0.7.0
-> transport (xtask 242), assuming this session's starter-lane work merged; re-baseline and say so
-> if the number differs. TASK-74 Slice 2 landed: the credential preflight
+> `export PATH="$HOME/.local/bin:$PATH"`). Baseline: **1,191 passing / 2 skipped** (xtask 242),
+> measured on the tree PR #168 merged as `21a238ae`; the transport now packs that commit, so a
+> restore should reproduce the same count. TASK-74 Slice 2 landed: the credential preflight
 > (`starter-check-token`) and the failed-phase summary (`starter-report-failure`) are wired into
 > `.github/workflows/starter.yml`, the `|| github.token` fallback is gone, and release.yml's notes
 > link the starter. TASK-74 is still In Progress: AC#7 (the configured token's delivery), AC#8's
