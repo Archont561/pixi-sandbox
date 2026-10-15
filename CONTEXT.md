@@ -3430,3 +3430,61 @@ Next session opening prompt:
 > (from 2026-10-19). Propose the slice and stop; do not push, open a PR, merge, release, or dispatch
 > without explicit go-ahead. House rules are in `AGENTS.md`; the session procedure is in
 > `.agents/skills/session/`.
+
+### 2026-10-15 — TASK-74 owner decisions applied; starter-lane failure reporting proposed
+
+This session restored the tree from the published transport (managed `pixi` 0.81.0 and
+`pixi-sandbox` 0.7.0, source commit `e16884a`, static, user tools registered) and re-baselined:
+**1,176 passing / 2 skipped** (pixi-sandbox-core 316, pixi-sandbox 579 + 2 skipped,
+pixi-sandbox-git 54, xtask 227), replacing the stale 1,168 / 2 figure that predated PR #164.
+
+**Decisions applied in TASK-74 and doc-10 (Slice 1).**
+- AC#7: delivery uses `PIXI_SANDBOX_STARTER_TOKEN`, a fine-grained token limited to the starter
+  repository (Contents and Workflows read/write, with an expiry); the TASK-73 dependency is
+  removed and the rest of AC#7 is unchanged. AC#7 stays unchecked until a starter run proves
+  delivery with that token; its expiry was not stated in this session.
+- AC#5: reworded to where the version actually appears — the released binary generates the
+  managed files, every file naming a pixi-sandbox version names the same release, a rerun is
+  identical, `init --check` is clean, and nothing uses `latest`; `pixi.toml`, `pixi.lock` and
+  `pixi-sandbox.toml` carry no version by design and the never-built version-manifest file is
+  dropped. AC#5 is checked on the v0.7.0 evidence already recorded in the task.
+- Transport: the starter keeps its `sandbox/developer-linux-64` branch; the rule is now that
+  `main` carries no prebuilt transport.
+- doc-10 matches: credentials, no version manifest, the transport-branch rule, and validation
+  items 1–2.
+- Issue #101 is fixed by TASK-71 (PR #102, shipped in v0.6.0) — see the CI publishing guide's
+  "Delivering workflow-file upgrades" section — and TASK-73's deprecation is noted there in
+  this session's records. Closing #101 from this sandbox was refused (`403 Resource not
+  accessible by integration`), so the closure click itself is the owner's.
+
+**Proposed, not implemented (Slice 2 — test-first, awaiting the owner's go-ahead).**
+- A missing `PIXI_SANDBOX_STARTER_TOKEN` fails at the first step with a clear message instead
+  of falling back to `github.token`, which can never push to another repository.
+- Every starter phase after dispatch writes a job summary with the tag, source commit, failed
+  phase and remediation, as the dispatch phase already does (AC#8); today the v0.7.0 publish
+  refusal said only "starter snapshots may replace only main", and the comment above "Upload
+  starter evidence" promises a failure summary that step never writes.
+- Record the commit the lane ran from next to the release's source commit: v0.7.0's skeleton
+  came from `e16884a`, not `d54ae974`; keep running from `main` (v0.7.0 needed #164's fix to
+  publish).
+- Link the starter from the release notes (AC#10).
+- If a test repository is created from the template: record its publisher run for AC#2, fetch
+  its snapshot and restore it offline for DoD#4.
+
+**Watch item.** GitHub's `ubuntu-latest` label moves to Ubuntu 26 from 2026-10-19; watch the
+first runs here and in every generated consumer workflow after the switch. No release or
+dispatch without explicit go-ahead.
+
+Next session opening prompt:
+
+> Restore only if the tree or `.pixi/` is missing (`bash scripts/restore.sh`; then
+> `export PATH="$HOME/.local/bin:$PATH"`). Baseline: **1,176 passing / 2 skipped** on the
+> v0.7.0 transport. TASK-74's owner decisions are applied (Slice 1): AC#7 names
+> `PIXI_SANDBOX_STARTER_TOKEN` with the TASK-73 dependency removed, AC#5 is reworded and
+> checked, doc-10 matches, and the starter keeps its transport branch while `main` carries no
+> prebuilt transport. Issue #101 still needs an owner's close click (fixed by TASK-71 /
+> PR #102 in v0.6.0; the sandbox token gets 403). Slice 2 — starter-lane failure reporting —
+> is proposed test-first in the 2026-10-15 scratchpad entry above and waits for the owner's
+> go-ahead; do not release or dispatch without explicit go-ahead. Watch the first runs after
+> `ubuntu-latest` moves to Ubuntu 26 (from 2026-10-19). House rules are in `AGENTS.md`; the
+> session procedure is in `.agents/skills/session/`.
