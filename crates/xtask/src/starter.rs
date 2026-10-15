@@ -673,14 +673,57 @@ pub fn dispatch_report(tag: &str, resolved_commit: &str) -> String {
     format!("{tag} names commit {resolved_commit}, and the dispatch agrees")
 }
 
-/// Check, over the network, that a starter dispatch names the commit its release tag points at.
+/// Resolve GitHub's latest published stable release, never a draft or prerelease.
+fn latest_release_tag(repo: &str) -> Result<String> {
+    let output = std::process::Command::new("gh")
+        .args([
+            "api",
+            &format!("repos/{repo}/releases/latest"),
+            "--jq",
+            ".tag_name",
+        ])
+        .output()
+        .context("starting gh api for the latest published stable release")?;
+    if !output.status.success() {
+        bail!(
+            "could not resolve the latest published stable release of {repo}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let tag = String::from_utf8(output.stdout)
+        .context("latest release tag is not UTF-8")?
+        .trim()
+        .to_string();
+    if !is_strict_tag(&tag) {
+        bail!("latest published stable release tag {tag:?} is not a strict semver tag like v1.2.3");
+    }
+    Ok(tag)
+}
+
+/// Resolve a starter dispatch and check any explicitly handed-off source commit.
+///
+/// A blank tag selects GitHub's latest published stable release. A blank expected commit uses
+/// the tag's resolved commit; an explicit one must still agree. Export both resolved values to
+/// `GITHUB_OUTPUT` only after validation, so every downstream step uses the same release even if
+/// a newer one is published while the workflow runs.
 ///
 /// # Errors
 ///
-/// Fails when the tag cannot be resolved through `gh`, or when the dispatch names a commit other than the one the tag points at. The refusal is annotated and summarised first.
+/// Fails when the latest release or tag cannot be resolved through `gh`, or when an explicit
+/// commit does not match the tag. A failed dispatch exports no release to the starter job.
 pub fn check_dispatch(repo: &str, tag: &str, expected_commit: &str) -> Result<()> {
-    let resolved = resolve_tag_commit(repo, tag)?;
-    let findings = dispatch_findings(tag, expected_commit, resolved.as_deref());
+    let tag = if tag.is_empty() {
+        latest_release_tag(repo)?
+    } else {
+        tag.to_string()
+    };
+    let resolved = resolve_tag_commit(repo, &tag)?;
+    let expected_commit = if expected_commit.is_empty() {
+        resolved.as_deref().unwrap_or("")
+    } else {
+        expected_commit
+    };
+    let findings = dispatch_findings(&tag, expected_commit, resolved.as_deref());
     if !findings.is_empty() {
         for finding in &findings {
             eprintln!("::error::{finding}");
@@ -694,11 +737,12 @@ pub fn check_dispatch(repo: &str, tag: &str, expected_commit: &str) -> Result<()
             findings.len()
         );
     }
-    // The findings are empty, so a commit came back; the dispatched spelling is the fallback only
-    // for the case the guard already refuses.
-    let report = dispatch_report(tag, resolved.as_deref().unwrap_or(expected_commit));
+    let resolved = resolved.context("an accepted starter dispatch must resolve to a commit")?;
+    let report = dispatch_report(&tag, &resolved);
     println!("{report} ({repo})");
     crate::util::github_summary(&format!("## Starter dispatch\n\n- {report}\n"));
+    crate::util::github_output("tag", &tag);
+    crate::util::github_output("commit", &resolved);
     Ok(())
 }
 

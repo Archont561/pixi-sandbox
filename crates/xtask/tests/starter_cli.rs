@@ -1,11 +1,11 @@
 #![cfg(unix)]
 
-//! The two starter verbs the publish lane calls, run as the binary runs them.
+//! Starter verbs the publish lane calls, run as the binary runs them.
 //!
-//! `starter.yml` reaches this code only through `xtask starter-clone` and
-//! `xtask starter-check-dispatch`, so the flag wiring is part of what has to stay true — a guard
+//! `starter.yml` invokes these verbs through the CLI, so the flag wiring is part of
+//! what has to stay true — a guard
 //! that reads the wrong argument is the same class of incident task-85 was written from. Real
-//! `git` in tempdirs, a `gh` stub on `PATH`: neither test touches this repository or the network
+//! `git` in tempdirs, a `gh` stub on `PATH`: no test touches this repository or the network
 //! (ADR-10), and the `gh` stub is the shape `starter_check_main.rs` established.
 
 use std::{
@@ -152,4 +152,69 @@ fn the_cli_refuses_a_dispatch_naming_another_commit_and_prints_both() {
     let error = String::from_utf8_lossy(&run.stderr);
     assert!(error.contains(COMMIT) && error.contains(OTHER), "{error}");
     assert!(error.contains("no starter work was started"), "{error}");
+}
+
+/// The workflow omits `--branch`; that default must publish main, not pass a refspec to a
+/// publisher that accepts only a branch name. Judge the result from the local bare remote.
+#[test]
+fn the_cli_publishes_main_when_the_workflow_omits_branch() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let owner = root.path().join("Archont561");
+    fs::create_dir(&owner).expect("owner dir");
+    let remote = owner.join("pixi-sandbox-starter.git");
+    support::run_git(
+        &owner,
+        &["init", "--bare", "-q", "pixi-sandbox-starter.git"],
+    );
+    let dir = root.path().join("starter");
+    fs::create_dir(&dir).expect("starter dir");
+    assembled_starter(&dir);
+    support::run_git(&dir, &["branch", "-M", "main"]);
+    support::run_git(
+        &dir,
+        &[
+            "remote",
+            "add",
+            "origin",
+            remote.to_str().expect("remote path"),
+        ],
+    );
+    support::run_git(&dir, &["push", "-q", "origin", "main"]);
+    let before = support::run_git(&remote, &["rev-parse", "main"]);
+
+    let run = Command::new(env!("CARGO_BIN_EXE_xtask"))
+        .args([
+            "starter-publish",
+            "--dir",
+            dir.to_str().expect("starter path"),
+            "--remote",
+            remote.to_str().expect("remote path"),
+            "--tag",
+            TAG,
+            "--source-commit",
+            COMMIT,
+        ])
+        .output()
+        .expect("run xtask starter-publish");
+
+    assert!(
+        run.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let after = support::run_git(&remote, &["rev-parse", "main"]);
+    assert_ne!(before, after, "main must advance to the published snapshot");
+    assert_eq!(
+        support::run_git(
+            &remote,
+            &["rev-parse", "refs/tags/pixi-sandbox-v1.2.3^{commit}"]
+        ),
+        after,
+        "the immutable release tag must name the published main snapshot"
+    );
+    assert_eq!(
+        support::run_git(&remote, &["rev-list", "--count", "main"]).trim(),
+        "1",
+        "publication must replace main with a parentless snapshot"
+    );
 }
