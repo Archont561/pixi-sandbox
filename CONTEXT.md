@@ -3488,3 +3488,80 @@ Next session opening prompt:
 > go-ahead; do not release or dispatch without explicit go-ahead. Watch the first runs after
 > `ubuntu-latest` moves to Ubuntu 26 (from 2026-10-19). House rules are in `AGENTS.md`; the
 > session procedure is in `.agents/skills/session/`.
+
+### 2026-10-15 (second session) — TASK-74 slice 2 landed: the starter lane fails loudly, and the release notes point at it
+
+This session restored the tree from the published transport (`pixi` 0.81.0, `pixi-sandbox` 0.7.0,
+tools registered) and re-measured the baseline at **1,176 passing / 2 skipped** before touching
+anything — the same figure Slice 1 recorded, and the transport's source commit `e16884a` is
+correctly one docs-only merge behind main because `publish-sandbox` is path-filtered and
+#165–#167 touched no listed path. Issue #101 was closed by the owner at 22:22Z, minutes before
+this session started, so it is off every list.
+
+Owner decisions taken in the standup: take **Slice 2 plus AC#10's wiring**; make the missing
+credential **fail fast** rather than keep the `github.token` fallback; and **do not** add a
+lane-commit line to the starter snapshot message (v0.7.0's message keeps naming only the release's
+source commit).
+
+**What landed (test-first, 15 new tests; xtask 227 → 242, workspace 1,176 → 1,191 passing).**
+
+- **Credential preflight.** `xtask starter-check-token` runs in the dispatch job before the release
+  is resolved, so a lane with no `PIXI_SANDBOX_STARTER_TOKEN` dies in the first minute naming the
+  secret, the repository and the two scopes (`Contents: read and write`, `Workflows: read and
+  write`). The `secrets.X || github.token` fallback is gone from all three write sites. The old
+  shape could only ever produce what v0.7.0's refused run (38800327950) produced: forty minutes of
+  scaffold, then a refusal whose annotation blamed the branch.
+- **Failure report.** Every step in `starter.yml` declares an id, and a trailing `if: failure()`
+  step hands `${{ toJSON(steps) }}` to `xtask starter-report-failure`, which writes the bounded
+  summary doc-10 asks for: failed phase, release tag, source commit, that phase's remediation, and
+  the `starter-<tag>` artifact the job already uploads. `STARTER_PHASES` is the id→remediation
+  table; two tests hold it and the workflow together in both directions (no step without an id, no
+  phase without a remediation, the reporter last), which is check 13's drift guard applied to this
+  lane. `STARTER_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` values are redacted out before the text
+  reaches `$GITHUB_STEP_SUMMARY`.
+- **Release notes (AC#10's notes half).** `release.yml` now supplies a body that links the starter
+  and names the immutable `pixi-sandbox-<tag>` evidence tag. The GitHub API prepends a supplied
+  body to the notes it generates, so `generate_release_notes: true` still delivers the changelog —
+  checked against the API documentation rather than assumed.
+
+**Alternatives weighed and not taken.** The summarizer could have lived inside each xtask
+subcommand; that would have covered the Rust-driven steps only and left the `pixi lock`/`init`/
+actionlint steps silent, so the phase list would still have been a guess. It could have used a
+chain of `if: steps.<id>.outcome == 'failure'` conditions; that is a second copy of the step list,
+free to drift from the first, which is why the job hands its own record over instead. The step ids
+could have been left off the infrastructure steps and reported as "no phase"; naming them costs
+nothing and turns every red run into a phase an operator can act on. Redaction could have been
+skipped on the argument that the summary is composed only of our own strings; the one thing it
+echoes is a step id, and a run summary on a public repository is permanent.
+
+**Deliberately left undone.** AC#7 stays unchecked: the lane now *requires* the token and names its
+scopes, but whether the configured secret is a fine-grained token limited to the starter repository
+cannot be read from here (run metadata suggests it authenticates as the owner, which is what a
+fine-grained token looks like too). AC#8's live half needs one failing starter run to show the
+summary; AC#10's live half needs the next release; AC#2/#9 and DoD#4 still need a repository
+created from the template. The lane-commit provenance line the scratchpad proposed was declined by
+the owner this session.
+
+**Watch item.** GitHub's `ubuntu-latest` label migrates to Ubuntu 26 gradually from 2026-10-19 to
+about 2026-11-19; read the first runs here and in every generated consumer workflow after it
+starts. No release and no starter dispatch this session — the code lands, the proofs wait.
+
+Next session opening prompt:
+
+> Restore only if the tree or `.pixi/` is missing (`bash scripts/restore.sh`; then
+> `export PATH="$HOME/.local/bin:$PATH"`). Baseline: **1,191 passing / 2 skipped** on the v0.7.0
+> transport (xtask 242), assuming this session's starter-lane work merged; re-baseline and say so
+> if the number differs. TASK-74 Slice 2 landed: the credential preflight
+> (`starter-check-token`) and the failed-phase summary (`starter-report-failure`) are wired into
+> `.github/workflows/starter.yml`, the `|| github.token` fallback is gone, and release.yml's notes
+> link the starter. TASK-74 is still In Progress: AC#7 (the configured token's delivery), AC#8's
+> live half (one failing starter run), AC#2/#9 and DoD#4 (a template-derived repository and its
+> offline-restore lifecycle) and AC#10's live half (the next release's notes) all still need the
+> owner, a live run or a release. Issue #101 is closed. TASK-66 still needs Castellan evidence and
+> the sandbox token cannot even read that repository (403).
+>
+> First: check the next release and the first `ubuntu-latest`-on-Ubuntu-26 runs (rollout starts
+> 2026-10-19). If a release is cut, its notes now cross-link the starter — read them for AC#10 —
+> and its starter dispatch is the run that can prove AC#8 and AC#7 if anything fails. Propose the
+> slice and stop; do not release, dispatch, or re-dispatch without explicit go-ahead. House rules
+> are in `AGENTS.md`; the session procedure is in `.agents/skills/session/`.

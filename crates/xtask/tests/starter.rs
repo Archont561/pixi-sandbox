@@ -824,3 +824,116 @@ fn starter_verification_refuses_an_unusable_cargo_policy() {
         );
     }
 }
+
+/// The dispatch job's own steps, which answer to the dispatch summary rather than to the starter
+/// job's phase report: it resolves the release and checks the credential before any starter
+/// access, so its failures are named where they happen.
+const DISPATCH_STEP_IDS: [&str; 2] = ["release", "token"];
+
+/// Run a missing `PIXI_SANDBOX_STARTER_TOKEN` through the lane as text. The repository
+/// `GITHUB_TOKEN` can push to neither another repository nor a workflow file (issue #101), so the
+/// `secrets.X || github.token` fallback could only ever convert a missing credential into a late
+/// push refusal — which is what v0.7.0's refused run did, blaming the branch.
+#[test]
+fn the_lane_checks_its_publication_token_before_it_touches_the_starter() {
+    assert!(
+        !STARTER_WORKFLOW.contains("|| github.token"),
+        "no starter write may fall back to a token that cannot make it"
+    );
+    let preflight = STARTER_WORKFLOW
+        .find("xtask starter-check-token")
+        .expect("a credential preflight");
+    let publish_job = STARTER_WORKFLOW
+        .find("\n  starter:")
+        .expect("the starter publication job");
+    assert!(
+        preflight < publish_job,
+        "the credential must be checked before the publication job starts"
+    );
+    assert!(
+        STARTER_WORKFLOW.contains("STARTER_TOKEN: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN }}"),
+        "the preflight reads the secret into its own variable, not into GH_TOKEN"
+    );
+    for site in [
+        "token: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN }}",
+        "GH_TOKEN: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN }}",
+    ] {
+        assert!(
+            STARTER_WORKFLOW.contains(site),
+            "missing write site: {site}"
+        );
+    }
+}
+
+/// The failed phase in a run summary comes from the job's own `steps` context, so a step without
+/// an id can never be named and a phase with no remediation is a dead entry. Both directions are
+/// held here, the way check 13 holds the consumer proof to the generator it inspects.
+#[test]
+fn every_step_the_failed_phase_report_can_name_declares_an_id_and_carries_a_remediation() {
+    let mut declared: Vec<String> = STARTER_WORKFLOW.lines().filter_map(step_id).collect();
+    declared.sort();
+    declared.dedup();
+    let mut described: Vec<String> = STARTER_PHASES
+        .iter()
+        .map(|(phase, _)| (*phase).to_string())
+        .chain(DISPATCH_STEP_IDS.iter().map(|id| (*id).to_string()))
+        .collect();
+    described.sort();
+    described.dedup();
+    assert_eq!(
+        declared, described,
+        "every workflow step must declare an id, and every id must be a phase the summarizer can name"
+    );
+
+    let summarizer = STARTER_WORKFLOW
+        .find("xtask starter-report-failure")
+        .expect("a failure summarizer after the phases");
+    for (phase, remediation) in STARTER_PHASES {
+        let declared_at = STARTER_WORKFLOW
+            .find(&format!("id: {phase}"))
+            .unwrap_or_else(|| panic!("{phase} is not declared in the workflow"));
+        assert!(
+            declared_at < summarizer,
+            "{phase} runs after the summarizer that is supposed to report it"
+        );
+        assert!(!remediation.is_empty(), "{phase} has no remediation");
+    }
+}
+
+/// A YAML step's `id:`, which is the key the summarizer reads out of `${{ toJSON(steps) }}`.
+fn step_id(line: &str) -> Option<String> {
+    let id = line.trim().strip_prefix("id: ")?;
+    let id = id.trim();
+    (!id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+        .then(|| id.to_string())
+}
+
+/// The report step is the last word on a failed run: it runs after every phase it can name, and
+/// after the artifact upload, so a failed upload is named too rather than left to the log. The
+/// one phase it cannot report is itself, which is why it is excluded from its own sweep.
+#[test]
+fn the_failed_phase_report_stands_after_every_phase_it_can_name() {
+    let summarizer = STARTER_WORKFLOW
+        .find("xtask starter-report-failure")
+        .expect("a failure summarizer");
+    let evidence = STARTER_WORKFLOW
+        .find("- name: Upload starter evidence")
+        .expect("the bounded evidence upload");
+    assert!(
+        summarizer > evidence,
+        "the summarizer must follow the upload, or a failed upload goes unnamed"
+    );
+    for (phase, _) in STARTER_PHASES {
+        if *phase == *STARTER_REPORT_PHASE {
+            assert_eq!(STARTER_WORKFLOW.matches("id: summary").count(), 1);
+            continue;
+        }
+        let declared_at = STARTER_WORKFLOW
+            .find(&format!("id: {phase}"))
+            .unwrap_or_else(|| panic!("{phase} is not declared in the workflow"));
+        assert!(
+            declared_at < summarizer,
+            "{phase} runs after the summarizer that is supposed to report it"
+        );
+    }
+}

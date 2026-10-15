@@ -71,13 +71,26 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: source-checkout
         with:
           persist-credentials: false
 
       - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+        id: pixi
         with:
           run-install: false
           cache: false
+
+      # Fail on a missing publication credential before the lane spends anything. The repository
+      # `GITHUB_TOKEN` cannot push to another repository, and GitHub refuses it
+      # `.github/workflows/*` even at home (issue #101), so falling back to that token could only
+      # ever surface as a push refusal at the end of a forty-minute job — which is exactly how
+      # v0.7.0's refused run read.
+      - name: Require the starter publication token
+        id: token
+        env:
+          STARTER_TOKEN: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN }}
+        run: pixi run -e package xtask starter-check-token -- --repo "$STARTER_REPO"
 
       - name: Resolve the release and refuse a mismatched source commit
         id: release
@@ -98,10 +111,12 @@ jobs:
     steps:
       - name: Check out pixi-sandbox
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: source-checkout
         with:
           persist-credentials: false
 
       - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+        id: pixi
         with:
           run-install: false
           cache: false
@@ -111,16 +126,19 @@ jobs:
       # touched the starter at this point, so a failure here leaves the previous revision
       # untouched by construction.
       - name: Verify the handed-off release
+        id: release-verify
         env:
           GH_TOKEN: ${{ github.token }}
         run: pixi run -e package xtask starter-verify-release -- --repo "$SOURCE_REPO" --tag "$TAG" --commit "$SOURCE_COMMIT"
 
       - name: Download the released binary
+        id: release-binary
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download "$TAG" --repo "$SOURCE_REPO" --pattern "$ASSET" --output "$RUNNER_TEMP/pixi-sandbox" --clobber
 
       - name: Download the release checksums
+        id: release-sums
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download "$TAG" --repo "$SOURCE_REPO" --pattern SHA256SUMS --output "$RUNNER_TEMP/SHA256SUMS" --clobber
@@ -128,17 +146,20 @@ jobs:
       # `gh release download` is HTTPS and authenticated, but the starter's whole claim is that
       # a specific verified binary generated it, so the checksum is checked rather than assumed.
       - name: Verify the binary against SHA256SUMS
+        id: release-asset
         run: pixi run -e package xtask starter-verify-asset -- --binary "$RUNNER_TEMP/pixi-sandbox" --sums "$RUNNER_TEMP/SHA256SUMS" --asset "$ASSET"
 
       - name: Make the released binary executable
+        id: release-chmod
         run: chmod +x "$RUNNER_TEMP/pixi-sandbox"
 
       # The canonical starter is created and seeded by an owner once. Do not infer that it has
       # a commit from `default_branch`: GitHub can report `main` for an empty repository. This
       # read-only check targets the actual ref and fails before checkout with the owner remedy.
       - name: Verify the starter repository has a main commit
+        id: starter-main
         env:
-          GH_TOKEN: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN }}
         run: pixi run -e package xtask starter-check-main -- --repo "$STARTER_REPO"
 
       # Checked out with a credential that carries `workflows: write`: the starter's owned
@@ -146,31 +167,37 @@ jobs:
       # restriction that produced issue #101 in the consumer upgrade lane.
       - name: Check out the starter repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: starter-checkout
         with:
           repository: Archont561/pixi-sandbox-starter
           ref: main
           path: starter
-          token: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN || github.token }}
+          token: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN }}
           fetch-depth: 0
 
       - name: Scaffold the starter's own files
+        id: scaffold
         run: pixi run -e package xtask starter-scaffold -- --out starter --tag "$TAG" --source-commit "$SOURCE_COMMIT" --source-repo "$SOURCE_REPO" --starter-repo "$STARTER_REPO"
 
       # `--script-path` puts the launcher under scripts/, which is where the starter's
       # REQUIRED_FILES expects it. Both invocations carry it, or `--check` compares against the
       # root-level default and reports drift that is not there (doc-13 §3.2).
       - name: Generate the owned files with the released binary
+        id: generate
         run: '"$RUNNER_TEMP/pixi-sandbox" init --project-root starter --script-path scripts/restore.sh --force'
 
       - name: Lock the starter environment
+        id: lock
         run: pixi lock --manifest-path starter/pixi.toml
 
       # Second generation must change nothing: that is the publication contract's idempotence
       # promise, and `init --check` is the same gate consumers run against their own tree.
       - name: Prove regeneration is byte-identical
+        id: regenerate
         run: '"$RUNNER_TEMP/pixi-sandbox" init --project-root starter --script-path scripts/restore.sh --check'
 
       - name: Lint the generated workflows
+        id: lint
         run: pixi run -e default lint-actions starter/.github/workflows/publish-sandbox.yml starter/.github/workflows/relock.yml
 
       # A fresh clone must install from the lockfile and run the documented command, or the
@@ -178,24 +205,30 @@ jobs:
       # from what `git` would commit — `init`'s output, the lock, the scaffold — so this proves
       # the revision and not the directory `pixi lock` and the step above left behind (task-85).
       - name: Assemble a fresh clone of the tree the starter would commit
+        id: clone
         run: pixi run -e package xtask starter-clone -- --dir starter --out "$RUNNER_TEMP/starter-clone"
 
       - name: Prove a fresh clone runs the documented dev task
+        id: dev
         run: pixi run --manifest-path "$RUNNER_TEMP/starter-clone/starter/pixi.toml" dev
 
       - name: Verify the assembled starter
+        id: verify
         run: pixi run -e package xtask starter-verify -- --dir starter --tag "$TAG"
 
       - name: Publish the starter revision
+        id: publish
         env:
-          GH_TOKEN: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.PIXI_SANDBOX_STARTER_TOKEN }}
         run: pixi run -e package xtask starter-publish -- --dir starter --remote "$GITHUB_SERVER_URL/$STARTER_REPO" --starter-repo "$STARTER_REPO" --tag "$TAG" --source-commit "$SOURCE_COMMIT" ${{ inputs.dry-run && '--dry-run' || '' }}
 
-      # Evidence for a failed run matters more than for a successful one: the summary names the
-      # phase that failed and the tag it failed for, without exposing a token.
+      # Bounded on purpose: the ten managed paths this run would publish, never the whole runner
+      # workspace. Runs `always()` so a failure keeps the intended managed-file diff, and picks
+      # up the summary above.
       - name: Upload starter evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: evidence
         with:
           name: starter-${{ needs.dispatch.outputs.tag }}
           path: |
@@ -209,3 +242,16 @@ jobs:
             starter/.github/workflows/
           if-no-files-found: warn
           retention-days: 30
+
+      # Evidence for a failed run matters more than for a successful one, so the failure is
+      # reported where a maintainer looks first and not only in the job log (TASK-74 AC#8,
+      # doc-10 "Credentials and safety"). The job's own step outcomes are the input, because a
+      # chain of `if: steps.*.outcome` conditions is a second copy of the step list and would
+      # drift from it; xtask reads that record, names the phase that failed, and redacts every
+      # credential the job carries. `if: failure()` keeps it out of green runs.
+      - name: Summarize the failed phase
+        id: summary
+        if: failure()
+        env:
+          STEPS: ${{ toJSON(steps) }}
+        run: pixi run -e package xtask starter-report-failure

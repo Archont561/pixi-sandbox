@@ -191,6 +191,18 @@ enum Command {
         #[arg(long)]
         repo: String,
     },
+    /// Fail unless the starter lane's publication token is configured (TASK-74 AC#7).
+    StarterCheckToken {
+        /// Canonical starter repository the token must be limited to.
+        #[arg(long, default_value = "Archont561/pixi-sandbox-starter")]
+        repo: String,
+    },
+    /// Summarize a failed starter run: tag, source commit, failed phase, remediation (AC#8).
+    ///
+    /// Reads the job's own record — `${{ toJSON(steps) }}` in `STEPS`, the dispatched `TAG` and
+    /// `SOURCE_COMMIT` — and never fails: the job is already failing, and a reporting step that
+    /// errors would replace the operator's answer with its own.
+    StarterReportFailure,
     /// Write the starter's own files (Pixi project, ignore file, README) for one release.
     StarterScaffold {
         /// Directory the starter tree is assembled in.
@@ -433,6 +445,32 @@ fn run_args(args: Args) -> Result<()> {
         Command::StarterClone { dir, out } => starter::clone_publishable(&dir, &out)
             .map(|clone| println!("starter clone ready at {}", clone.display())),
         Command::StarterCheckMain { repo } => starter::check_main_ref(&repo),
+        Command::StarterCheckToken { repo } => {
+            // The value is read here and dropped straight into the check: the library never
+            // reaches for the environment, and nothing downstream can print what it holds.
+            starter::check_token(
+                std::env::var(starter::STARTER_TOKEN_ENV).ok().as_deref(),
+                &repo,
+            )
+        }
+        Command::StarterReportFailure => {
+            let steps = std::env::var("STEPS").unwrap_or_default();
+            let tag = std::env::var("TAG").unwrap_or_default();
+            let source_commit = std::env::var("SOURCE_COMMIT").unwrap_or_default();
+            // Every credential the job can carry, so the summary is redacted whether or not this
+            // particular failure could have echoed one.
+            let secrets: Vec<String> = [starter::STARTER_TOKEN_ENV, "GH_TOKEN", "GITHUB_TOKEN"]
+                .iter()
+                .filter_map(|name| std::env::var(name).ok())
+                .collect();
+            let summary = starter::failure_summary(
+                starter::failed_phase(&steps).as_deref(),
+                &tag,
+                &source_commit,
+            );
+            util::github_summary(&starter::redact_secrets(&summary, &secrets));
+            Ok(())
+        }
         Command::StarterScaffold {
             out,
             tag,

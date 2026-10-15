@@ -63,6 +63,21 @@ pub const FORBIDDEN_PATHS: [&str; 6] = [
 /// installation guide to spell it, so a user sees one command in all three places.
 pub const CANONICAL_GLOBAL_INSTALL: &str = "pixi global install --channel https://prefix.dev/archont561/archont561 --channel conda-forge pixi-sandbox";
 
+/// The fine-grained token the starter lane publishes with, by the name it has in the repository
+/// secrets, so every message a failing run prints names the thing an owner has to create.
+///
+/// The lane needs `Contents: read and write` (the snapshot commit plus its immutable tag) and
+/// `Workflows: read and write` (`init` writes `.github/workflows/*` into the starter, and GitHub
+/// refuses a push that creates or edits a workflow file without it — issue #101's restriction).
+pub const STARTER_TOKEN_SECRET: &str = "PIXI_SANDBOX_STARTER_TOKEN";
+
+/// The environment variable the workflow reads the secret into.
+///
+/// Deliberately *not* `GH_TOKEN`: a missing secret would then be indistinguishable from the
+/// repository token `gh` falls back to by itself, which is the mistake this preflight exists to
+/// make impossible.
+pub const STARTER_TOKEN_ENV: &str = "STARTER_TOKEN";
+
 /// Strip a leading `v` so a tag and a CLI version can be compared.
 ///
 /// The release tag is `v1.2.3`; the generated publisher stamps the bare `1.2.3`. Comparing
@@ -746,6 +761,41 @@ pub fn check_dispatch(repo: &str, tag: &str, expected_commit: &str) -> Result<()
     Ok(())
 }
 
+/// Fail closed unless the starter lane's publication credential is present.
+///
+/// The repository `GITHUB_TOKEN` cannot push to another repository at all, and GitHub bars it
+/// from `.github/workflows/*` even inside the repository it owns (issue #101), so the workflow's
+/// `secrets.X || github.token` fallback could only ever turn a missing credential into a late,
+/// misattributed failure: the v0.7.0 scaffold ran to its last step before the push was refused
+/// for a reason the annotation blamed on the branch. This runs before the lane touches the
+/// starter instead, and names the secret, the repository it must be limited to and the two
+/// scopes it needs.
+///
+/// # Errors
+///
+/// Fails when the token is absent or blank.
+pub fn check_token(token: Option<&str>, repo: &str) -> Result<()> {
+    let present = token.map(str::trim).is_some_and(|value| !value.is_empty());
+    if !present {
+        let finding = format!(
+            "{STARTER_TOKEN_SECRET} is empty; the starter lane needs a fine-grained token limited to {repo} with Contents: read and write and Workflows: read and write"
+        );
+        eprintln!("::error::{finding}");
+        crate::util::github_summary(&format!(
+            "## Starter token\n\n- `{STARTER_TOKEN_SECRET}` is not set, so the lane cannot push to `{repo}`\n- the repository `GITHUB_TOKEN` cannot replace it: it is scoped to this repository and may not write workflow files (issue #101)\n- configure `{STARTER_TOKEN_SECRET}` on this repository as a fine-grained token limited to `{repo}` with `Contents: read and write` and `Workflows: read and write`, then re-run\n"
+        ));
+        bail!("{finding}");
+    }
+    let report = format!(
+        "starter token present; delivery is limited to {repo} (Contents: read and write, Workflows: read and write)"
+    );
+    println!("{report}");
+    crate::util::github_summary(&format!(
+        "## Starter token\n\n- `{STARTER_TOKEN_SECRET}` is present\n- {report}\n"
+    ));
+    Ok(())
+}
+
 /// Check that the canonical starter already has a real `main` commit before attempting checkout.
 ///
 /// `default_branch` is repository metadata, not proof that a branch ref exists: GitHub can
@@ -1038,4 +1088,199 @@ pub fn publish(
         "## Starter published\n\n- release `{tag}`\n- source commit `{source_commit}`\n- starter tag `{immutable}`\n"
     ));
     Ok(())
+}
+
+/// The lane's own phases, in the order the workflow runs them, each with what an owner does when
+/// it fails (`TASK-74` AC#8, doc-10 "Credentials and safety").
+///
+/// The keys are the step ids `starter.yml` gives those steps, and the summarizer reports the step
+/// the job's `steps` context actually marks as failed, so this table is not a second description
+/// of the lane: `tests/starter.rs` fails when the workflow declares an id this list does not have
+/// or drops a phase it has.
+pub const STARTER_PHASES: [(&str, &str); 20] = [
+    (
+        "source-checkout",
+        "the runner could not check out this repository; re-run the job",
+    ),
+    (
+        "pixi",
+        "the runner could not resolve the Pixi environment this lane runs in; re-run the job, and if it repeats check the pixi pin in the tools lock",
+    ),
+    (
+        "release-verify",
+        "the dispatched tag is not a published release at the handed-off commit; check the tag and the commit the release lane passed",
+    ),
+    (
+        "release-binary",
+        "the released standalone binary could not be downloaded; check the release's assets before re-dispatching",
+    ),
+    (
+        "release-sums",
+        "the release's SHA256SUMS could not be downloaded; check the release's assets before re-dispatching",
+    ),
+    (
+        "release-asset",
+        "the downloaded binary did not verify against the release's own SHA256SUMS; do not publish a starter from this release until its assets are republished",
+    ),
+    (
+        "release-chmod",
+        "the downloaded binary could not be made executable on the runner; re-run the job",
+    ),
+    (
+        "starter-main",
+        "the starter repository has no readable commit on main; an owner must seed that ref with an initial commit",
+    ),
+    (
+        "starter-checkout",
+        "the starter repository could not be checked out with the configured credential; check that PIXI_SANDBOX_STARTER_TOKEN can reach this repository and carries Workflows: read and write",
+    ),
+    (
+        "scaffold",
+        "the starter's own files could not be written; read the annotations on this step",
+    ),
+    (
+        "generate",
+        "the released binary could not generate the managed files in the assembled tree; read the annotations on this step",
+    ),
+    (
+        "lock",
+        "the scaffolded Pixi project could not be locked; read the solver output in this step's log",
+    ),
+    (
+        "regenerate",
+        "the second generation was not byte-identical to the first, so the template would drift between runs; read `init --check`'s findings in this step's log",
+    ),
+    (
+        "lint",
+        "a generated workflow is not actionlint-clean; fix the render in this repository rather than this run",
+    ),
+    (
+        "clone",
+        "the tree this run would commit could not be assembled into a fresh clone; read the annotations on this step",
+    ),
+    (
+        "dev",
+        "the documented development task failed in a fresh clone, so the template's quickstart is not true for this release; read this step's log",
+    ),
+    (
+        "verify",
+        "the assembled tree is not publishable for this tag; read the `::error::` findings in this step's log",
+    ),
+    (
+        "publish",
+        "the publication was refused before any push; check whether the immutable `pixi-sandbox-<tag>` evidence tag already exists, and that the target branch is main",
+    ),
+    (
+        STARTER_REPORT_PHASE,
+        "the failure report itself could not be written; read the failing step's log instead",
+    ),
+    (
+        "evidence",
+        "the bounded evidence artifact could not be uploaded; read the failing step's log",
+    ),
+];
+/// The id of the step that writes the report itself.
+///
+/// It is a step like any other, so it carries an id the workflow declares and a remediation for
+/// the one failure it cannot report: its own. Everything else in [`STARTER_PHASES`] runs before
+/// it, which is what makes the phase it names trustworthy.
+pub const STARTER_REPORT_PHASE: &str = "summary";
+
+/// What the run should say when no lane phase reported the failure: either the job was cancelled,
+/// or the failing step sits outside the guarded phases (checkout, the Pixi environment).
+const UNREPORTED_PHASE: &str =
+    "no lane phase reported this failure; read the failing step's log for the annotation";
+
+/// What it should say for a step that failed but predates this table — a phase added to the
+/// workflow without a remediation. Named separately from [`UNREPORTED_PHASE`]: the step *did*
+/// report itself, and an operator should be able to tell the two apart.
+const UNKNOWN_PHASE: &str = "this step has no remediation on record; read the failing step's log";
+
+/// The phase a job's `steps` context says failed, if any.
+///
+/// The workflow hands over `${{ toJSON(steps) }}`, so the answer comes from the job's own record
+/// rather than from a chain of `if:` conditions that would drift from the step list. A job stops
+/// at its first failing step, so this normally returns one phase; when a `continue-on-error` step
+/// failed earlier, [`STARTER_PHASES`]' execution order decides. An id the table does not know is
+/// reported as-is, in a shape safe to print.
+#[must_use]
+pub fn failed_phase(steps_json: &str) -> Option<String> {
+    let steps: serde_json::Value = serde_json::from_str(steps_json).ok()?;
+    let steps = steps.as_object()?;
+    let failed: Vec<&str> = steps
+        .iter()
+        .filter(|(_, step)| step["outcome"].as_str() == Some("failure"))
+        .map(|(id, _)| id.as_str())
+        .collect();
+    if let Some(known) = STARTER_PHASES
+        .iter()
+        .map(|(phase, _)| *phase)
+        .find(|phase| failed.contains(phase))
+    {
+        return Some(known.to_string());
+    }
+    failed.first().map(|id| sanitize_phase(id))
+}
+
+/// Reduce an unknown step id to something safe to print in a run summary: identifier characters
+/// only, bounded in length. The id comes from the workflow rather than from a user, but the
+/// summary is a public, permanently visible surface, so nothing reaches it unfiltered.
+fn sanitize_phase(id: &str) -> String {
+    let mut safe: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(64)
+        .collect();
+    if safe.is_empty() {
+        safe.push_str("unknown");
+    }
+    safe
+}
+
+/// The bounded failure summary a failed starter run publishes (doc-10: tag, source commit,
+/// failed phase, remediation, no token or secret).
+///
+/// Bounded on purpose: it names the phase and the two immutable identifiers rather than pasting a
+/// log, and the run's own artifact carries the intended managed-file diff. Every starter phase
+/// after the dispatch leaves the previous revision in place by construction, so the summary can
+/// state that as a fact rather than as a hope.
+#[must_use]
+pub fn failure_summary(phase: Option<&str>, tag: &str, source_commit: &str) -> String {
+    let phase = phase.map_or_else(
+        || UNREPORTED_PHASE.to_string(),
+        |phase| format!("phase `{phase}`: {}", phase_remediation(phase)),
+    );
+    format!(
+        "## Starter phase failed\n\n- {phase}\n- release tag `{tag}`\n- source commit `{source_commit}`\n- the previous starter revision is unchanged (ADR-22 replaces main only after a validated push)\n- this run uploaded the bounded artifact `starter-{tag}`\n"
+    )
+}
+
+/// What an owner does about a failed phase. Unknown phases get the generic instruction rather
+/// than an empty line, because a summary that names a phase and no remedy is what AC#8 forbids.
+#[must_use]
+pub fn phase_remediation(phase: &str) -> &'static str {
+    STARTER_PHASES
+        .iter()
+        .find(|(known, _)| *known == phase)
+        .map_or(UNKNOWN_PHASE, |(_, remediation)| *remediation)
+}
+
+/// Replace every credential the job carries with a marker before text reaches a run summary.
+///
+/// A summary is permanent and world-readable on a public repository, so "this text happens to be
+/// composed only of values we chose" is not a safety argument an owner should have to audit: the
+/// one thing the summarizer echoes from outside itself is the id of a failed step it does not
+/// recognise. The caller supplies the values (the library never reads the environment itself),
+/// and an empty or absent secret is skipped so a missing variable cannot blank the summary.
+#[must_use]
+pub fn redact_secrets(text: &str, secrets: &[String]) -> String {
+    let mut redacted = text.to_string();
+    for secret in secrets {
+        let secret = secret.trim();
+        if secret.is_empty() {
+            continue;
+        }
+        redacted = redacted.replace(secret, "redacted");
+    }
+    redacted
 }
