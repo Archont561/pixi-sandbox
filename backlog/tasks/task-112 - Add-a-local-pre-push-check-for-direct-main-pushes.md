@@ -1,10 +1,10 @@
 ---
 id: TASK-112
 title: Add a local pre-push check for direct main pushes
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-15 08:06'
-updated_date: '2026-10-15 10:10'
+updated_date: '2026-10-15 16:25'
 labels:
   - git-hooks
   - ci
@@ -37,13 +37,13 @@ ADR-29 keeps the authoritative main-integration verdict in CI, but a contributor
 - [x] #2 A push targeting another remote ref does not invoke the main-integration judgment or fail merely because the local branch is not main.
 - [x] #3 The local pre-push hook runs the check through Pixi and reuses the existing policy; any local rejection is only a convenience, not a substitute for CI or branch protection.
 - [x] #4 Regression coverage at the agreed public seam proves a rejected main update, a sanctioned main update, and a non-main update that is ignored; tests use temporary Git fixtures, never this checkout.
-- [ ] #5 The Lefthook configuration validates, and repository format, lint, and test gates pass.
+- [x] #5 The Lefthook configuration validates, and repository format, lint, and test gates pass.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 pixi run --frozen fmt
-- [ ] #2 pixi run --frozen lint
+- [x] #2 pixi run --frozen lint
 - [x] #3 pixi run --frozen test
 - [x] #4 pixi run --frozen -- lefthook validate
 - [x] #5 pixi run --frozen -- convco check HEAD~1..HEAD
@@ -65,4 +65,12 @@ CLI tests use temporary Git fixtures and cover a rejected main update, a sanctio
 The full `pixi run --frozen lint` gate is currently blocked by the unchanged Cargo.lock pin `rustls 0.23.45`, which `cargo deny` flags for RUSTSEC-2026-0346, -0347, -0348, and -0349 (the advisory output recommends `rustls >=0.23.46`). Dependency remediation is outside this task; therefore AC#5 and DOD#2 remain open rather than recording a false green.
 
 Dependency remediation is now tracked as TASK-113. TASK-112 depends on that follow-up for the repository-wide lint gate; this task remains In Progress until the linked remediation makes full lint green.
+
+TASK-113 closed the rustls advisories (0.23.45 → 0.23.46), so the repository-wide gate is green again: `pixi run --frozen lint` 11/11 (cargo-deny `advisories ok, bans ok, licenses ok, sources ok`), `pixi run --frozen fmt --check`, `pixi run --frozen test` 1,156 passing / 2 skipped, and `pixi run --frozen -- lefthook validate` reports "All good". AC#5 and DOD#2 are now satisfied and this task is closed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A local pre-push convenience now gives the same ADR-29 main-integration verdict CI gives. `xtask check-main-push-hook` reads Git's pre-push ref-update protocol, delegates only `refs/heads/main` updates to the existing guard, refuses a main deletion, and no-ops blank input and non-main refs. Lefthook's `main-integration` pre-push job runs it through Pixi with stdin. Regression coverage at the CLI seam drives temporary Git fixtures (rejected main update, sanctioned main update, feature remote ref with a local `main`, empty stdin, main deletion). It is a convenience only: CI stays the repository-wide authority. The full gate went green once TASK-113 refreshed rustls — lint 11/11, suite 1,156 passing / 2 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->
