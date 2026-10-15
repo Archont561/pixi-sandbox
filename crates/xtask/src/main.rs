@@ -278,8 +278,8 @@ enum Command {
         /// Release tag this revision was generated from.
         #[arg(long)]
         tag: String,
-        /// Branch refspec to push.
-        #[arg(long, default_value = "HEAD:refs/heads/main")]
+        /// Branch name to replace; starter snapshots may replace only main.
+        #[arg(long, default_value = "main")]
         branch: String,
         /// Immutable source commit recorded in the starter commit message.
         #[arg(long)]
