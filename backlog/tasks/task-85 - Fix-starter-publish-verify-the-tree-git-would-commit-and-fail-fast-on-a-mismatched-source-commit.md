@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-08 18:40'
-updated_date: '2026-10-11 18:36'
+updated_date: '2026-10-15 19:37'
 labels:
   - starter
   - workflow
@@ -45,7 +45,7 @@ Non-goals: no change to the starter template content, the publication mechanism 
 - [x] #3 A regression test in crates/xtask/tests/ fails on the current code for a working tree that contains an ignored .pixi/ and passes after the fix; a second case fails when .pixi/ is actually tracked.
 - [x] #4 A manual dispatch whose source-commit does not match the commit the release tag names fails in the first job step, before checkout or any scaffolding, with a message naming both commits.
 - [x] #5 The workflow still passes the existing workflow lint gates (pixi run --frozen lint-actions and the check-repository workflow checks) and keeps the single-line run: rule from AGENTS.md.
-- [ ] #6 A dry-run starter workflow dispatch with the correct source-commit (8298edce13049ab01a7bc9d3e09c9daf8d14fc08 for v0.6.0) completes the verify step successfully. Recorded as evidence in the task notes; it must not publish.
+- [ ] #6 A future suitable starter workflow dry-run dispatch, using the matching release tag and source commit for that cycle, completes the verify step successfully. It must not publish; record the run as evidence in these notes.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -139,19 +139,14 @@ The blocker is token capability, not connectivity: reaching GitHub works, dispat
 workflow does not. AC#6 needs a maintainer with `actions:write`, exactly as above.
 
 2026-10-11 — additional positive-path evidence: v0.6.2 starter run https://github.com/Archont561/pixi-sandbox/actions/runs/38163988956 passed the dispatch guard, fresh-clone development task, assembled-tree verification, and actual publication. The published tree is complete at starter commit 1655285c27f162f24be33428fb1c1f791bd2e063 (tag pixi-sandbox-v0.6.2). This confirms the repaired lane works on a real runner, but does NOT satisfy AC#6: that criterion explicitly asks for a non-publishing dry-run dispatch for v0.6.0/source 8298edce13049ab01a7bc9d3e09c9daf8d14fc08. No dispatch was attempted during this evidence follow-up; AC#6 remains unchecked and the task remains In Progress.
+
+2026-10-15 — Owner direction supersedes the historical v0.6.0-specific dry-run requirement. Do not dispatch or pursue the obsolete v0.6.0 starter run. AC#6 now waits for the next suitable starter workflow cycle and must exercise the same non-publishing dry-run path with that release's matching tag and source commit. The task remains In Progress until that live run completes its verify step successfully; v0.6.2's publishing run remains positive context, not a substitute for the dry-run proof.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 <!-- SECTION:SUMMARY:BEGIN -->
-The starter lane now judges the revision instead of the directory: the verifier asks git what would
-be committed, so the runtime state the lane's own steps install no longer blocks a publishable
-starter, while runtime state that *is* in the index or not covered by an ignore rule is still
-refused. The template's development-task proof moved to a fresh `git clone` of exactly that tree,
-assembled in a scratch directory, and a dispatch whose `source-commit` the release tag does not name
-now fails in its own first job with both commits named and the remedy stated. AC#1-#5 are proven
-locally; AC#6 (one successful dry-run dispatch on a real runner) waits for a maintainer's click, so
-the task stays In Progress.
+The starter lane now verifies the revision Git would publish, exercises the documented development task in a fresh clone, and rejects a mismatched release hand-off before scaffolding. AC#1–#5 are locally and structurally proven. Under owner direction, the remaining non-publishing dry-run proof will be collected from the next suitable starter workflow cycle using its matching release tag and source commit; the obsolete v0.6.0 dispatch is not required. The task remains In Progress until that run is recorded.
 <!-- SECTION:SUMMARY:END -->
 <!-- SECTION:FINAL_SUMMARY:END -->
