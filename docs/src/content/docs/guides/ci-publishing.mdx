@@ -149,6 +149,43 @@ git ls-remote origin 'sandbox/*'
 
 ## Failure modes
 
+## A consumer's own CI and the empty `default` environment
+
+The generated publisher is immune to a workspace whose implicit `default` environment is
+empty: every `setup-pixi` step in it sets `run-install: false`, so it never runs `pixi list`.
+A consumer's **own** validation workflow that uses `prefix-dev/setup-pixi` with its defaults
+is not. With no `with:` inputs, that action runs `pixi info`, `pixi install --locked`, then
+`pixi list --locked` — and when every environment is declared explicitly and the implicit
+`default` environment holds no packages, `pixi list` exits non-zero:
+
+```
+Error:   × No packages found in 'default' environment for 'linux-64' platform.
+```
+
+The job then dies inside the *setup* step, before a single consumer command runs, and the
+workflow log says only that `pixi` exited 1 — it names neither the environment nor the
+command. `pixi install --locked` installs the empty environment without complaint; only
+`pixi list` refuses it.
+
+Name the environment the first steps use, so the action installs and lists a populated one:
+
+```yaml
+- uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+  with:
+    environments: core
+```
+
+`run-install: false` also avoids the `list` call, but the action rejects it together with
+`cache: true` (`Cannot cache without running install`), so naming `environments:` is the
+drop-in fix.
+
+This is a pixi / `setup-pixi` interaction, not a pixi-sandbox one: `pixi list` exits non-zero
+for an empty environment, and `setup-pixi` does not tolerate the non-zero exit. Both are
+upstream; pixi-sandbox documents the workaround rather than adding a CLI check, because it has
+never parsed the consumer's `pixi.toml` and guessing an environment is empty from a partial
+read would be worse than silence (see issue #158).
+
+
 - **A phase fails before `publish`** — the existing transport is never replaced. Read the
   `publish-diagnostics-<platform>` artifact (per-phase `pack.log` / `doctor.log` / `publish.log`)
   and the `$GITHUB_STEP_SUMMARY` failure report; evidence collection is in
@@ -156,6 +193,7 @@ git ls-remote origin 'sandbox/*'
 - **The publish is over budget** — entry 7 in
   [Troubleshooting and incident response](/pixi-sandbox/troubleshooting/); the ceilings and the
   remedy are in [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/).
+- **Consumer workflows using setup-pixi with defaults** — if every environment is declared explicitly and the implicit `default` environment is empty, `setup-pixi` runs `pixi list` on the empty environment and exits non-zero, killing the job in setup; see the section above for the workaround.
 - **The upgrade job cannot open its pull request** — the Workflows-capable token is missing or
   refused; the job stays green and uploads the `git apply`-able patch instead (above).
 
