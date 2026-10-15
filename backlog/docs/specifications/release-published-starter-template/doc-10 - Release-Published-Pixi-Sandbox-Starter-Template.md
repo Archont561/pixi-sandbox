@@ -3,7 +3,7 @@ id: doc-10
 title: Release-Published Pixi Sandbox Starter Template Specification
 type: specification
 created_date: '2026-10-05'
-updated_date: '2026-10-05'
+updated_date: '2026-10-15'
 tags:
   - template
   - onboarding
@@ -47,15 +47,21 @@ a GitHub template. The final repository name is an implementation detail, but it
 canonical public URL documented from the main project.
 - Keep the starter language-neutral: it supplies the Pixi/Sandbox scaffold and a small documented
   development task, not a framework-specific application or a second project generator.
-- Treat the following as generated/managed template files: the pinned pixi-sandbox version
-  manifest, `pixi.toml`, the lockfile, `pixi-sandbox.toml`, and
-  `.github/workflows/publish-sandbox.yml`. The template README may contain maintained prose but
+- Treat the following as generated/managed template files: `pixi.toml`, the lockfile,
+  `pixi-sandbox.toml`, and `.github/workflows/publish-sandbox.yml`. There is no separate
+  version-manifest file: `pixi.toml`, `pixi.lock` and `pixi-sandbox.toml` carry no
+  pixi-sandbox version by design, and every file that does name a pixi-sandbox version
+  names the same release. The template README may contain maintained prose but
   must state its corresponding release and template revision.
 - The committed publisher must be a normal consumer publisher produced by the released CLI. It
   keeps the exact production version pin and checksum verification already required of generated
   consumer workflows; it must never resolve `latest` while packing or publishing.
-- The template must include an appropriate `.gitignore` and must not commit `.pixi/`,
-  `.pixi-sandbox/`, packages, credentials, release tokens, or a prebuilt transport branch.
+- The template must include an appropriate `.gitignore`; `main` must not carry `.pixi/`,
+  `.pixi-sandbox/`, packages, credentials, release tokens, or a prebuilt transport. The
+  canonical starter otherwise keeps the `sandbox/developer-linux-64` transport branch its
+  own included publisher writes, like any consumer repository; that branch is not part of
+  the template snapshot on `main`, and **Use this template** copies only the default branch
+  unless "Include all branches" is chosen.
 
 ## Release-to-template publication contract
 
@@ -80,11 +86,12 @@ A new release creates a snapshot even if its file tree is unchanged.
 
 ## Credentials and safety
 
-Cross-repository publication uses a narrowly installed, owner-operated GitHub App installation
-token (or an equivalent short-lived credential), never a personal access token. It has access only
-to the source and starter repositories and only the `contents`, `workflows`, and pull-request
-capabilities needed for the update. The ordinary consumer template contains none of these
-credentials.
+Cross-repository publication uses `PIXI_SANDBOX_STARTER_TOKEN`, a fine-grained token
+limited to the starter repository, granting Contents and Workflows read/write and carrying
+an expiry. It is the only delivery credential: `github.token` can never push to another
+repository, and neither a personal access token with broader scope nor an owner-operated
+GitHub App is used — the owner-operated App model (TASK-73) is deprecated. The ordinary
+consumer template contains none of these credentials.
 
 The automation may update only the canonical starter repository; it must never push to template
 derivatives, forks, or repositories created by users. Each successful update replaces only the
@@ -105,9 +112,11 @@ source commit, intended managed-file diff, and a remediation; no token or secret
 
 Before publishing a new starter revision, CI must prove in a clean temporary directory that:
 
-1. the managed files pin exactly `vX.Y.Z` and no production setup references `latest`;
-2. the released standalone binary and `SHA256SUMS` verify successfully and can regenerate the
-   template without source-checkout dependencies;
+1. every file that names a pixi-sandbox version names exactly `vX.Y.Z`, no production setup
+   references `latest`, and `pixi.toml`, `pixi.lock` and `pixi-sandbox.toml` carry no
+   pixi-sandbox version by design;
+2. the released standalone binary and `SHA256SUMS` verify successfully and that binary
+   generates the managed files, so the template does not depend on the source checkout;
 3. a second generation is byte-identical and `init --check` reports no drift;
 4. the generated publisher is actionlint-clean and retains checksum verification, native planning,
    doctor-before-publish ordering, and explicit `GITHUB_TOKEN` permissions;

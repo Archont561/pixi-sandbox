@@ -4,7 +4,7 @@ title: Publish a release-pinned Pixi Sandbox starter template
 status: In Progress
 assignee: []
 created_date: '2026-10-05'
-updated_date: '2026-10-15 21:27'
+updated_date: '2026-10-15 22:00'
 labels:
   - onboarding
   - template
@@ -13,7 +13,6 @@ labels:
   - consumer
 dependencies:
   - TASK-62
-  - TASK-73
 references:
   - >-
     backlog/docs/specifications/release-published-starter-template/doc-10 -
@@ -50,13 +49,13 @@ they can start. The detailed release, ownership, validation, and rollback contra
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 A canonical public `pixi-sandbox` starter repository is marked as a GitHub template and contains a language-neutral Pixi development scaffold, locked environment, `pixi-sandbox.toml`, generated consumer publisher, `.gitignore`, and a concise clone/use-template quickstart; it contains no credentials, prebuilt transport, or ignored runtime directories.
+- [x] #1 A canonical public `pixi-sandbox` starter repository is marked as a GitHub template and contains a language-neutral Pixi development scaffold, locked environment, `pixi-sandbox.toml`, generated consumer publisher, `.gitignore`, and a concise clone/use-template quickstart; it contains no credentials, prebuilt transport on `main`, or ignored runtime directories.
 - [ ] #2 A repository created from the template needs no manual Pixi Sandbox initialization or connected-host setup: on a clean checkout, the documented Pixi development command succeeds, and a push to the default branch can execute the included publisher with explicitly scoped repository `GITHUB_TOKEN` permissions and no Archont561-owned secret.
 - [x] #3 A template-update workflow starts only after `release.yml` has successfully published the exact prefix.dev package set, GitHub Release, standalone assets, and `SHA256SUMS`; it receives an explicit tag/immutable commit hand-off rather than depending on a `release.published` event suppressed by `GITHUB_TOKEN`.
 - [x] #4 Before changing the template, the receiver independently verifies that the requested semver tag is a published `Archont561/pixi-sandbox` release, resolves to the handed-off commit, and contains the required release assets/checksum manifest; malformed, missing, unpublished, or mismatched input fails closed.
-- [ ] #5 The verified released standalone binary regenerates all managed template setup. The resulting `pixi.toml`/lockfile, config, workflow, and template metadata pin the same exact version; a second run is byte-identical, `init --check` is clean, and no production path resolves `latest`.
+- [x] #5 The verified released standalone binary regenerates all managed template setup. Every file that names a pixi-sandbox version names the same release; a second run is byte-identical, `init --check` is clean, and no production path resolves `latest`. `pixi.toml`, `pixi.lock` and `pixi-sandbox.toml` carry no pixi-sandbox version by design, and there is no separate version manifest.
 - [x] #6 The template's generated publisher is actionlint-clean and keeps existing consumer safety guarantees: checksum-verified bootstrap, native plan matrix, doctor-before-publish ordering, exact version pinning, and no publish before successful pack/doctor.
-- [ ] #7 Cross-repository delivery uses a short-lived owner-operated GitHub App installation token (following TASK-73's proven credential model), scoped only to the source and starter repositories. It never uses a personal token or modifies generated user repositories, forks, or prior template derivatives. The canonical starter main alone is replaced by a lease-protected, atomic single-commit snapshot per ADR-22; immutable release tags are retained.
+- [ ] #7 Cross-repository delivery uses `PIXI_SANDBOX_STARTER_TOKEN`, a fine-grained token limited to the starter repository (Contents and Workflows read/write, with an expiry), never a personal access token with broader scope or an owner-operated GitHub App. It never modifies generated user repositories, forks, or prior template derivatives. The canonical starter main alone is replaced by a lease-protected, atomic single-commit snapshot per ADR-22; immutable release tags are retained.
 - [ ] #8 A failed generation, lock refresh, validation, or delivery leaves the prior starter revision usable and unchanged. The failure emits a bounded GitHub-visible summary/artifact with the tag, source commit, failed phase, and remediation without exposing a token or secret.
 - [ ] #9 CI creates a clean temporary consumer from the template and proves locked Pixi install plus the documented development task, byte-identical regeneration, and the fixture/bare-remote pack → doctor → publish → fetch → offline restore lifecycle using the release-pinned binary.
 - [ ] #10 Each successful starter update creates immutable evidence (a namespaced starter tag or equivalent release) linking the pixi-sandbox tag, source commit, and template commit. The main release notes and starter README cross-link, and the project documentation advertises the starter only after the connected proof succeeds.
@@ -74,17 +73,19 @@ they can start. The detailed release, ownership, validation, and rollback contra
 
 <!-- SECTION:PLAN:BEGIN -->
 Create the starter repository and one manually validated baseline first; do not introduce a
-second generator or hand-maintained publisher. Define a small machine-readable version manifest
-that names the source tag and commit, then let the checksum-verified released standalone binary
-render the same consumer files ordinary users receive. Establish clean-clone and full transport
-lifecycle tests before wiring publication.
+second generator or hand-maintained publisher. The starter tag and source commit are recorded
+in the starter commit message, the immutable starter tag and the README; there is no separate
+version-manifest file. The checksum-verified released standalone binary renders the same
+consumer files ordinary users receive. Establish clean-clone and full transport lifecycle tests
+before wiring publication.
 
-After TASK-73 supplies the proven owner-operated GitHub App delivery model, add a narrowly scoped
-release hand-off after `release.yml` creates the GitHub Release. The starter-side job must verify
-the release independently, generate and validate in a disposable checkout, and update only its
-managed files atomically. Publish a namespaced immutable starter tag/evidence after the target
-repository is updated; retain the preceding template revision on every error. Finally add the
-canonical template URL and three-step quickstart to user documentation.
+Add a narrowly scoped release hand-off after `release.yml` creates the GitHub Release, delivered
+with `PIXI_SANDBOX_STARTER_TOKEN` (TASK-73's owner-operated App model is Deprecated and is not a
+dependency). The starter-side job must verify the release independently, generate and validate
+in a disposable checkout, and update only its managed files atomically. Publish a namespaced
+immutable starter tag/evidence after the target repository is updated; retain the preceding
+template revision on every error. Finally add the canonical template URL and three-step
+quickstart to user documentation.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -132,4 +133,18 @@ Still unproven, and not provable from here: the starter repository still holds o
 - **AC#10 stays open.** The immutable tag names the template commit, whose message records the release and source commit, and the starter README links release v0.7.0 and the source commit. The v0.7.0 release notes do not link the starter.
 
 2026-10-15 — TASK-73 is now Deprecated: the owner-operated GitHub App model is no longer pursued. The App half of AC#7, and the plan step that waits for TASK-73, can no longer be met as written. AC#7 and the TASK-73 dependency are left unchanged until the owner decides how AC#7 should read. One option is to name the credential the starter actually uses, `PIXI_SANDBOX_STARTER_TOKEN`; run metadata suggests it is a personal token, which AC#7 also forbids. The other is to drop the credential half. Until then, the dependency keeps this task shown as blocked. The status stays In Progress.
+
+2026-10-15 — owner decisions applied (Slice 1). AC#7 now names `PIXI_SANDBOX_STARTER_TOKEN`, a
+fine-grained token limited to the starter repository (Contents and Workflows read/write, with an
+expiry), and the TASK-73 dependency is removed; TASK-73's owner-operated App model is Deprecated.
+AC#7 stays unchecked until the configured token's delivery is proven on a starter run. AC#5 is
+reworded to where the version actually appears — every file naming a pixi-sandbox version names
+the same release, a rerun is identical, `init --check` is clean, and nothing uses `latest`;
+`pixi.toml`, `pixi.lock` and `pixi-sandbox.toml` carry no version by design and the never-built
+version-manifest file is dropped — and is checked on the v0.7.0 evidence above. doc-10 is updated
+to match (credentials, no version manifest, validation items 1–2), and the transport rule is now
+that `main` carries no prebuilt transport while the starter keeps its
+`sandbox/developer-linux-64` branch. Issue #101 is fixed by TASK-71 (PR #102, shipped in v0.6.0);
+closing it from this sandbox was refused with 403 (`Resource not accessible by integration`), so
+the closure itself needs an owner click.
 <!-- SECTION:NOTES:END -->
