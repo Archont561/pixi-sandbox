@@ -10,6 +10,7 @@ pub mod github;
 pub mod host_probe;
 pub mod pack;
 pub mod pipeline;
+pub mod pixi_lock;
 pub mod prepare;
 pub mod rattler_build;
 pub mod release;
