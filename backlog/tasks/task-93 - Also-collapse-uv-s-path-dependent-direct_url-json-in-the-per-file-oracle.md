@@ -1,10 +1,10 @@
 ---
 id: TASK-93
 title: Also collapse uv's path-dependent direct_url.json in the per-file oracle
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-11 14:45'
-updated_date: '2026-10-11 15:57'
+updated_date: '2026-10-15 16:45'
 labels:
   - bug
   - verification
@@ -51,7 +51,7 @@ This is the gap TASK-88 AC#8 exists to catch. It was carried open; this task is 
 - [x] #1 `*.dist-info/direct_url.json` is treated exactly as `uv_cache.json` is: presence-only in `scan_prefix` (so a missing/forged install stays caught) and its `RECORD` row collapsed to `@pixi-sandbox-regenerated@` before hashing, through the same shared canonical entry point — not a second rule.
 - [x] #2 A `*.dist-info/direct_url.json` outside a `.dist-info` directory, or a file merely named `direct_url.json`, keeps its content digest.
 - [x] #3 A regression test models a wheel reinstalled with a *different* `direct_url.json` path and asserts a clean verdict at the `verify_restored` seam; tampering with the package payload the wheel shipped is still caught.
-- [ ] #4 The fix is exercised against a real `pixi-pack` → `pixi-unpack` round trip of a pypi wheel on a connected host and the restored tree verifies with 0 failures. Recorded as evidence in this file.
+- [x] #4 The fix is exercised against a real `pixi-pack` → `pixi-unpack` round trip of a pypi wheel on a connected host and the restored tree verifies with 0 failures. Recorded as evidence in this file.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -88,4 +88,32 @@ its limits. No `files.json` schema change was needed.
 **AC#4 remains open.** This airlocked host cannot run the required real `pixi-pack` →
 `pixi-unpack` pypi-wheel round trip because it cannot resolve against `prefix.dev`. The local
 fixture proves the seam but is not substituted for connected-host evidence.
+
+### 2026-10-15 — AC#4 satisfied on a connected host
+
+The full evidence (commands, versions, oracle entries, restore output and the v0.6.1 red / v0.6.2
+green comparison) is recorded once, in TASK-88 § Implementation Notes, because the two ACs name
+the same connected round trip. Summary: a `python 3.12` + pypi `six 1.17.0` project was packed
+with the fixed build (`pixi-pack 0.7.11`, 6416 file entries) and restored with the embedded
+`pixi-unpack 0.7.11`; the restored `direct_url.json` carries the restore-time local wheel path,
+and the restored tree verified with **0 failure(s)** (exit 0). The pre-fix v0.6.1 binary failed
+the same transport on `six-1.17.0.dist-info/RECORD` with the issue-#128 signature; the released
+v0.6.2 (which contains the fix) and the local main build both pass. `direct_url.json` and
+`uv_cache.json` are recorded presence-only in the manifest, and the `RECORD` row that hashes
+`direct_url.json` is collapsed to the shared sentinel — exactly the TASK-93 change.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:SUMMARY:BEGIN -->
+`*.dist-info/direct_url.json` is now modelled like `uv_cache.json`: presence-only in the
+per-file oracle, with its `RECORD` row collapsed to `@pixi-sandbox-regenerated@` through the one
+shared `canonical_file_sha256` entry point, so pack and verify cannot drift. Because
+`pixi-unpack` always reinstalls a pypi dependency from a local wheel, `direct_url.json` names a
+different path on every host and prefix, and `RECORD` embeds that path's hash — the file issue
+#128 could not survive. Exercised against a real `pixi-pack` → `pixi-unpack` round trip of pypi
+`six 1.17.0` on a connected host: the restored tree verifies with 0 failures with the fix, and
+fails on `six-1.17.0.dist-info/RECORD` with the pre-fix v0.6.1 binary. Files merely named
+`direct_url.json` outside a `.dist-info`, and tinkering with the payload the wheel shipped, are
+still caught.
+<!-- SECTION:SUMMARY:END -->

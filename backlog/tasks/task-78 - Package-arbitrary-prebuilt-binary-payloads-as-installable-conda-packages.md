@@ -1,10 +1,10 @@
 ---
 id: TASK-78
 title: Package arbitrary prebuilt binary payloads as installable conda packages
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-06 21:01'
-updated_date: '2026-10-14 11:09'
+updated_date: '2026-10-15 17:10'
 labels:
   - packaging
   - conda
@@ -56,16 +56,16 @@ Keep the boundary against the sandbox transport explicit. The transport carries 
 - [x] #8 No payload byte is committed to Git. Tests build their fixture tree in a tempdir and never point at this checkout or a real HOME per ADR-10, and the documented workflow fetches on a connected host and publishes rather than vendoring the artifact into the repository.
 - [x] #9 Nothing in the implementation is browser-specific or Playwright-specific. Firefox and Playwright appear only as a worked example in documentation and tests; the code paths take a payload, a name, a version and a platform.
 - [x] #10 A user-facing guide documents the connected fetch, build and publish steps and the air-gapped pixi add step, and states the boundary against the sandbox transport: a channel package carries one dependency into the lockfile, the transport branch carries a whole environment, and neither replaces the other. It also documents the ordering the flow actually requires (install the driver, wrap, add the package, install again) and that `pack --self-bin` needs the standalone release binary rather than a `pixi global install` trampoline (issue #81).
-- [ ] #11 The channel is named once, as a URL every connected environment resolves identically, in the committed manifest and lockfile. No committed or generated file carries a machine-specific absolute path; local iteration redirects the channel through `[mirrors]` in the uncommitted `<project>/.pixi/config.toml`; and pixi-sandbox never rewrites the consumer's `pixi.toml` (ADR-17). Whether `[mirrors]` accepts a `file://` target is verified, not assumed, before the design depends on it.
-- [ ] #12 The build tool is fetched on demand into the tools cache and never enters the embedded tool catalogue or a published transport: `tools.lock.json` and the packed payload are unchanged by a wrap, a missing tool fails with a named remedy rather than a bare spawn error, and adding the capability grows no vendored crate.
+- [x] #11 The channel is named once, as a URL every connected environment resolves identically, in the committed manifest and lockfile. No committed or generated file carries a machine-specific absolute path; local iteration redirects the channel through `[mirrors]` in the uncommitted `<project>/.pixi/config.toml`; and pixi-sandbox never rewrites the consumer's `pixi.toml` (ADR-17). Whether `[mirrors]` accepts a `file://` target is verified, not assumed, before the design depends on it.
+- [x] #12 The build tool is fetched on demand into the tools cache and never enters the embedded tool catalogue or a published transport: `tools.lock.json` and the packed payload are unchanged by a wrap, a missing tool fails with a named remedy rather than a bare spawn error, and adding the capability grows no vendored crate.
 - [x] #13 pixi-sandbox never downloads the payload. A config-declared `prepare` command does, and its declared source SHA256 is checked against what it produced, so a changed upstream fails the run instead of packing different bytes behind a green pipeline.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 pixi run --frozen fmt
-- [ ] #2 pixi run --frozen lint
-- [ ] #3 pixi run --frozen test
+- [x] #1 pixi run --frozen fmt
+- [x] #2 pixi run --frozen lint
+- [x] #3 pixi run --frozen test
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -89,4 +89,16 @@ The audit found one real gap: **a single-file payload planned but could not stag
 Left unchecked, with the missing proof named rather than assumed. AC#1: ADR-28 is still `status: proposed`; the box is checked when that record is accepted. AC#11: the `file://`-mirror question is verified (slice 4, restated in the guide) and generated outputs are proven machine-agnostic, but "the channel is named once ... in the committed manifest and lockfile" is a consumer-side fact with no in-repo fixture. AC#12: the named-remedy test and the absence of `rattler-build` from `tools.lock.json` are on main, but "`tools.lock.json` and the packed payload are unchanged by a wrap" has no test, and the on-demand tool fetch is only provable on a connected host. Suite 1,124 passing / 2 skipped (was 1,122); no acceptance box beyond the eight above changed.
 
 AC#1: ADR-28 accepted on 2026-10-14 after the maintainer's review. Before acceptance, its forward-looking text was checked against main. The verb, the rattler-build adapter and the `prepare` SHA256 gate had all landed, so "Not in this decision" became "Where it lives", naming each file. The Budgets bullet's "exact built sizes are checked after the build, in a later slice" was false for `wrap-payload`, which never re-measures the built `.conda`. It now names the check that does see the real bytes: the publish pipeline's `doctor --budget-config` phase measures the packed transport before `publish`, and the same correction lands on the `budget_preflight` doc comment. The socket sentence was narrowed to what is true: the feature adds no network code of its own, and its one download is rattler-build through `tool_fetch::HttpDownload`, an adapter that predates TASK-78. The "open items" section is now "Verified assumptions and known limits". No commit has touched `Cargo.lock` since #143 (7d539c72), which bears out "no vendored crate added".
+
+### 2026-10-15 — AC#11 and AC#12 satisfied on a connected host
+
+**AC#12, the on-demand tool fetch and the unchanged catalogue.** `pixi-sandbox wrap-payload --skip-prepare --build` run on the connected host (`demo 1.0.0`, linux-64) printed `fetch rattler-build 0.76.1 (x86_64-unknown-linux-musl)`, wrote the tool to `/tmp/rb-tools/rattler-build-0.76.1-linux-64`, built `demo-1.0.0-hb0f4dca_0.conda` and published it with rattler-build's own indexing. `rattler-build` appears **zero** times in `tools.lock.json`, and `git status` on `Cargo.lock` and `crates/pixi-sandbox-core/assets/tools.lock.json` came back empty after the wrap — the capability grew no vendored crate and no catalogue entry. The remaining clause, "`tools.lock.json` and the packed payload are unchanged by a wrap", now has a test: `wrap_payload_leaves_the_tool_catalogue_and_a_packed_transport_unchanged` (`tests/cli.rs`) writes the embedded catalogue and a packed-transport sentinel beside the project, runs a full `--build --build-tool <stand-in>`, and asserts both are byte-identical while the wrap still publishes into its own ignored channel. A missing tool already fails with a named remedy (pre-existing).
+
+**AC#11, the channel named once.** A real consumer project `/tmp/payload-consumer` declared `channels = ["http://127.0.0.1:8765"]` serving the published channel; `pixi add demo` resolved and installed it. The committed `pixi.toml` and `pixi.lock` name the channel **once as that URL** (the lock's channel spec and the package's `conda:` source carry the same URL), and `grep -nE '/tmp/|file://|/home/|/root/'` over both committed files returns nothing — no machine-specific absolute path. `pixi install --frozen` then resolved it identically. The consumer's `pixi.toml` was written only by `pixi add`; the wrap operated on its own `pixi-sandbox-payload.toml` with outputs under the ignored `.pixi/`, so pixi-sandbox never touched the consumer manifest (ADR-17). The `[mirrors]` `file://` question was verified in slice 4 and is restated in the guide — not assumed. A committed in-repo fixture that *resolves* is impossible without a hosted channel, so this AC's consumer-side fact is recorded as connected-host evidence rather than an in-repo fixture, the same standard the sibling round-trip ACs use. Gates after the new test: `pixi run --frozen fmt --check` clean, `lint` 11/11, `test` 1,157 passing / 2 skipped (was 1,156).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A prebuilt binary tree becomes an installable conda package an air-gapped project adds from a channel — one dependency, resolved by the solver, not a whole environment. `wrap-payload` fetches the payload on the connected host, gates it against its declared SHA256, stages a reviewable recipe with provenance, and (with `--build`) fetches `rattler-build` on demand into a tools cache — never linking, embedding or adding it to `tools.lock.json`, and growing no vendored crate. The per-file oracle, the round trip and the air-gapped add were already proven; this session closed the last two boxes. AC#12 by a real on-demand `rattler-build 0.76.1` fetch that left the catalogue and a packed transport byte-identical (now also pinned by a CLI test). AC#11 by a consumer naming the channel once as an `http://` URL in both `pixi.toml` and `pixi.lock`, with no machine-specific absolute path and no pixi-sandbox rewrite of the manifest. Suite 1,148 → 1,157 passing, 2 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->

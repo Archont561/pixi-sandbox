@@ -2962,6 +2962,69 @@ fn wrap_payload_build_runs_the_named_tool_and_publishes_into_the_default_channel
     );
 }
 
+/// TASK-78 AC#12: the build tool is fetched into a tools cache and never enters the embedded
+/// catalogue, so a wrap leaves `tools.lock.json` byte-identical and writes nothing into a packed
+/// transport beside it. The stand-in `rattler-build` keeps this offline; the real on-demand
+/// download was proven on a connected host (the tool lands in `--tools-cache`, and `rattler-build`
+/// appears zero times in `tools.lock.json`).
+#[cfg(unix)]
+#[test]
+fn wrap_payload_leaves_the_tool_catalogue_and_a_packed_transport_unchanged() {
+    let project = tempfile::tempdir().unwrap();
+    let digest = pixi_sandbox_core::shard::sha256_bytes(b"the artifact");
+    write_payload_project(project.path(), b"the artifact", &digest);
+
+    let catalogue = project.path().join("tools.lock.json");
+    fs::write(&catalogue, pixi_sandbox_core::tools_lock::EMBEDDED_JSON)
+        .expect("write the tool catalogue");
+    let transport = project.path().join(".pixi-sandbox");
+    fs::create_dir_all(&transport).expect("packed transport dir");
+    let marker = transport.join("manifest.json");
+    fs::write(
+        &marker,
+        b"{\"schema\":1,\"sentinel\":\"packed-transport\"}\n",
+    )
+    .expect("write the transport marker");
+
+    let catalogue_before = fs::read_to_string(&catalogue).expect("read the catalogue");
+    let marker_before = fs::read_to_string(&marker).expect("read the marker");
+
+    let (tool, package_source) = write_fake_rattler_build(project.path(), b"package");
+
+    bin()
+        .current_dir(project.path())
+        .env("FAKE_PACKAGE", package_source)
+        .args([
+            "wrap-payload",
+            "--config",
+            "pixi-sandbox-payload.toml",
+            "--skip-prepare",
+            "--build",
+            "--build-tool",
+            tool.to_str().expect("utf-8 tool path"),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(&catalogue).expect("read the catalogue after"),
+        catalogue_before,
+        "tools.lock.json is byte-identical after a wrap"
+    );
+    assert_eq!(
+        fs::read_to_string(&marker).expect("read the marker after"),
+        marker_before,
+        "the packed transport beside it is unchanged by a wrap"
+    );
+    assert!(
+        project
+            .path()
+            .join(".pixi/payload-channel/repodata.json")
+            .is_file(),
+        "the wrap still published its own package, into its own ignored channel"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn wrap_payload_allows_a_built_package_exactly_at_the_blob_limit() {
