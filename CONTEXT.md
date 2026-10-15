@@ -3296,3 +3296,78 @@ Next session opening prompt:
 > When a new release runs, update only the task criteria its evidence proves. TASK-85 AC#6 closes only on a **non-publishing `dry-run=true` starter dispatch** whose release tag and source commit match that cycle; an automatic publishing starter run alone does not satisfy it. TASK-94 AC#4 needs the corrected published starter's own publisher to pass; TASK-95 AC#5 needs a live publication showing starter main is a one-commit snapshot while prior tags remain intact; TASK-74 remains In Progress until each of its compound consumer/App/lifecycle proofs is present. Do not close TASK-73 or issue #101 from release success alone.
 >
 > Record any newly proven run URLs in the relevant task notes, leave unproven criteria unchecked, and propose the next slice before changing code. Do not push, open a PR, merge, release, or dispatch without explicit go-ahead. House rules are in `AGENTS.md`; the session procedure is in `.agents/skills/session/`.
+
+### 2026-10-15 — v0.7.0 starter published; TASK-85, TASK-94 and TASK-95 closed
+
+An Arena AI sandbox session with no Pixi restore: the changes are Markdown only, and the repository
+gates ran in pull-request CI.
+
+**The run was watched, not re-dispatched.** PR #164 (`e16884a`) fixed `starter-publish`'s default
+branch (`main`, not `HEAD:refs/heads/main`) and made the starter dispatch inputs optional; blank
+inputs resolve the latest stable release and its immutable commit. Before this session started, the
+owner dispatched starter run 38804692103 on main at `e16884a`. It resolved v0.7.0 / `d54ae974` and
+succeeded, so no second dispatch was made; it would have been refused on the existing tag. The
+superseded hand-off run 38800327950 was not rerun.
+
+**What was verified.** The sources are job/step conclusions and the published refs; raw logs and
+artifacts are egress-blocked here.
+- Starter main is one parentless commit, `66704220`, whose message records the release and source
+  commit. Tag `pixi-sandbox-v0.7.0` names it. The previous main, `c971ef77` (the owner's untagged
+  2026-10-11 `cargo_vendor` edit), was replaced. That proves the publisher credential may
+  lease-force-update main.
+- Tags `pixi-sandbox-v0.6.1` (`d75c3a8f` → `945ed1a7`) and `pixi-sandbox-v0.6.2`
+  (`7f24bfa0` → `1655285c`) are unchanged.
+- The starter tree has the ten required files and `cargo_vendor = false`. Its workflows pin 0.7.0,
+  and its publish path uses only the repository token.
+- The push started the starter's own publisher, run 38804893239, which succeeded. Its transport
+  (`ddc086e4`) names source `6670422`, carries the starter lock digest, and holds static
+  pixi-sandbox 0.7.0.
+- The rest of the v0.7.0 release chain passed: release 38798448933, consumer proof 38800324030 and
+  docs. The developer transport is at `e16884a` with 0.7.0.
+
+**Closed.**
+- TASK-95: AC#5, one commit on main and prior tags intact.
+- TASK-94: AC#4, the corrected starter's own publisher passed.
+- TASK-85: AC#6 was reworded at the owner's direction, then proven by run 38804692103. It now
+  accepts an owner-sanctioned publishing run as well as a dry run, because release.yml always hands
+  off a publishing run and `starter::publish` refuses an existing tag before its dry-run return; a
+  later dry run for the same release necessarily ends red.
+- TASK-74 AC#6 is checked, from the live publisher run, the published workflow and the
+  fetch-release and pipeline tests.
+- The README's v0.6.2 starter caution is reworded: the advice for v0.6.2-derived projects stays, and
+  the "not yet replaced" claim goes.
+
+**Still open; not implemented here.**
+- TASK-74 is blocked on TASK-73. Its other gaps:
+  - AC#7 needs an App credential. The starter publisher run lists `Archont561` as actor, which
+    suggests `PIXI_SANDBOX_STARTER_TOKEN` is a personal token (inferred, not read).
+  - AC#2, AC#9 and DoD#4 need a template-derived repository that publishes, fetches and restores
+    offline.
+  - AC#8: the failure annotation lacks the tag, source commit and remediation.
+  - AC#10: the release notes need to link the starter.
+  - AC#5's wording asks pixi.toml, the lockfile and the config to pin a version they do not carry.
+- Owner questions:
+  - Does the canonical starter keep its `sandbox/developer-linux-64` transport branch, written by
+    its own publisher, when doc-10 forbids committing a prebuilt transport branch?
+  - Should TASK-74 AC#5 be reworded?
+- Suggestion: record the release and source commit in the starter tag's message, not only in the
+  tagged commit's message, so the tag object alone carries its provenance.
+- Heads-up: GitHub's `ubuntu-latest` label moves to Ubuntu 26 from 2026-10-19. Every workflow here
+  and every generated consumer workflow uses it, so watch the first runs after the switch.
+- TASK-73 / issue #101 and TASK-66 are unchanged. Castellan returns 403 to this sandbox's token.
+
+Next session opening prompt:
+
+> Restore only if the tree or `.pixi/` is missing (`bash scripts/restore.sh`; then
+> `export PATH="$HOME/.local/bin:$PATH"`). The test baseline was not re-measured on 2026-10-15,
+> because no code changed. The last recorded figure, 1,168 passing / 2 skipped, predates PR #164's new
+> xtask tests, so re-baseline before comparing. v0.7.0 is the latest release, and the starter is
+> published for it: starter main `66704220`, tag `pixi-sandbox-v0.7.0`. Its own publisher passed.
+> TASK-85, TASK-94 and TASK-95 are Done. Still open: TASK-74, blocked on TASK-73's owner-operated
+> GitHub App and also needing a template-derived publish/restore proof, a failure-path summary and a
+> release-note cross-link; TASK-73 / issue #101; and TASK-66 (Castellan evidence). First settle two
+> questions with the owner: may the canonical starter keep its `sandbox/developer-linux-64`
+> transport branch, and should TASK-74 AC#5 be reworded? Watch the first runs after `ubuntu-latest`
+> moves to Ubuntu 26 (from 2026-10-19). Propose the slice and stop; do not push, open a PR, merge,
+> release, or dispatch without explicit go-ahead. House rules are in `AGENTS.md`; the session
+> procedure is in `.agents/skills/session/`.
