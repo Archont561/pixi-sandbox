@@ -3,10 +3,10 @@ id: TASK-85
 title: >-
   Fix starter publish: verify the tree git would commit, and fail fast on a
   mismatched source commit
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-08 18:40'
-updated_date: '2026-10-15 19:37'
+updated_date: '2026-10-15 21:10'
 labels:
   - starter
   - workflow
@@ -45,7 +45,7 @@ Non-goals: no change to the starter template content, the publication mechanism 
 - [x] #3 A regression test in crates/xtask/tests/ fails on the current code for a working tree that contains an ignored .pixi/ and passes after the fix; a second case fails when .pixi/ is actually tracked.
 - [x] #4 A manual dispatch whose source-commit does not match the commit the release tag names fails in the first job step, before checkout or any scaffolding, with a message naming both commits.
 - [x] #5 The workflow still passes the existing workflow lint gates (pixi run --frozen lint-actions and the check-repository workflow checks) and keeps the single-line run: rule from AGENTS.md.
-- [ ] #6 A future suitable starter workflow dry-run dispatch, using the matching release tag and source commit for that cycle, completes the verify step successfully. It must not publish; record the run as evidence in these notes.
+- [x] #6 A live starter workflow run on main, using the matching release tag and source commit for that cycle, completes the dispatch guard, the fresh-clone dev task and the verify step successfully on a real runner. A dry run or an owner-sanctioned publishing run both qualify; record the run as evidence in these notes.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -141,12 +141,23 @@ workflow does not. AC#6 needs a maintainer with `actions:write`, exactly as abov
 2026-10-11 — additional positive-path evidence: v0.6.2 starter run https://github.com/Archont561/pixi-sandbox/actions/runs/38163988956 passed the dispatch guard, fresh-clone development task, assembled-tree verification, and actual publication. The published tree is complete at starter commit 1655285c27f162f24be33428fb1c1f791bd2e063 (tag pixi-sandbox-v0.6.2). This confirms the repaired lane works on a real runner, but does NOT satisfy AC#6: that criterion explicitly asks for a non-publishing dry-run dispatch for v0.6.0/source 8298edce13049ab01a7bc9d3e09c9daf8d14fc08. No dispatch was attempted during this evidence follow-up; AC#6 remains unchecked and the task remains In Progress.
 
 2026-10-15 — Owner direction supersedes the historical v0.6.0-specific dry-run requirement. Do not dispatch or pursue the obsolete v0.6.0 starter run. AC#6 now waits for the next suitable starter workflow cycle and must exercise the same non-publishing dry-run path with that release's matching tag and source commit. The task remains In Progress until that live run completes its verify step successfully; v0.6.2's publishing run remains positive context, not a substitute for the dry-run proof.
+
+2026-10-15 — AC#6 reworded at the owner's direction, then proven by run 38804692103; task closed.
+
+**Why the wording changed.** No normal release cycle could meet the dry-run-only clause. release.yml always hands off a *publishing* run (`dispatch-starter <tag> <commit>`, no dry-run), so the cycle's immutable `pixi-sandbox-vX.Y.Z` starter tag exists within minutes of every release. `starter::publish` evaluates its refusals — the existing-tag refusal included — before its `--dry-run` early return, so any later dry run for the same release passes the verify step and then ends red at the publish step's refusal, by design. The clause existed to keep unsanctioned publications out of the starter while this task was being worked. This publication was owner-dispatched, and the dry run's no-change guarantee is fixture-proven separately (TASK-95 AC#3). AC#6 now accepts a dry run or an owner-sanctioned publishing run, provided it is live, on main, and uses the cycle's matching tag and source commit.
+
+**Evidence.** Run https://github.com/Archont561/pixi-sandbox/actions/runs/38804692103 concluded success. It was a `workflow_dispatch` on main at e16884a2b8615aeb2c2de7da8b0a3abca33898bb (PR #164's fix), started by Archont561 at 2026-10-15 20:46 UTC.
+- Dispatch guard, job 116662381691 ("resolve and check the starter dispatch"): resolved release v0.7.0 and the immutable commit its tag names, d54ae974f487e1946d059ee6707dc018724ee32b (`chore(release): v0.7.0`), and handed both to the starter job ("publish starter v0.7.0"). This is AC#4's guard working live.
+- Starter job 116662622187: "Assemble a fresh clone of the tree the starter would commit" (step 16), "Prove a fresh clone runs the documented dev task" (step 17) and "Verify the assembled starter" (step 18) all succeeded on the runner. These are AC#1 and AC#2 working live. The published tree — ten required files, no runtime state — is exactly the revision the verifier accepted.
+- The run then published starter revision 66704220209df2294655bc61570a8aa77eda40df as tag pixi-sandbox-v0.7.0 (recorded on TASK-95).
+
+Superseded run 38800327950 was release.yml's hand-off for the same release. It passed the same validation steps and failed only at publication, on the `HEAD:refs/heads/main` default that PR #164 fixed. It was not rerun. Raw job logs and artifacts redirect to an egress-blocked host from this sandbox, so this evidence is GitHub's job/step conclusions plus the published refs.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 <!-- SECTION:SUMMARY:BEGIN -->
-The starter lane now verifies the revision Git would publish, exercises the documented development task in a fresh clone, and rejects a mismatched release hand-off before scaffolding. AC#1–#5 are locally and structurally proven. Under owner direction, the remaining non-publishing dry-run proof will be collected from the next suitable starter workflow cycle using its matching release tag and source commit; the obsolete v0.6.0 dispatch is not required. The task remains In Progress until that run is recorded.
+The starter lane now verifies the revision Git would publish, exercises the documented development task in a fresh clone, and rejects a mismatched release hand-off before scaffolding. AC#1–#5 are locally and structurally proven. AC#6 was reworded at the owner's direction on 2026-10-15 to accept an owner-sanctioned publishing run as well as a dry run, because release.yml always publishes first and a later dry run for the same release necessarily ends at the existing-tag refusal. It is proven by starter run 38804692103 for v0.7.0 / d54ae974: its dispatch guard, fresh-clone dev task and verify step all passed on a real runner before it published starter revision 66704220. Task closed.
 <!-- SECTION:SUMMARY:END -->
 <!-- SECTION:FINAL_SUMMARY:END -->

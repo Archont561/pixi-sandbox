@@ -36,12 +36,12 @@ The starter includes a locked, language-neutral Pixi project, release-pinned pub
 relock workflows, a devcontainer, and `scripts/restore.sh`. You do not need to run `init` or
 copy workflows from this repository. It currently targets `linux-64`.
 
-> [!IMPORTANT]
-> The v0.6.2 starter's first publisher run exposed an incorrect Cargo-vendoring default.
-> Before pushing a project created from that revision, set `cargo_vendor = false` in
-> `pixi-sandbox.toml`: the starter contains no Rust workspace or `Cargo.lock`.
-> The [failed run](https://github.com/Archont561/pixi-sandbox-starter/actions/runs/38164114312)
-> has not yet been replaced by a verified successful publisher run.
+> [!NOTE]
+> Projects created from the v0.6.2 starter inherited an incorrect Cargo-vendoring default.
+> Before pushing such a project, set `cargo_vendor = false` in its `pixi-sandbox.toml`: the
+> starter contains no Rust workspace or `Cargo.lock`. The v0.7.0 starter ships the corrected
+> setting, and its own publisher
+> [completed successfully](https://github.com/Archont561/pixi-sandbox-starter/actions/runs/38804893239).
 
 Commit your changes and push to `main` to run the included publisher. Its repository-scoped
 `GITHUB_TOKEN` publishes the transport to `sandbox/developer-linux-64`; no Archont561-owned
