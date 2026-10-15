@@ -3371,3 +3371,62 @@ Next session opening prompt:
 > moves to Ubuntu 26 (from 2026-10-19). Propose the slice and stop; do not push, open a PR, merge,
 > release, or dispatch without explicit go-ahead. House rules are in `AGENTS.md`; the session
 > procedure is in `.agents/skills/session/`.
+
+### 2026-10-15 — GitHub App tasks deprecated
+
+At the owner's direction, every backlog task about the owner-operated GitHub App moves to a new
+`Deprecated` status. It was a Markdown-only change from an Arena AI sandbox session, and the gates
+ran in pull-request CI. PR #165 merged first, as merge commit `8c934b6`.
+
+**Which tasks.** A content search found one: TASK-73, "Prove owner-operated GitHub App delivery for
+consumer upgrades". The other tasks that name an App do so in passing:
+- TASK-71 (Done) built the optional PAT-or-App upgrade token.
+- TASK-48, TASK-68 and TASK-85 mention a sandbox's App token.
+- TASK-91 has a remark about module layout.
+- TASK-74 is the starter, so it stays open; see below.
+
+**The status.** `backlog/config.yml` now lists `To Do`, `In Progress`, `Deprecated`, `Done`. Keep
+`Done` last: Backlog.md 1.53.0 treats only the last configured status as finished
+(`getTerminalStatus` takes the last entry). Appended after `Done`, `Deprecated` would have made all
+105 Done tasks count as unfinished, which blocks their dependents and breaks `task complete` and
+`cleanup`. Two side effects:
+- Backlog.md's readiness still reports a Deprecated task whose dependencies are finished as ready.
+- `backlog config set` rewrites the file and drops YAML comments, so this note, not the config,
+  carries the constraint.
+
+Both task edits went through the pinned CLI, run under node because Pixi was not restored. The
+package (`backlog.md` 1.53.0) was hash-checked against `bun.lock`.
+
+**Still open; not implemented here.**
+- TASK-74 AC#7 still requires an owner-operated App installation token, and its plan waits for
+  TASK-73. The dependency keeps TASK-74 shown as blocked. The owner chooses one of two rewordings:
+  - name the credential the starter actually uses, `PIXI_SANDBOX_STARTER_TOKEN`; run metadata
+    suggests it is a personal token, which AC#7 also forbids;
+  - or drop the credential half.
+  Then remove the dependency.
+- doc-10 still specifies an owner-operated App for cross-repository starter publication, and doc-13
+  lists TASK-73's proof as pending. Both need the same decision.
+- Issue #101 is still open. The restriction it reports stands; the shipped answer is the optional
+  `PIXI_SANDBOX_UPGRADE_TOKEN` plus the patch-artifact fallback. Closing it is the owner's call.
+- The CI publishing and migration guides describe a generic PAT-or-App token. That is shipped
+  behavior, so they need no change.
+
+Next session opening prompt:
+
+> Restore only if the tree or `.pixi/` is missing (`bash scripts/restore.sh`; then
+> `export PATH="$HOME/.local/bin:$PATH"`). The test baseline was not re-measured on 2026-10-15,
+> because only Markdown changed. The last recorded figure, 1,168 passing / 2 skipped, predates
+> PR #164's new xtask tests, so re-baseline before comparing. The starter is published for the
+> latest release (starter main `66704220`). TASK-85, TASK-94 and TASK-95 are Done. TASK-73, the
+> owner-operated GitHub App, is Deprecated. Still open:
+> - TASK-74: AC#7's credential wording and its TASK-73 dependency await the owner. It also needs a
+>   template-derived publish/restore proof, a failure-path summary and a release-note cross-link.
+> - Issue #101.
+> - TASK-66, which needs Castellan evidence.
+>
+> First settle three questions with the owner. How should TASK-74 AC#7 read now that the App is
+> deprecated? May the canonical starter keep its `sandbox/developer-linux-64` transport branch?
+> Should TASK-74 AC#5 be reworded? Watch the first runs after `ubuntu-latest` moves to Ubuntu 26
+> (from 2026-10-19). Propose the slice and stop; do not push, open a PR, merge, release, or dispatch
+> without explicit go-ahead. House rules are in `AGENTS.md`; the session procedure is in
+> `.agents/skills/session/`.

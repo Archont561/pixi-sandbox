@@ -4,7 +4,7 @@ title: Publish a release-pinned Pixi Sandbox starter template
 status: In Progress
 assignee: []
 created_date: '2026-10-05'
-updated_date: '2026-10-15 21:10'
+updated_date: '2026-10-15 21:27'
 labels:
   - onboarding
   - template
@@ -130,4 +130,6 @@ Still unproven, and not provable from here: the starter repository still holds o
 - **AC#8 stays open.** Superseded run 38800327950 failed at delivery and left starter main unchanged at c971ef77: the 2026-10-12 scheduled run still ran there, and no push-triggered run occurred until the v0.7.0 publication. It also uploaded its bounded `starter-v0.7.0` artifact. But its failure annotation names no tag, source commit or remediation.
 - **AC#9 and DoD#4 stay open.** There is still no template-derived consumer and no fetch → offline-restore lifecycle in the starter lane. consumer-proof is now only the asset-boundary smoke.
 - **AC#10 stays open.** The immutable tag names the template commit, whose message records the release and source commit, and the starter README links release v0.7.0 and the source commit. The v0.7.0 release notes do not link the starter.
+
+2026-10-15 — TASK-73 is now Deprecated: the owner-operated GitHub App model is no longer pursued. The App half of AC#7, and the plan step that waits for TASK-73, can no longer be met as written. AC#7 and the TASK-73 dependency are left unchanged until the owner decides how AC#7 should read. One option is to name the credential the starter actually uses, `PIXI_SANDBOX_STARTER_TOKEN`; run metadata suggests it is a personal token, which AC#7 also forbids. The other is to drop the credential half. Until then, the dependency keeps this task shown as blocked. The status stays In Progress.
 <!-- SECTION:NOTES:END -->

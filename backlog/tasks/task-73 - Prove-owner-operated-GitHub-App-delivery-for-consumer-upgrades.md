@@ -1,9 +1,10 @@
 ---
 id: TASK-73
 title: Prove owner-operated GitHub App delivery for consumer upgrades
-status: To Do
+status: Deprecated
 assignee: []
 created_date: '2026-10-04 20:38'
+updated_date: '2026-10-15 21:27'
 labels:
   - ci
   - github-actions
@@ -43,3 +44,16 @@ Prove the complete reviewed upgrade cycle in Castellan: exact release discovery,
 - [ ] #2 pixi run --frozen lint
 - [ ] #3 pixi run --frozen test
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-15 — Deprecated at the owner's direction. The owner-operated GitHub App delivery model is no longer pursued, so this task closes unimplemented: none of its criteria was proven, and none will be.
+
+Nothing shipped changes. TASK-71's optional credential path stays as released. A consumer that stores a workflow-capable token (a PAT or any GitHub App token) in `PIXI_SANDBOX_UPGRADE_TOKEN` gets its upgrade PR opened automatically. Without one, the lane stays green and uploads a `git apply`-able patch artifact. The CI publishing and migration guides document that generic secret, not an owner-operated App, so they stay accurate.
+
+Still open elsewhere:
+- Issue #101 stays open. It reports that `GITHUB_TOKEN` cannot push `.github/workflows/*`, and this decision does not change that.
+- TASK-74 AC#7 and its implementation plan name this task's credential model; see the 2026-10-15 note there.
+- doc-10 still specifies an owner-operated App for cross-repository starter publication.
+<!-- SECTION:NOTES:END -->
