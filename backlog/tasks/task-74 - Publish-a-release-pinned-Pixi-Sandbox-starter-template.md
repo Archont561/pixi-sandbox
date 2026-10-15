@@ -175,6 +175,8 @@ proven; both stay unchecked because neither has been observed live.
   `pixi run --frozen fmt`, `pixi run --frozen lint` (11/11 tasks, actionlint included) and
   `pixi run --frozen test` are green on the branch; `pixi run --frozen xtask check-repository` is
   clean with the workflow edits in place.
+- **Landed as PR #168** (merge commit `21a238ae`); post-merge `ci`, `docs` and `publish sandbox`
+  were green, the last repacking the transport from that commit.
 - **Still open, all needing a live run or a release.** AC#7: the configured token's delivery (the
   secret is unreadable from here; AC#7 now names the scopes it must carry). AC#8's live half: a
   failing starter run producing this summary. AC#2/#9 and DoD#4: a repository created from the
