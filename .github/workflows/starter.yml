@@ -28,12 +28,12 @@ on:
   workflow_dispatch:
     inputs:
       release-tag:
-        description: Published release the starter is generated from, for example v1.2.3.
-        required: true
+        description: Published release tag; blank selects the latest published stable release.
+        required: false
         type: string
       source-commit:
-        description: Immutable commit that release was built from.
-        required: true
+        description: Expected source commit; blank resolves the selected release tag automatically.
+        required: false
         type: string
       dry-run:
         description: Validate and report what would be published without pushing.
@@ -52,19 +52,20 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TAG: ${{ inputs.release-tag }}
-  SOURCE_COMMIT: ${{ inputs.source-commit }}
   SOURCE_REPO: ${{ github.repository }}
   STARTER_REPO: Archont561/pixi-sandbox-starter
   ASSET: pixi-sandbox-x86_64-unknown-linux-musl
 
 jobs:
-  # First and cheapest: does the dispatched commit exist at all, and is it the one the release tag
-  # names? Everything after this point can take forty minutes, and a hand-typed `source-commit` is
-  # the one input a human gets to choose.
+  # Resolve the release once before any starter writes. Blank inputs choose the latest stable
+  # release and its immutable commit; explicit release hand-offs must still agree with the tag.
+  # Downstream steps consume these outputs, never re-query latest during publication.
   dispatch:
-    name: check the starter dispatch
+    name: resolve and check the starter dispatch
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      commit: ${{ steps.release.outputs.commit }}
     # A cargo build of xtask with no cache, which is what it costs to answer one question before
     # the lane spends its forty minutes.
     timeout-minutes: 15
@@ -78,14 +79,20 @@ jobs:
           run-install: false
           cache: false
 
-      - name: Refuse a dispatch whose commit the tag does not name
+      - name: Resolve the release and refuse a mismatched source commit
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release-tag }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
         run: pixi run -e package xtask starter-check-dispatch -- --repo "$SOURCE_REPO" --tag "$TAG" --commit "$SOURCE_COMMIT"
 
   starter:
-    name: publish starter ${{ inputs.release-tag }}
+    name: publish starter ${{ needs.dispatch.outputs.tag }}
     needs: dispatch
+    env:
+      TAG: ${{ needs.dispatch.outputs.tag }}
+      SOURCE_COMMIT: ${{ needs.dispatch.outputs.commit }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -190,7 +197,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: starter-${{ inputs.release-tag }}
+          name: starter-${{ needs.dispatch.outputs.tag }}
           path: |
             starter/pixi.toml
             starter/pixi.lock

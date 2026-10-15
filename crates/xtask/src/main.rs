@@ -173,16 +173,16 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
-    /// Fail unless a dispatched release tag resolves to the handed-off source commit.
+    /// Resolve a starter release and verify any explicitly handed-off source commit.
     StarterCheckDispatch {
         /// Repository the release must belong to.
         #[arg(long, default_value = "Archont561/pixi-sandbox")]
         repo: String,
-        /// Release tag the starter is to be generated from.
-        #[arg(long)]
+        /// Release tag; blank selects GitHub's latest published stable release.
+        #[arg(long, default_value = "")]
         tag: String,
-        /// Commit the dispatch handed off with that tag.
-        #[arg(long)]
+        /// Expected source commit; blank resolves the selected tag's immutable commit.
+        #[arg(long, default_value = "")]
         commit: String,
     },
     /// Verify the starter repository has an actual commit on its main branch.
