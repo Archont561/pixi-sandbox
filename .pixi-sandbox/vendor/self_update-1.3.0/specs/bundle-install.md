@@ -1,0 +1,328 @@
+# Bundle Install (directory bundles, #145 phase A)
+
+Status: implemented (design signed off 2026-07-26, see Design decisions; shipped
+for directory bundles as specified below, with `.deb`/`.msi` remaining a
+docs-only recipe per Non-goals)
+
+Implementation: `bundle_path_in_archive` / `bundle_install_path` on the common
+builder setters (`src/macros.rs`), resolved by
+`CommonBuilderConfig::resolve_bundle_mode` (`src/backends/common.rs:CommonBuilderConfig::resolve_bundle_mode`) and
+`default_bundle_install_path` (`src/update.rs:default_bundle_install_path`); the finish tail branches to
+`install_bundle` / `swap_bundle` (`src/update.rs:install_bundle`, `src/update.rs:swap_bundle`). See
+`ref-update-pipeline.md` ("Bundle install") for the behavior reference and the
+test list.
+
+## Problem
+
+The update pipeline extracts exactly one file (`bin_path_in_archive`) and replaces
+one binary (`install_binary`, `src/update.rs:install_binary`). A macOS application is a
+directory bundle (`MyApp.app/...`): updating only the exe inside it leaves stale
+resources and breaks the bundle's code signature. Issue #145 carries a complete
+userland implementation (full unzip + dir-copy + self_replace) and the maintainer
+welcomed upstreaming it.
+
+Phase A (this spec): a directory-bundle install mode through the existing
+pipeline. Phase B (`.deb`/`.msi`) is a docs-only recipe (decided 2026-07-17, see
+Non-goals). Phase C (relaunch) shipped as `restart()` / `restart_with()`
+(`ref-restart.md`); a swapped bundle composes with it unchanged.
+
+## Building blocks (current behavior, cited)
+
+- `Extract::extract_into` (`src/lib.rs:Extract::extract_into`): full-tree extraction. Zip entries
+  get their archived unix mode applied, masked to `0o777` (`src/lib.rs:extract_into`;
+  tests `src/lib.rs:extract_zip_masks_setuid_setgid_sticky_bits`, `src/lib.rs:extract_into_preserves_zip_unix_mode`). Tar unpacks via `tar::Archive::unpack`
+  (`src/lib.rs:extract_into`), which preserves modes and symlinks. Zip-slip is rejected via
+  `enclosed_name` (`src/lib.rs:extract_into`).
+- Zip symlink entries are restored as symlinks on unix, with escape-target
+  rejection and a physical-parent canonicalization backstop (fixed in PR #199).
+  See BNDL-4.
+- `MoveAll` (`src/lib.rs:MoveAll`): all-or-nothing multi-file swap. Stashes each
+  displaced destination under `temp`, rolls back applied moves in reverse on the
+  first failure, returns the original error; rollback is best-effort (failures
+  logged via `log::error!`). Rename-only: sources, destinations, and `temp`
+  must share one filesystem.
+- `install_binary` (`src/update.rs:install_binary`): `verify_binary` hook, then `self_replace`
+  when `bin_install_path` is the running exe (`same_file`, canonicalizing,
+  `src/update.rs:install_binary`), else `Move`.
+- Config threading: builder setter -> `CommonConfig.bin_install_path` (default
+  `current_exe()`, `src/backends/common.rs:bin_install_path`) -> `FinishCtx` (owned,
+  `src/update.rs:FinishCtx`) -> `finish_update_owned` (shared sync/async tail).
+- Staging today: download and single-file extraction happen in a system-temp
+  `TempDir`.
+
+## BNDL-1: builder API
+
+BNDL-1-1. `bundle_path_in_archive(path: impl Into<String>) -> &mut Self` is added
+to the common builder setters (`src/macros.rs`), available on every backend's
+`UpdateBuilder`. It names the bundle root directory inside the archive, relative
+to the archive root (e.g. `MyApp.app` or `{{ bin }}-{{ version }}/MyApp.app`).
+The `{{ bin }}` / `{{ target }}` / `{{ version }}` templates apply with the same
+substitution and `is_safe_asset_name` traversal defense as `bin_path_in_archive`
+(`src/update.rs:is_safe_asset_name`).
+
+BNDL-1-2. `bundle_install_path(path: impl AsRef<Path>) -> &mut Self` names the
+installed bundle directory to replace (e.g. `/Applications/MyApp.app`).
+
+BNDL-1-3. Setting `bundle_path_in_archive` selects bundle mode; `bundle_install_path`
+on its own does not, and is `Error::MissingField { field: "bundle_path_in_archive" }`
+rather than a silently discarded install path. The `.app` suffix is matched
+case-insensitively, since macOS's default filesystem preserves case without
+distinguishing it. Default
+`bundle_install_path` on macOS: the nearest ancestor of
+`std::env::current_exe()` whose file name ends in `.app`. Resolution happens in
+`build()`; no `.app` ancestor and no explicit path => a config error naming the
+exe path (see BNDL-5-1). On non-macOS targets there is no default:
+`bundle_install_path` is required in bundle mode
+(`Error::MissingField { field: "bundle_install_path" }`).
+
+BNDL-1-4. Mutual exclusion: an explicit `bin_path_in_archive(..)` or
+`bin_install_path(..)` call combined with bundle mode is a `build()` error. The
+`bin_path_in_archive` value auto-derived from `bin_name` does not count
+(distinguished by the existing `bin_path_in_archive_auto` flag,
+`src/backends/common.rs:bin_path_in_archive_auto`); in bundle mode the auto-derived value is simply unused.
+
+BNDL-1-5. `bin_name` and `current_version` remain required; asset selection,
+verification config, confirm/output flags, and progress are unchanged. Bundle
+mode is orthogonal to the backend.
+
+BNDL-1-6. There is no exe-in-archive setter. The running exe is located via
+`current_exe()` at swap time; the new tree carries its own copy of the exe. The
+pipeline verifies the staged bundle root exists and is a directory, and (when
+the running exe is inside the installed bundle) that the staged tree contains a
+file at the same relative path, before touching the destination.
+
+BNDL-1-7. Async parity: the bundle fields ride through `FinishCtx` so
+`update_extended` and `update_extended_async` share the identical finish tail,
+as today.
+
+## BNDL-2: pipeline
+
+BNDL-2-1. Download and archive-level verification are unchanged and shared:
+checksum, release digest, and signature all run on the downloaded archive bytes
+before extraction (`ref-update-pipeline.md`, verify ordering). The archive
+still downloads to a system-temp `TempDir`.
+
+BNDL-2-2. Same-filesystem staging: bundle mode creates two directories with
+`tempfile::TempDir::new_in(parent)` where `parent` is
+`bundle_install_path.parent()`: a staging dir (extraction target) and a stash
+dir (displaced-tree holding area). This guarantees every rename in the swap is
+same-filesystem, the constraint `MoveAll` documents. Failure to create them
+surfaces as an install-path IO error naming `bundle_install_path` (see BNDL-3).
+There is no cross-device case by construction, and phase A has no copy
+fallback (open question Q5).
+
+BNDL-2-3. Extraction: `Extract::from_source(archive).extract_into(staging)`.
+The staged bundle root is `staging/<substituted bundle_path_in_archive>`.
+Missing or not a directory => error, nothing touched.
+
+BNDL-2-4. The `verify_binary` hook, when set, runs against the staged bundle
+root path before the swap (open question Q6); `Err` aborts as
+`Error::VerificationRejected` with nothing replaced, matching `install_binary`.
+
+BNDL-2-5. Swap (stash-and-rollback, `MoveAll` semantics, one code path on all
+platforms):
+
+1. If `current_exe()` is inside `bundle_install_path` (ancestor check using the
+   `same_file` canonicalization approach, `src/update.rs:exe_inside_bundle`): rename the running
+   exe file out to `stash/exe-aside`. Renaming a running executable is
+   permitted on unix and windows; this is the primitive `self_replace` itself
+   relies on, applied here so the old tree contains no running image before the
+   directory rename.
+2. Rename `bundle_install_path` -> `stash/old` (the whole old tree, stashed).
+3. Rename the staged bundle root -> `bundle_install_path`.
+4. On failure at any step, reverse the applied renames in order (restore
+   `stash/old`, restore `exe-aside`) and return the original error. Rollback
+   is best-effort and logged on failure, exactly the `MoveAll` contract
+   (`src/lib.rs:MoveAll`).
+5. On success the stash `TempDir` is dropped. On unix, unlinking the old
+   running image is safe (the inode persists until the process exits). On
+   windows the aside old exe stays locked until process exit; its deletion is
+   scheduled best-effort (self-replace-crate technique) or left to temp
+   cleanup. This residue never affects the installed tree.
+
+BNDL-2-6. After a successful swap the file at the running exe's original path
+is the new exe from the new tree; no separate `self_replace` call is needed on
+the success path. `self_replace`'s rename-the-running-image mechanism is what
+step 1 uses; routing the exe through it keeps one code path across platforms
+instead of a unix-only "rename the live directory" shortcut.
+
+BNDL-2-7. Windows caveat (documented, not solved in phase A): step 2 fails if
+other files inside the old bundle are memory-mapped (e.g. DLLs the process
+loaded from the bundle); rollback then restores the original state and the
+error names the path. Phase A's target is macOS `.app`; windows/linux
+directory bundles work when nothing but the exe is held open (open question
+Q4).
+
+BNDL-2-8. `show_output` messages mirror the single-binary flow ("Extracting
+archive...", "Replacing bundle directory... Done"). `ReleaseStatus` /
+`VersionStatus` reporting is unchanged.
+
+## BNDL-3: preflight and error context (#112 interaction)
+
+BNDL-3-1. The opt-in preflight (`check_install_path_writable`, #112) probes the
+bundle's parent directory in bundle mode, not the bundle itself: the swap needs
+create+rename permission in the parent (probe via create/delete of a temp
+sibling). A definite failure =>
+`Error::InstallPathNotWritable { path: <parent> }` before anything downloads.
+
+BNDL-3-2. Independent of preflight, install-step IO errors in the swap carry
+the `bundle_install_path` context (the #112 always-on error-context behavior),
+so a mid-swap EACCES names the path rather than a bare os error 13.
+
+## BNDL-4: extraction fidelity (standalone fixes)
+
+BNDL-4-1. Permission bits: already correct, no change needed. Zip modes are
+applied masked to `0o777` (`src/lib.rs:extract_into`); tar preserves modes via
+`unpack`. Recorded here because #145's userland code applies `unix_mode()`
+manually; upstream already does.
+
+BNDL-4-2. Zip symlinks: FIXED in PR #199 (independently of bundle mode). A zip
+entry whose `unix_mode()` has `S_IFLNK` set is restored as a symlink on unix
+(target = entry contents); previously the target text was written as a regular
+file, corrupting a zipped `.app`'s `Frameworks/*/Versions/Current` links and
+the publisher's code signature. A symlink whose target escapes the extraction
+root (absolute, or `..`-resolving outside) is rejected, consistent with the
+`enclosed_name` zip-slip defense, and every file/symlink entry's physical
+parent must canonicalize to exactly `canonical_root/<lexical parent>` as a
+backstop against symlinked-parent traversal. On windows, symlink entries are
+written as regular files (documented; `.app` is not a windows concern). See
+`ref-update-pipeline.md` for the current-behavior citations.
+
+## BNDL-5: errors and guarantees
+
+BNDL-5-1. New error variants. `Error` is `#[non_exhaustive]`
+(`src/errors.rs:Error`), so each addition is a minor-version change:
+- `Error::NoAppBundle { exe: PathBuf }` ("ConfigError: no `.app` ancestor of
+  <exe>; set bundle_install_path explicitly") for failed macOS default
+  detection. Matchable so a caller can prompt for a path instead of failing.
+- `Error::ConflictingConfig { field, conflict }` for BNDL-1-4.
+- `Error::AppTranslocated { exe: PathBuf }` for BNDL-5-3.
+
+BNDL-5-3. App Translocation: a quarantined `.app` runs from a read-only
+randomized mount, so the detected bundle path cannot be swapped. Detection
+checks for an `AppTranslocation` path component in `current_exe()` during
+default-path resolution and returns `Error::AppTranslocated`, naming the
+translocated exe and directing the user to move the app (which clears
+quarantine) before updating. Without the check the failure surfaces as a bare
+read-only-filesystem IO error from mid-swap, on the most common
+first-run-after-download path on macOS.
+
+BNDL-5-2. Rollback guarantee: every pre-swap check (staged root present and a
+directory, staged tree carries the running exe's relative path, `verify_binary`)
+runs before any rename, so a rejection there leaves `bundle_install_path`
+byte-for-byte untouched. Step 1 does move one file out of the bundle (the
+running exe, when it is inside), and a failure at step 2 or 3 restores the old
+tree and that exe via reverse renames. After step 3 succeeds the update is
+committed. The guarantees match `MoveAll`: all-or-nothing at rename granularity,
+original error surfaced, best-effort logged rollback. The bundle swap adds on top
+of `MoveAll`: whole-tree granularity (one rename each way, so no per-file partial
+window) and the exe-aside step for running-image safety.
+
+BNDL-5-4. A symlinked `bundle_install_path` is resolved to its real path before
+the swap, so the installed tree behind the link is what gets replaced and the
+link itself survives; staging follows the resolved path's parent, keeping every
+rename same-filesystem. A dangling symlink at the path counts as an existing
+entry and is stashed and replaced rather than being renamed onto.
+
+The resolution happens exactly once, in the orchestrator, before the
+confirmation prompt, and the resolved path is what the status block names, what
+the `check_install_path_writable` preflight probes, and what the swap writes.
+`install_bundle` resolves nothing itself. Resolving again after the prompt would
+mean the tree named in the block and the tree replaced by the swap are read at
+two different times, so a link repointed in between would redirect the
+replacement to a path the user never approved.
+
+BNDL-5-5. Concurrency is not coordinated: the existence check and the renames
+are not atomic as a unit, so two updaters racing on one bundle can interleave and
+each report success while only one tree survives. Single-writer is assumed, as it
+is for the single-file `Move` / `self_replace` path.
+
+## Non-goals
+
+- `.deb` / `.msi` (phase B): docs-only recipe built on `Download` +
+  `std::process::Command` handing off to `dpkg -i` / `msiexec /i`; no
+  `install_package` helper (decided 2026-07-17). The pipeline's
+  replace/verify semantics do not apply to system installers.
+- Code signing / notarization: the crate does not sign, staple, or notarize.
+  The publisher must ship the archive with a fully signed (and, for
+  Gatekeeper, notarized/stapled) `.app`; the swap preserves exactly what was
+  shipped. Docs must note: a bundle modified after signing fails Gatekeeper,
+  and a quarantined app running under App Translocation executes from a
+  read-only randomized mount, so default `.app` detection finds a path that
+  cannot be swapped (detected and rejected, BNDL-5-3).
+- No privilege escalation (consistent with #112): an unwritable
+  `/Applications` surfaces as an error; sudo/UAC re-exec is the application's
+  choice.
+- No merge or partial update of bundle contents: whole-root swap only.
+- Windows `.app`-equivalent guarantees when the process holds files inside the
+  bundle open beyond the exe (BNDL-2-7).
+
+## Tests
+
+- Fixture archives (tar.gz and zip) containing a nested tree with an
+  executable-bit file and a relative symlink; assert `extract_into` fidelity
+  (mode masked to `0o777`, symlink restored) - extends the existing
+  `extract_into_preserves_zip_unix_mode` / zip-slip tests.
+- Swap unit tests on temp dirs: fresh install (no existing bundle), replace,
+  and injected-failure rollback (e.g. remove the staged root between stash and
+  install, or make the destination parent unwritable) asserting the original
+  tree is restored byte-for-byte and the original error surfaces.
+- Exe-inside-bundle detection: ancestor/`same_file` logic including symlinked
+  paths (mirrors the existing `same_file` tests).
+- macOS default detection: pure function over a supplied exe path (no real
+  `.app` needed) covering `.app` ancestor found / not found / nested `.app`.
+- Preflight: parent-dir probe under a 0555 parent (unix), nothing downloaded.
+- Default-path resolution is a pure function of `(exe, has_default)`
+  (`resolve_default_bundle_path`), with the macOS policy carried by a `cfg!`
+  value rather than a `#[cfg]` branch, so every arm compiles and is tested on
+  every host instead of the macOS arm being invisible to a linux run.
+- The suite runs on macOS in CI (`macos-latest`, arm64), which covers the swap on
+  APFS: case-insensitive filenames, macOS symlink and rename semantics, and
+  `self_replace`. None of that is architecture-dependent, so arm64 alone is
+  enough and no x86_64 runner is used. That leaves as genuinely
+  manual only what needs a signed build or a real download: `codesign --verify`
+  on a signed/notarized `.app`, Gatekeeper, a quarantined (translocated) copy,
+  launching from Finder, and relaunch via `restart()`. Document that run in the
+  PR, for `.app` archives in both zip and tar.gz form, installed under
+  `/Applications` and under `~/Applications`.
+
+## Design decisions (signed off 2026-07-26)
+
+D1. Naming: `bundle_path_in_archive` / `bundle_install_path`, symmetric with
+    the existing `bin_path_in_archive` / `bin_install_path` pair. The
+    directory-ness is carried by the docs and the swap semantics, not by the
+    setter name (rejected: `bundle_root_in_archive`, `bundle_dir`).
+D2. Mutual exclusion (BNDL-1-4): hard `build()` error. Silently dropping one
+    setter can install to the wrong path; a config conflict fails before any
+    network work (rejected: last-setter-wins, warn-and-continue).
+D3. macOS default detection: on automatically whenever bundle mode is set
+    without an explicit path, mirroring `bin_install_path`'s `current_exe()`
+    default. No `.app` ancestor is a hard error naming the exe, and D9 covers
+    the quarantined case, so every failure mode is explicit.
+D4. Non-macOS in-bundle swaps: allowed, with the BNDL-2-7 caveat documented.
+    One code path on all platforms; a windows file-locking failure rolls back
+    and surfaces an error naming the path, so the failure is diagnosable
+    rather than corrupting (rejected: hard error on windows, ack-setter gate).
+D5. Cross-device: no fallback. Staging in `bundle_install_path.parent()` makes
+    a cross-device rename impossible by construction; a copy fallback would
+    forfeit the all-or-nothing rename guarantee (rejected: copy on EXDEV).
+D6. `verify_binary` in bundle mode receives the staged bundle root. Always
+    resolvable (the exe path is not, when the running exe lives outside the
+    bundle) and it is the path `codesign --verify --deep` wants. Documented as
+    a directory in bundle mode; a hook that wants the exe joins the relative
+    path itself (rejected: staged exe path, skipping the hook).
+D7. Errors: three new variants, `Error::NoAppBundle`,
+    `Error::ConflictingConfig`, and `Error::AppTranslocated` (BNDL-5-1).
+    `Error` is `#[non_exhaustive]`, so these are matchable without a breaking
+    change (rejected: string-only distinction via the existing config family).
+D8. The zip-symlink fix (BNDL-4-2) landed as a standalone bug-fix PR (#199)
+    ahead of bundle mode.
+D9. App Translocation: detect and fail with `Error::AppTranslocated`
+    (BNDL-5-3), not document-only.
+
+## Related
+
+- `ref-update-pipeline.md` (finish tail; update in the implementing PR)
+- `multi-file-install.md` (`MoveAll`)
+- `ref-restart.md` (phase C relaunch)
+- `post-update-verify.md` (`verify_binary` hook)
