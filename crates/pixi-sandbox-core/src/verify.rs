@@ -310,6 +310,9 @@ fn verify_env_restored(
     };
 
     let candidates = prefix_candidates(&prefix, project, name, work_dir);
+    // The document says which row rule its digests were recorded under; comparing them under
+    // any other rule would fail every RECORD it collapsed (or failed to collapse) differently.
+    let rows = crate::files_manifest::RecordRows::for_schema(doc.schema);
 
     let listed: std::collections::BTreeMap<&str, &crate::files_manifest::FileEntry> = doc
         .files
@@ -319,7 +322,7 @@ fn verify_env_restored(
 
     // Every listed entry must exist, with the recorded content, mode and symlink target.
     for entry in &doc.files {
-        check_restored_entry(name, entry, &walked, &candidates, report);
+        check_restored_entry(name, entry, &walked, &candidates, rows, report);
     }
 
     // Nothing unlisted, except the bookkeeping files pixi and restore own (the allowlist is
@@ -366,6 +369,7 @@ fn check_restored_entry(
     entry: &crate::files_manifest::FileEntry,
     walked: &crate::files_manifest::Walked,
     candidates: &[Vec<u8>],
+    rows: crate::files_manifest::RecordRows,
     report: &mut Report,
 ) {
     report.files += 1;
@@ -383,7 +387,8 @@ fn check_restored_entry(
                     return;
                 }
             };
-            let actual = crate::files_manifest::canonical_file_sha256(&entry.p, &raw, candidates);
+            let actual =
+                crate::files_manifest::canonical_file_sha256_with(rows, &entry.p, &raw, candidates);
             if &actual != expected {
                 report.failures.push(Check {
                     path: entry.p.clone(),
