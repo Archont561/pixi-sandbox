@@ -199,6 +199,40 @@ the vendor mode. File it with the per-file oracle diff.
 
 ---
 
+## 9. `pixi-pack` refuses a non-wheel PyPI dependency
+
+**Symptom.** `pixi-sandbox pack` stops before creating its output and lists a selected environment,
+package and locked location that is not a wheel. The same lock issue is not reported by `plan`:
+the check runs against the selected environments and platform at pack time.
+
+**Likely cause.** A selected PyPI dependency is locked to a source distribution (such as `.tar.gz`),
+a VCS location (`git+https://…`), or a project/source path instead of a location whose file name
+ends in `whl`. Wheel URLs, local wheel paths and wheel URLs with a query or `#sha256=…` fragment
+are accepted. A wheel can be platform-tagged, so confirm that each packed platform has a
+compatible wheel; `.whl` alone does not establish compatibility.
+
+**Safe immediate action.** Stop and keep the lock and preflight output. Do not hand-edit the
+transport or assume the check can be bypassed with a `pixi-pack` flag: `pixi-sandbox pack` exposes
+neither upstream `--ignore-pypi-non-wheel` (which omits the dependency) nor `--inject <wheel>`
+(which does not verify wheel compatibility), and it has no arbitrary flag passthrough.
+
+**Evidence.** The complete refusal output; the exact `pixi-sandbox pack` command, including its
+`--envs` and `--platform`; the matching `environments.<env>.packages.<platform>` entries and
+location/name mapping from `pixi.lock`; and the candidate wheel filename and tags, if one exists.
+The check precedes output creation, so an absent output directory is expected.
+
+**Recovery.** Work through these options in order: (1) use the equivalent conda package from a
+channel available on the target platform; (2) choose a PyPI release with a compatible wheel for
+every packed platform; (3) build a wheel from the source and publish it where the lock can resolve
+it; or (4) move the dependency out of the packed environment, splitting the workload if needed.
+Then refresh the lock and pack again. At restore, uv reinstalls the transported wheel and
+regenerates install metadata; ADR-21 records which metadata is presence-checked or normalized in
+`RECORD`, not digested. That oracle rule does not permit packing an sdist.
+
+**Escalate when** the reported location's filename ends in `whl` but the preflight refuses it, or
+no compatible wheel or conda package can be supplied. File the lock entry, selected platform,
+command, full error and candidate wheel tags; see [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/#pack).
+
 ## Filing an incident
 
 A reproducible report needs: the command that failed (with its flags), the platform, the transport
