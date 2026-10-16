@@ -129,6 +129,45 @@ pixi-sandbox pack \
 
 No override means embedded pins from `tools.lock.json` compiled into the binary.
 
+### PyPI dependencies must lock to wheels
+
+`pack` checks `pixi.lock` for the selected environments and `--platform` **at pack time**, before
+creating the output directory. `plan` does not inspect a pack invocation's selected lock entries,
+so this refusal is not reported by `plan`. Each selected PyPI location must have a file name that
+ends in `whl`: a wheel URL is accepted, including a URL with a query or `#sha256=…` fragment, as
+is a local wheel path. Source archives such as `.tar.gz`, VCS locations such as `git+https://…`,
+and project/source paths that do not name a wheel are refused. The error lists every offending
+environment, package and locked location.
+
+A `.whl` suffix is the transportability check, not a promise that one wheel fits every machine.
+Wheels can be platform-tagged (for example, a `manylinux` wheel); make sure the lock resolves to a
+wheel compatible with each platform you pack. A `py3-none-any` wheel is platform-independent.
+
+If the lock points at a non-wheel, fix it in this order:
+
+1. Prefer the equivalent conda package in a channel available to the target platform.
+2. If the dependency must come from PyPI, choose a release that publishes a compatible wheel for
+each platform you pack.
+3. If no suitable wheel is published, build a wheel from the source distribution and publish it
+at a location the lock can use; verify the resulting filename is a wheel, not an sdist.
+4. If the package cannot be supplied as a wheel, move it out of the packed environment (or split
+that workload into a separate environment) so the transport does not promise to carry it.
+
+Upstream `pixi-pack` has two related options, but `pixi-sandbox pack` does not expose them:
+`--ignore-pypi-non-wheel` lets upstream omit non-wheel dependencies, leaving an incomplete
+environment, and `--inject <wheel>` can add a separately supplied wheel without checking its
+compatibility with the target environment. Neither flag is a supported escape through this CLI;
+there is no arbitrary `pixi-pack` flag passthrough. Adding one would be a separate behavior
+change, not a documentation fix.
+
+At restore, `pixi-unpack` uses uv to install the transported wheel, so some install metadata is
+regenerated on the destination machine. ADR-21 explains why the per-file oracle checks the
+presence of uv's `uv_cache.json` and `direct_url.json` metadata and normalizes their rows in
+`RECORD` rather than digesting machine-specific values. That verification rule does not make a
+source distribution transportable: the lock still needs to name a wheel when `pack` runs.
+
+For the refusal and recovery checklist, see [PyPI wheel cannot be packed](/pixi-sandbox/troubleshooting/#9-pixi-pack-refuses-a-non-wheel-pypi-dependency).
+
 `--config` is optional and additive: with it, a project's `[host_requirements]` table — resolved
 for `--platform`'s host family — travels in `manifest.json`, so the restored branch still says what
 its workloads need from the machine (see
