@@ -16,6 +16,15 @@ guides are retained, not just a selected subset of manifest fields.
 Only `manifest.created_at` and the corresponding README `Built … from commit`
 timestamp are replaced with `2000-01-01T00:00:00Z`. This exception was explicitly
 approved for TASK-82; every other byte remains the pre-extraction binary's output.
+
+One further deliberate exception, from TASK-117: each `envs/default/files.json`
+carries `"schema": 2` instead of `1`, and each manifest's recorded digest for that
+blob is the digest of the updated bytes. The oracle document's schema is what names
+the `*.dist-info/RECORD` row rule its digests were recorded under (schema 2 adds the
+prefix-stamped entry-point script rows, issue #170), so a reference capture from a
+schema-1 tool cannot stay byte-identical once the current tool writes schema 2.
+Nothing else in these trees changed.
+
 The CLI comparison supplies the current package version as the reference manifest's
 build-version input, without rewriting that field in actual output. Thus a release
 bump remains valid but a wrong/hard-coded emitted build stamp fails. At extraction

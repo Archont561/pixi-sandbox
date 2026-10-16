@@ -8,9 +8,9 @@
 //! oracle scanned the verification-unpacked environment and rejected the man pages.
 
 use pixi_sandbox_core::files_manifest::{
-    self, ALLOWED_EXTRAS, FileEntry, FilesDoc, RESTORE_MARKERS, SENTINEL, canonical_file_sha256,
-    canonical_sha256, canonicalise, collapse_nul_runs, is_allowed_extra, list_rel_path,
-    replace_all, scan_prefix,
+    self, ALLOWED_EXTRAS, DOC_SCHEMA, FileEntry, FilesDoc, RESTORE_MARKERS, RecordRows, SENTINEL,
+    canonical_file_sha256, canonical_file_sha256_with, canonical_sha256, canonicalise,
+    collapse_nul_runs, is_allowed_extra, list_rel_path, replace_all, scan_prefix,
 };
 use proptest::prelude::*;
 use std::fs;
@@ -273,7 +273,7 @@ fn scanning_a_staged_prefix_produces_a_verifiable_list() {
 #[test]
 fn parsing_rejects_a_forged_or_malformed_list() {
     let bad = [
-        r#"{"schema": 2, "excluded": [], "files": [{"p": "a"}]}"#, // future schema
+        r#"{"schema": 3, "excluded": [], "files": [{"p": "a"}]}"#, // future schema
         r#"{"schema": 1, "excluded": [], "files": []}"#,           // nothing listed
         r#"{"schema": 1, "excluded": [], "files": [{"p": "../escape"}]}"#,
         r#"{"schema": 1, "excluded": [], "files": [{"p": "a"}, {"p": "a"}]}"#,
@@ -286,8 +286,14 @@ fn parsing_rejects_a_forged_or_malformed_list() {
             "must be refused: {text}"
         );
     }
-    let good = r#"{"schema": 1, "excluded": ["conda-meta/pixi_env_prefix"], "files": [{"p": "bin/tool", "h": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "x": true}]}"#;
-    FilesDoc::parse(good.as_bytes()).unwrap();
+    // Both digest generations parse: schema 1 keeps its pre-#170 rows comparable, schema 2
+    // is what this tool writes.
+    for schema in [1, DOC_SCHEMA] {
+        let good = format!(
+            r#"{{"schema": {schema}, "excluded": ["conda-meta/pixi_env_prefix"], "files": [{{"p": "bin/tool", "h": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "x": true}}]}}"#
+        );
+        FilesDoc::parse(good.as_bytes()).unwrap();
+    }
 }
 
 #[test]
@@ -472,4 +478,144 @@ fn uv_install_metadata_may_appear_without_being_listed() {
     assert!(is_allowed_extra(&dist_info("direct_url.json")));
     assert!(!is_allowed_extra(&dist_info("RECORD")));
     assert!(!is_allowed_extra("conda-meta/hand-forged.json"));
+}
+
+// issue #170 — the installer stamps entry-point scripts with the install prefix
+// ---------------------------------------------------------------------------
+//
+// A pypi dependency travels as its *wheel*, so `pixi-unpack` reinstalls it with uv — and uv
+// writes the console scripts itself: `bin/<name>` on unix, `Scripts/<name>` on Windows, each
+// carrying the install prefix in its shebang. The `RECORD` row for such a script records the
+// sha256 **and size** of those stamped bytes, so the row is a function of the staging prefix
+// — pack's verification unpack and the airlock's restore never share it. The script *file* is
+// unaffected: it is compared in canonical form, where the prefix spelling is a sentinel.
+//
+// Measured on issue #170's transport (packed 2026-10-15): seven `*.dist-info/RECORD` files
+// failed the final tree check, one per uv-installed package that has an entry-point script
+// (coverage ×3 rows, hypothesis, mako, pytest_bdd), while every conda-installed dist-info
+// with the same-looking rows matched — its RECORD bytes ship inside the `.conda`.
+
+/// A `RECORD` as uv writes it for an installed wheel with one console script, with the script
+/// row's hash and size as parameters. The row names `<prefix>/bin/typer`, spelled from
+/// site-packages the way the installer spells it.
+fn record_with_script(script_hash: &str, script_size: u32) -> Vec<u8> {
+    format!(
+        "typer/__init__.py,sha256=AAAA,10\n\
+         ../../../bin/typer,sha256={script_hash},{script_size}\n\
+         typer-0.27.3.dist-info/INSTALLER,,\n"
+    )
+    .into_bytes()
+}
+
+/// The same RECORD under a Windows prefix: site-packages sits at `Lib/site-packages`, so the
+/// script directory is two levels up and the scripts are `.exe` wrappers.
+fn record_with_scripts_exe(script_hash: &str, script_size: u32) -> Vec<u8> {
+    format!(
+        "typer/__init__.py,sha256=AAAA,10\n\
+         ../../Scripts/typer.exe,sha256={script_hash},{script_size}\n\
+         typer-0.27.3.dist-info/INSTALLER,,\n"
+    )
+    .into_bytes()
+}
+
+#[test]
+fn an_installer_script_row_does_not_change_a_record_digest() {
+    let rel = dist_info("RECORD");
+    let packed = canonical_file_sha256(&rel, &record_with_script("AAAA", 364), &[]);
+    let restored = canonical_file_sha256(&rel, &record_with_script("BBBB", 343), &[]);
+    assert_eq!(
+        packed, restored,
+        "a RECORD's entry-point row is stamped with this side's prefix; the rest of the file is not"
+    );
+}
+
+#[test]
+fn a_windows_scripts_row_collapses_like_its_unix_twin() {
+    let rel = "Lib/site-packages/typer-0.27.3.dist-info/RECORD";
+    let packed = canonical_file_sha256(rel, &record_with_scripts_exe("AAAA", 404), &[]);
+    let restored = canonical_file_sha256(rel, &record_with_scripts_exe("BBBB", 398), &[]);
+    assert_eq!(
+        packed, restored,
+        "the Windows spelling names the same prefix directory and must collapse the same way"
+    );
+}
+
+#[test]
+fn a_changed_script_row_path_still_changes_the_digest() {
+    let rel = dist_info("RECORD");
+    let honest = record_with_script("AAAA", 364);
+    let renamed = String::from_utf8(honest.clone())
+        .unwrap()
+        .replace("../../../bin/typer", "../../../bin/typerx");
+    assert_ne!(
+        canonical_file_sha256(&rel, &honest, &[]),
+        canonical_file_sha256(&rel, renamed.as_bytes(), &[]),
+        "collapsing a script row's hash must not exempt which script the row names"
+    );
+}
+
+#[test]
+fn a_script_row_missing_on_one_side_still_changes_the_digest() {
+    let rel = dist_info("RECORD");
+    let with = record_with_script("AAAA", 364);
+    let without = String::from_utf8(with.clone())
+        .unwrap()
+        .replace("../../../bin/typer,sha256=AAAA,364\n", "");
+    assert_ne!(
+        canonical_file_sha256(&rel, &with, &[]),
+        canonical_file_sha256(&rel, without.as_bytes(), &[]),
+        "the row's presence is the installer's statement that the script exists"
+    );
+}
+
+#[test]
+fn a_bin_row_that_does_not_name_a_prefix_script_is_ordinary_content() {
+    let rel = dist_info("RECORD");
+    // Inside the package's own tree, not the prefix's script directory: transported content,
+    // and the row must keep its digest.
+    let row = |hash: &str| format!("typer/bin/tool,sha256={hash},10\n").into_bytes();
+    assert_ne!(
+        canonical_file_sha256(&rel, &row("AAAA"), &[]),
+        canonical_file_sha256(&rel, &row("BBBB"), &[]),
+        "only a path that resolves to <prefix>/bin/<name> is installer-stamped"
+    );
+    // One level of `../` too few resolves inside site-packages, not into the prefix.
+    let shallow = |hash: &str| format!("../../bin/typer,sha256={hash},364\n").into_bytes();
+    assert_ne!(
+        canonical_file_sha256(&rel, &shallow("AAAA"), &[]),
+        canonical_file_sha256(&rel, &shallow("BBBB"), &[]),
+        "the row must spell the path the way the installer resolves it"
+    );
+}
+
+#[test]
+fn a_schema_1_document_keeps_the_pre_170_row_rule() {
+    // A transport packed before the fix recorded this row's hash and size as-is. Comparing
+    // those digests under the new rule would call every one of them wrong, so the rule comes
+    // from the document — and schema 1 means the row stays transported content.
+    let rel = dist_info("RECORD");
+    let with_script = record_with_script("AAAA", 364);
+    let other_script = record_with_script("BBBB", 343);
+    assert_eq!(
+        canonical_file_sha256_with(RecordRows::Regenerated, &rel, &with_script, &[]),
+        canonical_sha256(&with_script, &[]),
+        "schema 1 hashes the file exactly as the pre-#170 verifier did"
+    );
+    assert_ne!(
+        canonical_file_sha256_with(RecordRows::Regenerated, &rel, &with_script, &[]),
+        canonical_file_sha256_with(RecordRows::Regenerated, &rel, &other_script, &[]),
+        "under schema 1 a stamped row still differs, which is issue #170 itself"
+    );
+}
+
+#[test]
+fn a_scanned_document_names_the_row_rule_its_digests_were_recorded_under() {
+    let (_temp, doc) = scanned_perl_prefix();
+    assert_eq!(doc.schema, DOC_SCHEMA);
+    assert_eq!(
+        RecordRows::for_schema(doc.schema),
+        RecordRows::RegeneratedAndStamped,
+        "a document this tool wrote is read back under the rule that wrote it"
+    );
+    assert_eq!(RecordRows::for_schema(1), RecordRows::Regenerated);
 }

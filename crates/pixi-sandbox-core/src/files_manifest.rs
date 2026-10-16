@@ -35,6 +35,11 @@
 //!   `etc/conda/activate.d/pixi-sandbox-cargo-home.*` hooks are written by `restore` itself,
 //!   so they are excluded from the list and allowed as extras on disk; the fingerprint is
 //!   checked separately against the manifest's recorded value.
+//! * A `*.dist-info/RECORD` keeps its digest like any other file, but two of its row classes
+//!   describe bytes its own installer wrote rather than bytes the wheel shipped, so those rows
+//!   are collapsed before hashing (see `canonical_file_sha256`). Presence, order, and every
+//!   other row survive, and the files the collapsed rows name are still content-verified
+//!   entries of the list themselves.
 
 use crate::error::{Error, Result};
 use crate::manifest::check_rel_path;
@@ -52,7 +57,21 @@ pub const FILE_NAME: &str = "files.json";
 pub const SENTINEL: &[u8] = b"@pixi-sandbox-prefix@";
 
 /// Schema of the list document itself (independent of the manifest's schema).
-pub const DOC_SCHEMA: u32 = 1;
+///
+/// * **1** — digests recorded with uv's regenerated install-metadata rows collapsed (issue
+///   #128).
+/// * **2** — the same, plus the prefix-stamped entry-point script rows (issue #170).
+///
+/// Digests are only comparable within one rule, so the document names the one that produced
+/// it and a reader applies *that* rule — never the newest it happens to know. A transport
+/// packed under schema 1 therefore keeps failing exactly where it already failed (the seven
+/// rows issue #170 reported); a transport packed under schema 2 needs a reader that knows
+/// schema 2, which is why it carries its own tool.
+pub const DOC_SCHEMA: u32 = 2;
+
+/// The document schemas this reader can compare digests under. A document from a newer tool
+/// is refused rather than checked under a rule it was not recorded with.
+pub const SUPPORTED_DOC_SCHEMAS: [u32; 2] = [1, DOC_SCHEMA];
 
 /// Files `restore` writes into a live prefix, so a staged tree never contains their final
 /// content. Excluded from the list; allowed as extras when verifying.
@@ -137,9 +156,9 @@ impl FilesDoc {
     /// name the scanned file rather than the document it was going to be written into
     /// (issue #95's diagnosis detour).
     fn validate_labelled(&self, what: &str) -> Result<()> {
-        if self.schema != DOC_SCHEMA {
+        if !SUPPORTED_DOC_SCHEMAS.contains(&self.schema) {
             return Err(Error::Invalid(format!(
-                "files manifest schema {} is not supported (expected {DOC_SCHEMA})",
+                "files manifest schema {} is not supported (expected one of {SUPPORTED_DOC_SCHEMAS:?})",
                 self.schema
             )));
         }
@@ -224,18 +243,35 @@ pub fn canonical_sha256(bytes: &[u8], candidates: &[Vec<u8>]) -> String {
 /// one another in a digest or a diff.
 const REGENERATED: &[u8] = b"@pixi-sandbox-regenerated@";
 
+/// What a `RECORD` row collapses to when the bytes it describes were stamped with *this
+/// side's* install prefix. A third distinct sentinel: such a row is neither a path spelling
+/// ([`SENTINEL`]) nor rewritten on every install ([`REGENERATED`]) — the installer wrote a
+/// digest of a file that names the prefix it happened to be installed into.
+const PREFIX_STAMPED: &[u8] = b"@pixi-sandbox-prefix-stamped@";
+
 /// sha256 of the canonical form of the file at `rel` — the digest both sides compute, and
-/// the only one a regular file is checked by.
-///
-/// `rel` is what makes the form path-aware: a `*.dist-info/RECORD` has one row describing
-/// uv's own install metadata, which uv rewrites on every install (issue #128), so that row
-/// is collapsed to [`REGENERATED`] before hashing. Everything else about the file is
-/// transported content and stays covered.
+/// the only one a regular file is checked by — under the row rule [`DOC_SCHEMA`] records.
 #[must_use]
 pub fn canonical_file_sha256(rel: &str, bytes: &[u8], candidates: &[Vec<u8>]) -> String {
+    canonical_file_sha256_with(RecordRows::for_schema(DOC_SCHEMA), rel, bytes, candidates)
+}
+
+/// sha256 of the canonical form of the file at `rel`, under the row rule `rows`.
+///
+/// `rel` is what makes the form path-aware: a `*.dist-info/RECORD` carries rows describing
+/// bytes the *installer* wrote rather than bytes the wheel shipped, so those rows are
+/// collapsed before hashing (see [`collapse_installer_rows`]). Everything else about the
+/// file is transported content and stays covered.
+#[must_use]
+pub fn canonical_file_sha256_with(
+    rows: RecordRows,
+    rel: &str,
+    bytes: &[u8],
+    candidates: &[Vec<u8>],
+) -> String {
     let canonical = canonicalise(bytes, candidates);
     let hashed = if is_dist_info_record(rel) {
-        collapse_regenerated_rows(&canonical)
+        collapse_installer_rows(rows, rel, &canonical)
     } else {
         canonical
     };
@@ -285,10 +321,61 @@ pub fn is_allowed_extra(rel: &str) -> bool {
     ALLOWED_EXTRAS.contains(&rel) || is_uv_install_metadata(rel)
 }
 
-/// Collapse the rows of a `RECORD` that describe uv's own install metadata, byte for byte
-/// elsewhere. Line endings, the row order and every other row survive untouched, so a
-/// `RECORD` that differs in anything real still hashes differently.
-fn collapse_regenerated_rows(bytes: &[u8]) -> Vec<u8> {
+/// Which `*.dist-info/RECORD` rows a document's digests treat as installer-written rather
+/// than transported content.
+///
+/// Selected by [`FilesDoc::schema`], because digests are only comparable within one rule: a
+/// reader that applied the newest rule to an older document would call every one of its
+/// digests wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordRows {
+    /// uv's regenerated install-metadata rows only — schema 1, issue #128.
+    Regenerated,
+    /// Those rows, plus the entry-point scripts the installer stamps with the install prefix
+    /// — schema 2, issue #170.
+    RegeneratedAndStamped,
+}
+
+impl RecordRows {
+    /// The rule a document of `schema` was recorded under.
+    ///
+    /// Schemas above [`DOC_SCHEMA`] never reach a digest: [`FilesDoc::parse`] refuses them
+    /// before a single entry is compared.
+    #[must_use]
+    pub fn for_schema(schema: u32) -> Self {
+        if schema >= 2 {
+            Self::RegeneratedAndStamped
+        } else {
+            Self::Regenerated
+        }
+    }
+}
+
+/// Collapse the rows of a `RECORD` that no honest restore can reproduce byte for byte,
+/// leaving line endings, the row order and every other row untouched — so a `RECORD` that
+/// differs in anything real still hashes differently.
+///
+/// Two row classes qualify, and both are written by the *installer* rather than shipped in
+/// the wheel:
+///
+/// * uv's own install metadata ([`UV_INSTALL_METADATA`]) — rewritten on every install, hash
+///   and size included (issue #128).
+/// * the entry-point scripts the installer writes into the prefix's script directory
+///   (`<prefix>/bin/<name>`, and `<prefix>/Scripts/<name>` on Windows) — schema 2 only. Their
+///   shebang names the install prefix, so the recorded hash and size are functions of the
+///   *staging* prefix that pack's verification unpack and the airlock's restore never share
+///   (issue #170). The script file itself is unaffected: it is compared in canonical form,
+///   where the prefix spelling is [`SENTINEL`].
+///
+/// The script rows are recognised by the exact path the installer writes — resolved from the
+/// directory holding the `.dist-info`, one `../` per component between it and the prefix — so
+/// a row naming a file anywhere else in the tree, or at any other depth, stays transported
+/// content.
+fn collapse_installer_rows(rows: RecordRows, rel: &str, bytes: &[u8]) -> Vec<u8> {
+    let script_prefixes = match rows {
+        RecordRows::Regenerated => Vec::new(),
+        RecordRows::RegeneratedAndStamped => prefix_script_row_prefixes(rel),
+    };
     let mut out = Vec::with_capacity(bytes.len());
     let mut rest = bytes;
     while !rest.is_empty() {
@@ -296,15 +383,53 @@ fn collapse_regenerated_rows(bytes: &[u8]) -> Vec<u8> {
             Some(at) => rest.split_at(at + 1),
             None => (rest, &[][..]),
         };
-        out.extend_from_slice(&collapse_regenerated_row(line));
+        out.extend_from_slice(&collapse_installer_row(line, &script_prefixes));
         rest = tail;
     }
     out
 }
 
-/// One `RECORD` line: if its first CSV field names uv's install metadata, keep the field
-/// and replace the hash and size that describe regenerated bytes.
-fn collapse_regenerated_row(line: &[u8]) -> Vec<u8> {
+/// The spellings that name a script directly inside the prefix's script directory, read from
+/// the directory holding this `.dist-info`: one `../` per component between the two, then
+/// `bin/` or `Scripts/`.
+#[must_use]
+fn prefix_script_row_prefixes(rel: &str) -> Vec<Vec<u8>> {
+    // `rel` is `<site-packages>/<name>.dist-info/RECORD`. A `RECORD` row resolves from
+    // `<site-packages>`, so the climb to the prefix root is one `../` per component of it.
+    let site_packages = rel
+        .rsplit_once('/')
+        .and_then(|(dist_info, _record)| dist_info.rsplit_once('/'))
+        .map(|(site_packages, _dist_info_name)| site_packages);
+    let Some(site_packages) = site_packages else {
+        return Vec::new();
+    };
+    let depth = site_packages
+        .split('/')
+        .filter(|component| !component.is_empty())
+        .count();
+    if depth == 0 {
+        return Vec::new();
+    }
+    let up = "../".repeat(depth);
+    ["bin/", "Scripts/"]
+        .iter()
+        .map(|script_dir| format!("{up}{script_dir}").into_bytes())
+        .collect()
+}
+
+/// Is `field` a row naming a script directly inside the prefix's script directory — the
+/// spelling the installer writes for `<prefix>/bin/<name>` (or `Scripts/<name>`)?
+#[must_use]
+fn is_prefix_script_row(field: &[u8], prefix: &[u8]) -> bool {
+    let Some(name) = field.strip_prefix(prefix) else {
+        return false;
+    };
+    !name.is_empty() && !name.contains(&b'/')
+}
+
+/// One `RECORD` line: if it names a row class the installer owns, keep the path field and
+/// replace the hash and size that describe those generated bytes.
+fn collapse_installer_row(line: &[u8], script_prefixes: &[Vec<u8>]) -> Vec<u8> {
     let (body, ending) = match line.strip_suffix(b"\n") {
         Some(body) => {
             let ending: &[u8] = if body.ends_with(b"\r") {
@@ -319,16 +444,23 @@ fn collapse_regenerated_row(line: &[u8]) -> Vec<u8> {
     let field_len = body.iter().position(|b| *b == b',').unwrap_or(body.len());
     let field = &body[..field_len];
     let name = field.rsplit(|b| *b == b'/').next().unwrap_or(field);
-    if !UV_INSTALL_METADATA
+    let sentinel = if UV_INSTALL_METADATA
         .iter()
         .any(|metadata| metadata.as_bytes() == name)
     {
+        REGENERATED
+    } else if script_prefixes
+        .iter()
+        .any(|prefix| is_prefix_script_row(field, prefix))
+    {
+        PREFIX_STAMPED
+    } else {
         return line.to_vec();
-    }
+    };
     let mut out = Vec::with_capacity(line.len());
     out.extend_from_slice(field);
     out.push(b',');
-    out.extend_from_slice(REGENERATED);
+    out.extend_from_slice(sentinel);
     out.push(b',');
     out.extend_from_slice(ending);
     out
