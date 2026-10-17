@@ -136,7 +136,7 @@ jobs:
   # consumer-proof.yml, dispatched after the release below.
   #
   # Job-level `permissions:` *replaces* the workflow-level block, so `contents: read` is the
-  # whole grant here; this job is deliberately not in `environment: release`.
+  # whole grant here; this job is deliberately not in `environment: prefix`.
   consumer-proof:
     name: consumer proof (linux-64, built artifact)
     needs: build
@@ -196,7 +196,11 @@ jobs:
     needs: [build, consumer-proof]
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: release
+    # The publish gate, named for what this job publishes to (prefix.dev). It is a gate and not
+    # a secret bag — the upload below authenticates with the job's own GitHub OIDC identity, so
+    # the environment exists to hold whatever approval/branch protection the repo wants on a
+    # release. A job that publishes nothing stays outside it (see `consumer-proof` above).
+    environment: prefix
     permissions:
       contents: write
       id-token: write
