@@ -641,7 +641,11 @@ fn doctor_verify_fails_loudly_on_a_corrupted_branch() {
         ])
         .assert()
         .failure()
-        .stdout(predicate::str::contains("OK").not());
+        // The temp path itself can contain "OK"; assert that the verifier success record is absent.
+        .stdout(
+            predicate::str::contains("verify    OK — every declared byte matches the manifest")
+                .not(),
+        );
 }
 
 #[test]

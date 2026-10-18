@@ -3574,3 +3574,34 @@ Next session opening prompt:
 > and its starter dispatch is the run that can prove AC#8 and AC#7 if anything fails. Propose the
 > slice and stop; do not release, dispatch, or re-dispatch without explicit go-ahead. House rules
 > are in `AGENTS.md`; the session procedure is in `.agents/skills/session/`.
+
+### 2026-10-17 — TASK-74 locally provable phase-order fix; live proofs still open
+
+Restored from `sandbox/developer-linux-64` at `897964d` (Pixi 0.81.0, pixi-sandbox 0.7.0,
+pixi-unpack 0.7.11; user tools registered). Baseline on main `8e9d4996`: **1,198 passing / 2
+skipped**. No release newer than v0.7.0 was listed; latest `publish sandbox` run was a successful
+repack, not a release. Environment API shows `prefix` exists with no protection rules. No starter
+dispatch appeared in the recent run list.
+
+TASK-74 local slice: `STARTER_PHASES` decides which failed step is reported when multiple outcomes
+are failures. Its final entries put `summary` before `evidence`, while `starter.yml` runs evidence
+first. Added a workflow-order regression test, observed it fail against the old order, then moved
+`evidence` before `summary`. The report now follows workflow execution order. Focused reporter tests,
+`pixi run --frozen fmt`, `pixi run --frozen lint`, and `pixi run --frozen test` pass; updated suite
+is **1,199 passing / 2 skipped** (xtask 243). Task remains In Progress and no acceptance criterion
+was checked.
+
+**Still needs owner/live proof:** AC#7 token delivery; AC#8 a failing starter run producing the
+summary; AC#10 release-note cross-link on a new release; AC#2/#9 and DoD#4 a template-derived
+repository and its restore lifecycle. The `prefix` environment has no protection rules; any
+protection policy/settings write needs owner direction. Do not dispatch, cut a release, or change
+environment settings without explicit approval.
+
+Next session: inspect the next release (and its run) and any starter dispatch; use a failing starter
+run only with approval to close AC#8 and verify token delivery. Ask the owner to create/use a
+template-derived repository for AC#2/#9/DoD#4 and decide whether `prefix` should have protection
+rules. Keep TASK-74 In Progress until the live proofs exist.
+
+### 2026-10-18 — PR #175 coverage failure was a temp-path false positive
+
+The CI log supplied for PR #175 showed the coverage task's actual failure: `doctor_verify_fails_loudly_on_a_corrupted_branch` asserted that all stdout lacked the substring `OK`, but the fixture's temporary directory was `/tmp/.tmpOK1rqH`. The verifier correctly reported corruption; the test accidentally matched its path. Reproduced locally by setting `TMPDIR=/tmp/OK-regression` (red), then narrowed the assertion to the exact verifier success record `verify    OK — every declared byte matches the manifest` (green). Focused test, `pixi run --frozen fmt`, `lint`, `test`, and `coverage` all pass locally; coverage ran 1,199 passing / 2 skipped. Change is in `crates/pixi-sandbox/tests/cli.rs`; re-run PR checks after pushing the fix.

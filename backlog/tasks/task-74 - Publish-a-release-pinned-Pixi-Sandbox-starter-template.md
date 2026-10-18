@@ -4,7 +4,7 @@ title: Publish a release-pinned Pixi Sandbox starter template
 status: In Progress
 assignee: []
 created_date: '2026-10-05'
-updated_date: '2026-10-15 22:45'
+updated_date: '2026-10-17 23:10'
 labels:
   - onboarding
   - template
@@ -181,4 +181,5 @@ proven; both stay unchecked because neither has been observed live.
   secret is unreadable from here; AC#7 now names the scopes it must carry). AC#8's live half: a
   failing starter run producing this summary. AC#2/#9 and DoD#4: a repository created from the
   template and its fetch → offline-restore lifecycle. AC#10's live half: the next release's notes.
+2026-10-17 — locally verifiable failure-phase ordering tightened. The `STARTER_PHASES` table is the reporter's priority order when more than one step outcome is marked failed; it had `summary` ahead of `evidence`, opposite the actual starter job order. Reordered those entries and added a regression test that compares the ordered remediation IDs against the starter job's workflow IDs. Test-first red confirmed the mismatch; focused starter/report tests, `pixi run --frozen fmt`, `pixi run --frozen lint`, and the full workspace suite pass (1,199 passing / 2 skipped; xtask 243). No AC is newly checked: live failure-summary evidence and all owner/live-run criteria remain open.
 <!-- SECTION:NOTES:END -->
