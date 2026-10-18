@@ -908,6 +908,31 @@ fn step_id(line: &str) -> Option<String> {
         .then(|| id.to_string())
 }
 
+/// The remediation table is also the reporter's tie-breaker when several steps have failure
+/// outcomes, so it must retain the workflow's execution order.
+#[test]
+fn the_failure_remediation_table_follows_workflow_execution_order() {
+    let phase_ids: Vec<&str> = STARTER_PHASES.iter().map(|(phase, _)| *phase).collect();
+    let starter_job = STARTER_WORKFLOW
+        .split_once("\n  starter:")
+        .expect("the starter job")
+        .1;
+    let workflow_phase_ids: Vec<String> = starter_job
+        .lines()
+        .filter_map(step_id)
+        .filter(|id| phase_ids.contains(&id.as_str()))
+        .collect();
+
+    assert_eq!(
+        phase_ids,
+        workflow_phase_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        "when more than one step outcome is failed, the reporter's priority must match the workflow order"
+    );
+}
+
 /// The report step is the last word on a failed run: it runs after every phase it can name, and
 /// after the artifact upload, so a failed upload is named too rather than left to the log. The
 /// one phase it cannot report is itself, which is why it is excluded from its own sweep.

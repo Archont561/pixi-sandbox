@@ -1171,12 +1171,12 @@ pub const STARTER_PHASES: [(&str, &str); 20] = [
         "the publication was refused before any push; check whether the immutable `pixi-sandbox-<tag>` evidence tag already exists, and that the target branch is main",
     ),
     (
-        STARTER_REPORT_PHASE,
-        "the failure report itself could not be written; read the failing step's log instead",
-    ),
-    (
         "evidence",
         "the bounded evidence artifact could not be uploaded; read the failing step's log",
+    ),
+    (
+        STARTER_REPORT_PHASE,
+        "the failure report itself could not be written; read the failing step's log instead",
     ),
 ];
 /// The id of the step that writes the report itself.
