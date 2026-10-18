@@ -3601,3 +3601,7 @@ Next session: inspect the next release (and its run) and any starter dispatch; u
 run only with approval to close AC#8 and verify token delivery. Ask the owner to create/use a
 template-derived repository for AC#2/#9/DoD#4 and decide whether `prefix` should have protection
 rules. Keep TASK-74 In Progress until the live proofs exist.
+
+### 2026-10-18 — PR #175 coverage failure was a temp-path false positive
+
+The CI log supplied for PR #175 showed the coverage task's actual failure: `doctor_verify_fails_loudly_on_a_corrupted_branch` asserted that all stdout lacked the substring `OK`, but the fixture's temporary directory was `/tmp/.tmpOK1rqH`. The verifier correctly reported corruption; the test accidentally matched its path. Reproduced locally by setting `TMPDIR=/tmp/OK-regression` (red), then narrowed the assertion to the exact verifier success record `verify    OK — every declared byte matches the manifest` (green). Focused test, `pixi run --frozen fmt`, `lint`, `test`, and `coverage` all pass locally; coverage ran 1,199 passing / 2 skipped. Change is in `crates/pixi-sandbox/tests/cli.rs`; re-run PR checks after pushing the fix.
