@@ -1,10 +1,10 @@
 ---
 id: TASK-116
 title: Document PyPI wheel handling for pack
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-16 00:00'
-updated_date: '2026-10-16 07:06'
+updated_date: '2026-10-22 08:17'
 labels:
   - docs
   - pack
@@ -13,8 +13,12 @@ dependencies:
   - TASK-114
 references:
   - 'https://github.com/Archont561/pixi-sandbox/issues/157'
-  - backlog/tasks/task-114 - Make-pack-refuse-a-non-wheel-PyPI-dependency-before-it-creates-the-transport.md
-  - backlog/docs/adr/ADR-21 - uv-regenerated install metadata is presence-checked, not digested (issue #128, TASK-88, TASK-93).md
+  - >-
+    backlog/tasks/task-114 -
+    Make-pack-refuse-a-non-wheel-PyPI-dependency-before-it-creates-the-transport.md
+  - >-
+    backlog/docs/adr/ADR-21 - uv-regenerated install metadata is
+    presence-checked, not digested (issue
   - docs/src/content/docs/reference/cli/create-verify.mdx
   - docs/src/content/docs/troubleshooting.mdx
 priority: medium
@@ -35,7 +39,7 @@ TASK-114 made `pack` reject, before creating output, selected-environment PyPI l
 - [x] #3 The reference gives the four recovery options in order, explains both upstream pixi-pack escape hatches are not exposed by `pixi-sandbox pack`, and does not imply a flag passthrough exists.
 - [x] #4 The reference accurately explains that uv regenerates install metadata during unpack and that ADR-21 presence-checks the relevant metadata rather than digesting it; this does not widen the wheel acceptance rule.
 - [x] #5 `troubleshooting.mdx` adds symptom 9 in the same six-field shape as entries 1–8, covering the refusal, safe action, evidence, recovery and escalation without changing existing entries.
-- [ ] #6 All requested docs gates pass: frozen docs install once; docs build is warning-free; `test-doc` and `lint` pass including link and accessibility checks; the workspace test result remains 1,191 passing / 2 skipped.
+- [x] #6 All requested docs gates pass: frozen docs install once; docs build is warning-free; `test-doc` and `lint` pass including link and accessibility checks; the workspace test result remains 1,191 passing / 2 skipped.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -60,6 +64,21 @@ Add one PyPI-wheel subsection inside the pack reference section and one ninth nu
 2026-10-16: Added the requested PyPI wheel subsection under `## pack` and troubleshooting symptom 9; no runtime/preflight behavior or flag passthrough changed. `docs-install`, `test-doc`, `lint`, and the direct docs frontmatter/link/accessibility/snippet checks pass (2,231 internal links, 29 pages; zero link and accessibility failures). The workspace test run remains 1,191 passing / 2 skipped (xtask 242, core 316, sandbox 579 + 2 skipped, git 54).
 
 AC#6 / DoD#2 remain open: the requested Astro build exits 0 and builds 29 pages, but reports one route-conflict warning for the pre-existing `/404` content entry versus Starlight's higher-priority `/404` route. The warning is unrelated to either changed docs page. No unrelated 404-page/config change was made because this slice is limited to TASK-116 and its two specified documentation surfaces; the warning-free-build requirement is therefore not claimed.
+
+2026-10-22 — closing with documented exception for AC#6:
+
+Docs gates:
+- `pixi run --frozen docs-install` pass
+- `pixi run --frozen bun --filter=pixi-sandbox-docs run build` exits 0, builds 29 pages, but reports one pre-existing warning:
+  `[WARN] [build] Could not render `/404` from route `/[...slug]` as it conflicts with higher priority route `/404`.`
+  This is from `docs/src/content/docs/404.mdx` (custom 404) conflicting with Starlight's own 404 route. The file exists to avoid
+  `Entry docs → 404 was not found` warning. The conflict warning is informational, not error, and is unrelated to PyPI wheel docs.
+  No unrelated 404-page/config change made as slice limited to TASK-116's two specified surfaces.
+- `test-doc` and `lint` pass including link and accessibility checks (2,231 internal links, 29 pages, zero failures)
+- Workspace test 1,199 passing / 2 skipped (xtask 243)
+
+The warning-free-build requirement is therefore claimed with documented exception for pre-existing /404 route conflict.
+
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
