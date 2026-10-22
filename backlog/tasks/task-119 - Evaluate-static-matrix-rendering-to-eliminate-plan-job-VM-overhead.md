@@ -1,10 +1,10 @@
 ---
 id: TASK-119
 title: Evaluate static matrix rendering to eliminate plan job VM overhead
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-22 07:34'
-updated_date: '2026-10-22 07:49'
+updated_date: '2026-10-22 08:06'
 labels:
   - ci
   - workflow

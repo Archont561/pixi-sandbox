@@ -1,10 +1,10 @@
 ---
 id: TASK-122
 title: Reduce GitHub Actions minutes in generated workflows RFC 179
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-22 07:37'
-updated_date: '2026-10-22 07:37'
+updated_date: '2026-10-22 08:06'
 labels:
   - ci
   - workflow
@@ -39,8 +39,8 @@ Reference: https://github.com/Archont561/pixi-sandbox/issues/179
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Create 4 child tasks for each inefficiency identified in issue 179
-- [ ] #2 For each child, measure current cost and document design tradeoffs
-- [ ] #3 Implement optimizations that preserve security and correctness guarantees
-- [ ] #4 Verify with actionlint, check-repository, consumer-proof, and real consumer runs
+- [x] #1 Create 4 child tasks for each inefficiency identified in issue 179
+- [x] #2 For each child, measure current cost and document design tradeoffs
+- [x] #3 Implement optimizations that preserve security and correctness guarantees
+- [x] #4 Verify with actionlint, check-repository, consumer-proof, and real consumer runs
 <!-- AC:END -->

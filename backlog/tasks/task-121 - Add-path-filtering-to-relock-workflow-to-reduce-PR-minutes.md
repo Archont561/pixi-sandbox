@@ -1,10 +1,10 @@
 ---
 id: TASK-121
 title: Add path filtering to relock workflow to reduce PR minutes
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-22 07:34'
-updated_date: '2026-10-22 07:49'
+updated_date: '2026-10-22 08:06'
 labels:
   - ci
   - workflow
@@ -60,8 +60,8 @@ Reference: crates/pixi-sandbox/src/generated/relock_workflow.rs comment
 - [x] #1 Measure relock guard job time and cost on docs-only PR vs manifest-changing PR
 - [x] #2 Document current no-paths design rationale and what cases it catches that paths filter would miss
 - [x] #3 Propose safe default paths filter that includes manifests and lockfiles and does not miss hand-edited or deleted locks
-- [ ] #4 Implement paths filter in relock template as optional via config or default, with tests
-- [ ] #5 Verify actionlint, check-repository, and that stale lock arriving by any route is still caught when filter matches
+- [x] #4 Implement paths filter in relock template as optional via config or default, with tests
+- [x] #5 Verify actionlint, check-repository, and that stale lock arriving by any route is still caught when filter matches
 <!-- AC:END -->
 
 ## Implementation Notes

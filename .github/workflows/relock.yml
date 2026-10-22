@@ -5,11 +5,22 @@ name: relock
 # Refresh lockfiles for a manifest edit that was made where the network is not.
 #
 # The guard job reports on every pull request; the relock job runs only when the guard found
-# drift, which is why this workflow carries no `paths:` filter — a stale lock arriving by any
-# route (a transitive manifest, a hand-edited lock, a deleted one) is caught the same way.
+# drift. When `[workflow]` is present, `on.pull_request.paths:` limits the guard to manifest
+# and lock changes (TASK-121) — the safe default includes lockfiles so a hand-edited or
+# deleted lock is still caught. Without `[workflow]`, no filter (pre-TASK-121 behavior).
 
 on:
   pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - ".pixi-sandbox.toml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "bun.lock"
+      - "package.json"
+      - "pixi.lock"
+      - "pixi.toml"
+
   workflow_dispatch:
     inputs:
       repaired_sha:
