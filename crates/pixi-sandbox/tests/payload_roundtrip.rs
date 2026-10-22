@@ -102,7 +102,7 @@ fn real_package_preserves_payload_and_installs_under_egress_denial() {
         .current_dir(&publisher)
         .args(["wrap-payload", "--config"])
         .arg(config_path)
-        .args(["--skip-prepare", "--build", "--tools-cache"])
+        .args(["--skip-prepare", "--build", "--build-cache"])
         .arg(rattler_cache)
         .env("HOME", &home)
         .env("USERPROFILE", &home)

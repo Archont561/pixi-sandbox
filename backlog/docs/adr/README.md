@@ -83,3 +83,5 @@ would recreate `backlog/decisions/` starting again at `decision-1`, which would 
 ## Subsequent records
 
 - ADR-30 — Generated CI bootstraps directly from verified standalone releases (TASK-126).
+- ADR-31 — Native format-1 transports replace helper acquisition (TASK-125); supersedes
+  ADR-2/3/4/24 for new producers, preserving legacy transport reading.

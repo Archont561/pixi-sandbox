@@ -9,8 +9,8 @@ use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox::user_tools::{self, LauncherChange, LauncherKind, PathChange, UserTools};
 use pixi_sandbox_core::manifest::{Blob, Env, MANIFEST_DIR, Manifest, ToolEntry, Vendor};
+use pixi_sandbox_core::platform::executable_filename;
 use pixi_sandbox_core::shard;
-use pixi_sandbox_core::tools_lock::executable_filename;
 use pixi_sandbox_core::verify::{self, Linkage};
 use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
@@ -53,17 +53,21 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
 
     println!("materialise tools");
     let tools_dir = materialise_tools(&branch, &manifest, &project, args.force)?;
-    let unpacker = resolve_unpacker(&tools_dir, &manifest)?;
 
     println!("restore environments");
     for environment in &environments {
+        let unpacker = if support::uses_native_pack(&manifest, &branch, environment)? {
+            None
+        } else {
+            Some(resolve_unpacker(&tools_dir, &manifest)?)
+        };
         install_environment(
             &branch,
             &manifest,
             environment,
             &project,
             &work,
-            &unpacker,
+            unpacker.as_deref(),
             args.force,
         )?;
     }
@@ -535,7 +539,7 @@ fn install_environment(
     environment: &str,
     project: &Path,
     work: &Path,
-    unpacker: &Path,
+    unpacker: Option<&Path>,
     force: bool,
 ) -> Result<()> {
     let entry = manifest
@@ -570,49 +574,57 @@ fn install_environment(
     let stage = work.join(format!("stage-{environment}"));
     support::remove_path(&stage)?;
     fs::create_dir_all(&stage).with_context(|| format!("creating {}", stage.display()))?;
-    let mut command = Command::new(unpacker);
-    command
-        .arg(&pack)
-        .arg("-o")
-        .arg(&stage)
-        .arg("-e")
-        .arg(environment);
-    support::use_work_tmp(&mut command, work);
-    support::run(&mut command).with_context(|| format!("unpacking environment {environment}"))?;
+    if unpacker.is_none() {
+        pixi_sandbox::native_pack::install(
+            &pack,
+            &stage.join(environment),
+            &target,
+            &stage.join("cache"),
+        )?;
+    } else if let Some(unpacker) = unpacker {
+        let mut command = Command::new(unpacker);
+        command
+            .arg(&pack)
+            .arg("-o")
+            .arg(&stage)
+            .arg("-e")
+            .arg(environment);
+        support::use_work_tmp(&mut command, work);
+        support::run(&mut command)
+            .with_context(|| format!("unpacking environment {environment}"))?;
+    }
 
     let prefix = stage.join(environment);
     if !prefix.is_dir() {
         bail!(
             "{} completed but did not create {}",
-            unpacker.display(),
+            unpacker.map_or_else(
+                || "native installer".to_string(),
+                |path| path.display().to_string()
+            ),
             prefix.display()
         );
     }
 
     // The archive bytes were verified before extraction. Relocate textual conda metadata while
     // the replacement prefix is still staged, so no installed file points into restore scratch.
-    let relocated = relocate_text_prefixes(&prefix, &target)?;
+    let relocated = if unpacker.is_none() {
+        0
+    } else {
+        relocate_text_prefixes(&prefix, &target)?
+    };
     if relocated > 0 {
         println!("  {environment}: relocated {relocated} text file(s) to the final prefix");
     }
 
-    if target.exists() {
-        // `--force` was checked before any source bytes were materialised; deletion happens
-        // only after the replacement prefix is complete in its stage directory.
-        support::remove_path(&target)?;
-    }
-    let parent = target
-        .parent()
-        .expect("environment target always has an envs parent");
-    fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    fs::rename(&prefix, &target).with_context(|| {
-        format!(
-            "moving complete environment {} to {}",
-            prefix.display(),
-            target.display()
-        )
-    })?;
-    write_markers(&target, entry)?;
+    let parent = target.parent().expect("environment has a parent");
+    fs::create_dir_all(parent)?;
+    let final_prefix = parent.canonicalize()?.join(environment);
+    write_markers(&prefix, entry, &final_prefix)?;
+    let checked =
+        verify::verify_staged(manifest, branch, &final_prefix, environment, &prefix, work);
+    report_restored_tree(&checked)?;
+    super::unpack::promote_prefix(&prefix, &target, force)?;
     println!(
         "  {environment} -> {} ({} MiB unpacked)",
         target.display(),
@@ -669,16 +681,13 @@ fn relocate_text_prefixes(staged_prefix: &Path, final_prefix: &Path) -> Result<u
     Ok(changed)
 }
 
-fn write_markers(prefix: &Path, entry: &Env) -> Result<()> {
+fn write_markers(prefix: &Path, entry: &Env, final_prefix: &Path) -> Result<()> {
     let conda_meta = prefix.join("conda-meta");
     fs::create_dir_all(&conda_meta)
         .with_context(|| format!("creating {}", conda_meta.display()))?;
-    let resolved_prefix = prefix
-        .canonicalize()
-        .with_context(|| format!("canonicalising restored prefix {}", prefix.display()))?;
     fs::write(
         conda_meta.join("pixi_env_prefix"),
-        resolved_prefix.to_string_lossy().as_bytes(),
+        final_prefix.to_string_lossy().as_bytes(),
     )
     .context("writing pixi_env_prefix marker")?;
     if let Some(fingerprint) = &entry.pixi_environment_fingerprint {

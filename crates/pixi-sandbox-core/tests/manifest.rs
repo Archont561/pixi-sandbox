@@ -3,7 +3,6 @@
 
 use pixi_sandbox_core::host_requirements::{HostCapability, HostRequirementSet};
 use pixi_sandbox_core::manifest::{Manifest, Part, SCHEMA_VERSION};
-use pixi_sandbox_core::tools_lock::ToolsLock;
 use proptest::prelude::*;
 use rstest::rstest;
 use std::path::Path;
@@ -483,44 +482,4 @@ fn split_parts_must_sum_to_the_blob_size() {
     );
     let err = parse(&text).validate().expect_err("must refuse");
     assert!(err.to_string().contains("parts sum"), "got: {err}");
-}
-
-/// The embedded catalogue is what installed binaries use. These are the tools CI downloads and
-/// the airlock runs, so a missing platform is a broken release, not a warning.
-#[rstest]
-#[case("pixi-pack", "linux-64")]
-#[case("pixi-pack", "linux-aarch64")]
-#[case("pixi-pack", "osx-64")]
-#[case("pixi-pack", "osx-arm64")]
-#[case("pixi-pack", "win-64")]
-#[case("pixi-unpack", "linux-64")]
-#[case("pixi-unpack", "linux-aarch64")]
-#[case("pixi-unpack", "osx-64")]
-#[case("pixi-unpack", "osx-arm64")]
-#[case("pixi-unpack", "win-64")]
-#[case("pixi", "linux-64")]
-#[case("pixi", "linux-aarch64")]
-#[case("pixi", "osx-64")]
-#[case("pixi", "osx-arm64")]
-#[case("pixi", "win-64")]
-fn the_embedded_tool_pins_are_valid_and_complete(#[case] tool: &str, #[case] platform: &str) {
-    let lock = ToolsLock::embedded().expect("embedded tools lock must parse");
-    let pin = lock
-        .pin(tool, platform)
-        .unwrap_or_else(|| panic!("{tool} must be pinned for {platform}"));
-    assert_eq!(pin.sha256.len(), 64, "{tool}/{platform}: sha256");
-    let url = lock.url(tool, platform).expect("url");
-    assert!(url.starts_with("https://github.com/"), "got {url}");
-    assert!(!url.contains('{'), "unsubstituted template: {url}");
-
-    // The linux-64 unpacker is the static musl asset (decisions ADR-4) — the whole airlock story
-    // rests on that one asset.
-    if (tool, platform) == ("pixi-unpack", "linux-64") {
-        assert_eq!(pin.linkage, "static");
-        assert_eq!(pin.target, "x86_64-unknown-linux-musl");
-        assert_eq!(
-            pin.sha256,
-            "8191f586b734e634e2f1644e553dcb8e07718d0bafbfefb65c5e6e22b4d484b7"
-        );
-    }
 }

@@ -726,25 +726,6 @@ fn the_devcontainer_setup_installs_three_things_and_no_toolchain() {
     assert!(!setup.contains("c-compiler"), "{setup}");
 }
 
-#[test]
-fn the_pixi_version_comes_from_the_tools_lock_the_release_embeds() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let lock = dir.path().join("tools.lock.json");
-    std::fs::write(
-        &lock,
-        "{\"schema\":1,\"tools\":{\"pixi\":{\"version\":\"9.9.9\"}}}\n",
-    )
-    .expect("write");
-    assert_eq!(
-        pixi_version_from_tools_lock(&lock).expect("version"),
-        "9.9.9"
-    );
-
-    std::fs::write(&lock, "{\"schema\":1,\"tools\":{}}\n").expect("write");
-    let error = pixi_version_from_tools_lock(&lock).unwrap_err().to_string();
-    assert!(error.contains("names no tools.pixi.version"), "{error}");
-}
-
 /// The devcontainer is scaffold-owned, so `init --check` never sees it; `verify` is the only
 /// gate that can hold its contract.
 #[test]

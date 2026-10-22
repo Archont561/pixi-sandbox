@@ -1,3 +1,26 @@
+## TASK-125 native producer continuation — 2026-10-22
+
+Current session branch: `arena/6aceae22-pixi-sandbox` (not the historical branch below).
+PR #187 was merged as d9c84ab; this is the subsequent native producer/restore migration.
+
+Implemented native version-7/compact-lock packing and schema-3 manifests, native format-1
+restore/unpack under schemas 1–3, staged file-oracle verification before replacement, rollback
+promotion, and explicit-local executable SHA256 recording. Removed catalogue/update/tools CLI
+and helper flags. Optional ADR-28 builder download remains independent (`--build-cache`), with
+its download/hash/version/linkage security tests retained in build_tool_fetch/embedded_tools.
+Source Pixi manifest/lock no longer includes pack/unpack helpers. Publisher and consumer argv
+explicitly bundle Pixi; only the immutable-old-release airlock adapter capability-selects its
+former CLI. Older opaque transports retain an explicit compatibility unpacker path (ADR-31).
+
+Owner-approved obsolete helper/catalogue/synthetic producer tests retired: baseline 1,203 passes
+and 2 skips; latest workspace inventory 1,154 passes and 2 skips, including 26 genuine native
+lifecycle cases. Further explicit-local SHA256 and Option-based oracle refactor passed focused
+checks after that inventory. Full lint passed 11/11, fmt passed; the exact final full test/lint,
+connected payload roundtrip, artifacts-only built consumer proof and airlock results are still
+completion gates. No release or merge is authorized for this continuation. Do not claim TASK-125
+complete just because local tests pass. Temporary provisioning workflow/script/research project
+have been removed; authentic ignored vendor sources remain local and must not be committed.
+
 # Project Context
 
 Orientation guide for developers and AI agents working on `pixi-sandbox`.
@@ -3749,3 +3772,8 @@ run `39772582346`, job `119803522167`. Do not fabricate or recommit generated de
 Local memory-light profile settings were moved from ignored `.cargo/config.toml` into ignored
 `.pixi-sandbox/cargo-home/config.toml`; otherwise relock rendering incorrectly detects the
 local-only config as a consumer input. No unrelated generated workflow change is required.
+
+TASK-125 final-local update (2026-10-22): full `pixi run --frozen test` passed all four package
+tasks, 1,154 passes / 2 skips; full lint rerun passed 11/11 after extracting raw-unpack staged
+verification; fmt passed. Connected payload/native built-artifact consumer/airlock proofs remain
+outstanding. No task-completion or merge claim is warranted until their actual outcomes are known.

@@ -123,7 +123,7 @@ jobs:
             --envs "$ENVIRONMENTS" \
             --output-dir "$TRANSPORT" \
             --platform "$PLATFORM" \
-            --fetch-tools \
+            --pixi-bin pixi \
             --self-bin "$SELF_BIN" \
             $CARGO_VENDOR_ARG
           "$SELF_BIN" doctor --branch-location "$TRANSPORT" --verify --budget-config .pixi-sandbox.toml
@@ -153,7 +153,7 @@ jobs:
           }
           $transport = Join-Path $env:RUNNER_TEMP 'pixi-sandbox-transport'
           Remove-Item -Recurse -Force $transport -ErrorAction SilentlyContinue
-          $packArgs = @('pack', '--repo-root', '.', '--envs', $env:ENVIRONMENTS, '--output-dir', $transport, '--platform', $env:PLATFORM, '--fetch-tools', '--self-bin', $env:SELF_BIN)
+          $packArgs = @('pack', '--repo-root', '.', '--envs', $env:ENVIRONMENTS, '--output-dir', $transport, '--platform', $env:PLATFORM, '--pixi-bin', 'pixi', '--self-bin', $env:SELF_BIN)
           if ($env:CARGO_VENDOR -eq 'true') { $packArgs += '--cargo-vendor' }
           & $env:SELF_BIN @packArgs
           & $env:SELF_BIN doctor --branch-location $transport --verify --budget-config .pixi-sandbox.toml

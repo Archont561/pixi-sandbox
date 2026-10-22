@@ -10,6 +10,12 @@ tags:
   - release
   - platform
 ---
+
+> TASK-125 / ADR-31 supersedes the helper acquisition and execution sections below: new
+> schema-3 transports use native rattler/UV. Explicit `--pixi-bin` / `--self-bin` select local
+> bootstrap executables; the old tools command/catalogue/flags no longer exist. Format-1
+> payloads read natively under schemas 1–3; older opaque payloads retain a compatibility reader.
+
 # Rust bootstrap release artifact
 
 ## Purpose

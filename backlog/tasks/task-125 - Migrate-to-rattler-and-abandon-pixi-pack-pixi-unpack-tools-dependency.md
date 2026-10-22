@@ -124,3 +124,29 @@ reqwest remains transitive; host normal-tree inspection finds no AWS-LC edge. A 
 workspace/all-targets CI gate is added; its actual result, not the newer local compiler, must
 validate the floor. Remaining implementation and compatibility evidence are enumerated in
 CONTEXT.md's dated TASK-125 checkpoint. PR #187 remains draft; TASK-125 remains In Progress.
+
+
+### Native producer and restore continuation
+
+PR #187 was merged; it was a partial checkpoint, not task completion. The subsequent implementation
+now packs genuine compact version-7 locks natively, emits schema 3, restores format-1 packs under
+schemas 1–3 without helpers, and checks the staged file oracle before rollback-protected promotion.
+A hash-valid but incorrect oracle cannot retire an existing restore or raw-unpack output. Explicit
+local tools now record their actual byte SHA256 even without upstream catalogue provenance.
+
+Removed the tools CLI/catalogue/updater and helper flags, source Pixi helper dependencies, and
+approved temporary provisioning files. The independent payload builder remains on-demand under
+`--build-cache`. Publisher/consumer callers explicitly select Pixi; the airlock release adapter
+alone supports the immutable pre-migration release CLI. Opaque legacy transports retain their
+recorded unpacker compatibility reader; that is not a new-producer dependency (ADR-31).
+
+The owner approved obsolete helper-interface/synthetic producer test retirement: previous baseline
+1,203 passes / 2 skipped; latest full workspace inventory 1,154 passes / 2 skipped, with 26 native
+CLI/library cases. Original Conda archive and wheel bytes are independently compared unchanged.
+Full lint passed 11/11; fmt passed. Final full-task test/lint and connected payload, built-artifact
+consumer and airlock evidence remain pending, so AC/DoD completion is deliberately not asserted.
+
+Final local gate reruns: `pixi run --frozen fmt` passed; `pixi run --frozen lint` passed 11/11;
+`pixi run --frozen test` passed all four package tasks (1,154 tests / 2 intentionally skipped).
+The last oracle-option refactor also passed pack/native/embedding checks. Connected platform
+proofs remain outstanding; task stays In Progress until their actual outcomes are known.

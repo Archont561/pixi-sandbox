@@ -235,7 +235,7 @@ fn pack_argv_carries_the_vendor_flag_only_when_asked() {
                 ".".to_string()
             ]
         );
-        assert!(argv.contains(&"--fetch-tools".to_string()));
+        assert!(argv.contains(&"--pixi-bin".to_string()));
         assert!(argv.contains(&"/bin/pixi-sandbox".to_string()));
     }
 }

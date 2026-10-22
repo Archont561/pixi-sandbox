@@ -13,12 +13,12 @@
 //! The subprocess is behind [`ProcessRunner`] so the argv and the package discovery are tested
 //! without a binary, the network or this checkout.
 
+use crate::build_tool_fetch::{ToolDownload, fetch_tool_with};
 use crate::pack::support;
-use crate::tool_fetch::{ToolDownload, fetch_tool_with};
 use crate::wrap_payload::RECIPE_FILE;
+use pixi_sandbox_core::build_tool_pins::{BuildToolPins, LOCK_SCHEMA, PlatformPin, Tool};
 use pixi_sandbox_core::payload::{PayloadError, PayloadToolchain, WrapPlan};
 use pixi_sandbox_core::platform::Platform;
-use pixi_sandbox_core::tools_lock::{LOCK_SCHEMA, PlatformPin, Tool, ToolsLock};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -78,7 +78,7 @@ const PINS: &[Pin] = &[
 
 /// The reviewed pins, in the shape the tool-fetch machinery already consumes.
 #[must_use]
-pub fn pins() -> ToolsLock {
+pub fn pins() -> BuildToolPins {
     let platforms = PINS
         .iter()
         .map(|pin| {
@@ -102,7 +102,7 @@ pub fn pins() -> ToolsLock {
     };
     let mut tools = BTreeMap::new();
     tools.insert(TOOL_NAME.to_string(), tool);
-    ToolsLock {
+    BuildToolPins {
         schema: LOCK_SCHEMA,
         generated_at: None,
         tools,

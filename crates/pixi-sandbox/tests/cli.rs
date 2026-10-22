@@ -80,7 +80,6 @@ fn prints_version(mut bin: Command) {
 #[case("doctor")]
 #[case("init")]
 #[case("plan")]
-#[case("tools")]
 #[case("self-update")]
 #[case("fetch-release")]
 #[case("pipeline")]
@@ -413,40 +412,6 @@ fn unpack_requires_input_and_output() {
 }
 
 #[test]
-fn tools_list_reads_a_pin_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let lock = dir.path().join("tools.lock.json");
-    fs::write(
-        &lock,
-        r#"{"schema":1,"tools":{"pixi-unpack":{"version":"0.7.11",
-        "url_template":"https://example.invalid/v{version}/{target}",
-        "platforms":{"linux-64":{"target":"x86_64-unknown-linux-musl",
-        "sha256":"8191f586b734e634e2f1644e553dcb8e07718d0bafbfefb65c5e6e22b4d484b7","linkage":"static"}}}}}"#,
-    )
-    .unwrap();
-
-    bin()
-        .args(["tools", "list", "--tools-lock", lock.to_str().unwrap()])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("pixi-unpack 0.7.11"))
-        .stdout(predicate::str::contains("linux-64"))
-        .stdout(predicate::str::contains("static"));
-}
-
-#[test]
-fn tools_list_uses_embedded_pins_without_a_root_sidecar_file() {
-    let dir = tempfile::tempdir().unwrap();
-    bin()
-        .current_dir(dir.path())
-        .args(["tools", "list"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("embedded tools lock"))
-        .stdout(predicate::str::contains("pixi-unpack"));
-}
-
-#[test]
 fn plan_emits_a_publish_matrix_from_a_reviewed_project_config() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join(".pixi-sandbox.toml");
@@ -560,7 +525,7 @@ platforms = ["linux-aarch64"]
 }
 
 #[test]
-fn plan_rejects_a_custom_runner_without_embedded_tool_support() {
+fn plan_rejects_a_custom_runner_outside_the_native_platform_table() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join(".pixi-sandbox.toml");
     fs::write(
@@ -582,7 +547,7 @@ platforms = ["linux-ppc64le"]
         .args(["plan", "--config", config.to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("embedded helper-tool pins"));
+        .stderr(predicate::str::contains("unknown platform"));
 }
 
 // --------------------------------------------------------------- doctor, on the fixture
@@ -1093,30 +1058,6 @@ fn publish_failure_preserves_the_existing_healthy_transport_branch() {
         .success();
 }
 
-/// Task-6: an operator with no network must never be sent to a reference that no longer exists.
-/// It used to send them to a reference implementation that 0.2.0 deleted from the repository,
-/// which is exactly the kind of dead end an airlock cannot resolve. `tools update` was the last
-/// verb that could emit such a pointer, so the rule is now asserted over every operator-visible
-/// surface: no verb may claim to be unimplemented, and no help text may name a deleted reference.
-#[test]
-fn tools_update_never_defers_to_a_reference() {
-    let deferred = bin()
-        .args([
-            "tools",
-            "update",
-            "--check",
-            "--tools-lock",
-            "/nonexistent/does-not-exist.json",
-        ])
-        .assert()
-        .failure();
-    let stderr = String::from_utf8_lossy(&deferred.get_output().stderr);
-    assert!(
-        !stderr.contains("not implemented yet"),
-        "`tools update` is implemented; it must not still defer:\n{stderr}"
-    );
-}
-
 // The stale words stay on one line: `#[case]` attributes would each need an opt-out marker.
 // stale-ref-allowed: this list is the rule `lint-repo-consistency` enforces elsewhere.
 const STALE_DELETED_REFERENCES: [&str; 3] = ["python", "prototype", ".knowledge/research"];
@@ -1125,9 +1066,6 @@ const STALE_DELETED_REFERENCES: [&str; 3] = ["python", "prototype", ".knowledge/
 #[case("--help", 0)]
 #[case("--help", 1)]
 #[case("--help", 2)]
-#[case("tools --help", 0)]
-#[case("tools --help", 1)]
-#[case("tools --help", 2)]
 #[case("pack --help", 0)]
 #[case("pack --help", 1)]
 #[case("pack --help", 2)]
@@ -1142,21 +1080,6 @@ fn no_help_surface_points_at_a_deleted_reference(#[case] surface: &str, #[case] 
     assert!(
         !text.contains(stale),
         "`{surface}` points at the deleted {stale} reference"
-    );
-}
-
-// The flags only exist because the verb is implemented, so their presence is the positive
-// half of "not a stub" — the failure above only rules out the old wording coming back.
-#[rstest]
-#[case("--tools-lock")]
-#[case("--check")]
-#[case("--tool")]
-fn tools_update_help_documents_its_flags(#[case] flag: &str) {
-    let update = bin().args(["tools", "update", "--help"]).assert().success();
-    let text = String::from_utf8_lossy(&update.get_output().stdout);
-    assert!(
-        text.contains(flag),
-        "`tools update --help` must document {flag}:\n{text}"
     );
 }
 
@@ -1258,108 +1181,6 @@ fn unpack_verify_only_checks_the_fixture_without_creating_output() {
     );
 }
 
-/// This is deliberately Unix-only: the fake helper programs are POSIX scripts. The portable
-/// command paths are still covered by verify-only tests above, while this test proves the full
-/// pack → verify → standalone-unpack → restore flow without a network or a real conda payload.
-#[cfg(unix)]
-#[test]
-fn pack_unpack_and_restore_a_verified_synthetic_environment() {
-    let temp = tempfile::tempdir().unwrap();
-    let repo = temp.path().join("project-source");
-    let tools = temp.path().join("fake-tools");
-    let transport = temp.path().join("transport");
-    let raw_prefix = temp.path().join("raw-prefix");
-    let restored_project = temp.path().join("restored-project");
-    fs::create_dir_all(&repo).unwrap();
-    fs::create_dir_all(&restored_project).unwrap();
-    fs::write(repo.join("pixi.lock"), "version: 7\n").unwrap();
-    fake_tools(&tools);
-    let path = path_with_fake_tools(&tools);
-
-    bin()
-        .env("PATH", &path)
-        .args([
-            "pack",
-            "--repo-root",
-            repo.to_str().unwrap(),
-            "--envs",
-            "demo",
-            "--output-dir",
-            transport.to_str().unwrap(),
-            "--platform",
-            "linux-64",
-            // The generated fake package is just over one KiB, while the tools remain
-            // smaller than this limit. That exercises record_file + join_parts end to end.
-            "--shard-limit-mib",
-            "0.0005",
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("packed transport"));
-
-    let manifest = fs::read_to_string(transport.join(".pixi-sandbox/manifest.json")).unwrap();
-    assert!(
-        manifest.contains(".part000"),
-        "the synthetic package must be sharded"
-    );
-
-    bin()
-        .env("PATH", &path)
-        .args([
-            "doctor",
-            "--branch-location",
-            transport.to_str().unwrap(),
-            "--verify",
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("OK — every declared byte matches"));
-
-    bin()
-        .env("PATH", &path)
-        .args([
-            "unpack",
-            "--input-dir",
-            transport.to_str().unwrap(),
-            "--output-dir",
-            raw_prefix.to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-    assert!(raw_prefix.join("conda-meta/fake-package.json").is_file());
-    assert!(
-        !raw_prefix.join("conda-meta/pixi_env_prefix").exists(),
-        "unpack makes a raw prefix; restore owns Pixi's markers"
-    );
-
-    bin()
-        .env("PATH", &path)
-        // task-33: registration runs by default; keep it inside the tempdir.
-        .env("HOME", temp.path())
-        .env("USERPROFILE", temp.path())
-        .env("SHELL", "/usr/bin/bash")
-        .env("TMPDIR", temp.path())
-        .args([
-            "restore",
-            "--branch-location",
-            transport.to_str().unwrap(),
-            "--output-path",
-            restored_project.to_str().unwrap(),
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("restore complete"));
-    let prefix = restored_project.join(".pixi/envs/demo");
-    assert!(prefix.join("conda-meta/fake-package.json").is_file());
-    assert!(prefix.join("conda-meta/pixi_env_prefix").is_file());
-    assert!(
-        restored_project
-            .join(".pixi/tools/linux-64/pixi-unpack")
-            .is_file()
-    );
-    assert!(!restored_project.join(".pixi/sandbox-env.sh").exists());
-}
-
 #[cfg(unix)]
 #[test]
 fn pack_keeps_the_self_binary_only_in_tools_and_the_branch_root_documentation_only() {
@@ -1369,7 +1190,7 @@ fn pack_keeps_the_self_binary_only_in_tools_and_the_branch_root_documentation_on
     let transport = temp.path().join("transport");
     let self_bin = temp.path().join("self-bin");
     fs::create_dir_all(&repo).unwrap();
-    fs::write(repo.join("pixi.lock"), "version: 7\n").unwrap();
+    support::write_empty_native_lock(&repo, &["demo"]);
     fake_tools(&tools);
     write_executable(&self_bin, "#!/bin/sh\necho pixi-sandbox self-binary\n");
 
@@ -1419,7 +1240,7 @@ fn pack_refuses_a_pixi_global_trampoline_self_bin_before_embedding() {
     let transport = temp.path().join("transport");
     let global_bin = temp.path().join("global/bin");
     fs::create_dir_all(&repo).unwrap();
-    fs::write(repo.join("pixi.lock"), "version: 7\n").unwrap();
+    support::write_empty_native_lock(&repo, &["demo"]);
     fs::create_dir_all(&global_bin).unwrap();
     fake_tools(&tools);
     let self_bin = global_bin.join("pixi-sandbox");
@@ -1539,7 +1360,7 @@ fn pack_refuses_a_self_bin_that_cannot_leave_its_prefix() {
     let transport = temp.path().join("transport");
     let self_bin = temp.path().join("self-bin");
     fs::create_dir_all(&repo).unwrap();
-    fs::write(repo.join("pixi.lock"), "version: 7\n").unwrap();
+    support::write_empty_native_lock(&repo, &["demo"]);
     fake_tools(&tools);
     write_executable(
         &self_bin,
@@ -3032,7 +2853,7 @@ fn wrap_payload_build_runs_the_named_tool_and_publishes_into_the_default_channel
 /// TASK-78 AC#12: the build tool is fetched into a tools cache and never enters the embedded
 /// catalogue, so a wrap leaves `tools.lock.json` byte-identical and writes nothing into a packed
 /// transport beside it. The stand-in `rattler-build` keeps this offline; the real on-demand
-/// download was proven on a connected host (the tool lands in `--tools-cache`, and `rattler-build`
+/// download was proven on a connected host (the tool lands in `--build-cache`, and `rattler-build`
 /// appears zero times in `tools.lock.json`).
 #[cfg(unix)]
 #[test]
@@ -3042,8 +2863,7 @@ fn wrap_payload_leaves_the_tool_catalogue_and_a_packed_transport_unchanged() {
     write_payload_project(project.path(), b"the artifact", &digest);
 
     let catalogue = project.path().join("tools.lock.json");
-    fs::write(&catalogue, pixi_sandbox_core::tools_lock::EMBEDDED_JSON)
-        .expect("write the tool catalogue");
+    fs::write(&catalogue, b"project-local sentinel\n").expect("write the tool catalogue");
     let transport = project.path().join(".pixi-sandbox");
     fs::create_dir_all(&transport).expect("packed transport dir");
     let marker = transport.join("manifest.json");

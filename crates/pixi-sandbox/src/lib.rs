@@ -5,6 +5,8 @@
 //! `crates/xtask`.
 
 pub mod branch_docs;
+pub mod build_tool_fetch;
+pub mod embedded_tools;
 pub mod generated;
 pub mod github;
 pub mod host_probe;
@@ -17,8 +19,6 @@ pub mod rattler_build;
 pub mod release;
 pub mod self_update;
 pub mod standalone;
-pub mod tool_fetch;
-pub mod tools_update;
 pub mod upgrade;
 pub mod user_tools;
 pub mod vendor;

@@ -44,13 +44,7 @@ taplo = "=0.10.0"
 convco = "=0.7.2"
 
 [feature.sandbox.dependencies]
-# The CI-side packer and the airlock-side unpacker. Having them here is convenient for
-# local reproduction; CI itself does not depend on this feature — it fetches the same
-# helper tools from the binary's embedded sha256 pins (see crates/pixi-sandbox-core/src/tools_lock.rs).
-# Pinned to the same versions the embedded catalogue compiles in, so a local `pack` and a
-# CI `pack` cannot pack different helper tools.
-pixi-pack = "=0.7.11"
-pixi-unpack = "=0.7.11"
+# Local package-channel indexing used by payload publishing; packing/restoration are native.
 rattler-index = "=0.31.5"
 
 [environments]
@@ -254,7 +248,7 @@ sandbox-pack = { args = [
   { arg = "platform", default = "linux-64" },
   { arg = "self_bin", default = "target/release/pixi-sandbox" },
   { arg = "vendor", default = "--cargo-vendor" },
-], cmd = "cargo build -q -p pixi-sandbox --release && cargo run -q -p pixi-sandbox --release -- pack --repo-root {{ project }} --envs {{ envs }} --output-dir {{ out }} --platform {{ platform }} {{ vendor }} --fetch-tools --self-bin {{ self_bin }}" }
+], cmd = "cargo build -q -p pixi-sandbox --release && cargo run -q -p pixi-sandbox --release -- pack --repo-root {{ project }} --envs {{ envs }} --output-dir {{ out }} --platform {{ platform }} {{ vendor }} --pixi-bin pixi --self-bin {{ self_bin }}" }
 
 sandbox-doctor = { args = [
   { arg = "transport", default = ".sandbox-out" },

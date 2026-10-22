@@ -200,3 +200,16 @@ impl std::fmt::Display for Platform {
         f.write_str(self.as_str())
     }
 }
+
+/// Pixi version used by generated solve/devcontainer workflows.
+pub const PIXI_VERSION: &str = "0.81.0";
+
+/// Executable filename for a transport platform.
+#[must_use]
+pub fn executable_filename(tool: &str, platform: &str) -> String {
+    if platform.starts_with("win-") && !tool.to_ascii_lowercase().ends_with(".exe") {
+        format!("{tool}.exe")
+    } else {
+        tool.to_string()
+    }
+}

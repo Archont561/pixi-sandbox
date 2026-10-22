@@ -183,25 +183,6 @@ pub fn render_devcontainer_setup() -> String {
     )
 }
 
-/// The pixi version a release pins, read from the embedded tools lock it was built with.
-///
-/// The lane checks out the exact commit the tag names (`starter-check-dispatch` refuses any
-/// other), so this file *is* the release's pin — the same bytes the binary compiles in and
-/// `pixi-sandbox tools list` prints, read without executing anything.
-///
-/// # Errors
-///
-/// Fails when the lock cannot be read, is not valid JSON, or names no pixi version.
-pub fn pixi_version_from_tools_lock(path: &Path) -> Result<String> {
-    let text = crate::util::read(path)?;
-    let lock: serde_json::Value =
-        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    lock["tools"]["pixi"]["version"]
-        .as_str()
-        .map(str::to_string)
-        .with_context(|| format!("{} names no tools.pixi.version", path.display()))
-}
-
 /// The starter README.
 ///
 /// doc-10 requires the prose to state the release it corresponds to and to cross-link the main

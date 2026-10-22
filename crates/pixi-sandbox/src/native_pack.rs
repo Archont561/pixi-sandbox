@@ -5,6 +5,8 @@
 //! Callers retain ownership of staging, transport verification and atomic promotion.
 
 mod wheels;
+mod writer;
+pub use writer::{preflight, write};
 
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::shard;
@@ -186,8 +188,14 @@ fn inspect_channel(pack: &Path, platform: &str) -> Result<Vec<LocalPackage>> {
             }
         }
     }
-    if packages.is_empty() {
-        bail!("local pack contains no Conda packages");
+    if !pack.join("channel/noarch/repodata.json").is_file()
+        && !pack
+            .join("channel")
+            .join(platform)
+            .join("repodata.json")
+            .is_file()
+    {
+        bail!("local pack contains no channel metadata");
     }
     Ok(packages)
 }

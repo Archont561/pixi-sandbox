@@ -4,8 +4,8 @@
 //! writing it, but nothing checked the tree that comes out the other end: a prefix that is
 //! structurally plausible but wrong passed every check (task-10, measured against a real
 //! transport). This module is the fix: at pack time the environment is unpacked once more,
-//! with the same pinned `pixi-unpack` the airlock will use, and every file of that tree is
-//! recorded here with a digest. `verify::verify_restored` then walks a *restored* prefix and
+//! with the native rattler/UV installer (or an explicit legacy adapter), and every file
+//! of that tree is recorded here with a digest. `verify::verify_restored` then walks a *restored* prefix and
 //! compares it against this list — presence, content, symlink targets and the executable bit.
 //!
 //! ## Why digests need a canonical form

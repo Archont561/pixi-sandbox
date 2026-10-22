@@ -7,11 +7,11 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
+use pixi_sandbox::build_tool_fetch::ToolDownload;
 use pixi_sandbox::rattler_build::{
     ProcessRunner, RattlerBuildToolchain, RealProcessRunner, TOOL_NAME, TOOL_VERSION, build_args,
     find_package, missing_tool_remedy, pins, publish_args, resolve_tool,
 };
-use pixi_sandbox::tool_fetch::ToolDownload;
 use pixi_sandbox_core::payload::{
     PackageIdentity, PayloadError, PayloadSpec, PayloadToolchain, PayloadTotals, Provenance,
     SourceArtifact, ValidatedPayload, WrapPlan,

@@ -1,112 +1,15 @@
-//! Pinned helper fetching and verification (ADR-4); embedding never changes the selected bytes.
+//! Independent, on-demand package-builder fetching and verification (ADR-28).
 
+use crate::embedded_tools::reported_version;
 use crate::pack::support;
 use crate::user_tools::make_executable;
 use anyhow::{Context, Result, bail};
-use pixi_sandbox_core::manifest::ToolEntry;
+use pixi_sandbox_core::build_tool_pins::BuildToolPins;
+use pixi_sandbox_core::platform::executable_filename;
 use pixi_sandbox_core::shard;
-use pixi_sandbox_core::tools_lock::{ToolsLock, executable_filename};
-use pixi_sandbox_core::verify::{self, Linkage};
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-
-#[derive(Debug)]
-pub struct ToolSource {
-    pub path: PathBuf,
-    pub version: String,
-    pub url: Option<String>,
-    pub pinned_sha256: Option<String>,
-}
-
-/// Embed one helper tool into the payload: copy, chmod, size-limit, digest-pin and
-/// linkage checks.
-///
-/// # Errors
-///
-/// Returns an error if the tool cannot be copied or made executable, exceeds the shard
-/// limit, fails its pin, or is dynamically linked.
-///
-/// # Panics
-///
-/// Panics if the computed destination has no parent directory (a bug in this function,
-/// not an input: the path is built from fixed segments).
-pub fn embed_tool(
-    payload: &Path,
-    platform: &str,
-    name: &str,
-    source: &ToolSource,
-    shard_limit: u64,
-) -> Result<ToolEntry> {
-    let file_name = executable_filename(name, platform);
-    let relative = format!("tools/{platform}/{file_name}");
-    let destination = payload.join(&relative);
-    let parent = destination
-        .parent()
-        .expect("tool path always has a parent directory");
-    fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    fs::copy(&source.path, &destination).with_context(|| {
-        format!(
-            "copying {name} from {} to {}",
-            source.path.display(),
-            destination.display()
-        )
-    })?;
-    make_executable(&destination)?;
-
-    let metadata = fs::metadata(&destination)?;
-    if metadata.len() > shard_limit {
-        bail!(
-            "embedded tool {name} is {} bytes, above the {} byte shard limit; tools cannot be split",
-            metadata.len(),
-            shard_limit
-        );
-    }
-    let actual = shard::sha256_file(&destination)?;
-    if let Some(expected) = &source.pinned_sha256
-        && &actual != expected
-    {
-        bail!(
-            "integrity: embedded {name} does not match its pin (expected {expected}, got {actual})"
-        );
-    }
-
-    let linkage = verify::linkage_of(&destination);
-    if linkage == Linkage::Dynamic {
-        bail!(
-            "{name} is dynamically linked — ship the static release asset instead (decision ADR-4)"
-        );
-    }
-    Ok(ToolEntry {
-        version: source.version.clone(),
-        url: source.url.clone(),
-        pinned_sha256: source.pinned_sha256.clone(),
-        linkage: linkage.as_str().to_string(),
-        size_bytes: metadata.len(),
-        path: Some(relative),
-    })
-}
-
-/// Load the embedded pins, or a deliberate override resolved relative to the project.
-///
-/// # Errors
-///
-/// Returns an error if the override or the embedded pins cannot be read or parsed.
-pub fn resolve_lock(root: &Path, override_path: Option<&Path>) -> Result<ToolsLock> {
-    match override_path {
-        Some(path) => {
-            let path = if path.is_absolute() {
-                path.to_path_buf()
-            } else {
-                root.join(path)
-            };
-            ToolsLock::load(&path)
-                .with_context(|| format!("reading tool-pin override {}", path.display()))
-        }
-        None => ToolsLock::embedded().context("loading embedded helper-tool pins"),
-    }
-}
 
 /// The external download boundary. Policy still owns checksum verification, atomic cache
 /// replacement, permissions and version checking; an adapter supplies only the byte stream.
@@ -135,7 +38,7 @@ impl ToolDownload for HttpDownload {
 /// Returns an error if the download, the checksum verification, the cache write, or the
 /// version check fails.
 pub fn fetch_tool(
-    lock: &ToolsLock,
+    lock: &BuildToolPins,
     name: &str,
     platform: &str,
     cache: &Path,
@@ -157,12 +60,12 @@ pub struct FetchedTool {
 ///
 /// Returns an error if no explicit path is given and HOME is not set, or the path cannot
 /// be made absolute.
-pub fn tools_cache(explicit: Option<&Path>, home: Option<&std::ffi::OsStr>) -> Result<PathBuf> {
+pub fn build_cache(explicit: Option<&Path>, home: Option<&std::ffi::OsStr>) -> Result<PathBuf> {
     if let Some(path) = explicit {
         support::absolute(path)
     } else {
         let home =
-            home.ok_or_else(|| anyhow::anyhow!("cannot choose a tools cache: HOME is not set"))?;
+            home.ok_or_else(|| anyhow::anyhow!("cannot choose a build cache: HOME is not set"))?;
         Ok(PathBuf::from(home)
             .join(".cache")
             .join("pixi-sandbox")
@@ -181,7 +84,7 @@ pub fn tools_cache(explicit: Option<&Path>, home: Option<&std::ffi::OsStr>) -> R
 ///
 /// Panics if the selected pin is missing (a bug: the pin was checked before download).
 pub fn fetch_tool_with(
-    lock: &ToolsLock,
+    lock: &BuildToolPins,
     name: &str,
     platform: &str,
     cache: &Path,
@@ -262,21 +165,4 @@ pub fn fetch_tool_with(
         url,
         sha256: pin.sha256.clone(),
     })
-}
-
-/// Ask a tool binary for its `--version` output.
-///
-/// # Errors
-///
-/// Returns an error if the tool cannot be run or its output cannot be read.
-pub fn reported_version(path: &Path) -> Result<String> {
-    let mut command = Command::new(path);
-    command.arg("--version");
-    let output = support::run(&mut command)
-        .with_context(|| format!("asking {} for its version", path.display()))?;
-    Ok(output
-        .split_whitespace()
-        .last()
-        .unwrap_or("unknown")
-        .to_string())
 }

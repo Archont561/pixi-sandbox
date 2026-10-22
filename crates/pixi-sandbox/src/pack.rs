@@ -126,8 +126,8 @@ pub fn resolve_host_requirements(
 
 /// Build the per-file oracle for one environment (ADR-13).
 ///
-/// The unpack uses the pinned unpacker — exactly what `restore` will do on the airlock —
-/// and records the tree it produces, with every prefix-path spelling canonicalised away
+/// Native installation is the default. An explicit legacy unpacker adapter is retained for
+/// old opaque payload compatibility. Record the resulting tree with prefix spellings canonicalised away
 /// (see `files_manifest`).
 ///
 /// The unpack runs on a *copy* of the pack: pixi-unpack writes its extraction cache into the
@@ -144,7 +144,7 @@ pub fn build_files_oracle(
     payload: &Path,
     env: &str,
     pack: &Path,
-    unpacker: &Path,
+    unpacker: Option<&Path>,
     shard_limit: u64,
 ) -> Result<(EnvFiles, u64)> {
     let scratch = out.join(format!(".pixi-sandbox-verify-{env}"));
@@ -168,20 +168,29 @@ pub fn build_files_oracle(
             .with_context(|| format!("copying {} for the verification unpack", file.display()))?;
     }
 
-    let mut command = Command::new(unpacker);
-    command
-        .arg(&pack_copy)
-        .arg("-o")
-        .arg(&stage)
-        .arg("-e")
-        .arg(env);
-    support::use_work_tmp(&mut command, &scratch);
-    support::run(&mut command).with_context(|| {
-        format!(
-            "verification-unpacking environment {env} with {}",
-            unpacker.display()
-        )
-    })?;
+    if let Some(unpacker) = unpacker {
+        let mut command = Command::new(unpacker);
+        command
+            .arg(&pack_copy)
+            .arg("-o")
+            .arg(&stage)
+            .arg("-e")
+            .arg(env);
+        support::use_work_tmp(&mut command, &scratch);
+        support::run(&mut command).with_context(|| {
+            format!(
+                "verification-unpacking environment {env} with {}",
+                unpacker.display()
+            )
+        })?;
+    } else {
+        crate::native_pack::install(
+            &pack_copy,
+            &stage.join(env),
+            &stage.join(env),
+            &scratch.join("cache"),
+        )?;
+    }
 
     let prefix = stage.join(env);
     if !prefix.is_dir() {

@@ -35,8 +35,6 @@ pub enum Command {
     Plan(PlanArgs),
     /// Fetch a prebuilt payload on the connected host and stage its conda package recipe (ADR-28).
     WrapPayload(WrapPayloadArgs),
-    /// Manage the pinned helper tools (`pixi-pack`, `pixi-unpack`, `pixi`).
-    Tools(ToolsArgs),
     /// Replace this standalone binary with a published release (ADR-26).
     SelfUpdate(SelfUpdateArgs),
     /// Download the checksum-verified standalone release binary for this host (workflow bootstrap).
@@ -249,18 +247,9 @@ pub struct PackArgs {
     #[arg(long, value_enum, default_value_t = VendorModeArg::Loose)]
     pub cargo_vendor_mode: VendorModeArg,
 
-    /// Fetch and embed the helper tools pinned into this binary (no system installs).
+    /// Explicitly bundle this Pixi executable for frozen/offline checks after restore.
     #[arg(long)]
-    pub fetch_tools: bool,
-
-    /// Use this reviewed pin file instead of the lock embedded in the binary. Relative paths
-    /// are resolved against `--repo-root`.
-    #[arg(long)]
-    pub tools_lock: Option<PathBuf>,
-
-    /// Cache directory for downloaded tools.
-    #[arg(long, env = "PIXI_SANDBOX_TOOLS_CACHE")]
-    pub tools_cache: Option<PathBuf>,
+    pub pixi_bin: Option<PathBuf>,
 
     /// Bundle this very binary so the branch bootstraps itself. Must run *standalone*:
     /// use the checksum-verified release asset (`pixi-sandbox-<target>`), never a
@@ -599,48 +588,14 @@ pub struct WrapPayloadArgs {
     #[arg(long, value_name = "PATH")]
     pub channel: Option<PathBuf>,
 
-    /// Tools cache for `rattler-build` (default: `$HOME/.cache/pixi-sandbox/tools`).
+    /// Build cache for `rattler-build` (default: `$HOME/.cache/pixi-sandbox/tools`).
     #[arg(long, value_name = "PATH")]
-    pub tools_cache: Option<PathBuf>,
+    pub build_cache: Option<PathBuf>,
 
     /// Use this `rattler-build` instead of fetching the pinned one — for offline use, a mirror,
     /// or a test double.
     #[arg(long, value_name = "PATH")]
     pub build_tool: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub struct ToolsArgs {
-    #[command(subcommand)]
-    pub command: ToolsCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum ToolsCommand {
-    /// Print the pins embedded in this binary, or an explicit override file.
-    List {
-        #[arg(long)]
-        tools_lock: Option<PathBuf>,
-    },
-    /// Refresh an explicit pin file from upstream releases (network; review the diff).
-    Update(ToolsUpdateArgs),
-}
-
-#[derive(Debug, Args)]
-pub struct ToolsUpdateArgs {
-    /// Update this file in place. Without it the candidate catalogue is printed, so it can be
-    /// redirected into `crates/pixi-sandbox-core/assets/tools.lock.json` and reviewed as a diff.
-    #[arg(long)]
-    pub tools_lock: Option<PathBuf>,
-
-    /// Report whether anything is newer and exit non-zero if so, without downloading or writing.
-    /// This is the form a scheduled workflow keys on.
-    #[arg(long)]
-    pub check: bool,
-
-    /// Limit the run to these tool names (repeatable). Everything else is reported as skipped.
-    #[arg(long = "tool", value_name = "NAME")]
-    pub tool: Vec<String>,
 }
 
 pub fn run() -> Result<()> {
@@ -665,7 +620,7 @@ pub fn run() -> Result<()> {
             let manifest = pixi_sandbox_core::manifest::Manifest::load(
                 &pixi_sandbox_core::manifest::Manifest::path_in(&branch),
             )?;
-            let executable = pixi_sandbox_core::tools_lock::executable_filename(
+            let executable = pixi_sandbox_core::platform::executable_filename(
                 "pixi-sandbox",
                 &manifest.platform,
             );
@@ -698,7 +653,6 @@ pub fn run() -> Result<()> {
         Command::Init(args) => commands::init(&args),
         Command::Plan(args) => commands::plan(&args),
         Command::WrapPayload(args) => commands::wrap_payload(&args),
-        Command::Tools(args) => commands::tools(args),
         Command::SelfUpdate(args) => commands::self_update(args),
         Command::FetchRelease(args) => commands::fetch_release(&args),
         Command::Pipeline(args) => commands::pipeline(args),

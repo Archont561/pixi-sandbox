@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 /// Schema 2 added `envs.<name>.files` (the per-file oracle for a restored prefix, ADR-13);
 /// a schema-1 transport simply has no oracle and `doctor --verify-restored` says so
 /// instead of guessing.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// Directory that holds the payload inside a transport / on a branch.
 pub const MANIFEST_DIR: &str = ".pixi-sandbox";

@@ -453,7 +453,7 @@ fn the_pack_and_restore_command_lines_are_the_ones_the_recipe_ran() {
     let checkout = Path::new("/tmp/proof/checkout");
     let restored = Path::new("/tmp/proof/restored");
 
-    // `--fetch-tools` and `--self-bin` are what make the packed transport self-contained, and
+    // `--pixi-bin` and `--self-bin` are what make the packed transport self-contained, and
     // `--user-tools skip` is what keeps the restore from writing into the runner's HOME. Each
     // is a property of the proof, so each is pinned here rather than retyped in a workflow.
     assert_eq!(
@@ -468,7 +468,8 @@ fn the_pack_and_restore_command_lines_are_the_ones_the_recipe_ran() {
             "/tmp/proof/transport",
             "--platform",
             "linux-64",
-            "--fetch-tools",
+            "--pixi-bin",
+            "pixi",
             "--self-bin",
             "./pixi-sandbox",
         ]

@@ -8,7 +8,6 @@
 use crate::error::{Error, Result};
 use crate::host_requirements::{HostRequirementSet, HostRequirements};
 use crate::platform::Platform;
-use crate::tools_lock::ToolsLock;
 use crate::transport_budget::{
     DEFAULT_MAX_BLOB_MIB, DEFAULT_MAX_REPOSITORY_PUSH_MIB, DEFAULT_MAX_RESTORE_REQUIRED_MIB,
     DEFAULT_MAX_TRANSPORT_MIB, TransportBudgets, mib_to_bytes,
@@ -395,12 +394,11 @@ impl SandboxConfig {
         // fetches only the reviewed catalogue compiled into its verified binary. Fail before a
         // matrix job starts if a configured platform would later fail to fetch pixi, pack, or
         // unpack helpers.
-        let embedded_tools = ToolsLock::embedded()?;
         let mut include = Vec::new();
         for bundle in &self.bundles {
             let environments = bundle.environments.join(",");
             for platform in &bundle.platforms {
-                ensure_embedded_tools_cover(&embedded_tools, platform)?;
+                Platform::from_str(platform)?;
                 let runner = self.runner_for(platform)?;
                 include.push(PublishTarget {
                     bundle: bundle.name.clone(),
@@ -585,23 +583,6 @@ impl SandboxConfig {
             ))
         })
     }
-}
-
-/// A planned release job always uses compiled pins: allowing a target whose helper releases are
-/// absent would turn a reviewed plan into a slow, avoidable failure on a native runner.
-fn ensure_embedded_tools_cover(lock: &ToolsLock, platform: &str) -> Result<()> {
-    let missing = ["pixi", "pixi-pack", "pixi-unpack"]
-        .into_iter()
-        .filter(|tool| lock.pin(tool, platform).is_none())
-        .collect::<Vec<_>>();
-    if missing.is_empty() {
-        return Ok(());
-    }
-    Err(Error::Invalid(format!(
-        "platform {platform:?} has no complete embedded helper-tool pins (missing {}); \
-         add reviewed pins and release a new pixi-sandbox binary before publishing it",
-        missing.join(", ")
-    )))
 }
 
 fn default_branch_prefix() -> String {
