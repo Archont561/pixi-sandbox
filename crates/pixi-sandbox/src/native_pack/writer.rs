@@ -195,6 +195,29 @@ fn conda_record(record: &mut Value, url: &Url, filename: &str) -> Result<Package
     ] {
         fields.entry(key).or_insert_with(|| value.into());
     }
+    // Lock v7 omits a build number when it equals the trailing decimal digits
+    // of the build string (or zero if there are none). Preserve explicit values.
+    // This is rattler_lock's derive_build_number_from_build rule, not an
+    // assumption that all compact records have build number zero.
+    let build = fields["build"]
+        .as_str()
+        .context("invalid locked Conda build")?;
+    let trailing_digits = build
+        .rsplit_once(|c: char| !c.is_ascii_digit())
+        .map_or(build, |(_, digits)| digits);
+    let build_number = trailing_digits.parse::<u64>().unwrap_or(0);
+    fields
+        .entry("build_number")
+        .or_insert_with(|| build_number.into());
+    // For noarch builds, v7 infers the kind from whether the build contains "py".
+    if url_subdir == "noarch" {
+        let noarch = if derived.build_string.contains("py") {
+            "python" // stale-ref-allowed: Conda runtime noarch kind.
+        } else {
+            "generic"
+        };
+        fields.entry("noarch").or_insert_with(|| noarch.into());
+    }
     let package: PackageRecord =
         serde_json::from_value(record.clone()).context("invalid locked Conda record")?;
     if identifier.identifier.to_string()

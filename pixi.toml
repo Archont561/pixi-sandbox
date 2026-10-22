@@ -93,7 +93,7 @@ package = []
 test = { depends-on = ["bun-install"], cmd = "bun run test" }
 # Connected real build, then the consumer portion runs inside a Linux network namespace with no egress.
 test-payload-roundtrip = "cargo test -p pixi-sandbox --test payload_roundtrip -- --ignored --nocapture"
-test-doc = { depends-on = ["bun-install"], cmd = "bun run test" }
+test-doc = "cargo test --doc --workspace"
 # task-47 AC#2: replacing the binary that is currently executing, on a real Windows host — the
 # one behaviour no amount of Linux testing can confirm, because Linux will happily unlink a
 # running image and Windows will not. This remains outside Turbo because the empty `package`

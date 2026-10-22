@@ -71,7 +71,7 @@ Reference: https://github.com/Archont561/pixi-sandbox/issues/179, TASK-118/119/1
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 pixi run --frozen fmt
-- [ ] #2 pixi run --frozen lint
+- [x] #2 pixi run --frozen lint
 - [x] #3 pixi run --frozen test
 <!-- DOD:END -->
 
@@ -167,6 +167,21 @@ those missing releases, so connected CI can verify the final graph. Check PR #18
 commit checks for the authoritative result; merge only when all checks pass. Local counts
 above do not validate the new TLS sources. These repairs supersede the earlier unchanged-
 lockfile blocker notes, not the still-pending live/billing acceptance criteria.
+
+
+### 2026-10-22 — Log-backed main CI build-graph follow-up
+
+User authorized the publisher correctness fix and CI optimizations after the post-merge logs.
+Final local gates: full strict lint 7/7, tests and coverage 1,186 pass / 2 skipped, docs quality
+checks pass; exact ordinary/instrumented inventories match all 1,188 entries. Warm lint 7/7
+actual hits after excluding generated logs/reports; no live CI savings claimed.
+The main CI follow-up is documented in `backlog/docs/plans/task-126-ci-build-graph.md`.
+Workspace Clippy has one owner, Cargo lint tasks are serialized, planning uses debug source,
+coverage owns the ordinary Linux suite, and `test-doc` is an actual workspace doctest command.
+The separate ignored payload proof, MSRV, real Windows replacement and docs/security gates remain.
+Pixi-aware Rust cache fingerprinting, profile-aware strict Turbo hashing and debug-info-free CI
+profiles address the observed compiler/environment mismatch and oversized cache. No live savings
+or billing claim; cold/warm CI, successful publisher and release/native evidence remain open.
 
 <!-- SECTION:NOTES:END -->
 

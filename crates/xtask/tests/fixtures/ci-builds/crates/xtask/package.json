@@ -1,0 +1,13 @@
+{
+  "name": "@repo/xtask",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "cargo nextest run -p xtask --no-tests pass"
+  },
+  "dependencies": {
+    "@repo/pixi-sandbox": "workspace:*",
+    "@repo/pixi-sandbox-core": "workspace:*",
+    "@repo/pixi-sandbox-git": "workspace:*"
+  }
+}

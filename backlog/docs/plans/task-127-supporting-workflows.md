@@ -136,3 +136,27 @@ Commands needing the larger native dependency graph used `CARGO_PROFILE_DEV_DEBU
 `CARGO_PROFILE_TEST_DEBUG=0`, `CARGO_INCREMENTAL=0` and `CARGO_NET_OFFLINE=true`. Turbo used
 `--env-mode=loose --force` so these settings actually reached Cargo and results were not cached.
 These are sandbox disk accommodations, not CI performance measurements.
+
+## Post-merge evidence and publisher incident follow-up (2026-10-22)
+
+Merge SHA `97bb24c68475d7e29e519cb2fffb22abcd145a57`:
+
+- CI [39813564355](https://github.com/Archont561/pixi-sandbox/actions/runs/39813564355)
+  succeeded, including MSRV and Windows replacement. Linux job 707s; observed overall job span
+  829s and aggregate job runtime 928s, not billed minutes.
+- Pages [39816408308](https://github.com/Archont561/pixi-sandbox/actions/runs/39816408308)
+  adopted the trusted same-SHA CI artifact, skipped the manual build, and deployed successfully.
+  This supplies the previously missing real main-path adoption evidence; manual/refusal paths
+  still have structural/local evidence, not newly dispatched live runs.
+- Publisher [39813564308](https://github.com/Archont561/pixi-sandbox/actions/runs/39813564308)
+  failed after the successful 2m40s static musl source compile. Frozen Pixi install succeeded;
+  pack failed with `invalid locked Conda record: missing field build_number`. Doctor/publish
+  did not run. This is a compact-lock decoding bug, not authentication or a compile failure.
+  The follow-up has local public-boundary red/green coverage and retains verification gates;
+  successful live publication remains required. Publisher caches now save on failure so a
+  subsequent packing incident does not discard successful dependency compilation. Cache scopes,
+  permissions, serialization and the source-fresh/static bootstrap requirement are unchanged.
+
+See the TASK126 follow-up plan for main-CI measurements and optimizations. Failed/successful runs
+are not comparable performance samples. TASK127 remains In Progress with native/cold/warm/billing
+and publisher evidence outstanding.

@@ -573,3 +573,62 @@ fn unpack_preserves_destination_replacement_policy(
         assert!(!output.join("conda-meta/pixi_env_prefix").exists());
     }
 }
+
+#[rstest]
+#[case("0", None, 0, "generic")]
+#[case("hfixture_102", None, 102, "generic")]
+#[case("7", None, 7, "generic")]
+#[case("20_gnu", Some(20), 20, "generic")]
+#[case("custom", None, 0, "generic")]
+// stale-ref-allowed: Conda runtime noarch kind, not the retired prototype.
+#[case("pyhd_5", None, 5, "python")]
+fn compact_locks_preserve_build_numbers_and_noarch_in_the_local_channel(
+    native_locked_project_fixture: NativePackFixture,
+    #[case] build: &str,
+    #[case] explicit_number: Option<u64>,
+    #[case] expected_number: u64,
+    #[case] expected_noarch: &str,
+) {
+    let fixture = native_locked_project_fixture;
+    let channel = support::crate_dir().join("tests/fixtures/compact-lock/channel/noarch");
+    let repodata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(channel.join("repodata.json")).unwrap()).unwrap();
+    let filename = format!("compact-fixture-1.0-{build}.tar.bz2");
+    let location = url::Url::from_file_path(channel.join(&filename))
+        .unwrap()
+        .to_string();
+    let mut record = repodata["packages"][&filename].clone();
+    let fields = record.as_object_mut().unwrap();
+    for field in [
+        "name",
+        "version",
+        "build",
+        "build_number",
+        "subdir",
+        "noarch",
+    ] {
+        fields.remove(field);
+    }
+    if let Some(number) = explicit_number {
+        record["build_number"] = number.into();
+    }
+    record["conda"] = location.clone().into();
+    std::fs::write(fixture.pack.join("pixi.lock"), serde_json::to_vec(&serde_json::json!({
+        "version": 7,
+        "environments": {"default": {"packages": {support::host_platform(): [{"conda": location}]}}},
+        "packages": [record],
+    })).unwrap()).unwrap();
+    let output = fixture.home.path().join("compact-pack");
+    pixi_sandbox::native_pack::write(&fixture.pack, "default", support::host_platform(), &output)
+        .unwrap();
+    pixi_sandbox::native_pack::verify(&output).unwrap();
+    let actual: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(output.join("channel/noarch/repodata.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        actual["packages"][&filename]["build_number"],
+        expected_number
+    );
+    assert_eq!(actual["packages"][&filename]["noarch"], expected_noarch);
+}

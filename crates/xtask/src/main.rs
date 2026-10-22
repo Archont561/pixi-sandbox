@@ -46,6 +46,8 @@ enum Command {
     CheckReleaseScheduling,
     /// Validate Pages artifact identity, trust and quality gates.
     CheckDocsArtifacts,
+    /// Validate the single-suite CI route, lint serialization and toolchain cache.
+    CheckCiBuilds,
     /// Rewrite this repository's committed render of the generated relock workflow.
     RenderRelock,
     /// Report every documented release reference that disagrees with the declared version.
@@ -429,6 +431,7 @@ fn run_args(args: Args) -> Result<()> {
         Command::Version => version::print_version(&root),
         Command::CheckRepository => repo_checks::run(&root),
         Command::CheckReleaseScheduling => xtask::workflow_gates::check_release_scheduling(&root),
+        Command::CheckCiBuilds => xtask::workflow_gates::check_ci_builds(&root),
         Command::CheckDocsArtifacts => xtask::workflow_gates::check_docs_artifacts(&root),
         Command::CheckReleaseRefs => {
             let findings = release_refs::scan(&root)?;

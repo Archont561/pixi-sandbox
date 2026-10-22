@@ -1,0 +1,165 @@
+name: ci
+
+# Every step in this file is ONE line: `pixi run <task>`.
+#
+# The rule (doc-2 §6): a step that needs more than one line is a task in `pixi.toml`
+# (or a script under `scripts/`) — never inline bash here. That keeps the
+# workflow reviewable, and it means the exact command CI runs is the command you run
+# locally. Tasks that need paths from the workflow read them from the environment.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A pull request's newer push supersedes its older run, so that run is cancelled. A push to main
+# never is: each tip is proven once, by its own run, and a cancelled main run would leave a tip
+# nothing judged (decision ADR-29). Grouping pushes by commit, not by ref, is what guarantees
+# it — one group per ref would still cancel a pending main run when a third push queues.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: ci (lint · test · coverage)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run-rust: ${{ steps.changes.outputs.code != 'false' }}
+    steps:
+      # Depth 2: the pushed tip and its parents, which is the evidence the main-integration
+      # guard at the end of this job reads.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      # Keep the required CI check alive for every PR. Filter expensive steps, not the
+      # workflow trigger: paths-ignored workflows leave required checks Pending. Pushes
+      # always run everything, including ADR-29's main-integration judgment below.
+      # Set repository variable PIXI_SANDBOX_FULL_CI=true to disable this optimization.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: changes
+        if: github.event_name == 'pull_request' && vars.PIXI_SANDBOX_FULL_CI != 'true'
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!backlog/**'
+              - '!CONTEXT.md'
+              - '!CHANGELOG.md'
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          environments: default
+          cache: true
+      - if: steps.changes.outputs.code != 'false'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cmd-format: pixi run --frozen -- {0}
+          shared-key: ci-pixi-dev
+          key: ${{ hashFiles('pixi.lock') }}
+      - if: steps.changes.outputs.code != 'false'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ github.ref_name }}-
+            turbo-${{ runner.os }}-
+      - if: steps.changes.outputs.code != 'false'
+        run: pixi run fmt --check
+      - if: steps.changes.outputs.code != 'false'
+        run: pixi run lint
+      - if: steps.changes.outputs.code != 'false'
+        run: pixi run test-doc
+      - if: steps.changes.outputs.code != 'false'
+        run: pixi run test-payload-roundtrip
+      - if: steps.changes.outputs.code != 'false'
+        run: pixi run coverage
+      - if: steps.changes.outputs.code != 'false'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: crates/lcov.info
+          disable_search: true
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - if: steps.changes.outputs.code == 'false'
+        run: pixi run lint-docs
+      - run: pixi run xtask check-ci-builds
+      - run: pixi run xtask check-release-scheduling
+      - run: pixi run xtask check-docs-artifacts
+      - run: pixi run docs build
+      - run: pixi run docs-frontmatter-check
+      - run: pixi run docs-link-check
+      - run: pixi run docs-a11y-check
+      - run: pixi run docs-snippet-check
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-site-${{ github.sha }}
+          path: docs/dist
+          if-no-files-found: error
+          retention-days: 7
+      # The main-integration guard (decision ADR-29): how did this push reach main — a pull
+      # request merged on GitHub, the release commit, or one direct commit outside the
+      # airlock's paths? Last, and on `!cancelled()`, so a red step above still gets the verdict;
+      # it runs after the push, so it reports a violation in red and cannot refuse one.
+      - if: ${{ !cancelled() && github.event_name == 'push' }}
+        run: pixi run xtask check-main-push -- ${{ github.event.before }} ${{ github.sha }}
+
+  # TASK-125: UV's wheel installer raises the source-build floor to Rust 1.94.
+  # Compile every workspace target with that compiler, not merely the newer dev pin.
+  msrv:
+    needs: ci
+    if: needs.ci.outputs.run-rust == 'true'
+    name: Rust 1.94 minimum
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          environments: default
+          cache: true
+      - run: rustup toolchain install 1.94.0 --profile minimal
+      - run: pixi run check-msrv
+
+  # task-47 AC#2: the one thing the job above cannot prove. `self-update` replaces the binary
+  # that is currently executing, and Windows forbids what Unix permits — a mapped image cannot
+  # be unlinked or renamed onto, though it can be renamed aside. `windows_swap` is written for
+  # exactly that, and its `ReplaceStrategy` parameter lets Linux run the code path, but only a
+  # real Windows host with a real running process can confirm the OS behaviour underneath it.
+  #
+  # This proves the updater's replace path on Windows. It does NOT make win-64 a supported
+  # platform: `pixi.lock` still carries no win-64 entries, the README's Windows gap (no
+  # conda-forge `bun`, ADR-11) stands, and `.pixi-sandbox.toml` still publishes linux-64 only.
+  replace-running-image:
+    needs: ci
+    if: needs.ci.outputs.run-rust == 'true'
+    name: replace a running image (windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # `run-install: false` for the same reason release.yml's matrix sets it: no environment
+      # can be installed on win-64, so the empty `package` one is what runs — against the Rust
+      # toolchain the runner image already ships, exactly as the release build leg does.
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          run-install: false
+          cache: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: pixi run -e package test-self-update-replace

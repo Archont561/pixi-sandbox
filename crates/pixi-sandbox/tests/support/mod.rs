@@ -530,7 +530,7 @@ pub fn native_locked_project_fixture(
         let mut record = record.clone();
         record["conda"] = location.clone().into();
         // Pixi lock v7 elides identity fields already encoded in the URL.
-        for field in ["name", "version", "build", "subdir"] {
+        for field in ["name", "version", "build", "build_number", "subdir"] {
             record.as_object_mut().unwrap().remove(field);
         }
         packages.push(record);

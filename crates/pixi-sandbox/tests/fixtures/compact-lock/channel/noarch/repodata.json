@@ -1,0 +1,75 @@
+{
+  "info": {
+    "subdir": "noarch"
+  },
+  "packages": {
+    "compact-fixture-1.0-0.tar.bz2": {
+      "name": "compact-fixture",
+      "version": "1.0",
+      "build": "0",
+      "build_number": 0,
+      "subdir": "noarch",
+      "depends": [],
+      "noarch": "generic",
+      "sha256": "c62ed9d565527add872873e1d4f16ab063723bf93354530bb8103cea5a318d7d",
+      "size": 288
+    },
+    "compact-fixture-1.0-hfixture_102.tar.bz2": {
+      "name": "compact-fixture",
+      "version": "1.0",
+      "build": "hfixture_102",
+      "build_number": 102,
+      "subdir": "noarch",
+      "depends": [],
+      "noarch": "generic",
+      "sha256": "a9897ad6c246bd4d85593a90a53246c5fec5efac4c0861728cddcad5b4ddda5e",
+      "size": 290
+    },
+    "compact-fixture-1.0-7.tar.bz2": {
+      "name": "compact-fixture",
+      "version": "1.0",
+      "build": "7",
+      "build_number": 7,
+      "subdir": "noarch",
+      "depends": [],
+      "noarch": "generic",
+      "sha256": "28b4713b673341956f55234908533e5c4f27255242e9ae85b85d945668301f63",
+      "size": 286
+    },
+    "compact-fixture-1.0-20_gnu.tar.bz2": {
+      "name": "compact-fixture",
+      "version": "1.0",
+      "build": "20_gnu",
+      "build_number": 20,
+      "subdir": "noarch",
+      "depends": [],
+      "noarch": "generic",
+      "sha256": "59dc2b00e56ac60dc52a35fa7b07843eaad180e1145407026de43458bec409ae",
+      "size": 289
+    },
+    "compact-fixture-1.0-custom.tar.bz2": {
+      "name": "compact-fixture",
+      "version": "1.0",
+      "build": "custom",
+      "build_number": 0,
+      "subdir": "noarch",
+      "depends": [],
+      "noarch": "generic",
+      "sha256": "be6d35ecc0713a4fec6a050a5d813a3a7086440b769333b1bae5be97e12a6304",
+      "size": 292
+    },
+    "compact-fixture-1.0-pyhd_5.tar.bz2": {
+      "name": "compact-fixture",
+      "version": "1.0",
+      "build": "pyhd_5",
+      "build_number": 5,
+      "subdir": "noarch",
+      "depends": [],
+      "noarch": "python",
+      "sha256": "71c0757ebfaa7d22ad21f397bc23a2fc26f215b00be0a5fb0100820a514c5de9",
+      "size": 292
+    }
+  },
+  "packages.conda": {},
+  "repodata_version": 2
+}

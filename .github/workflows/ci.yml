@@ -24,6 +24,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
 
 permissions:
   contents: read
@@ -65,6 +67,10 @@ jobs:
           cache: true
       - if: steps.changes.outputs.code != 'false'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cmd-format: pixi run --frozen -- {0}
+          shared-key: ci-pixi-dev
+          key: ${{ hashFiles('pixi.lock') }}
       - if: steps.changes.outputs.code != 'false'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -77,8 +83,10 @@ jobs:
         run: pixi run fmt --check
       - if: steps.changes.outputs.code != 'false'
         run: pixi run lint
+      # Coverage below executes the full ordinary workspace suite once. Doctests and
+      # the ignored connected/offline payload proof remain separate mandatory gates.
       - if: steps.changes.outputs.code != 'false'
-        run: pixi run test
+        run: pixi run test-doc
       - if: steps.changes.outputs.code != 'false'
         run: pixi run test-payload-roundtrip
       - if: steps.changes.outputs.code != 'false'
@@ -87,10 +95,12 @@ jobs:
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: crates/lcov.info
+          disable_search: true
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
       - if: steps.changes.outputs.code == 'false'
         run: pixi run lint-docs
+      - run: pixi run xtask check-ci-builds
       - run: pixi run xtask check-release-scheduling
       - run: pixi run xtask check-docs-artifacts
       - run: pixi run docs build
