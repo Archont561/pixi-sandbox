@@ -28,7 +28,6 @@ concurrency:
 
 env:
   PIXI_SANDBOX_VERSION: 9.8.7
-  PIXI_SANDBOX_CHANNEL: https://prefix.dev/archont561/archont561
 
 jobs:
   plan:
@@ -40,16 +39,34 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
-        with:
-          run-install: false
-      - name: Install pixi-sandbox CLI
+      - name: Fetch the pinned pixi-sandbox release
         shell: bash
-        run: >-
-          pixi global install
-          --channel "$PIXI_SANDBOX_CHANNEL"
-          --channel conda-forge
-          "pixi-sandbox==${PIXI_SANDBOX_VERSION}"
+        env:
+          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox-bin/pixi-sandbox${{ runner.os == 'Windows' && '.exe' || '' }}
+        # multiline-run-allowed: ADR-30 — the sole pre-CLI bootstrap; checksum-verified before PATH registration
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS/$RUNNER_ARCH" in
+            Linux/X64) asset=pixi-sandbox-x86_64-unknown-linux-musl ;;
+            Linux/ARM64) asset=pixi-sandbox-aarch64-unknown-linux-musl ;;
+            macOS/X64) asset=pixi-sandbox-x86_64-apple-darwin ;;
+            macOS/ARM64) asset=pixi-sandbox-aarch64-apple-darwin ;;
+            Windows/X64) asset=pixi-sandbox-x86_64-pc-windows-msvc.exe ;;
+            *) echo "::error::unsupported runner: $RUNNER_OS/$RUNNER_ARCH"; exit 1 ;;
+          esac
+          base="https://github.com/Archont561/pixi-sandbox/releases/download/v$PIXI_SANDBOX_VERSION"
+          stage=$(mktemp -d)
+          trap 'rm -rf "$stage"' EXIT
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 --output "$stage/$asset" "$base/$asset"
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 --output "$stage/SHA256SUMS" "$base/SHA256SUMS"
+          digest=$(awk -v name="$asset" '{ sub(/\r$/, ""); if ($2 == name || $2 == "*" name) { if (NF == 2) print $1; else print "invalid" } }' "$stage/SHA256SUMS")
+          [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]] || { echo "::error::missing, duplicate or malformed checksum for $asset"; exit 1; }
+          printf '%s  %s\n' "$digest" "$asset" > "$stage/selected.sha256"
+          (cd "$stage"; if command -v sha256sum >/dev/null 2>&1; then sha256sum --check selected.sha256; else shasum -a 256 --check selected.sha256; fi)
+          chmod +x "$stage/$asset"
+          mkdir -p "$(dirname "$PIXI_SANDBOX_BIN")"
+          mv "$stage/$asset" "$PIXI_SANDBOX_BIN"
+          printf '%s\n' "$(dirname "$PIXI_SANDBOX_BIN")" >> "$GITHUB_PATH"
       - id: plan
         shell: bash
         run: echo "matrix=$(pixi-sandbox plan --config config/pixi-sandbox.toml --json)" >> "$GITHUB_OUTPUT"
@@ -70,25 +87,34 @@ jobs:
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           run-install: false
-      - name: Install pixi-sandbox CLI
-        shell: bash
-        run: >-
-          pixi global install
-          --channel "$PIXI_SANDBOX_CHANNEL"
-          --channel conda-forge
-          "pixi-sandbox==${PIXI_SANDBOX_VERSION}"
-
-      # Bootstrap exception (task-76 AC#4): this step downloads the pinned binary that
-      # everything below runs as, so it cannot use that binary as its own entrypoint. It is
-      # one checksum-verified command, cross-platform — `fetch-release` resolves this
-      # runner's release asset and verifies it against the release's SHA256SUMS.
       - name: Fetch the pinned pixi-sandbox release
         shell: bash
         env:
-          # The checksum-verified standalone binary this job drives everything with. The
-          # workflow decides when; the tool decides how.
-          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: pixi-sandbox fetch-release --dest "$PIXI_SANDBOX_BIN" --version "$PIXI_SANDBOX_VERSION"
+          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox-bin/pixi-sandbox${{ runner.os == 'Windows' && '.exe' || '' }}
+        # multiline-run-allowed: ADR-30 — the sole pre-CLI bootstrap; checksum-verified before PATH registration
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS/$RUNNER_ARCH" in
+            Linux/X64) asset=pixi-sandbox-x86_64-unknown-linux-musl ;;
+            Linux/ARM64) asset=pixi-sandbox-aarch64-unknown-linux-musl ;;
+            macOS/X64) asset=pixi-sandbox-x86_64-apple-darwin ;;
+            macOS/ARM64) asset=pixi-sandbox-aarch64-apple-darwin ;;
+            Windows/X64) asset=pixi-sandbox-x86_64-pc-windows-msvc.exe ;;
+            *) echo "::error::unsupported runner: $RUNNER_OS/$RUNNER_ARCH"; exit 1 ;;
+          esac
+          base="https://github.com/Archont561/pixi-sandbox/releases/download/v$PIXI_SANDBOX_VERSION"
+          stage=$(mktemp -d)
+          trap 'rm -rf "$stage"' EXIT
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 --output "$stage/$asset" "$base/$asset"
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 --output "$stage/SHA256SUMS" "$base/SHA256SUMS"
+          digest=$(awk -v name="$asset" '{ sub(/\r$/, ""); if ($2 == name || $2 == "*" name) { if (NF == 2) print $1; else print "invalid" } }' "$stage/SHA256SUMS")
+          [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]] || { echo "::error::missing, duplicate or malformed checksum for $asset"; exit 1; }
+          printf '%s  %s\n' "$digest" "$asset" > "$stage/selected.sha256"
+          (cd "$stage"; if command -v sha256sum >/dev/null 2>&1; then sha256sum --check selected.sha256; else shasum -a 256 --check selected.sha256; fi)
+          chmod +x "$stage/$asset"
+          mkdir -p "$(dirname "$PIXI_SANDBOX_BIN")"
+          mv "$stage/$asset" "$PIXI_SANDBOX_BIN"
+          printf '%s\n' "$(dirname "$PIXI_SANDBOX_BIN")" >> "$GITHUB_PATH"
 
       # One cross-platform step where the per-platform Bash/PowerShell twins used to be:
       # install each environment, pack, verify (budgets included), publish — with per-phase
@@ -97,7 +123,7 @@ jobs:
         shell: bash
         env:
           PIXI_SANDBOX_PUSH_TOKEN: ${{ github.token }}
-          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox${{ runner.os == 'Windows' && '.exe' || '' }}
+          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox-bin/pixi-sandbox${{ runner.os == 'Windows' && '.exe' || '' }}
         run: >-
           "$PIXI_SANDBOX_BIN" pipeline
           --envs "${{ matrix.environments }}"
@@ -138,27 +164,34 @@ jobs:
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           run-install: false
-      - name: Install pixi-sandbox CLI
-        shell: bash
-        run: >-
-          pixi global install
-          --channel "$PIXI_SANDBOX_CHANNEL"
-          --channel conda-forge
-          "pixi-sandbox==${PIXI_SANDBOX_VERSION}"
-
-      # Never trust a package manager's "latest" for anything that ends up in a committed
-      # file (ADR-26 / ADR-16): bootstrap the version already pinned above — checksum
-      # verified, exactly like the publish job's own bootstrap — then ask that exact binary to
-      # self-update in place. Only the verified result of that self-update, never a floating
-      # resolver, ever touches a generated file.
-      #
-      # Bootstrap exception (task-76 AC#4): the single checksum-verified download, the same
-      # command as the publish job's.
       - name: Fetch the pinned pixi-sandbox release
         shell: bash
         env:
-          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox
-        run: pixi-sandbox fetch-release --dest "$PIXI_SANDBOX_BIN" --version "$PIXI_SANDBOX_VERSION"
+          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox-bin/pixi-sandbox${{ runner.os == 'Windows' && '.exe' || '' }}
+        # multiline-run-allowed: ADR-30 — the sole pre-CLI bootstrap; checksum-verified before PATH registration
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS/$RUNNER_ARCH" in
+            Linux/X64) asset=pixi-sandbox-x86_64-unknown-linux-musl ;;
+            Linux/ARM64) asset=pixi-sandbox-aarch64-unknown-linux-musl ;;
+            macOS/X64) asset=pixi-sandbox-x86_64-apple-darwin ;;
+            macOS/ARM64) asset=pixi-sandbox-aarch64-apple-darwin ;;
+            Windows/X64) asset=pixi-sandbox-x86_64-pc-windows-msvc.exe ;;
+            *) echo "::error::unsupported runner: $RUNNER_OS/$RUNNER_ARCH"; exit 1 ;;
+          esac
+          base="https://github.com/Archont561/pixi-sandbox/releases/download/v$PIXI_SANDBOX_VERSION"
+          stage=$(mktemp -d)
+          trap 'rm -rf "$stage"' EXIT
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 --output "$stage/$asset" "$base/$asset"
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 --output "$stage/SHA256SUMS" "$base/SHA256SUMS"
+          digest=$(awk -v name="$asset" '{ sub(/\r$/, ""); if ($2 == name || $2 == "*" name) { if (NF == 2) print $1; else print "invalid" } }' "$stage/SHA256SUMS")
+          [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]] || { echo "::error::missing, duplicate or malformed checksum for $asset"; exit 1; }
+          printf '%s  %s\n' "$digest" "$asset" > "$stage/selected.sha256"
+          (cd "$stage"; if command -v sha256sum >/dev/null 2>&1; then sha256sum --check selected.sha256; else shasum -a 256 --check selected.sha256; fi)
+          chmod +x "$stage/$asset"
+          mkdir -p "$(dirname "$PIXI_SANDBOX_BIN")"
+          mv "$stage/$asset" "$PIXI_SANDBOX_BIN"
+          printf '%s\n' "$(dirname "$PIXI_SANDBOX_BIN")" >> "$GITHUB_PATH"
 
       # A manual dispatch names the exact version to propose; the weekly schedule takes the
       # newest release. Two one-line steps instead of one shell conditional, so the pinned
@@ -167,13 +200,13 @@ jobs:
         if: inputs.upgrade != ''
         shell: bash
         env:
-          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox
+          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox-bin/pixi-sandbox
         run: '"$PIXI_SANDBOX_BIN" self-update --dest "$PIXI_SANDBOX_BIN" --version "${{ inputs.upgrade }}"'
       - name: Self-update to the latest release
         if: inputs.upgrade == ''
         shell: bash
         env:
-          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox
+          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox-bin/pixi-sandbox
         run: '"$PIXI_SANDBOX_BIN" self-update --dest "$PIXI_SANDBOX_BIN"'
 
       # Check, regenerate, commit and deliver — one step, one cross-platform invocation.
@@ -186,7 +219,7 @@ jobs:
         env:
           PIXI_SANDBOX_UPGRADE_TOKEN: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN || github.token }}
-          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox
+          PIXI_SANDBOX_BIN: ${{ runner.temp }}/pixi-sandbox-bin/pixi-sandbox
         run: >-
           "$PIXI_SANDBOX_BIN" upgrade
           --github-workflow-path .github/workflows/publish-sandbox.yml

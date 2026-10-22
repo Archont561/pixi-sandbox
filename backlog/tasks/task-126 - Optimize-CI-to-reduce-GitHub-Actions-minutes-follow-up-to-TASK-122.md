@@ -1,7 +1,7 @@
 ---
 id: TASK-126
 title: Optimize CI to reduce GitHub Actions minutes follow-up to TASK-122
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-22'
 updated_date: '2026-10-22'
@@ -63,14 +63,96 @@ Reference: https://github.com/Archont561/pixi-sandbox/issues/179, TASK-118/119/1
 <!-- AC:BEGIN -->
 - [ ] #1 Publish workflow bootstrap optimized: conda install pixi-sandbox replaced by curl + SHA256SUMS verification (or small standalone fetcher), preserving checksum verification and static linkage guarantee; time saved measured (10s per publish job, 32% overhead removed)
 - [ ] #2 Plan job optimized: either uses standalone binary via curl (no conda install) or static matrix rendering when `[workflow] static_matrix = true` – saves 1 billed minute per push, documented in ADR
-- [ ] #3 Default concurrency added to generated consumer publish workflow: prevents overlapping force-push contention, saves minutes on rapid merges; golden file updated, actionlint passes
+- [x] #3 Default concurrency added to generated consumer publish workflow: prevents overlapping force-push contention, saves minutes on rapid merges; golden file updated, actionlint passes
 - [ ] #4 Path filtering added to ci.yml (optional via config) and already present in relock.yml (TASK-121) verified – docs-only PRs skip guard (1 min saved), hand-edited/deleted locks still caught
 - [ ] #5 Full verification: `pixi run --frozen fmt --check`, `lint`, `test`, `coverage`, `docs build`, `check-repository` (generated == render), `actionlint`, `consumer-proof`, real consumer runs (starter) show reduced billed minutes without weakening security (checksum, static) or correctness (stale lock detection)
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 pixi run --frozen fmt
+- [x] #1 pixi run --frozen fmt
 - [ ] #2 pixi run --frozen lint
-- [ ] #3 pixi run --frozen test
+- [x] #3 pixi run --frozen test
 <!-- DOD:END -->
+
+## Implementation Notes
+<!-- SECTION:NOTES:BEGIN -->
+
+### 2026-10-22 — Local implementation; live proof and dependency gate outstanding
+
+- Replaced conda CLI installation plus `fetch-release` with one curl + SHA256SUMS bootstrap
+  in generated plan, publish and upgrade jobs. Asset names are emitted from `Platform`, with
+  OS **and architecture** matching and musl for Linux. HTTPS-only downloads stage into a fresh
+  temporary directory. Exact filename selection, one valid digest and checksum verification
+  precede installation/PATH registration; duplicate/missing/malformed entries fail closed.
+  Supports GNU sha256sum and macOS shasum, CRLF manifests and binary-mode checksum entries.
+- Dynamic plan now uses the verified standalone CLI and no setup-pixi/conda install. Static
+  matrix mode was deliberately not implemented: the latest config remains authoritative.
+  This repository's source-built publisher is intentionally unchanged for dogfooding.
+- ADR-30 documents the narrowly scoped multiline bootstrap exception to TASK-76, security
+  boundary, dynamic-matrix choice and billing caveat. Golden, CLI compatibility ratchets,
+  consumer-proof assertions, repository checks and publishing/migration guides were updated.
+- Default repository-wide concurrency with `cancel-in-progress: false` already existed
+  (TASK-120). Verified it in the golden/default render and retained explicit overrides. AC#3
+  is checked for the implemented serialization/coalescing policy; no live numeric saving is claimed.
+- `ci.yml` filters expensive Rust/cache/coverage steps with a SHA-pinned paths-filter action,
+  **not** workflow-level paths (which can strand required checks Pending). Docs/backlog-only
+  PRs still lint docs and build the site, and skip the Windows Rust job. Mixed/code PRs run
+  everything; missing filter output defaults to full checks, and filter errors fail CI.
+  All pushes keep full CI and ADR-29's `!cancelled()` main guard. Repository variable
+  `PIXI_SANDBOX_FULL_CI=true` disables filtering. This is repository CI policy, not a new
+  `[workflow]` setting for a CI generator that does not exist. Docs-site upload is push-only.
+- Relock filtering is unchanged and its committed render equals the generator. Its allowlist
+  includes manifests and lockfiles, so edits/deletions of locks still schedule the guard.
+  The selected paths-filter implementation treats renames as delete+add, preserving both paths.
+
+**Red/green evidence.** The first rendered-bootstrap execution test failed because no direct
+bootstrap existed, then passed. A new extra-field checksum-row case failed against the first
+implementation, then passed after requiring two fields. Removing the checksum verification
+command made the corrupt-byte refusal test fail (mutation reverted). The standalone repository
+check fixture also failed against the old channel-only check before its ADR-30 update.
+Execution tests cover all five runner mappings, corruption, missing/duplicate/malformed/checksum
+substring entries, extra fields, failed downloads, unsupported runners and shasum fallback.
+A one-off ten-case picomatch fixture check verified docs-only/mixed/manifests/locks/workflows,
+README and AGENTS paths against the CI filter. No production test targets this checkout.
+
+**Verification:**
+- `pixi run --frozen fmt --check`: pass.
+- `pixi run --frozen -- cargo clippy --offline --workspace --all-targets -- -D warnings`: pass.
+- `pixi run --frozen test`: **1,188 passing / 2 skipped**, up from **1,175 / 2**.
+- Coverage: pass, **1,188 passing / 2 skipped**, LCOV generated. To fit the sandbox disk,
+  invoked `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
+  pixi run --frozen coverage --env-mode=loose`; the complete workspace/normal exclusion
+  remain unchanged. Removed only the generated instrumented target directory afterwards.
+- Docs build, docs Biome lint, TOML formatting, actionlint, check-repository and
+  lint-generated-workflow: pass.
+- Real freshly built CLI: consumer-proof fixture + generate/regenerate/assertions: pass.
+  Fixture-backed consumer-proof library/CLI tests pass. The complete online lifecycle needs
+  prefix.dev and live native runners; it is **not** claimed as executed here.
+- Full `pixi run --frozen lint`: **blocked**, cargo-deny advisories and rejected
+  `libbz2-rs-sys` license `bzip2-1.0.6`. Reports include RUSTSEC-2026-0374, -0382, -0383,
+  -0381, -0367, -0368, -0369 and RUSTSEC-2024-0449. Cargo manifests, Cargo.lock and deny.toml
+  are unchanged by TASK-126; no exceptions or weakened policy were added. Main at the
+  starting commit already has a failed lint run (39755810540).
+
+**Still open / no release or dispatch performed:**
+- AC#1: implementation done; before/after native consumer bootstrap timings still needed.
+  TASK-118's 10s / 32% are historical, not newly measured savings.
+- AC#2: cheaper dynamic plan implemented and documented, but it still starts a VM; replacing
+  a 2s conda install does **not** establish one billed minute saved. No such claim is checked.
+- AC#4: filters implemented/locally validated; real docs-only, hand-edited/deleted-lock and
+  manifest PR evidence still needed before checking the complete criterion.
+- AC#5 / DoD#2: full lint dependency remediation, online consumer lifecycle, native Windows/
+  macOS smoke tests and starter/consecutive-merge billing comparisons remain. The latest
+  starter run 39234092046 was upgrade-only (plan/publish skipped), so it cannot supply publish
+  after-evidence. Native tests cannot be replaced by simulated runner labels on Linux.
+
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+<!-- SECTION:SUMMARY:BEGIN -->
+Local TASK-126 implementation is in place with checksum-first standalone bootstrap, a cheaper
+runtime planner, safe CI step filtering and push-only docs artifacts. All executable local
+gates except the existing cargo-deny dependency-policy failures pass. Task remains In Progress;
+no unmeasured billed-minute saving, release, live consumer lifecycle or native proof is claimed.
+<!-- SECTION:SUMMARY:END -->

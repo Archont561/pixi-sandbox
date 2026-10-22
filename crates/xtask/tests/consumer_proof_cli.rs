@@ -37,7 +37,7 @@ case "$1" in
   --help) echo "usage: pixi-sandbox [OPTIONS]" ;;
   init)
     mkdir -p .github/workflows
-    printf 'pixi-sandbox fetch-release --dest "$BIN"\n# SHA256SUMS\n' > .github/workflows/publish-sandbox.yml
+    printf 'pixi-sandbox sha256sum --check selected.sha256 "$BIN"\n# SHA256SUMS\n' > .github/workflows/publish-sandbox.yml
     ;;
 esac
 "#,

@@ -79,3 +79,7 @@ Backlog document", and every inbound reference now points at the document itself
 now — use `backlog doc create` and tag the result `decision`. Running `backlog decision create`
 would recreate `backlog/decisions/` starting again at `decision-1`, which would collide with the
 `ADR` series; don't.
+
+## Subsequent records
+
+- ADR-30 — Generated CI bootstraps directly from verified standalone releases (TASK-126).

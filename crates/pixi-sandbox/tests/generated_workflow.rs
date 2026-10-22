@@ -3,8 +3,10 @@
 //! actionlint validates GitHub's full schema through xtask. These tests own the contracts it
 //! cannot evaluate: indentation-derived matrix shape, agreement with the planner's JSON
 //! keys, and — since TASK-76 — the shape of the workflow as the tool's entrypoint: every
-//! logic-bearing step is a single `pixi-sandbox <verb>` invocation, with no multi-line
-//! `run:` block and no PowerShell twin left in the render.
+//! post-bootstrap logic-bearing step is a single `pixi-sandbox <verb>` invocation.
+//! ADR-30 permits the shared, verified pre-CLI shell bootstrap; no PowerShell twin remains.
+
+mod support;
 
 use pixi_sandbox::generated::{GithubWorkflowOptions, parse_version_stamp, render_github_workflow};
 use pixi_sandbox_core::platform::Platform;
@@ -139,30 +141,34 @@ fn generated_workflow_carries_a_parseable_version_stamp() {
     assert_eq!(parse_version_stamp(&workflow()), Some(VERSION));
 }
 
-/// TASK-76 AC#1/AC#3: the crisp end state — no literal `run: |` block survives, and no
-/// `shell: pwsh` exists anywhere. Every logic-bearing step is one command (a folded scalar
-/// or a one-liner), so the former Bash/PowerShell twins are gone and the render satisfies
-/// the workflow-shape rule (check 9) without any exemption.
+/// ADR-30: only the three identical pre-CLI bootstraps may carry shell policy.
 #[test]
-fn the_render_carries_no_multiline_run_blocks_and_no_pwsh() {
+fn only_the_verified_bootstraps_carry_multiline_run_blocks() {
     let workflow = workflow();
-    assert!(
-        !workflow.contains("run: |"),
-        "a literal run block survives:\n{workflow}"
-    );
-    assert!(
-        !workflow.contains("shell: pwsh"),
-        "a pwsh step survives:\n{workflow}"
-    );
+    assert_eq!(workflow.matches("run: |").count(), 3);
+    assert_eq!(workflow.matches("multiline-run-allowed: ADR-30").count(), 3);
+    assert!(!workflow.contains("shell: pwsh"));
     assert!(!workflow.contains("shell: powershell"));
+    let scripts: Vec<_> = workflow
+        .split("        run: |\n")
+        .skip(1)
+        .map(|rest| {
+            rest.lines()
+                .take_while(|line| line.is_empty() || line.starts_with("          "))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect();
+    assert!(
+        scripts
+            .windows(2)
+            .all(|pair| pair[0].trim_end() == pair[1].trim_end())
+    );
 }
 
-/// TASK-76 AC#7: non-comment embedded shell falls from 218 lines (inside 9 literal `run:`
-/// blocks in two dialects) to the single commands alone. Every remaining `run:` scalar is
-/// one command: the package install (the bootstrap chain), the `fetch-release` download (the
-/// bootstrap exception), and the single pixi-sandbox invocations.
+/// Outside ADR-30's separately tested bootstrap, each shell scalar remains one CLI command.
 #[test]
-fn non_comment_shell_lines_fall_to_the_single_commands_alone() {
+fn post_bootstrap_shell_contains_only_the_cli_command_lines() {
     let workflow = workflow();
     let mut shell_lines = 0;
     let mut in_block = false;
@@ -171,7 +177,9 @@ fn non_comment_shell_lines_fall_to_the_single_commands_alone() {
         let stripped = line.trim_start();
         if let Some(rest) = stripped.strip_prefix("run:") {
             let value = rest.trim();
-            if matches!(value, "|" | ">" | "|-" | ">-" | "|+" | ">+") {
+            if value == "|" {
+                in_block = false; // The separately tested bootstrap exception.
+            } else if matches!(value, ">" | ">-" | ">+") {
                 in_block = true;
                 block_indent = line.len() - stripped.len();
             } else {
@@ -193,10 +201,9 @@ fn non_comment_shell_lines_fall_to_the_single_commands_alone() {
             in_block = false;
         }
     }
-    // plan: install(4) + plan(1) · publish: install(4) + fetch-release(1) + pipeline(9) ·
-    // upgrade: install(4) + fetch-release(1) + self-update(2) + upgrade(9).
+    // Outside the bootstrap: plan(1) + pipeline(9) + self-update(2) + upgrade(9).
     assert_eq!(
-        shell_lines, 35,
+        shell_lines, 21,
         "every remaining shell line must be one command"
     );
 }
@@ -259,7 +266,7 @@ mod upgrade_job {
 
     /// The upgrade job never trusts a package manager's "latest" for anything that ends up in
     /// a committed file (ADR-26 / ADR-16): it bootstraps the exact pinned, checksum-verified
-    /// binary — `fetch-release` verifies against the release's SHA256SUMS inside the tool —
+    /// binary against the release's SHA256SUMS (ADR-30) —
     /// and only that binary's own `self-update` ever decides the new version. The version
     /// conditional is two `if:`-gated one-line steps, so the pinned binary never sees an
     /// empty `--version`.
@@ -271,9 +278,7 @@ mod upgrade_job {
             "{workflow}"
         );
         assert!(
-            workflow.contains(
-                "pixi-sandbox fetch-release --dest \"$PIXI_SANDBOX_BIN\" --version \"$PIXI_SANDBOX_VERSION\""
-            ),
+            workflow.contains("sha256sum --check selected.sha256"),
             "{workflow}"
         );
         assert!(
@@ -519,7 +524,6 @@ fn generated_workflow_wires_plan_outputs_through_the_matrix() {
 /// behaviours behind them are covered by tests/pipeline.rs and tests/upgrade.rs.
 #[rstest]
 #[case("pixi-sandbox plan")]
-#[case("fetch-release --dest \"$PIXI_SANDBOX_BIN\" --version \"$PIXI_SANDBOX_VERSION\"")]
 #[case("\"$PIXI_SANDBOX_BIN\" pipeline")]
 #[case("self-update --dest \"$PIXI_SANDBOX_BIN\"")]
 #[case("\"$PIXI_SANDBOX_BIN\" upgrade")]
@@ -531,45 +535,36 @@ fn generated_workflow_invokes_the_expected_cli(#[case] command: &str) {
     );
 }
 
-/// TASK-76: the release download moved into the binary. The render no longer spells out a
-/// URL, an asset name, or a checksum command: `fetch-release` resolves this runner's asset
-/// and verifies it against the release's SHA256SUMS inside the tool (tested against a fake
-/// release in `tests/self_update_fetch.rs`). The package install stays exact-pinned.
+/// No package-manager resolver or unverified program precedes the bootstrap.
 #[test]
-fn generated_workflow_fetches_a_verified_release_binary_through_the_cli() {
+fn generated_workflow_fetches_a_verified_standalone_release_without_conda() {
     let workflow = workflow();
-    assert!(
-        !workflow.contains("uses: Archont561/pixi-sandbox"),
-        "consumer workflows must not depend on repository-owned composite actions:\n{workflow}"
+    assert!(!workflow.contains("uses: Archont561/pixi-sandbox"));
+    assert!(!workflow.contains("pixi global install"));
+    assert!(!workflow.contains("fetch-release --dest"));
+    assert_eq!(
+        workflow
+            .matches("sha256sum --check selected.sha256")
+            .count(),
+        3
     );
-    assert!(workflow.contains("https://prefix.dev/archont561/archont561"));
-    assert!(workflow.contains("\"pixi-sandbox==${PIXI_SANDBOX_VERSION}\""));
-    assert!(
-        workflow.contains(
-            "pixi-sandbox fetch-release --dest \"$PIXI_SANDBOX_BIN\" --version \"$PIXI_SANDBOX_VERSION\""
-        ),
-        "{workflow}"
+    assert_eq!(
+        workflow
+            .matches("shasum -a 256 --check selected.sha256")
+            .count(),
+        3
     );
-    // The shell download is gone: no URL, no asset case statement, no checksum command.
-    // (Comments may name SHA256SUMS when explaining the bootstrap exception; shell may not.)
-    let shell = workflow
-        .lines()
-        .filter(|line| !line.trim_start().starts_with('#'))
-        .collect::<Vec<_>>()
-        .join("\n");
-    for gone in [
-        "releases/download",
-        "sha256sum",
-        "Get-FileHash",
-        "SHA256SUMS",
-        "curl ",
-        "Invoke-WebRequest",
-    ] {
-        assert!(
-            !shell.contains(gone),
-            "the render still carries `{gone}` shell: {shell}"
-        );
-    }
+    let plan = workflow
+        .split("  plan:\n")
+        .nth(1)
+        .unwrap()
+        .split("  publish:\n")
+        .next()
+        .unwrap();
+    assert!(
+        !plan.contains("setup-pixi"),
+        "the planner needs no Pixi installation"
+    );
     assert!(!workflow.contains("build-release-binary"));
     assert!(!workflow.contains("rustup target add"));
 }
@@ -602,8 +597,10 @@ fn generated_workflow_passes_the_config_to_the_pipeline_so_host_requirements_tra
 fn generated_workflow_fetches_release_assets_from_the_pixi_sandbox_repository_not_the_consumers() {
     let workflow = workflow();
     assert!(
-        !workflow.contains("releases/download"),
-        "the download URL moved into fetch-release:\n{workflow}"
+        workflow.contains(
+            "https://github.com/Archont561/pixi-sandbox/releases/download/v$PIXI_SANDBOX_VERSION"
+        ),
+        "downloads must use the producer's pinned release:\n{workflow}"
     );
     assert!(
         !workflow.contains("GITHUB_REPOSITORY"),
@@ -659,35 +656,31 @@ fn generated_workflow_only_reads_matrix_keys_the_plan_emits() {
     }
 }
 
-/// TASK-76: the render no longer embeds release asset names at all. The old case/switch
-/// arms duplicated `Platform::asset_name` as literal text a plain runner executed before any
-/// pixi-sandbox binary existed to ask; the download moved into `fetch-release`/`self-update`,
-/// which resolve the host asset in Rust (pinned by the self-update and git crates' own
-/// tests). The structural guarantee is therefore the *absence* of the literals.
+/// The pre-CLI shell is generated from the canonical Rust platform catalogue (ADR-30).
 #[test]
-fn the_render_embeds_no_release_asset_names() {
+fn the_render_uses_only_canonical_standalone_release_assets() {
     let workflow = workflow();
     for platform in Platform::ALL {
-        assert!(
-            !workflow.contains(platform.asset_name()),
-            "the render still embeds {}'s asset name {}",
-            platform.as_str(),
-            platform.asset_name()
+        assert_eq!(
+            workflow
+                .matches(&format!("asset={} ;;", platform.asset_name()))
+                .count(),
+            3
         );
     }
+    assert!(
+        !workflow.contains("unknown-linux-gnu"),
+        "Linux bootstrap must remain musl"
+    );
 }
 
 /// task-53 (issue #79): the generated publisher's `[workflow]`-table-derived CI policy.
 mod workflow_policy {
     use super::{GithubWorkflowOptions, base_options, render_github_workflow, workflow};
 
-    /// AC#1: an unconfigured render carries none of the new blocks at all — this is the
-    /// byte-identical migration path for every existing consumer, held directly by the golden
-    /// fixture test above; this test names the absence explicitly, block by block.
-    /// TASK-120: concurrency is now default-on to prevent overlapping force-pushes
-    /// (issue #179 section 3), so the default render DOES contain concurrency.
+    /// TASK-120 / ADR-30: only concurrency is default-on; other policy remains explicit.
     #[test]
-    fn default_options_add_no_new_yaml() {
+    fn default_options_keep_optional_policy_absent_and_serialize_publishes() {
         let rendered = workflow();
         assert!(!rendered.contains("    paths:"));
         assert!(rendered.contains("permissions:\n  contents: write"));
@@ -777,9 +770,7 @@ mod workflow_policy {
         assert!(!rendered.contains("runs-on: ubuntu-latest\n    timeout-minutes:"));
     }
 
-    /// TASK-76: the upgrade job gained a setup-pixi step (it installs the pinned CLI the
-    /// fetch-release bootstrap runs from), so the pin and cache policy now render on all
-    /// three setup-pixi steps.
+    /// ADR-30: only publish and upgrade need Pixi; plan uses the standalone CLI alone.
     #[test]
     fn pixi_version_and_cache_render_on_every_setup_pixi_step() {
         let rendered = render_github_workflow(GithubWorkflowOptions {
@@ -789,8 +780,8 @@ mod workflow_policy {
         });
         let occurrences = rendered.matches("prefix-dev/setup-pixi@").count();
         assert_eq!(
-            occurrences, 3,
-            "expected plan + publish + upgrade setup-pixi steps"
+            occurrences, 2,
+            "only publish + upgrade need Pixi; the plan drives the standalone binary"
         );
         assert_eq!(
             rendered.matches("pixi-version: \"0.81.0\"").count(),
@@ -894,5 +885,171 @@ mod publish_diagnostics {
             workflow.contains("if: always()\n        uses: actions/upload-artifact@"),
             "the diagnostics upload must run on always():\n{workflow}"
         );
+    }
+}
+
+/// Execute the actual rendered bootstrap against a fake download boundary, never the network.
+#[cfg(unix)]
+mod bootstrap {
+    use super::*;
+    use std::{fs, process::Command};
+
+    fn script() -> String {
+        let rendered = workflow();
+        let step = rendered
+            .split("      - name: Fetch the pinned pixi-sandbox release\n")
+            .nth(1)
+            .expect("bootstrap step");
+        step.split("        run: |\n")
+            .nth(1)
+            .expect("auditable bootstrap script")
+            .lines()
+            .take_while(|line| line.is_empty() || line.starts_with("          "))
+            .map(|line| line.strip_prefix("          ").unwrap_or(line))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[rstest]
+    #[case::linux("Linux", "X64", "pixi-sandbox-x86_64-unknown-linux-musl")]
+    #[case::linux_arm("Linux", "ARM64", "pixi-sandbox-aarch64-unknown-linux-musl")]
+    #[case::macos("macOS", "X64", "pixi-sandbox-x86_64-apple-darwin")]
+    #[case::macos_arm("macOS", "ARM64", "pixi-sandbox-aarch64-apple-darwin")]
+    #[case::windows("Windows", "X64", "pixi-sandbox-x86_64-pc-windows-msvc.exe")]
+    fn the_bootstrap_installs_only_the_pinned_checksum_verified_binary(
+        #[case] os: &str,
+        #[case] arch: &str,
+        #[case] asset: &str,
+    ) {
+        run(os, arch, asset, "valid", true);
+    }
+
+    #[rstest]
+    #[case("corrupt")]
+    #[case("missing")]
+    #[case("duplicate")]
+    #[case("malformed")]
+    #[case("substring")]
+    #[case("download-failed")]
+    #[case("extra-fields")]
+    fn the_bootstrap_refuses_unverified_downloads(#[case] mode: &str) {
+        run(
+            "Linux",
+            "X64",
+            "pixi-sandbox-x86_64-unknown-linux-musl",
+            mode,
+            false,
+        );
+    }
+
+    #[test]
+    fn an_unsupported_runner_fails_before_downloading() {
+        run("Windows", "ARM64", "unsupported", "valid", false);
+    }
+
+    #[test]
+    fn the_bootstrap_verifies_with_shasum_when_sha256sum_is_unavailable() {
+        run(
+            "Linux",
+            "X64",
+            "pixi-sandbox-x86_64-unknown-linux-musl",
+            "shasum",
+            true,
+        );
+    }
+
+    fn run(os: &str, arch: &str, asset: &str, mode: &str, succeeds: bool) {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        let tools = dir.join("tools");
+        fs::create_dir(&tools).unwrap();
+        let payload = b"a standalone binary fixture\n";
+        fs::write(dir.join("payload"), payload).unwrap();
+        let hash = pixi_sandbox_core::shard::sha256_file(&dir.join("payload")).unwrap();
+        let checksums = match mode {
+            "missing" => String::new(),
+            "duplicate" => format!("{hash}  {asset}\n{hash}  {asset}\n"),
+            "malformed" => format!("NOT-A-DIGEST  {asset}\n"),
+            "extra-fields" => format!("{hash}  {asset}  extra\n"),
+            "substring" => format!("{hash}  {asset}.other\n"),
+            _ => format!("{hash}  {asset}\r\n"),
+        };
+        fs::write(dir.join("SHA256SUMS"), checksums).unwrap();
+        if mode == "corrupt" {
+            fs::write(dir.join("payload"), "tampered").unwrap();
+        }
+        support::write_executable(
+            &tools.join("curl"),
+            r#"#!/bin/sh
+set -eu
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output) dest=$2; shift 2 ;;
+    *) url=$1; shift ;;
+  esac
+done
+printf '%s\n' "$url" >> "$HOME/downloads"
+case "$url" in
+  https://github.com/Archont561/pixi-sandbox/releases/download/v9.8.7/SHA256SUMS) cp "$HOME/SHA256SUMS" "$dest" ;;
+  "https://github.com/Archont561/pixi-sandbox/releases/download/v9.8.7/$ASSET") cp "$HOME/payload" "$dest"; [ "$MODE" != download-failed ] ;;
+  *) exit 91 ;;
+esac
+"#,
+        );
+        let path = if mode == "shasum" {
+            // Exercise macOS's fallback without inheriting the host's sha256sum.
+            for tool in [
+                "bash", "mktemp", "rm", "awk", "cp", "chmod", "dirname", "mkdir", "mv", "shasum",
+            ] {
+                let executable = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+                    .map(|directory| directory.join(tool))
+                    .find(|path| path.is_file())
+                    .unwrap();
+                std::os::unix::fs::symlink(executable, tools.join(tool)).unwrap();
+            }
+            tools.clone().into_os_string()
+        } else {
+            support::path_with_fake_tools(&tools)
+        };
+        let destination = dir.join("installed/pixi-sandbox");
+        let output = Command::new("bash")
+            .args(["-e", "-c", &script()])
+            .env("SHELL", "/bin/bash")
+            .env("HOME", dir)
+            .env("USERPROFILE", dir)
+            .env("TMPDIR", dir)
+            .env("PATH", path)
+            .env("RUNNER_OS", os)
+            .env("RUNNER_ARCH", arch)
+            .env("ASSET", asset)
+            .env("MODE", mode)
+            .env("PIXI_SANDBOX_VERSION", VERSION)
+            .env("PIXI_SANDBOX_BIN", &destination)
+            .env("GITHUB_PATH", dir.join("github-path"))
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.success(),
+            succeeds,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if !succeeds {
+            assert!(!destination.exists(), "unverified bytes were installed");
+            assert!(
+                !dir.join("github-path").exists(),
+                "unverified bytes entered PATH"
+            );
+            if asset == "unsupported" {
+                assert!(!dir.join("downloads").exists());
+            }
+            return;
+        }
+        assert_eq!(fs::read(&destination).unwrap(), payload);
+        assert_eq!(
+            fs::read_to_string(dir.join("github-path")).unwrap(),
+            format!("{}\n", destination.parent().unwrap().display())
+        );
+        assert!(!workflow().contains("pixi global install"));
     }
 }

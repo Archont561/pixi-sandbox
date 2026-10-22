@@ -1,6 +1,6 @@
 //! TASK-76 AC#5: generator/CLI compatibility, enforced against the binary the workflow pins.
 //!
-//! The generated workflow invokes pixi-sandbox verbs (`plan`, `fetch-release`, `pipeline`,
+//! The generated workflow invokes pixi-sandbox verbs (`plan`, `pipeline`,
 //! `self-update`, `upgrade`). Every one of those invocations runs against the *released*
 //! binary the workflow pins as `PIXI_SANDBOX_VERSION` — never against whatever happens to be
 //! on a developer's PATH. The honest local enforcement has two halves:
@@ -24,13 +24,7 @@ use pixi_sandbox::generated::{GithubWorkflowOptions, parse_version_stamp, render
 use rstest::rstest;
 use std::collections::BTreeSet;
 
-const EXPECTED_VERBS: &[&str] = &[
-    "fetch-release",
-    "pipeline",
-    "plan",
-    "self-update",
-    "upgrade",
-];
+const EXPECTED_VERBS: &[&str] = &["pipeline", "plan", "self-update", "upgrade"];
 
 fn render_with_the_running_version() -> String {
     render_github_workflow(GithubWorkflowOptions {
@@ -245,7 +239,6 @@ fn every_emitted_invocation_is_accepted_by_the_pinned_binary() {
 
 #[rstest]
 #[case("plan")]
-#[case("fetch-release")]
 #[case("pipeline")]
 #[case("self-update")]
 #[case("upgrade")]

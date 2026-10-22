@@ -78,7 +78,7 @@ Every capability the retired Actions carried has a named successor in the genera
 | Retired capability | Where it lives now |
 |---|---|
 | Native publish matrix | `plan --json` feeds `strategy.matrix.include` — one job per bundle × platform |
-| Checksum-verified toolchain | The "Fetch the pinned pixi-sandbox release" step (`pixi-sandbox fetch-release`) verifies the binary against the release's `SHA256SUMS` |
+| Checksum-verified toolchain | The "Fetch the pinned pixi-sandbox release" bootstrap verifies the standalone binary against the release's `SHA256SUMS` before execution |
 | Verification gate | `doctor --verify` inside `pipeline`, budgets enforced before any push |
 | Cargo vendoring | `--cargo-vendor` handed to `pipeline` from the plan matrix |
 | Orphan-branch publish | `publish` inside `pipeline` — `<prefix>/<bundle>-<platform>`, force-push, `--keep` rotation |

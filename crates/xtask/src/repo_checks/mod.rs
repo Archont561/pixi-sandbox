@@ -152,7 +152,7 @@ pub fn run(root: &Path) -> Result<()> {
         bail!("repo consistency: {} check(s) failed", failures.len());
     }
     eprintln!(
-        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs and generated workflows use the canonical package channel; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render; every permissions: scope is one GitHub accepts; AGENTS.md's repo map resolves and its promoted-module list matches lib.rs" // stale-ref-allowed
+        "repo consistency: crates/ is free of prototype references; platform and version claims agree; action pins are immutable; connected-host docs use the canonical package channel and generated workflows verify standalone releases; no workflow pins a literal release tag; the surviving shell script stays on the Bash 3.2 surface of the macOS runners; every workflow run: is a single command line; the committed relock workflow is the generator's current render; every permissions: scope is one GitHub accepts; AGENTS.md's repo map resolves and its promoted-module list matches lib.rs" // stale-ref-allowed
     );
     Ok(())
 }
