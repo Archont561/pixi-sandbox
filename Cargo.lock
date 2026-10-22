@@ -1595,6 +1595,7 @@ dependencies = [
  "rstest-bdd-macros",
  "self_update",
  "serde_json",
+ "sha2",
  "tar",
  "tempfile",
  "toml 1.1.6+spec-1.1.0",

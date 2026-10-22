@@ -7,6 +7,11 @@
 //! filename for the real GitHub adapter boundary, not for all network I/O. Keep this file thin —
 //! a second consumer (such as xtask) or a third GitHub API call is the trigger to reconsider its
 //! in-crate home.
+//!
+//! Transport (TASK-124 / ADR-27): `latest_tag` uses the `self_update` crate's
+//! `backends::github::ReleaseList` for rate-limit aware listing (`Error::RateLimited` with
+//! `Retry-After`), and `asset` uses `Download` for the actual file transfer. Checksum parsing
+//! itself lives in `self_update::Checksum::from_sums_file` (used in `self_update::mod.rs`).
 
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
@@ -60,26 +65,51 @@ impl Default for GitHubReleaseSource {
 
 impl ReleaseSource for GitHubReleaseSource {
     fn latest_tag(&self, repo: &str) -> Result<String> {
-        let body = self
-            .get(&format!(
-                "https://api.github.com/repos/{repo}/releases/latest"
-            ))?
-            .body_mut()
-            .read_to_string()
-            .with_context(|| format!("reading the latest release of {repo}"))?;
-        let json: serde_json::Value = serde_json::from_str(&body)
-            .with_context(|| format!("parsing the latest release of {repo}"))?;
-        json["tag_name"]
-            .as_str()
-            .map(str::to_string)
-            .with_context(|| format!("GitHub's latest-release response for {repo} has no tag_name"))
+        // Use the self_update crate's GitHub backend for rate-limit aware listing.
+        // It returns Error::RateLimited distinct from Unauthorized, correctly classifying
+        // GitHub's secondary 403 + Retry-After (ADR-27).
+        let (owner, repo_name) = repo
+            .split_once('/')
+            .ok_or_else(|| anyhow::anyhow!("invalid repo {repo:?}, expected owner/name"))?;
+        let mut builder = ::self_update::backends::github::ReleaseList::configure();
+        builder.repo_owner(owner);
+        builder.repo_name(repo_name);
+        if let Some(token) = &self.token {
+            builder.auth_token(token);
+        } else {
+            // Reads GH_TOKEN, GITHUB_TOKEN (gh CLI precedence) – broader than old GITHUB_TOKEN-only,
+            // but intentionally so per crate docs.
+            builder.auth_token_from_env();
+        }
+        let releases = builder
+            .build()
+            .map_err(|e| anyhow::anyhow!(e))
+            .context("building GitHub release list")?
+            .fetch()
+            .map_err(|e| anyhow::anyhow!(e))
+            .with_context(|| format!("fetching releases for {repo}"))?;
+        let release = releases
+            .latest()
+            .ok_or_else(|| anyhow::anyhow!("no releases for {repo}"))?;
+        // Release::version() is bare semver (no v prefix); reconstruct tag as v{version}
+        // to match our historical latest_tag contract (v0.4.4 etc.).
+        Ok(format!("v{}", release.version()))
     }
 
     fn asset(&self, repo: &str, tag: &str, name: &str) -> Result<Asset> {
+        // Use the self_update crate's Download engine (ureq with rustls, retries, timeout)
+        // per ADR-27, rather than hand-rolled ureq get.
         let url = format!("https://github.com/{repo}/releases/download/{tag}/{name}");
+        let mut download = ::self_update::Download::from_url(&url);
+        if let Some(token) = &self.token {
+            // Private repos need Authorization; for public repos it's harmless.
+            // Download::request_header is infallible setter, deferred error surfaced in download_to.
+            download.request_header("Authorization", format!("Bearer {token}"));
+        }
         let mut bytes = Vec::new();
-        let response = self.get(&url)?;
-        std::io::copy(&mut response.into_body().into_reader(), &mut bytes)
+        download
+            .download_to(&mut bytes)
+            .map_err(|e| anyhow::anyhow!(e))
             .with_context(|| format!("downloading {name} from {url}"))?;
         if bytes.is_empty() {
             bail!("{url} returned an empty body; refusing to record a hash for nothing");
@@ -93,6 +123,8 @@ impl ReleaseSource for GitHubReleaseSource {
         tag: &str,
     ) -> Result<Option<BTreeMap<String, String>>> {
         // A project with no manifest answers 404; that is a fact about the project, not an error.
+        // Keep ureq path for this secondary manifest fetch (tools_update) – it already handles 404
+        // as Ok(None). Could be migrated to Download as well, but not required for ADR-27.
         let Ok(mut response) = self.get(&format!(
             "https://github.com/{repo}/releases/download/{tag}/{PIXI_CHECKSUM_MANIFEST}"
         )) else {
