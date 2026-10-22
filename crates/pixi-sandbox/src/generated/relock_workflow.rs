@@ -23,7 +23,6 @@
 
 use super::GENERATED_MARKER;
 use pixi_sandbox_core::sandbox_config::SandboxConfig;
-use pixi_sandbox_core::tools_lock::ToolsLock;
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -76,11 +75,7 @@ pub struct RelockWorkflowOptions<'a> {
 /// embedded-lock tests already forbid.
 #[must_use]
 pub fn embedded_pixi_pin() -> Option<String> {
-    ToolsLock::embedded()
-        .ok()?
-        .tools
-        .get("pixi")
-        .map(|tool| tool.version.clone())
+    Some(pixi_sandbox_core::platform::PIXI_VERSION.to_string())
 }
 
 /// Whether `Cargo.lock` belongs in a project's relock lane, read off the same reviewed
@@ -743,8 +738,7 @@ mod tests {
     #[test]
     fn the_pixi_pin_comes_from_the_embedded_catalogue() {
         let pin = super::embedded_pixi_pin().expect("the embedded lock always declares pixi");
-        let embedded = pixi_sandbox_core::tools_lock::ToolsLock::embedded().expect("embedded");
-        assert_eq!(pin, embedded.tools["pixi"].version);
+        assert_eq!(pin, pixi_sandbox_core::platform::PIXI_VERSION);
     }
 
     #[test]

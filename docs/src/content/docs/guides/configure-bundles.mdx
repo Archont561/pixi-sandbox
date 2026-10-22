@@ -126,7 +126,7 @@ This emits a GitHub Actions matrix — one job per `bundle × platform`.
       --output-dir .sandbox-out \
       --platform linux-64 \
       --cargo-vendor \
-      --fetch-tools \
+      --pixi-bin pixi \
       --self-bin target/release/pixi-sandbox
     ```
 
@@ -159,7 +159,7 @@ This emits a GitHub Actions matrix — one job per `bundle × platform`.
       --envs dev \
       --output-dir .sandbox-out \
       --platform linux-64 \
-      --fetch-tools \
+      --pixi-bin pixi \
       --self-bin ./pixi-sandbox-x86_64-unknown-linux-musl
     ```
   </TabItem>

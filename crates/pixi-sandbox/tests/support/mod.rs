@@ -508,3 +508,95 @@ pub fn native_wheel_pack_fixture(native_pack_fixture: NativePackFixture) -> Nati
     );
     native_pack_fixture
 }
+
+/// A locked project whose selected Conda/wheel archives are genuine local files.
+#[fixture]
+pub fn native_locked_project_fixture(
+    native_wheel_pack_fixture: NativePackFixture,
+) -> NativePackFixture {
+    let fixture = native_wheel_pack_fixture;
+    let project = fixture.home.path().join("locked-project");
+    fs::create_dir(&project).unwrap();
+    let data: serde_json::Value = serde_json::from_slice(
+        &fs::read(fixture.pack.join("channel/noarch/repodata.json")).unwrap(),
+    )
+    .unwrap();
+    let mut packages = Vec::new();
+    let mut selected = Vec::new();
+    for (name, record) in data["packages"].as_object().unwrap() {
+        let location = url::Url::from_file_path(fixture.pack.join("channel/noarch").join(name))
+            .unwrap()
+            .to_string();
+        let mut record = record.clone();
+        record["conda"] = location.clone().into();
+        // Pixi lock v7 elides identity fields already encoded in the URL.
+        for field in ["name", "version", "build", "subdir"] {
+            record.as_object_mut().unwrap().remove(field);
+        }
+        packages.push(record);
+        selected.push(serde_json::json!({"conda": location}));
+    }
+    let wheel = fixture.pack.join("pypi/native_demo-1.0-py3-none-any.whl");
+    let location = url::Url::from_file_path(&wheel).unwrap().to_string();
+    packages.push(serde_json::json!({"pypi": location, "name": "native-demo", "version": "1.0", "sha256": pixi_sandbox_core::shard::sha256_file(&wheel).unwrap()}));
+    selected.push(serde_json::json!({"pypi": location}));
+    fs::write(project.join("pixi.lock"), serde_json::to_vec_pretty(&serde_json::json!({
+        "version": 7, "environments": {"default": {"channels": [], "packages": {host_platform(): selected}}}, "packages": packages
+    })).unwrap()).unwrap();
+    fs::write(
+        project.join("pixi.toml"),
+        format!(
+            "[workspace]\nname = 'native-fixture'\nchannels = []\nplatforms = ['{}']\n",
+            host_platform()
+        ),
+    )
+    .unwrap();
+    NativePackFixture {
+        home: fixture.home,
+        pack: project,
+    }
+}
+
+/// An actual empty locked environment, for tests unrelated to dependency resolution.
+#[allow(dead_code)] // Shared fixture support is compiled separately by each test root.
+pub fn write_empty_native_lock(project: &Path, environments: &[&str]) {
+    let environments: serde_json::Map<String, serde_json::Value> = environments
+        .iter()
+        .map(|name| {
+            (
+                (*name).to_string(),
+                serde_json::json!({"channels": [], "packages": {host_platform(): []}}),
+            )
+        })
+        .collect();
+    fs::write(
+        project.join("pixi.lock"),
+        serde_json::to_vec(&serde_json::json!({
+            "version": 7, "environments": environments, "packages": [],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
+/// A transport produced by the public native pack CLI from genuine local packages.
+#[fixture]
+pub fn native_transport_fixture(
+    native_locked_project_fixture: NativePackFixture,
+) -> NativePackFixture {
+    let fixture = native_locked_project_fixture;
+    let transport = fixture.home.path().join("transport");
+    isolated_bin(fixture.home.path())
+        .env("PATH", "")
+        .args(["pack", "--repo-root"])
+        .arg(&fixture.pack)
+        .arg("--output-dir")
+        .arg(&transport)
+        .args(["--envs", "default", "--platform", host_platform()])
+        .assert()
+        .success();
+    NativePackFixture {
+        home: fixture.home,
+        pack: transport,
+    }
+}

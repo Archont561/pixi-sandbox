@@ -236,11 +236,18 @@ pub fn verify_restored(
         let failures_before = restored.report.failures.len();
         verify_env_restored(
             branch_location,
-            project,
+            &project.join(".pixi").join("envs").join(name),
             name,
             env,
             files,
-            work_dir,
+            &prefix_candidates(
+                &project.join(".pixi").join("envs").join(name),
+                &work_dir.map_or_else(
+                    || project.join(".pixi").join(".restore-work"),
+                    Path::to_path_buf,
+                ),
+                name,
+            ),
             &mut restored,
         );
         if restored.report.failures.len() == failures_before {
@@ -250,18 +257,45 @@ pub fn verify_restored(
     restored
 }
 
+/// Compare a staged replacement with the transport oracle before retiring the live prefix.
+/// Uses the same digest rules as `verify_restored`, including final-prefix relocation.
+#[must_use]
+pub fn verify_staged(
+    manifest: &Manifest,
+    branch: &Path,
+    final_prefix: &Path,
+    name: &str,
+    prefix: &Path,
+    work: &Path,
+) -> RestoredReport {
+    let mut restored = RestoredReport::default();
+    let env = &manifest.envs[name];
+    let Some(files) = &env.files else {
+        restored.unverifiable.push(name.to_string());
+        return restored;
+    };
+    let mut candidates = prefix_candidates(prefix, work, name);
+    candidates.push(final_prefix.to_string_lossy().into_owned().into_bytes());
+    if let Ok(path) = final_prefix.canonicalize() {
+        candidates.push(path.to_string_lossy().into_owned().into_bytes());
+    }
+    verify_env_restored(branch, prefix, name, env, files, &candidates, &mut restored);
+    if restored.report.failures.is_empty() {
+        restored.verified.push(name.to_string());
+    }
+    restored
+}
+
 fn verify_env_restored(
     branch_location: &Path,
-    project: &Path,
+    prefix: &Path,
     name: &str,
     env: &crate::manifest::Env,
     files: &crate::manifest::EnvFiles,
-    work_dir: Option<&Path>,
+    candidates: &[Vec<u8>],
     restored: &mut RestoredReport,
 ) {
     let report = &mut restored.report;
-    let prefix = project.join(".pixi").join("envs").join(name);
-
     // The oracle itself: read, verify against its recorded digest, parse.
     let list_bytes = match shard::read_blob(&branch_location.join(MANIFEST_DIR), &files.blob) {
         Ok(bytes) => bytes,
@@ -297,7 +331,7 @@ fn verify_env_restored(
         });
     }
 
-    let walked = match crate::files_manifest::walk_prefix(&prefix) {
+    let walked = match crate::files_manifest::walk_prefix(prefix) {
         Ok(walked) => walked,
         Err(e) => {
             report.failures.push(Check {
@@ -309,7 +343,6 @@ fn verify_env_restored(
         }
     };
 
-    let candidates = prefix_candidates(&prefix, project, name, work_dir);
     // The document says which row rule its digests were recorded under; comparing them under
     // any other rule would fail every RECORD it collapsed (or failed to collapse) differently.
     let rows = crate::files_manifest::RecordRows::for_schema(doc.schema);
@@ -322,7 +355,7 @@ fn verify_env_restored(
 
     // Every listed entry must exist, with the recorded content, mode and symlink target.
     for entry in &doc.files {
-        check_restored_entry(name, entry, &walked, &candidates, rows, report);
+        check_restored_entry(name, entry, &walked, candidates, rows, report);
     }
 
     // Nothing unlisted, except the bookkeeping files pixi and restore own (the allowlist is
@@ -330,18 +363,13 @@ fn verify_env_restored(
     check_unlisted(name, &walked, &listed, report);
 
     // The fingerprint marker restore writes must still say what the manifest recorded.
-    check_fingerprint(name, env, &prefix, report);
+    check_fingerprint(name, env, prefix, report);
 }
 
 /// The prefix-path spellings this side must neutralise: the final prefix (in both its
 /// literal and canonical form — a symlinked `.pixi` must not defeat the check), plus the
 /// restore-scratch paths that survive inside NUL-fixed binaries and conda-meta records.
-fn prefix_candidates(
-    prefix: &Path,
-    project: &Path,
-    name: &str,
-    work_dir: Option<&Path>,
-) -> Vec<Vec<u8>> {
+fn prefix_candidates(prefix: &Path, work: &Path, name: &str) -> Vec<Vec<u8>> {
     let mut candidates: Vec<Vec<u8>> = Vec::new();
     let mut push_candidate = |path: &Path| {
         let bytes = path.to_string_lossy().into_owned().into_bytes();
@@ -353,10 +381,6 @@ fn prefix_candidates(
     if let Ok(canonical) = prefix.canonicalize() {
         push_candidate(&canonical);
     }
-    let work = work_dir.map_or_else(
-        || project.join(".pixi").join(".restore-work"),
-        std::path::Path::to_path_buf,
-    );
     push_candidate(&work.join(format!("stage-{name}")).join(name));
     push_candidate(&work.join(format!("pack-{name}")));
     candidates

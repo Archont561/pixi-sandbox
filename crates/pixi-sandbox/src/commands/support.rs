@@ -223,3 +223,29 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
     }
     (year, month, day)
 }
+
+/// Format-1 packs are installed natively regardless of their enclosing manifest schema.
+/// Older opaque transports retain their recorded unpacker compatibility path.
+pub fn uses_native_pack(
+    manifest: &pixi_sandbox_core::manifest::Manifest,
+    branch: &Path,
+    environment: &str,
+) -> Result<bool> {
+    if manifest.schema >= 3 {
+        return Ok(true);
+    }
+    let path = format!("envs/{environment}/pack/pixi-pack.json");
+    let Some(blob) = manifest.envs[environment]
+        .blobs
+        .iter()
+        .find(|blob| blob.path == path)
+    else {
+        return Ok(false);
+    };
+    let bytes = pixi_sandbox_core::shard::read_blob(
+        &branch.join(pixi_sandbox_core::manifest::MANIFEST_DIR),
+        blob,
+    )?;
+    let metadata: serde_json::Value = serde_json::from_slice(&bytes)?;
+    Ok(metadata["version"].as_str() == Some("1"))
+}

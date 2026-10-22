@@ -271,7 +271,8 @@ fn a_real_packed_environment_restores_with_nothing_pointing_into_restore_scratch
             transport.to_str().unwrap(),
             "--platform",
             "linux-64",
-            "--fetch-tools",
+            "--pixi-bin",
+            "pixi",
         ])
         .assert()
         .success();

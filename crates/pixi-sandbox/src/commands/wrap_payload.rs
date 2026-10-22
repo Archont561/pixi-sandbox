@@ -11,9 +11,9 @@
 use crate::cli::WrapPayloadArgs;
 use crate::commands::support;
 use anyhow::{Context, Result};
+use pixi_sandbox::build_tool_fetch::{HttpDownload, build_cache};
 use pixi_sandbox::prepare::{ShellRunner, prepare, read_prepared};
 use pixi_sandbox::rattler_build::{RattlerBuildToolchain, RealProcessRunner, resolve_tool};
-use pixi_sandbox::tool_fetch::{HttpDownload, tools_cache};
 use pixi_sandbox::wrap_payload::{plan_report, stage_recipe_dir};
 use pixi_sandbox_core::payload::{
     PayloadToolchain, WrapPlan, WrapRequest, check_built_package_blob_budget, plan_wrap,
@@ -99,8 +99,8 @@ fn build_and_publish(
     let program = if let Some(path) = &args.build_tool {
         support::absolute(path)?
     } else {
-        let cache = tools_cache(
-            args.tools_cache.as_deref(),
+        let cache = build_cache(
+            args.build_cache.as_deref(),
             std::env::var_os("HOME").as_deref(),
         )
         .context("choosing the tools cache")?;

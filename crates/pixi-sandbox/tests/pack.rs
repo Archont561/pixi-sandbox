@@ -199,7 +199,7 @@ fn the_verification_unpack_keeps_the_pack_and_records_the_same_file_oracle(
         &payload,
         "default",
         &source,
-        &unpacker,
+        Some(&unpacker),
         u64::MAX,
     )
     .unwrap();
@@ -216,92 +216,6 @@ fn the_verification_unpack_keeps_the_pack_and_records_the_same_file_oracle(
         "unpack must use a copy"
     );
     assert!(!out.join(".pixi-sandbox-verify-default").exists());
-}
-
-#[cfg(unix)]
-#[rstest]
-#[case::linux_no_vendor("linux-no-vendor", "linux-64", None, false, false)]
-#[case::linux_loose("linux-loose", "linux-64", Some("loose"), true, true)]
-#[case::windows_loose("windows-loose", "win-64", Some("loose"), true, false)]
-fn pack_outputs_match_the_pre_extraction_reference(
-    synthetic_pack_fixture: support::SyntheticPackFixture,
-    pack_reference: std::path::PathBuf,
-    #[case] reference: &str,
-    #[case] platform: &str,
-    #[case] vendor_mode: Option<&str>,
-    #[case] self_bin: bool,
-    #[case] host: bool,
-) {
-    let fixture = synthetic_pack_fixture;
-    let output = fixture.home.path().join("out");
-    let mut command = fixture.command();
-    command
-        .arg("--output-dir")
-        .arg(&output)
-        .args(["--platform", platform]);
-    if let Some(mode) = vendor_mode {
-        command.args(["--cargo-vendor", "--cargo-vendor-mode", mode]);
-    }
-    if self_bin {
-        command.arg("--self-bin").arg(fixture.self_bin());
-    }
-    if host {
-        command
-            .arg("--config")
-            .arg(fixture.project.join("sandbox.toml"));
-    }
-    command.assert().success();
-
-    let mut actual = support::file_tree(&output);
-    let manifest_path = std::path::Path::new(".pixi-sandbox/manifest.json");
-    let manifest = &mut actual.get_mut(manifest_path).unwrap().0;
-    let text = String::from_utf8(manifest.clone()).unwrap();
-    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-    let timestamp = value["created_at"].as_str().unwrap();
-    *manifest = text
-        .replace(
-            &format!("\"created_at\": \"{timestamp}\""),
-            "\"created_at\": \"2000-01-01T00:00:00Z\"",
-        )
-        .into_bytes();
-    let readme = &mut actual.get_mut(std::path::Path::new("README.md")).unwrap().0;
-    *readme = String::from_utf8(readme.clone())
-        .unwrap()
-        .replace(
-            &format!("Built {timestamp} from commit"),
-            "Built 2000-01-01T00:00:00Z from commit",
-        )
-        .into_bytes();
-
-    let mut expected = support::file_tree(&pack_reference.join(reference));
-    // Build version is a fixture input, not a normalization of actual output. Keep release
-    // bumps valid while still refusing a wrong or hard-coded stamp in the CLI's manifest.
-    let manifest = &mut expected.get_mut(manifest_path).unwrap().0;
-    *manifest = String::from_utf8(manifest.clone())
-        .unwrap()
-        .replace(
-            "\"tool\": {\n    \"name\": \"pixi-sandbox\",\n    \"version\": \"0.6.0\"",
-            &format!(
-                "\"tool\": {{\n    \"name\": \"pixi-sandbox\",\n    \"version\": \"{}\"",
-                env!("CARGO_PKG_VERSION")
-            ),
-        )
-        .replace(
-            "\"pixi-sandbox\": {\n      \"version\": \"0.6.0\"",
-            &format!(
-                "\"pixi-sandbox\": {{\n      \"version\": \"{}\"",
-                env!("CARGO_PKG_VERSION")
-            ),
-        )
-        .into_bytes();
-    assert_eq!(
-        actual.keys().collect::<Vec<_>>(),
-        expected.keys().collect::<Vec<_>>(),
-        "complete file set"
-    );
-    for (path, bytes_and_exec) in expected {
-        assert_eq!(actual[&path], bytes_and_exec, "{} changed", path.display());
-    }
 }
 
 #[rstest]
@@ -343,7 +257,7 @@ fn a_failed_verification_unpack_retains_scratch_and_both_error_streams(
         &payload,
         "default",
         &pack_reference.join("linux-no-vendor/.pixi-sandbox/envs/default/pack"),
-        &unpacker,
+        Some(&unpacker),
         u64::MAX,
     )
     .unwrap_err();

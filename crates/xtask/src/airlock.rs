@@ -418,7 +418,11 @@ pub fn pack_argv(envs: &str, out: &Path, cargo_vendor: bool, self_bin: &Path) ->
         .map(|s| (*s).to_string())
         .collect();
     argv.push(out.display().to_string());
-    argv.extend(["--fetch-tools".to_string(), "--self-bin".to_string()]);
+    argv.extend([
+        "--pixi-bin".to_string(),
+        "pixi".to_string(),
+        "--self-bin".to_string(),
+    ]);
     argv.push(self_bin.display().to_string());
     if cargo_vendor {
         argv.push("--cargo-vendor".to_string());
@@ -492,7 +496,23 @@ pub fn airlock_pack_with_pixi(
         std::fs::remove_dir_all(out).with_context(|| format!("clearing {}", out.display()))?;
     }
 
-    let argv = pack_argv(envs, out, vendor, &self_bin);
+    let mut argv = pack_argv(envs, out, vendor, &self_bin);
+    // This proof also drives already-published pre-migration releases. Their CLI is immutable;
+    // retain their protocol only here, never in the current product's pack command.
+    let help = StdCommand::new(&self_bin)
+        .args(["pack", "--help"])
+        .output()
+        .context("probing the selected released pack CLI")?;
+    if !help.status.success() {
+        bail!("selected release cannot describe its pack CLI");
+    }
+    if !String::from_utf8_lossy(&help.stdout).contains("--pixi-bin") {
+        let index = argv
+            .iter()
+            .position(|arg| arg == "--pixi-bin")
+            .expect("native argv contains explicit Pixi");
+        argv.splice(index..index + 2, ["--fetch-tools".to_string()]);
+    }
     eprintln!("pixi-sandbox {}", argv.join(" "));
     let status = StdCommand::new(&self_bin)
         .args(&argv)

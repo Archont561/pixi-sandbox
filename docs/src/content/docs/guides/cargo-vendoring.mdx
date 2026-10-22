@@ -67,7 +67,7 @@ language-neutral starter writes `cargo_vendor = false`. The local pack flag mirr
 ```bash
 pixi-sandbox pack --repo-root . --envs dev,docs --output-dir .sandbox-out \
   --platform linux-64 --cargo-vendor --cargo-vendor-mode loose \
-  --fetch-tools --self-bin target/release/pixi-sandbox
+  --pixi-bin pixi --self-bin target/release/pixi-sandbox
 ```
 
 `--cargo-vendor-mode` is `loose` (default) or `tarballs`. Skip the flag entirely to ship conda

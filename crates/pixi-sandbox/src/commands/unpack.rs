@@ -8,8 +8,8 @@ use crate::cli::UnpackArgs;
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox_core::manifest::{MANIFEST_DIR, Manifest};
+use pixi_sandbox_core::platform::executable_filename;
 use pixi_sandbox_core::shard;
-use pixi_sandbox_core::tools_lock::executable_filename;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -65,11 +65,17 @@ pub fn run(args: &UnpackArgs) -> Result<()> {
             }
             (
                 packed,
-                Some(resolve_unpacker(
-                    args.unpacker.as_deref(),
-                    manifest,
-                    branch,
-                )?),
+                if args.unpacker.is_none()
+                    && support::uses_native_pack(manifest, branch, environment)?
+                {
+                    None
+                } else {
+                    Some(resolve_unpacker(
+                        args.unpacker.as_deref(),
+                        manifest,
+                        branch,
+                    )?)
+                },
             )
         }
         ResolvedInput::Bare {
@@ -109,9 +115,48 @@ pub fn run(args: &UnpackArgs) -> Result<()> {
             prefix.display()
         );
     }
+    verify_staged_output(&resolved, &prefix, &output, &work)?;
     promote_prefix(&prefix, &output, args.force)?;
     println!("unpacked {environment} -> {}", output.display());
     println!("  markers are restore's job; this is a raw prefix");
+    Ok(())
+}
+
+fn verify_staged_output(
+    resolved: &ResolvedInput,
+    prefix: &Path,
+    output: &Path,
+    work: &Path,
+) -> Result<()> {
+    if let ResolvedInput::Transport {
+        branch,
+        manifest,
+        environment,
+    } = resolved
+    {
+        // Raw unpack deliberately omits Pixi markers, but every payload file still has to
+        // match its oracle before a prior output may be retired.
+        let mut raw_manifest = (**manifest).clone();
+        raw_manifest
+            .envs
+            .get_mut(environment)
+            .expect("selected environment exists")
+            .pixi_environment_fingerprint = None;
+        let checked = pixi_sandbox_core::verify::verify_staged(
+            &raw_manifest,
+            branch,
+            output,
+            environment,
+            prefix,
+            work,
+        );
+        if !checked.report.failures.is_empty() {
+            bail!(
+                "unpacked tree does not match the transport oracle: {:?}",
+                checked.report.failures
+            );
+        }
+    }
     Ok(())
 }
 
@@ -268,7 +313,7 @@ fn check_output(output: &Path, force: bool) -> Result<()> {
 
 /// Do not retire an existing output until installation succeeds. Keep a same-parent
 /// backup until the stage rename succeeds, including when --work-dir crosses devices.
-fn promote_prefix(prefix: &Path, output: &Path, force: bool) -> Result<()> {
+pub(super) fn promote_prefix(prefix: &Path, output: &Path, force: bool) -> Result<()> {
     check_output(output, force)?;
     if fs::symlink_metadata(output).is_err() {
         return fs::rename(prefix, output)

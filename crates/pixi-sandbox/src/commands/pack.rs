@@ -8,20 +8,17 @@ use crate::cli::{PackArgs, VendorModeArg};
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox::branch_docs::write_branch_docs;
+use pixi_sandbox::embedded_tools::{ToolSource, embed_tool, reported_version};
 use pixi_sandbox::pack::{build_files_oracle, fingerprint_of, record_tree, sum_files};
-use pixi_sandbox::tool_fetch::{ToolSource, embed_tool, fetch_tool, reported_version, tools_cache};
 use pixi_sandbox::vendor::{VendorInfo, VendorMode, validate_vendorable_lockfile, vendor_tree};
 use pixi_sandbox_core::host_requirements::HostRequirementSet;
 use pixi_sandbox_core::manifest::{
     Env, MANIFEST_DIR, MANIFEST_FILE, Manifest, SCHEMA_VERSION, Source, ToolEntry, ToolInfo, Vendor,
 };
 use pixi_sandbox_core::shard;
-use pixi_sandbox_core::tools_lock::ToolsLock;
 use std::collections::BTreeMap;
-use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 const TOOL_NAME: &str = env!("CARGO_PKG_NAME");
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -32,21 +29,11 @@ pub fn run(args: PackArgs) -> Result<()> {
         "checking lockfiles, paths, and environment names",
     );
     let plan = PackPlan::from_args(args)?;
-    crate::diagnostics::phase("resolve-tools", "resolving pixi-pack and pixi-unpack");
-    let tools = plan.resolve_tools()?;
-    crate::diagnostics::phase(
-        "helpers-ready",
-        format!(
-            "pixi-pack={} pixi-unpack={}",
-            tools.packer.display(),
-            tools.unpacker.display()
-        ),
-    );
     crate::diagnostics::phase(
         "assemble",
         "packing environments, tools, and optional Cargo vendor",
     );
-    let artifacts = plan.assemble_artifacts(&tools)?;
+    let artifacts = plan.assemble_artifacts()?;
     crate::diagnostics::phase("write-manifest", "recording hashes and transport guides");
     plan.write_manifest_and_docs(artifacts)
 }
@@ -69,19 +56,6 @@ struct PackPlan {
     /// (issue #109, TASK-75). `None` when no config was given, when it declares no table, or
     /// when nothing resolves for this platform's host family.
     host_requirements: Option<HostRequirementSet>,
-}
-
-/// The tools one `pack` run executes: the packer/unpacker invoked for every environment, plus
-/// whatever pinned [`ToolsLock`] and download cache back them when `--fetch-tools` is set. A
-/// `None` lock means `--fetch-tools` was not asked for — `packer`/`unpacker` were resolved from
-/// PATH instead, and every tool [`PackPlan::assemble_artifacts`] embeds carries no provenance
-/// (its `url`/`pinned_sha256` are `None`).
-#[derive(Debug)]
-struct ResolvedTools {
-    lock: Option<ToolsLock>,
-    cache: Option<PathBuf>,
-    packer: PathBuf,
-    unpacker: PathBuf,
 }
 
 /// What a `pack` run actually produces before anything is written: the per-environment file
@@ -130,6 +104,10 @@ impl PackPlan {
             &args.platform,
         )?;
 
+        for environment in &args.envs {
+            pixi_sandbox::native_pack::preflight(&root, environment, &args.platform)?;
+        }
+
         // Resolved here, with the other pre-flight guards: a config that cannot be read or
         // does not validate is a refusal that must leave no output directory behind.
         let host_requirements =
@@ -145,76 +123,10 @@ impl PackPlan {
         })
     }
 
-    /// Fetching is fully pinned. The default pins are compiled into the released CLI, while an
-    /// explicit `--tools-lock` is a deliberately reviewable per-project override. The
-    /// non-fetch fallback is for a developer who consciously supplies
-    /// pixi-pack/pixi/pixi-unpack on PATH.
-    fn resolve_tools(&self) -> Result<ResolvedTools> {
-        let lock = if self.args.fetch_tools {
-            let lock = pixi_sandbox::tool_fetch::resolve_lock(
-                &self.root,
-                self.args.tools_lock.as_deref(),
-            )?;
-            Some(lock)
-        } else {
-            None
-        };
-        let cache = lock
-            .is_some()
-            .then(|| {
-                let home = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE"));
-                tools_cache(self.args.tools_cache.as_deref(), home.as_deref())
-            })
-            .transpose()?;
-
-        let packer = match &lock {
-            Some(lock) => {
-                fetch_tool(
-                    lock,
-                    "pixi-pack",
-                    &self.args.platform,
-                    cache.as_deref().expect("a fetched tool always has a cache"),
-                )?
-                .path
-            }
-            None => support::find_executable("pixi-pack").ok_or_else(|| {
-                anyhow::anyhow!(
-                    "pixi-pack is not on PATH (pass --fetch-tools to use embedded pins)"
-                )
-            })?,
-        };
-        // The per-file oracle (ADR-13) is built by unpacking each environment once more, with the
-        // same pinned unpacker the airlock will use, so it must be resolved up here rather than
-        // in the embed step below. The embed step re-resolves it from the same verified cache.
-        let unpacker = match &lock {
-            Some(lock) => {
-                fetch_tool(
-                    lock,
-                    "pixi-unpack",
-                    &self.args.platform,
-                    cache.as_deref().expect("a fetched tool always has a cache"),
-                )?
-                .path
-            }
-            None => support::find_executable("pixi-unpack").ok_or_else(|| {
-                anyhow::anyhow!(
-                    "pixi-unpack is not on PATH (pass --fetch-tools to use embedded pins)"
-                )
-            })?,
-        };
-
-        Ok(ResolvedTools {
-            lock,
-            cache,
-            packer,
-            unpacker,
-        })
-    }
-
     /// Pack every requested environment, build its file oracle, embed the transport tools (and
     /// an optional `--self-bin`), and vendor cargo dependencies when asked. Nothing here is
     /// written to the manifest yet — [`PackPlan::write_manifest_and_docs`] owns that.
-    fn assemble_artifacts(&self, tools: &ResolvedTools) -> Result<PackedArtifacts> {
+    fn assemble_artifacts(&self) -> Result<PackedArtifacts> {
         fs::create_dir_all(&self.payload)
             .with_context(|| format!("creating transport payload at {}", self.payload.display()))?;
 
@@ -225,14 +137,12 @@ impl PackPlan {
         );
         let mut envs = BTreeMap::new();
         for name in &self.args.envs {
-            self.pack_environment(tools, name, &mut envs)?;
+            self.pack_environment(name, &mut envs)?;
         }
 
         println!("embed tools");
         let mut entries = BTreeMap::new();
-        for name in ["pixi", "pixi-unpack"] {
-            self.embed_helper_tool(tools, name, &mut entries)?;
-        }
+        self.embed_pixi(&mut entries)?;
 
         self.embed_self_bin(&mut entries)?;
 
@@ -263,35 +173,19 @@ impl PackPlan {
     /// airlock will actually get (a copy — pixi-unpack writes a cache into the pack dir it
     /// reads from). The oracle is also the honest `unpacked_size_bytes`: measured on the
     /// unpacked tree, not parsed from a version-dependent log line.
-    fn pack_environment(
-        &self,
-        tools: &ResolvedTools,
-        name: &str,
-        envs: &mut BTreeMap<String, Env>,
-    ) -> Result<()> {
+    fn pack_environment(&self, name: &str, envs: &mut BTreeMap<String, Env>) -> Result<()> {
         let target = self.payload.join("envs").join(name).join("pack");
         let parent = target
             .parent()
             .expect("pack target always has an env parent");
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
 
-        let mut command = Command::new(&tools.packer);
-        command
-            .current_dir(&self.root)
-            .arg(&self.root)
-            .arg("-e")
-            .arg(name)
-            .arg("-p")
-            .arg(&self.args.platform)
-            .arg("-o")
-            .arg(&target)
-            .arg("--directory-only");
-        support::run(&mut command).with_context(|| format!("pixi-pack environment {name}"))?;
+        pixi_sandbox::native_pack::write(&self.root, name, &self.args.platform, &target)?;
 
         let files = shard::files_under(&target)
-            .with_context(|| format!("reading pixi-pack output for environment {name}"))?;
+            .with_context(|| format!("reading native pack output for environment {name}"))?;
         if files.is_empty() {
-            bail!("pixi-pack produced no files for environment {name}");
+            bail!("native pack produced no files for environment {name}");
         }
         let packed_size = sum_files(&files)?;
 
@@ -300,7 +194,7 @@ impl PackPlan {
             &self.payload,
             name,
             &target,
-            &tools.unpacker,
+            None,
             self.shard_limit,
         )
         .with_context(|| format!("building the per-file oracle for environment {name}"))?;
@@ -327,55 +221,29 @@ impl PackPlan {
         Ok(())
     }
 
-    /// Embed one helper tool (`pixi`, `pixi-unpack`): fetched from the embedded pins when
-    /// `--fetch-tools` is set, taken from PATH otherwise.
-    fn embed_helper_tool(
-        &self,
-        tools: &ResolvedTools,
-        name: &str,
-        entries: &mut BTreeMap<String, ToolEntry>,
-    ) -> Result<()> {
-        let source = if let Some(lock) = &tools.lock {
-            let fetched = fetch_tool(
-                lock,
-                name,
-                &self.args.platform,
-                tools
-                    .cache
-                    .as_deref()
-                    .expect("a fetched tool always has a cache"),
-            )?;
-            ToolSource {
-                path: fetched.path,
-                version: fetched.version,
-                url: Some(fetched.url),
-                pinned_sha256: Some(fetched.sha256),
-            }
+    /// Explicitly bundle Pixi for the subsequent frozen/offline environment check.
+    fn embed_pixi(&self, entries: &mut BTreeMap<String, ToolEntry>) -> Result<()> {
+        let Some(path) = &self.args.pixi_bin else {
+            return Ok(());
+        };
+        let path = if path.is_file() {
+            support::absolute(path)?
         } else {
-            let path = support::find_executable(name).ok_or_else(|| {
-                anyhow::anyhow!("{name} is not on PATH (pass --fetch-tools to use embedded pins)")
-            })?;
-            ToolSource {
-                version: reported_version(&path)?,
-                path,
-                url: None,
-                pinned_sha256: None,
-            }
+            support::find_executable(path.as_os_str()).context("--pixi-bin was not found")?
         };
         let entry = embed_tool(
             &self.payload,
             &self.args.platform,
-            name,
-            &source,
+            "pixi",
+            &ToolSource {
+                version: reported_version(&path)?,
+                path,
+                url: None,
+                pinned_sha256: None,
+            },
             self.shard_limit,
         )?;
-        println!(
-            "  {name} {} · {} · {} MiB",
-            entry.version,
-            entry.linkage,
-            support::mib(entry.size_bytes)
-        );
-        entries.insert(name.to_string(), entry);
+        entries.insert("pixi".into(), entry);
         Ok(())
     }
 
@@ -415,9 +283,9 @@ impl PackPlan {
         );
 
         // The behavioural oracle: execute exactly the bytes that will ship, under an empty
-        // environment. A self-bin's content is not pinned into the manifest (only its size
-        // is), and a static trampoline passes the linkage check — so neither declared check
-        // can see a launcher that dies without its global prefix; only running it can.
+        // environment. The manifest records the local digest, size and linkage, but a static
+        // trampoline can pass all those checks and still die without its global prefix;
+        // only running the embedded bytes can prove that boundary.
         // Cross-platform packs skip with a reason: probing foreign bytes would be a lie,
         // and doctor on the target host is the same guard there.
         if pixi_sandbox::standalone::host_platform() == Some(self.args.platform.as_str()) {

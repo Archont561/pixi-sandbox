@@ -356,8 +356,7 @@ fn copy_evidence(evidence: &Path, name: &str, from: &Path) -> Result<()> {
 
 /// `pixi-sandbox pack` for one platform, packing the consumer's own tree.
 ///
-/// `--fetch-tools` and `--self-bin` are what make the transport self-contained: the helper
-/// tools come down at pack time and the packing binary travels inside the payload, which is
+/// `--pixi-bin` and `--self-bin` are what make the transport self-contained: the explicitly selected Pixi executable is embedded at pack time and the packing binary travels inside the payload, which is
 /// what lets the restore run with no network.
 #[doc(hidden)] // test boundary (tests/consumer_proof.rs)
 #[must_use]
@@ -372,7 +371,8 @@ pub fn pack_argv(transport: &Path, platform: &str, self_bin: &Path) -> Vec<Strin
         &display(transport),
         "--platform",
         platform,
-        "--fetch-tools",
+        "--pixi-bin",
+        "pixi",
         "--self-bin",
         &display(self_bin),
     ])

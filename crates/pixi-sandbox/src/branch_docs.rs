@@ -7,7 +7,7 @@ use crate::pack::support;
 use crate::vendor::VendorInfo;
 use anyhow::{Context, Result};
 use pixi_sandbox_core::manifest::Manifest;
-use pixi_sandbox_core::tools_lock::executable_filename;
+use pixi_sandbox_core::platform::executable_filename;
 use std::fs;
 use std::path::Path;
 

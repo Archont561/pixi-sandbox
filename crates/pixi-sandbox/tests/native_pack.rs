@@ -1,10 +1,11 @@
-//! Native pack installation at the public CLI and library seams (TASK-125).
+//! Native pack writer and installation at the public CLI and library seams (TASK-125).
 mod support;
 
 use rstest::rstest;
+use support::native_transport_fixture;
 use support::{
-    NativePackFixture, file_tree_fixture, isolated_bin_fixture, native_pack_fixture,
-    native_wheel_pack_fixture,
+    NativePackFixture, file_tree_fixture, isolated_bin_fixture, isolated_home,
+    native_locked_project_fixture, native_pack_fixture, native_wheel_pack_fixture,
 };
 
 #[rstest]
@@ -234,4 +235,290 @@ fn unsafe_bare_environment_names_are_refused_before_staging(
         .stderr(predicates::str::contains("unsafe environment name"));
     assert!(!fixture.home.path().join(".pixi").exists());
     assert!(!output.exists());
+}
+
+#[rstest]
+fn a_locked_project_packs_without_external_helpers(
+    native_locked_project_fixture: NativePackFixture,
+    isolated_bin_fixture: fn(&std::path::Path) -> assert_cmd::Command,
+) {
+    let fixture = native_locked_project_fixture;
+    let output = fixture.home.path().join("transport");
+    isolated_bin_fixture(fixture.home.path())
+        .env("PATH", "")
+        .args(["pack", "--repo-root"])
+        .arg(&fixture.pack)
+        .arg("--output-dir")
+        .arg(&output)
+        .args(["--envs", "default", "--platform", support::host_platform()])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read(
+            output.join(".pixi-sandbox/envs/default/pack/pypi/native_demo-1.0-py3-none-any.whl")
+        )
+        .unwrap(),
+        std::fs::read(
+            fixture
+                .home
+                .path()
+                .join("native-pack/pypi/native_demo-1.0-py3-none-any.whl")
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        std::fs::read(
+            output.join(
+                ".pixi-sandbox/envs/default/pack/channel/noarch/native-fixture-1.0-0.tar.bz2"
+            )
+        )
+        .unwrap(),
+        std::fs::read(
+            fixture
+                .home
+                .path()
+                .join("native-pack/channel/noarch/native-fixture-1.0-0.tar.bz2")
+        )
+        .unwrap()
+    );
+    let manifest = pixi_sandbox_core::manifest::Manifest::load(
+        &pixi_sandbox_core::manifest::Manifest::path_in(&output),
+    )
+    .unwrap();
+    assert_eq!(manifest.schema, 3);
+    assert!(
+        manifest.tools.is_empty(),
+        "native packing must not implicitly bundle tools"
+    );
+    let restored = fixture.home.path().join("restored");
+    std::fs::create_dir(&restored).unwrap();
+    isolated_bin_fixture(fixture.home.path())
+        .env("PATH", "")
+        .args(["restore", "--branch-location"])
+        .arg(&output)
+        .arg("--output-path")
+        .arg(&restored)
+        .args(["--user-tools", "skip", "--no-vendor"])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read(restored.join(".pixi/envs/default/share/hello.txt")).unwrap(),
+        b"native fixture\n"
+    );
+    assert!(
+        restored
+            .join(".pixi/envs/default/conda-meta/pixi_env_prefix")
+            .is_file()
+    );
+    let raw = fixture.home.path().join("raw-prefix");
+    isolated_bin_fixture(fixture.home.path())
+        .env("PATH", "")
+        .args(["unpack", "--input-dir"])
+        .arg(&output)
+        .arg("--output-dir")
+        .arg(&raw)
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read(raw.join("share/hello.txt")).unwrap(),
+        b"native fixture\n"
+    );
+}
+
+#[rstest]
+fn an_empty_locked_environment_is_transportable(
+    native_locked_project_fixture: NativePackFixture,
+    isolated_bin_fixture: fn(&std::path::Path) -> assert_cmd::Command,
+) {
+    let fixture = native_locked_project_fixture;
+    let path = fixture.pack.join("pixi.lock");
+    let mut lock: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    lock["environments"]["default"]["packages"][support::host_platform()] = serde_json::json!([]);
+    lock["packages"] = serde_json::json!([]);
+    std::fs::write(path, serde_json::to_vec(&lock).unwrap()).unwrap();
+    let output = fixture.home.path().join("empty-transport");
+    isolated_bin_fixture(fixture.home.path())
+        .env("PATH", "")
+        .args(["pack", "--repo-root"])
+        .arg(&fixture.pack)
+        .arg("--output-dir")
+        .arg(&output)
+        .args(["--envs", "default", "--platform", support::host_platform()])
+        .assert()
+        .success();
+    let prefix = fixture.home.path().join("empty-prefix");
+    isolated_bin_fixture(fixture.home.path())
+        .env("PATH", "")
+        .args(["unpack", "--input-dir"])
+        .arg(output)
+        .arg("--output-dir")
+        .arg(&prefix)
+        .assert()
+        .success();
+    assert!(prefix.join("conda-meta/history").is_file());
+}
+
+#[rstest]
+#[case("--fetch-tools")]
+#[case("--tools-lock")]
+#[case("--tools-cache")]
+fn pack_no_longer_advertises_helper_management(
+    isolated_bin_fixture: fn(&std::path::Path) -> assert_cmd::Command,
+    isolated_home: tempfile::TempDir,
+    #[case] flag: &str,
+) {
+    let output = isolated_bin_fixture(isolated_home.path())
+        .args(["pack", "--help"])
+        .assert()
+        .success();
+    let text = String::from_utf8_lossy(&output.get_output().stdout);
+    assert!(
+        !text.contains(flag),
+        "retired flag still advertised: {flag}"
+    );
+}
+
+#[rstest]
+fn the_retired_tools_subcommand_is_rejected(
+    isolated_bin_fixture: fn(&std::path::Path) -> assert_cmd::Command,
+    isolated_home: tempfile::TempDir,
+) {
+    isolated_bin_fixture(isolated_home.path())
+        .args(["tools", "list"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("unrecognized subcommand"));
+}
+
+#[rstest]
+fn invalid_locked_selections_leave_no_transport_directory(
+    native_locked_project_fixture: NativePackFixture,
+    isolated_bin_fixture: fn(&std::path::Path) -> assert_cmd::Command,
+) {
+    let fixture = native_locked_project_fixture;
+    std::fs::write(
+        fixture.pack.join("pixi.lock"),
+        "version: 7\nenvironments: {}\npackages: []\n",
+    )
+    .unwrap();
+    let output = fixture.home.path().join("refused-transport");
+    isolated_bin_fixture(fixture.home.path())
+        .env("PATH", "")
+        .args(["pack", "--repo-root"])
+        .arg(fixture.pack)
+        .arg("--output-dir")
+        .arg(&output)
+        .args(["--envs", "default", "--platform", support::host_platform()])
+        .assert()
+        .failure();
+    assert!(!output.exists(), "selection preflight wrote output");
+}
+
+#[rstest]
+#[case::restore(false)]
+#[case::unpack(true)]
+fn a_verified_but_incorrect_oracle_cannot_replace_an_existing_environment(
+    native_transport_fixture: NativePackFixture,
+    isolated_bin_fixture: fn(&std::path::Path) -> assert_cmd::Command,
+    #[case] raw_unpack: bool,
+) {
+    use pixi_sandbox_core::{
+        files_manifest::FilesDoc,
+        manifest::{MANIFEST_DIR, Manifest},
+        shard,
+    };
+    let fixture = native_transport_fixture;
+    let manifest_path = Manifest::path_in(&fixture.pack);
+    let mut manifest = Manifest::load(&manifest_path).unwrap();
+    let files = manifest
+        .envs
+        .get_mut("default")
+        .unwrap()
+        .files
+        .as_mut()
+        .unwrap();
+    let path = fixture.pack.join(MANIFEST_DIR).join(&files.blob.path);
+    let mut doc = FilesDoc::parse(&std::fs::read(&path).unwrap()).unwrap();
+    doc.files
+        .iter_mut()
+        .find(|entry| entry.p == "share/hello.txt")
+        .unwrap()
+        .h = Some("0".repeat(64));
+    let bytes = doc.to_bytes().unwrap();
+    std::fs::write(&path, &bytes).unwrap();
+    files.blob.sha256 = shard::sha256_bytes(&bytes);
+    files.blob.size = bytes.len() as u64;
+    std::fs::write(manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    let project = fixture.home.path().join("receiver");
+    let prefix = project.join(".pixi/envs/default");
+    std::fs::create_dir_all(&prefix).unwrap();
+    std::fs::write(prefix.join("keep.txt"), b"previous environment").unwrap();
+    let mut command = isolated_bin_fixture(fixture.home.path());
+    command.env("PATH", "");
+    if raw_unpack {
+        command
+            .args(["unpack", "--input-dir"])
+            .arg(&fixture.pack)
+            .arg("--output-dir")
+            .arg(&prefix)
+            .arg("--force");
+    } else {
+        command
+            .args(["restore", "--branch-location"])
+            .arg(&fixture.pack)
+            .arg("--output-path")
+            .arg(&project)
+            .args(["--force", "--no-vendor", "--user-tools", "skip"]);
+    }
+    command.assert().failure();
+    assert_eq!(
+        std::fs::read(prefix.join("keep.txt")).unwrap(),
+        b"previous environment"
+    );
+    assert!(!prefix.join("share/hello.txt").exists());
+}
+
+#[rstest]
+#[case(1)]
+#[case(2)]
+fn legacy_manifest_schemas_can_restore_a_real_pack_without_external_helpers(
+    native_transport_fixture: NativePackFixture,
+    isolated_bin_fixture: fn(&std::path::Path) -> assert_cmd::Command,
+    #[case] schema: u32,
+) {
+    use pixi_sandbox_core::manifest::Manifest;
+    let fixture = native_transport_fixture;
+    let path = Manifest::path_in(&fixture.pack);
+    let mut manifest = Manifest::load(&path).unwrap();
+    manifest.schema = schema;
+    std::fs::write(path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    let project = fixture.home.path().join("receiver");
+    std::fs::create_dir(&project).unwrap();
+    isolated_bin_fixture(fixture.home.path())
+        .env("PATH", "")
+        .args(["restore", "--branch-location"])
+        .arg(&fixture.pack)
+        .arg("--output-path")
+        .arg(&project)
+        .args(["--no-vendor", "--user-tools", "skip"])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read(project.join(".pixi/envs/default/share/hello.txt")).unwrap(),
+        b"native fixture\n"
+    );
+    let raw = fixture.home.path().join("raw");
+    isolated_bin_fixture(fixture.home.path())
+        .env("PATH", "")
+        .args(["unpack", "--input-dir"])
+        .arg(fixture.pack)
+        .arg("--output-dir")
+        .arg(&raw)
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read(raw.join("share/hello.txt")).unwrap(),
+        b"native fixture\n"
+    );
 }

@@ -24,17 +24,29 @@ hand — so it cannot rot against a release. Release notes and the full history:
 | Component | Requirement | Notes |
 |---|---|---|
 | **pixi-sandbox** | the documented release (`__VERSION__`) | Static standalone binaries; no runtime dependencies |
-| **Pixi platforms** | `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64`, `win-64` | The platforms the embedded tool pins cover; `plan` rejects a platform without pins |
+| **Pixi platforms** | `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64`, `win-64` | The native platform table; `plan` rejects unsupported platforms |
 | **Release assets** | `pixi-sandbox-x86_64-unknown-linux-musl`, `-aarch64-unknown-linux-musl`, `-x86_64-apple-darwin`, `-aarch64-apple-darwin`, `-x86_64-pc-windows-msvc.exe` + `SHA256SUMS` | The verified bootstrap paths |
-| **Connected host** | Pixi (recent), Git, network to prefix.dev and GitHub | Pixi drives `pack`; the generated workflow can pin `setup-pixi`'s version via `[workflow].pixi_version` |
-| **Airlock** | Git and `tar`; **no network** | Pixi and pixi-sandbox do not need to be pre-installed — the restore registers both from the transport |
+| **Connected host** | Pixi (recent), Git, network to prefix.dev and GitHub | Pixi supplies the lock; the generated workflow can pin `setup-pixi`'s version via `[workflow].pixi_version` |
+| **Airlock** | Git and `tar`; **no network** | No preinstalled Pixi is needed when the producer explicitly bundles it with `--pixi-bin` |
 | **Building from source** | Rust 1.94+ (workspace MSRV), edition 2024 | `cargo build -p pixi-sandbox --release` |
 | **Config schema** | `schema = 1` | Readers refuse a newer schema; an older config is accepted silently and reported by `init --check` |
 | **Generated workflow** | rendered by the release that wrote it | Every generated file carries a `pixi-sandbox-version` marker; see the upgrade policy below |
 
-The exact helper-tool pins a release embeds (`pixi`, `pixi-pack`, `pixi-unpack`) are reviewed data:
-`pixi-sandbox tools list` prints them, and `tools update --check` reports staleness without
-downloading anything.
+## Native transport implementation
+
+New transports use manifest schema 3 and native format-1 packing/restoration. Schema-1 and
+schema-2 format-1 payloads remain readable without external helpers. Legacy opaque payloads
+retain their recorded unpacker compatibility path. No helper catalogue is embedded in new binaries;
+`--pixi-bin` and `--self-bin` explicitly select local executables when needed for bootstrapping.
+The existing 95 MiB per-blob/tool limit and total transport budgets still apply to selected tools;
+omitting helpers lowers measured transport bytes rather than loosening these safety limits.
+
+The minimal runtime graph uses rattler 0.54.2, conda types 0.57.1, streaming 0.27.15 and UV
+0.0.57, with rattler's default/TLS features disabled. Packing downloads with ureq; restoration has
+no downloader. **reqwest remains transitive**, so an empty reqwest graph is not claimed. The
+runtime graph has no AWS-LC edge. UV raises the source MSRV to **Rust 1.94**, validated by the
+minimum-toolchain CI lane. Exact, scoped YAML unmaintained-advisory and bzip2/0BSD license
+exceptions are documented in `deny.toml`; vulnerability checks remain enforced.
 
 ## Upgrade checklist
 

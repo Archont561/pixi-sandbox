@@ -105,9 +105,7 @@ pixi-sandbox pack \
   --shard-limit-mib 95 \
   --cargo-vendor \
   --cargo-vendor-mode loose|tarballs \
-  --fetch-tools \
-  --tools-lock /path/to/reviewed-tools.lock.json \
-  --tools-cache ~/.cache/pixi-sandbox/tools \
+  --pixi-bin pixi \
   --self-bin target/release/pixi-sandbox \
   --config pixi-sandbox.toml
 ```
@@ -121,13 +119,14 @@ pixi-sandbox pack \
 | `--shard-limit-mib` | Shard limit MiB (default 95) |
 | `--cargo-vendor` | Vendor Cargo deps |
 | `--cargo-vendor-mode` | `loose` (default) or `tarballs` |
-| `--fetch-tools` | Fetch pinned tools (sha256-verified) |
-| `--tools-lock` | Override tools.lock.json path |
-| `--tools-cache` | Tools cache dir |
+| `--pixi-bin PATH` | Explicit local Pixi executable to bundle; omitted by default |
 | `--self-bin` | **Standalone** binary to embed only under `.pixi-sandbox/tools/<platform>/pixi-sandbox` (`.exe` on Windows) — see below |
 | `--config` | Optional sandbox config; its `[host_requirements]` resolved for `--platform` are recorded in the manifest (relative to the current directory, like `plan --config`) |
 
-No override means embedded pins from `tools.lock.json` compiled into the binary.
+Packing reads a version-7 Pixi lock and copies SHA256-verified Conda archives and wheels into a
+format-1 local channel. No solver, Python interpreter, or external packing helper runs. Artifacts
+must use HTTPS or absolute `file://` URLs; source distributions are refused before output exists.
+Tools are bundled only when explicitly requested. New transports use manifest schema 3.
 
 ### PyPI dependencies must lock to wheels
 
@@ -135,7 +134,7 @@ No override means embedded pins from `tools.lock.json` compiled into the binary.
 creating the output directory. `plan` does not inspect a pack invocation's selected lock entries,
 so this refusal is not reported by `plan`. Each selected PyPI location must have a file name that
 ends in `whl`: a wheel URL is accepted, including a URL with a query or `#sha256=…` fragment, as
-is a local wheel path. Source archives such as `.tar.gz`, VCS locations such as `git+https://…`,
+is an absolute `file://` wheel URL. Source archives such as `.tar.gz`, VCS locations such as `git+https://…`,
 and project/source paths that do not name a wheel are refused. The error lists every offending
 environment, package and locked location.
 

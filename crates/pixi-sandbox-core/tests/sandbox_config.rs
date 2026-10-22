@@ -1,7 +1,6 @@
 use pixi_sandbox_core::sandbox_config::{
     CONFIG_SCHEMA, SandboxConfig, is_safe_git_ref, peek_schema, plan_override, schema_supported,
 };
-use pixi_sandbox_core::tools_lock::ToolsLock;
 use pixi_sandbox_core::transport_budget::{
     DEFAULT_MAX_BLOB_MIB, DEFAULT_MAX_RESTORE_REQUIRED_MIB, DEFAULT_MAX_TRANSPORT_MIB,
 };
@@ -243,7 +242,7 @@ platforms = ["linux-64"]
 }
 
 #[test]
-fn rejects_a_runner_backed_platform_without_embedded_tool_pins() {
+fn rejects_a_runner_backed_platform_outside_the_native_platform_table() {
     let config = config(
         r#"
 schema = 1
@@ -257,8 +256,8 @@ platforms = ["linux-ppc64le"]
 "#,
     );
     let err = config.plan().unwrap_err().to_string();
-    assert!(err.contains("embedded helper-tool pins"), "{err}");
-    assert!(err.contains("pixi-pack"), "{err}");
+    assert!(err.contains("unknown platform"), "{err}");
+    assert!(err.contains("linux-ppc64le"), "{err}");
 }
 
 #[test]
@@ -416,37 +415,6 @@ fn the_runner_table_plans_exactly_the_platforms_the_cases_cover() {
         .map(|target| target.platform.as_str())
         .collect();
     assert_eq!(platforms, ["linux-64", "osx-64", "osx-arm64", "win-64"]);
-}
-
-#[rstest]
-#[case("linux-64", "pixi")]
-#[case("linux-64", "pixi-pack")]
-#[case("linux-64", "pixi-unpack")]
-#[case("osx-arm64", "pixi")]
-#[case("osx-arm64", "pixi-pack")]
-#[case("osx-arm64", "pixi-unpack")]
-#[case("osx-64", "pixi")]
-#[case("osx-64", "pixi-pack")]
-#[case("osx-64", "pixi-unpack")]
-#[case("win-64", "pixi")]
-#[case("win-64", "pixi-pack")]
-#[case("win-64", "pixi-unpack")]
-fn every_platform_with_a_hosted_runner_has_complete_embedded_helper_pins(
-    #[case] platform: &str,
-    #[case] tool: &str,
-) {
-    let plan = runner_table_plan();
-    assert!(
-        plan.include
-            .iter()
-            .any(|target| target.platform == platform),
-        "the case list drifted from the plan: {platform} is no longer included"
-    );
-    let lock = ToolsLock::embedded().unwrap();
-    assert!(
-        lock.pin(tool, platform).is_some(),
-        "{tool} has no pin for {platform}"
-    );
 }
 
 /// Mirrors `manifest::schema_supported`'s policy exactly (task-47 AC#5 / decision ADR-16): every
