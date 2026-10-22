@@ -522,3 +522,54 @@ fn legacy_manifest_schemas_can_restore_a_real_pack_without_external_helpers(
         b"native fixture\n"
     );
 }
+
+// TASK-128: characterize the existing command before moving its promotion policy.
+#[rstest]
+#[case::absent(false, false, false)]
+#[case::empty(true, false, false)]
+#[case::refused(true, true, false)]
+#[case::forced(true, true, true)]
+fn unpack_preserves_destination_replacement_policy(
+    native_pack_fixture: NativePackFixture,
+    isolated_bin_fixture: fn(&std::path::Path) -> assert_cmd::Command,
+    #[case] existing: bool,
+    #[case] populated: bool,
+    #[case] force: bool,
+) {
+    let fixture = native_pack_fixture;
+    let output = fixture.home.path().join("prefix");
+    if existing {
+        std::fs::create_dir(&output).unwrap();
+    }
+    if populated {
+        std::fs::write(output.join("keep.txt"), b"previous environment").unwrap();
+    }
+    let mut command = isolated_bin_fixture(fixture.home.path());
+    command
+        .env("PATH", "")
+        .args(["unpack", "--input-dir"])
+        .arg(&fixture.pack)
+        .arg("--output-dir")
+        .arg(&output);
+    if force {
+        command.arg("--force");
+    }
+    if populated && !force {
+        command.assert().failure().stderr(predicates::str::contains(
+            "already exists and is not empty — pass --force to replace it",
+        ));
+        assert_eq!(
+            std::fs::read(output.join("keep.txt")).unwrap(),
+            b"previous environment"
+        );
+        assert!(!output.join("share/hello.txt").exists());
+    } else {
+        command.assert().success();
+        assert_eq!(
+            std::fs::read(output.join("share/hello.txt")).unwrap(),
+            b"native fixture\n"
+        );
+        assert!(!output.join("keep.txt").exists());
+        assert!(!output.join("conda-meta/pixi_env_prefix").exists());
+    }
+}

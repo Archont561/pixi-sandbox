@@ -624,7 +624,7 @@ fn install_environment(
     let checked =
         verify::verify_staged(manifest, branch, &final_prefix, environment, &prefix, work);
     report_restored_tree(&checked)?;
-    super::unpack::promote_prefix(&prefix, &target, force)?;
+    pixi_sandbox::prefix::promote_prefix(&prefix, &target, force)?;
     println!(
         "  {environment} -> {} ({} MiB unpacked)",
         target.display(),
