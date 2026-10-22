@@ -96,3 +96,13 @@ removal does not complete TASK-125 or change the existing transport format/tool 
   not retain a false rust-version claim. The installed development toolchain is 1.98.1.
 - Existing helper implementation remains intact until replacement behavior is proven. This
   temporary preparation is not completion of any migration acceptance criterion.
+
+### Dependency evaluation correction
+
+Connected source resolution shows rattler 0.48.7 / package_streaming 0.27.5 force zip 8.6.0;
+that line has no satisfactory patched candidate for the reported advisories. It is not an
+acceptable product dependency even with TLS disabled. The provisioning candidate therefore
+moves to rattler 0.54.2, conda_types 0.57.1, lock 0.34.8 and package_streaming 0.27.15,
+whose ZIP dependency uses the patched 9.x line. No ZIP advisory exception is authorized.
+The first real-fixture CLI test was run red: `unpack` with PATH empty fails because the
+current implementation requires pixi-unpack. Its red log is retained locally.
