@@ -24,6 +24,7 @@
 use super::GENERATED_MARKER;
 use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::tools_lock::ToolsLock;
+use std::fmt::Write as _;
 use std::path::Path;
 
 /// The identity automation commits carry, owned by the git layer so the relock bot, the
@@ -465,7 +466,7 @@ __CARGO_REPAIRED_GUARD__      - name: Mark local validation failure on the repai
             for p in paths {
                 // YAML quoted string via serde_json for safety (handles special chars)
                 let json = serde_json::to_string(p).expect("path is serialisable");
-                block.push_str(&format!("      - {json}\n"));
+                let _ = writeln!(block, "      - {json}");
             }
             block
         }

@@ -13,21 +13,22 @@
 //!
 //! Nothing between steps 3 and 5 ever executes the downloaded bytes, and `--check` stops after
 //! step 2 — that is what makes it safe to run from CI against an arbitrary release.
+//!
+//! Transport (TASK-124 / ADR-27): release lookup via `self_update` crate's
+//! `backends::github::ReleaseList` (rate-limit aware), download via `Download`, and
+//! checksum parsing via `Checksum::from_sums_file`. Ownership ladder and replace dance stay
+//! hand-rolled; `update()` is never called.
 
 pub mod assets;
-pub mod checksums;
 pub mod ownership;
 pub mod replace;
-pub mod resolver;
 
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
 use crate::release::ReleaseSource;
-use checksums::Checksums;
 use ownership::Ownership;
 use replace::{ReplaceStrategy, Replacement};
-use resolver::Resolved;
 
 /// The release that publishes pixi-sandbox's standalone binaries.
 ///
@@ -80,6 +81,90 @@ pub struct Applied {
     pub replacement: Replacement,
 }
 
+/// The release this run will install.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolved {
+    /// The tag as GitHub spells it, e.g. `v0.4.4`.
+    pub tag: String,
+    /// The bare version, e.g. `0.4.4`.
+    pub version: String,
+    /// How the tag was chosen.
+    pub selection: Selection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Selection {
+    /// No `--version`: whatever the project currently calls latest.
+    Latest,
+    /// An exact version the caller named.
+    Pinned,
+}
+
+impl Selection {
+    #[must_use]
+    pub fn describe(self) -> &'static str {
+        match self {
+            Selection::Latest => "latest",
+            Selection::Pinned => "pinned",
+        }
+    }
+}
+
+/// Accept `X.Y.Z` or `vX.Y.Z` and return the bare `X.Y.Z`.
+///
+/// Strict on purpose: a loose parser turns a typo into a 404 from the download step, where the
+/// error no longer says which input was wrong.
+///
+/// # Errors
+///
+/// Returns an error naming the malformed input when it is not `X.Y.Z` or `vX.Y.Z`.
+pub fn normalise_version(input: &str) -> Result<String> {
+    let bare = input.strip_prefix('v').unwrap_or(input);
+    let parts: Vec<&str> = bare.split('.').collect();
+    let valid = parts.len() == 3
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && part.bytes().all(|byte| byte.is_ascii_digit())
+                && (part.len() == 1 || !part.starts_with('0'))
+        });
+    if !valid {
+        bail!("{input:?} is not an exact version; expected X.Y.Z (for example 0.4.4)");
+    }
+    Ok(bare.to_string())
+}
+
+/// Resolve `requested` (or latest) against `source`.
+///
+/// # Errors
+///
+/// Returns an error if the requested version does not parse or does not exist upstream.
+pub fn resolve(
+    source: &dyn ReleaseSource,
+    repo: &str,
+    requested: Option<&str>,
+) -> Result<Resolved> {
+    if let Some(requested) = requested {
+        let version = normalise_version(requested)?;
+        Ok(Resolved {
+            tag: format!("v{version}"),
+            version,
+            selection: Selection::Pinned,
+        })
+    } else {
+        let tag = source
+            .latest_tag(repo)
+            .with_context(|| format!("resolving the latest pixi-sandbox release of {repo}"))?;
+        let version = normalise_version(&tag).with_context(|| {
+            format!("{repo}'s latest release tag {tag:?} is not a vX.Y.Z release")
+        })?;
+        Ok(Resolved {
+            tag,
+            version,
+            selection: Selection::Latest,
+        })
+    }
+}
+
 /// Steps 1 and 2: resolve the release and classify the destination. Writes nothing, downloads
 /// nothing but the release metadata.
 ///
@@ -89,7 +174,7 @@ pub struct Applied {
 /// resolved.
 pub fn plan(source: &dyn ReleaseSource, request: &Request<'_>) -> Result<Plan> {
     let asset = assets::asset_for(request.host_os, request.host_arch)?;
-    let resolved = resolver::resolve(source, request.repo, request.requested_version)?;
+    let resolved = resolve(source, request.repo, request.requested_version)?;
     let ownership = ownership::classify(request.destination);
     Ok(Plan {
         resolved,
@@ -98,6 +183,44 @@ pub fn plan(source: &dyn ReleaseSource, request: &Request<'_>) -> Result<Plan> {
         current_version: request.current_version.to_string(),
         ownership,
     })
+}
+
+/// Verify `binary_bytes` against `sums_body` for `asset` using the `self_update` crate's
+/// SHA256SUMS parser (ADR-27). Returns the actual digest on success.
+fn verify_with_crate(asset: &str, sums_body: &str, binary_bytes: &[u8]) -> Result<String> {
+    let checksum = ::self_update::Checksum::from_sums_file(sums_body, asset)
+        .map_err(|e| anyhow::anyhow!(e))
+        .with_context(|| format!("parsing {SUMS_ASSET} for {asset}"))?;
+
+    let expected = match &checksum {
+        ::self_update::Checksum::Sha256(hex) | ::self_update::Checksum::Sha512(hex) => hex.clone(),
+        _ => unreachable!("Checksum is non_exhaustive but only Sha256/Sha512 exist"),
+    };
+
+    let actual = match &checksum {
+        ::self_update::Checksum::Sha256(_) => pixi_sandbox_core::shard::sha256_bytes(binary_bytes),
+        ::self_update::Checksum::Sha512(_) => {
+            use sha2::{Digest, Sha512};
+            let mut hasher = Sha512::new();
+            hasher.update(binary_bytes);
+            let result = hasher.finalize();
+            let mut hex = String::with_capacity(result.len() * 2);
+            for byte in result {
+                use std::fmt::Write as _;
+                let _ = write!(&mut hex, "{byte:02x}");
+            }
+            hex
+        }
+        _ => unreachable!("Checksum is non_exhaustive but only Sha256/Sha512 exist"),
+    };
+
+    if !actual.eq_ignore_ascii_case(expected.trim()) {
+        bail!(
+            "checksum mismatch for {asset}\n  expected {expected}\n  actual   {actual}\n\
+             the downloaded bytes are not the published release; nothing was written"
+        );
+    }
+    Ok(actual)
 }
 
 /// Steps 3 to 5: download, verify, replace. Refuses a non-standalone destination first.
@@ -123,7 +246,6 @@ pub fn apply(source: &dyn ReleaseSource, request: &Request<'_>, plan: Plan) -> R
     let sums = source
         .asset(request.repo, tag, SUMS_ASSET)
         .with_context(|| format!("downloading {SUMS_ASSET} for {tag}"))?;
-    let sums = Checksums::parse(&String::from_utf8_lossy(&sums.bytes));
 
     let binary = source
         .asset(request.repo, tag, &plan.asset)
@@ -131,8 +253,9 @@ pub fn apply(source: &dyn ReleaseSource, request: &Request<'_>, plan: Plan) -> R
 
     // Verify before write (invariant 1). The digest is computed from what arrived, never
     // carried over from the manifest that is supposed to be judging it.
-    let digest = sums
-        .verify(&plan.asset, &binary.bytes)
+    // Uses the self_update crate's parser (Checksum::from_sums_file) per ADR-27.
+    let sums_str = String::from_utf8_lossy(&sums.bytes);
+    let digest = verify_with_crate(&plan.asset, &sums_str, &binary.bytes)
         .with_context(|| format!("verifying {} against {SUMS_ASSET} for {tag}", plan.asset))?;
 
     let replacement = replace::install(

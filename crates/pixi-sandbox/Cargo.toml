@@ -32,11 +32,11 @@ tracing-subscriber = { workspace = true }
 fs2 = { workspace = true }
 tar = { workspace = true }
 ureq = { workspace = true }
-# Declared for TASK-90's evaluation (doc-14) and unused until it decides: the crate ships the
-# release download/verify/replace engine the hand-rolled `self_update` modules implement. The
-# dependency exists so the airlocked vendor tree carries it — the airlock cannot reach crates.io,
-# so this is the only way the spike can build against it. Rejection removes it in one relock cycle.
+# Adopted per ADR-27 (TASK-124): supplies release-lookup (backends::github ReleaseList),
+# download engine (Download) and SHA256SUMS parser (Checksum). Ownership ladder and replace
+# swap stay hand-rolled; update() is never called.
 self_update = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 # Integration tests link against the crate's dependencies only if they are repeated here, and
