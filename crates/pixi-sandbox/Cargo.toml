@@ -37,6 +37,8 @@ ureq = { workspace = true }
 # swap stay hand-rolled; update() is never called.
 self_update = { workspace = true }
 sha2 = { workspace = true }
+# TASK-125: rattler replaces pixi-pack/pixi-unpack subprocesses so only pixi-sandbox binary from conda-forge is needed. Reuses rustls, brings reqwest/tokio.
+rattler = { workspace = true }
 
 [dev-dependencies]
 # Integration tests link against the crate's dependencies only if they are repeated here, and
