@@ -7,7 +7,13 @@ all-features = true
 [advisories]
 version = 2
 yanked = "warn"
-ignore = []
+# Owner-approved, advisory-specific exception (2026-10-22, PR #186). basic-toml has no
+# fixed release. It is used only by i18n-config in rstest-bdd's dev/test chain, not
+# the shipped CLI. Revisit when i18n-config replaces it; vulnerability advisories
+# remain enforced. This is not an exception for unsafe-libyaml or TLS/ZIP issues.
+ignore = [
+  { id = "RUSTSEC-2026-0374", reason = "Test-only rstest-bdd -> i18n-embed -> i18n-config -> basic-toml; unmaintained, no fixed release; owner accepted this specific risk in PR #186 on 2026-10-22" },
+]
 
 [licenses]
 version = 2

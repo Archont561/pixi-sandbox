@@ -147,12 +147,33 @@ README and AGENTS paths against the CI filter. No production test targets this c
   starter run 39234092046 was upgrade-only (plan/publish skipped), so it cannot supply publish
   after-evidence. Native tests cannot be replaced by simulated runner labels on Linux.
 
+### PR #186 repair follow-up (2026-10-22)
+
+The owner requested repair before merge after CI and airlock failed. Actual airlock job
+logs identify AWS-LC's `__isoc23_sscanf` link failure. Removed the unused rattler scaffold
+(no production imports; existing pack/restore subprocess behavior unchanged), pruning
+151 lock entries. TASK-125 remains pending. Pinned rustls-webpki 0.103.16 and webpki-roots
+1.0.10 using their authenticated registry-index checksums to fix the two TLS advisories.
+
+The owner approved only RUSTSEC-2026-0374 (basic-toml unmaintained, test-only rstest-bdd
+chain, no fixed release); deny.toml documents the exception. No vulnerability advisory
+ignore or license-policy weakening. The pre-TLS-update reduced graph passes fmt, clippy,
+all 1,188 tests (2 skipped), repository/generated checks and actionlint. Cargo-deny at that
+point passes bans/licenses/sources with only the two TLS advisories outstanding.
+
+Final TLS sources are absent from this sandbox's offline vendor; no forged vendor data.
+The owner separately authorized one push with exclusions only for local gates blocked by
+those missing releases, so connected CI can verify the final graph. Check PR #186's final
+commit checks for the authoritative result; merge only when all checks pass. Local counts
+above do not validate the new TLS sources. These repairs supersede the earlier unchanged-
+lockfile blocker notes, not the still-pending live/billing acceptance criteria.
+
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 <!-- SECTION:SUMMARY:BEGIN -->
 Local TASK-126 implementation is in place with checksum-first standalone bootstrap, a cheaper
-runtime planner, safe CI step filtering and push-only docs artifacts. All executable local
-gates except the existing cargo-deny dependency-policy failures pass. Task remains In Progress;
+runtime planner, safe CI step filtering and push-only docs artifacts. The dependency-policy/airlock repairs are included; the refreshed TLS graph requires connected
+CI verification because the offline vendor lacks the new sources. Task remains In Progress;
 no unmeasured billed-minute saving, release, live consumer lifecycle or native proof is claimed.
 <!-- SECTION:SUMMARY:END -->

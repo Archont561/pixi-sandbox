@@ -3660,12 +3660,43 @@ sandbox's egress allowlist. Git hooks are installed.
 TASK-126 remains **In Progress**: AC#3's existing concurrency policy verified; the other ACs
 retain live-evidence/billing or full-lint gaps. Its notes enumerate these explicitly.
 
-Next session opening prompt:
+### PR #186 failure-log repair (2026-10-22)
 
-> Resume TASK-126 on `arena/1106ac98-pixi-sandbox`. Restore only if needed; baseline is
-> **1,188 passing / 2 skipped**, with Pixi 0.81.0 and pixi-sandbox 0.7.0 registered. Read
-> CONTEXT.md's 2026-10-22 TASK-126 entry and ADR-30. The standalone bootstrap, cheaper dynamic
-> planner and safe CI step filtering are implemented locally, not pushed. First agree how to
-> remediate the existing cargo-deny advisory/license failures and whether to push/open a PR.
-> Then obtain native consumer and billing evidence; do not claim that a faster dynamic plan
-> saves a billed minute. Do not release, merge or dispatch workflows without approval.
+PR: https://github.com/Archont561/pixi-sandbox/pull/186 (branch
+`arena/1106ac98-pixi-sandbox`). The user asked for merge, then asked to fetch the actual
+failed job logs and repair, rather than merge red. Signed job-log URLs were minted with
+`gh api .../actions/jobs/.../logs` and read via the fetcher; ordinary gh downloads fail at
+this sandbox's Azure egress. Do not copy temporary signed URLs into documentation.
+
+Airlock run 39763600239 failed linking debug xtask: AWS-LC referenced `__isoc23_sscanf`
+not supplied by the conda sysroot. Removed the unused `rattler` workspace/CLI dependency;
+no Rust code imported it. This removes its active AWS-LC/archive/YAML build edges and
+151 locked packages without changing pack/restore's pinned subprocess implementation.
+Some optional AWS-LC entries still appear in Cargo.lock; `cargo tree -i aws-lc-sys
+--edges features --target all` has no active path. TASK-125 migration remains future work.
+
+The owner explicitly approved only the test-only basic-toml **unmaintained** advisory
+RUSTSEC-2026-0374 exception (no fixed release), documented in deny.toml. No vulnerability
+advisory or license exception was added. With rattler removed and that exception, local
+cargo-deny reports bans/licenses/sources OK and only the two TLS advisories outstanding.
+Their fixes are pinned to registry rustls-webpki 0.103.16 and webpki-roots 1.0.10. Checksums
+come from the authentic crates.io sparse index via GitHub; dependency/features metadata
+is unchanged. No broad dependency update or registry-source substitution was used.
+
+**Local verification boundary:** on the reduced graph *before those two TLS pin updates*,
+fmt, workspace/all-target clippy `-D warnings`, repository consistency, generated-workflow
+lint and actionlint pass; the full suite passes **1,188 / 2 skipped**. The first test rebuild
+filled the disk; removed generated target/debug and reran with
+`CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 pixi run
+--frozen test --env-mode=loose`. No test scope was reduced.
+
+The final TLS pins cannot be compiled here: the restored offline vendor lacks those two
+releases and direct crates.io downloads are blocked. Do not manufacture vendored sources
+or checksums. The owner separately approved a one-push exclusion of local hooks blocked
+by these missing crates, for verification by normal connected GitHub CI. This approval is
+not reusable. GitHub checks remain enabled and the merge request is conditional on all
+checks passing. PR #186's final commit checks are the authority for the refreshed TLS graph;
+the preceding local counts are not presented as validating those new TLS sources.
+
+TASK-126 remains In Progress for native standalone-bootstrap/live-consumer and billing
+proof even after this repair; a faster dynamic plan does not establish a billed minute saved.

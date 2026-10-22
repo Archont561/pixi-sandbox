@@ -62,3 +62,12 @@ Reference: https://crates.io/crates/rattler, https://github.com/conda/rattler, T
 - [ ] #2 pixi run --frozen lint
 - [ ] #3 pixi run --frozen test
 <!-- DOD:END -->
+
+## Dependency scaffold follow-up (2026-10-22, PR #186)
+
+The unused workspace/CLI `rattler` dependency was removed while repairing CI. No Rust
+code imported it; pack/restore still use the existing pinned tool subprocesses. The scaffold
+activated AWS-LC (airlock's debug link failed on `__isoc23_sscanf`) and vulnerable archive/YAML
+packages without implementing this task. Reintroduce a maintained, minimal-feature dependency
+with the actual migration, feature-tree/MSRV analysis, and all acceptance tests above. This
+removal does not complete TASK-125 or change the existing transport format/tool behavior.
