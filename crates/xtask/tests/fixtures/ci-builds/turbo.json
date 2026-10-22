@@ -1,0 +1,167 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalDependencies": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "pixi.toml",
+    "pixi.lock",
+    "bun.lock"
+  ],
+  "tasks": {
+    "test": {
+      "dependsOn": [
+        "^test"
+      ],
+      "inputs": [
+        "src/**",
+        "tests/**",
+        "Cargo.toml",
+        "package.json",
+        "turbo.json",
+        "$TURBO_ROOT$/Cargo.toml",
+        "$TURBO_ROOT$/Cargo.lock"
+      ],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": [],
+      "inputs": [
+        "src/**",
+        "tests/**",
+        "Cargo.toml",
+        "package.json",
+        "turbo.json",
+        "$TURBO_ROOT$/Cargo.toml",
+        "$TURBO_ROOT$/Cargo.lock",
+        "$TURBO_ROOT$/deny.toml",
+        "$TURBO_ROOT$/crates/**/src/**",
+        "$TURBO_ROOT$/crates/**/tests/**",
+        "$TURBO_ROOT$/crates/**/Cargo.toml",
+        "$TURBO_ROOT$/crates/**/package.json"
+      ],
+      "outputs": []
+    },
+    "coverage": {
+      "dependsOn": [],
+      "cache": false
+    },
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "src/**",
+        "package.json",
+        "astro.config.mjs",
+        "tsconfig.json",
+        "$TURBO_ROOT$/Cargo.toml"
+      ],
+      "outputs": [
+        "dist/**",
+        ".astro/**"
+      ]
+    },
+    "fmt": {
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "preview": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false,
+      "persistent": true
+    },
+    "//#lint:biome": {
+      "inputs": [
+        "biome.json",
+        "docs/**/*.{js,ts,mjs,cjs,json,jsonc,astro}",
+        "!docs/.astro/**",
+        "!docs/dist/**",
+        "!docs/node_modules/**"
+      ],
+      "outputs": []
+    },
+    "//#lint:actions": {
+      "inputs": [
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml"
+      ],
+      "outputs": []
+    },
+    "//#lint:toml": {
+      "inputs": [
+        "**/*.toml"
+      ],
+      "outputs": []
+    },
+    "//#lint:generated": {
+      "inputs": [
+        "crates/pixi-sandbox/src/generated/**",
+        ".github/workflows/**",
+        "crates/**/src/**",
+        "crates/**/Cargo.toml"
+      ],
+      "outputs": [],
+      "dependsOn": [
+        "@repo/rust#lint"
+      ]
+    },
+    "//#lint:plan": {
+      "inputs": [
+        ".pixi-sandbox.toml",
+        "pixi.toml",
+        "crates/pixi-sandbox-core/src/sandbox_config.rs",
+        "crates/**/src/**",
+        "crates/**/Cargo.toml"
+      ],
+      "outputs": [],
+      "dependsOn": [
+        "//#lint:generated"
+      ]
+    },
+    "//#lint:repo": {
+      "inputs": [
+        "AGENTS.md",
+        "README.md",
+        "Cargo.toml",
+        "crates/**",
+        ".github/workflows/**",
+        ".pixi-sandbox.toml",
+        "pixi.toml",
+        "crates/**/src/**",
+        "crates/**/Cargo.toml",
+        "!crates/**/.turbo/**",
+        "!crates/lcov.info",
+        "!crates/**/target/**"
+      ],
+      "outputs": [],
+      "dependsOn": [
+        "//#lint:plan"
+      ]
+    },
+    "//#fmt:biome": {
+      "cache": false
+    }
+  },
+  "futureFlags": {
+    "affectedUsingTaskInputs": true
+  },
+  "globalPassThroughEnv": [
+    "CARGO_HOME",
+    "CARGO_NET_OFFLINE"
+  ],
+  "globalEnv": [
+    "CARGO_INCREMENTAL",
+    "CARGO_PROFILE_*",
+    "CARGO_BUILD_TARGET",
+    "CARGO_TARGET_*",
+    "CARGO_ENCODED_RUSTFLAGS",
+    "RUSTFLAGS",
+    "RUSTDOCFLAGS"
+  ]
+}

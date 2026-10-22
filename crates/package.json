@@ -4,10 +4,11 @@
   "private": true,
   "description": "Workspace-wide Rust checks that deliberately remain one Cargo invocation.",
   "scripts": {
-    "lint": "bun run lint:fmt && bun run lint:deps",
+    "lint": "bun run lint:fmt && bun run lint:deps && bun run lint:clippy",
     "lint:fmt": "cargo fmt --all --check",
     "lint:deps": "cargo deny --manifest-path ../Cargo.toml check",
     "fmt": "cargo fmt --all",
-    "coverage": "cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --ignore-filename-regex 'pixi-sandbox/src/github\\.rs$'"
+    "coverage": "cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --ignore-filename-regex 'pixi-sandbox/src/github\\.rs$'",
+    "lint:clippy": "cargo clippy --workspace --all-targets -- -D warnings"
   }
 }

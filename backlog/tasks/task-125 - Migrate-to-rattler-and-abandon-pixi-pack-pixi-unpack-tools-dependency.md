@@ -150,3 +150,13 @@ Final local gate reruns: `pixi run --frozen fmt` passed; `pixi run --frozen lint
 `pixi run --frozen test` passed all four package tasks (1,154 tests / 2 intentionally skipped).
 The last oracle-option refactor also passed pack/native/embedding checks. Connected platform
 proofs remain outstanding; task stays In Progress until their actual outcomes are known.
+
+
+2026-10-22 publisher incident follow-up: post-merge publisher 39813564308 compiled successfully
+but pack rejected valid v7 records without `build_number`. Public fixture-backed pack/restore/unpack
+reproduced that exact error before fixing the v7 trailing-digit/default-zero rule. Explicit values
+remain authoritative; omitted noarch kind follows v7 inference too. Six genuine local Conda archive
+cases validate the resulting channel metadata (numeric/nonzero/non-trailing/default-zero builds,
+generic/Python kinds). Focused native suite: 36 pass. No new lock-format dependency or policy
+exception, and no production publication/release was triggered. Live publisher success and the
+existing native release obligations remain unproven; this does not close TASK-125.

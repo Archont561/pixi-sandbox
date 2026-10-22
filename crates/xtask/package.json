@@ -3,8 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "test": "cargo nextest run -p xtask --no-tests pass",
-    "lint": "cargo clippy -p xtask --all-targets -- -D warnings"
+    "test": "cargo nextest run -p xtask --no-tests pass"
   },
   "dependencies": {
     "@repo/pixi-sandbox": "workspace:*",

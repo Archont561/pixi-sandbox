@@ -229,3 +229,127 @@ pub fn check_docs_artifacts(root: &Path) -> Result<()> {
     );
     Ok(())
 }
+
+/// Guard the single-suite CI route, shared Cargo build configuration and lint ordering.
+///
+/// # Errors
+/// Refuses a filtered/optional test gate, competing Clippy invocations, release planner,
+/// or cache/environment settings that diverge from the effective Pixi build.
+pub fn check_ci_builds(root: &Path) -> Result<()> {
+    check_ci_test_route(root)?;
+    let read_json = |path: &str| -> Result<Value> {
+        Ok(serde_json::from_str(&fs::read_to_string(root.join(path))?)?)
+    };
+    let package = read_json("package.json")?;
+    ensure!(
+        package["scripts"]["lint:plan"]
+            == "cargo run -q -p pixi-sandbox -- plan --config .pixi-sandbox.toml --json",
+        "lint planning must use the source-fresh debug binary"
+    );
+    ensure!(
+        package["scripts"]["lint:rust"] == "turbo run lint --filter=@repo/rust",
+        "Rust lint must have one workspace owner"
+    );
+    let rust = read_json("crates/package.json")?;
+    ensure!(
+        rust["scripts"]["lint:clippy"] == "cargo clippy --workspace --all-targets -- -D warnings"
+            && rust["scripts"]["lint"]
+                == "bun run lint:fmt && bun run lint:deps && bun run lint:clippy",
+        "lint must run workspace/all-target Clippy once with warnings denied"
+    );
+    ensure!(
+        rust["scripts"]["coverage"]
+            == "cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --ignore-filename-regex 'pixi-sandbox/src/github\\.rs$'",
+        "coverage must execute the unfiltered workspace with only the socket adapter excluded"
+    );
+    for name in [
+        "pixi-sandbox",
+        "pixi-sandbox-core",
+        "pixi-sandbox-git",
+        "xtask",
+    ] {
+        ensure!(
+            read_json(&format!("crates/{name}/package.json"))?["scripts"]["lint"].is_null(),
+            "per-crate lint must not compete with workspace Clippy: {name}"
+        );
+    }
+    let manifest: toml::Value = toml::from_str(&fs::read_to_string(root.join("pixi.toml"))?)?;
+    ensure!(
+        manifest["tasks"]["test-doc"].as_str() == Some("cargo test --doc --workspace"),
+        "test-doc must run actual workspace doctests, not the ordinary suite"
+    );
+    let turbo = read_json("turbo.json")?;
+    for (task, predecessor) in [
+        ("//#lint:generated", "@repo/rust#lint"),
+        ("//#lint:plan", "//#lint:generated"),
+        ("//#lint:repo", "//#lint:plan"),
+    ] {
+        ensure!(
+            names(&turbo["tasks"][task]["dependsOn"]) == [predecessor].into_iter().collect(),
+            "{task} must follow {predecessor} without competing Cargo processes"
+        );
+    }
+    let hashed = names(&turbo["globalEnv"]);
+    for name in [
+        "CARGO_INCREMENTAL",
+        "CARGO_PROFILE_*",
+        "RUSTFLAGS",
+        "RUSTDOCFLAGS",
+    ] {
+        ensure!(hashed.contains(name), "Turbo must forward and hash {name}");
+    }
+    let repo_inputs = names(&turbo["tasks"]["//#lint:repo"]["inputs"]);
+    ensure!(
+        repo_inputs.contains("!crates/lcov.info")
+            && repo_inputs.contains("!crates/**/.turbo/**")
+            && !names(&turbo["tasks"]["//#lint:generated"]["inputs"]).contains("crates/xtask/**"),
+        "generated reports and Turbo logs must not invalidate source lint caches"
+    );
+    println!(
+        "CI build graph: one coverage suite, real doctests, payload proof, serialized workspace lint and matching Pixi cache"
+    );
+    Ok(())
+}
+
+fn check_ci_test_route(root: &Path) -> Result<()> {
+    let ci = load(root, "ci.yml")?;
+    let job = &ci["jobs"]["ci"];
+    for command in ["coverage", "test-doc", "test-payload-roundtrip"] {
+        let run = format!("pixi run {command}");
+        let matching: Vec<_> = steps(job).filter(|step| step["run"] == run).collect();
+        ensure!(
+            matching.len() == 1,
+            "CI requires exactly one {command} gate"
+        );
+        ensure!(
+            matching[0]["if"] == "steps.changes.outputs.code != 'false'"
+                && matching[0]["continue-on-error"].is_null(),
+            "{command} must remain mandatory for code changes"
+        );
+    }
+    ensure!(
+        steps(job).all(|s| s["run"] != "pixi run test"),
+        "CI must not duplicate coverage's ordinary workspace suite"
+    );
+    for name in [
+        "CARGO_INCREMENTAL",
+        "CARGO_PROFILE_DEV_DEBUG",
+        "CARGO_PROFILE_TEST_DEBUG",
+    ] {
+        ensure!(ci["env"][name] == "0", "CI must pin {name}=0");
+    }
+    let rust_cache = steps(job)
+        .find(|s| {
+            s["uses"]
+                .as_str()
+                .is_some_and(|action| action.starts_with("Swatinem/rust-cache@"))
+        })
+        .context("CI requires a Rust cache")?;
+    ensure!(
+        rust_cache["with"]["cmd-format"] == "pixi run --frozen -- {0}"
+            && rust_cache["with"]["key"] == "${{ hashFiles('pixi.lock') }}",
+        "Rust cache must fingerprint the effective Pixi compiler and lock"
+    );
+
+    Ok(())
+}
