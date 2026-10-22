@@ -39,8 +39,8 @@ Reference: https://github.com/Archont561/pixi-sandbox/issues/179
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Create 4 child tasks for each inefficiency identified in issue 179
-- [ ] #2 For each child, measure current cost and document design tradeoffs
-- [ ] #3 Implement optimizations that preserve security and correctness guarantees
-- [ ] #4 Verify with actionlint, check-repository, consumer-proof, and real consumer runs
+- [x] #1 Create 4 child tasks for each inefficiency identified in issue 179
+- [x] #2 For each child, measure current cost and document design tradeoffs
+- [x] #3 Implement optimizations that preserve security and correctness guarantees
+- [x] #4 Verify with actionlint, check-repository, consumer-proof, and real consumer runs
 <!-- AC:END -->
