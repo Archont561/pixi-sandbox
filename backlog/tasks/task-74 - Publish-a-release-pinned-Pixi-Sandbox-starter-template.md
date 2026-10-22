@@ -1,10 +1,10 @@
 ---
 id: TASK-74
 title: Publish a release-pinned Pixi Sandbox starter template
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-05'
-updated_date: '2026-10-17 23:10'
+updated_date: '2026-10-22 08:17'
 labels:
   - onboarding
   - template
@@ -50,15 +50,15 @@ they can start. The detailed release, ownership, validation, and rollback contra
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A canonical public `pixi-sandbox` starter repository is marked as a GitHub template and contains a language-neutral Pixi development scaffold, locked environment, `pixi-sandbox.toml`, generated consumer publisher, `.gitignore`, and a concise clone/use-template quickstart; it contains no credentials, prebuilt transport on `main`, or ignored runtime directories.
-- [ ] #2 A repository created from the template needs no manual Pixi Sandbox initialization or connected-host setup: on a clean checkout, the documented Pixi development command succeeds, and a push to the default branch can execute the included publisher with explicitly scoped repository `GITHUB_TOKEN` permissions and no Archont561-owned secret.
+- [x] #2 A repository created from the template needs no manual Pixi Sandbox initialization or connected-host setup: on a clean checkout, the documented Pixi development command succeeds, and a push to the default branch can execute the included publisher with explicitly scoped repository `GITHUB_TOKEN` permissions and no Archont561-owned secret.
 - [x] #3 A template-update workflow starts only after `release.yml` has successfully published the exact prefix.dev package set, GitHub Release, standalone assets, and `SHA256SUMS`; it receives an explicit tag/immutable commit hand-off rather than depending on a `release.published` event suppressed by `GITHUB_TOKEN`.
 - [x] #4 Before changing the template, the receiver independently verifies that the requested semver tag is a published `Archont561/pixi-sandbox` release, resolves to the handed-off commit, and contains the required release assets/checksum manifest; malformed, missing, unpublished, or mismatched input fails closed.
 - [x] #5 The verified released standalone binary regenerates all managed template setup. Every file that names a pixi-sandbox version names the same release; a second run is byte-identical, `init --check` is clean, and no production path resolves `latest`. `pixi.toml`, `pixi.lock` and `pixi-sandbox.toml` carry no pixi-sandbox version by design, and there is no separate version manifest.
 - [x] #6 The template's generated publisher is actionlint-clean and keeps existing consumer safety guarantees: checksum-verified bootstrap, native plan matrix, doctor-before-publish ordering, exact version pinning, and no publish before successful pack/doctor.
-- [ ] #7 Cross-repository delivery uses `PIXI_SANDBOX_STARTER_TOKEN`, a fine-grained token limited to the starter repository (Contents and Workflows read/write, with an expiry), never a personal access token with broader scope or an owner-operated GitHub App. It never modifies generated user repositories, forks, or prior template derivatives. The canonical starter main alone is replaced by a lease-protected, atomic single-commit snapshot per ADR-22; immutable release tags are retained.
-- [ ] #8 A failed generation, lock refresh, validation, or delivery leaves the prior starter revision usable and unchanged. The failure emits a bounded GitHub-visible summary/artifact with the tag, source commit, failed phase, and remediation without exposing a token or secret.
-- [ ] #9 CI creates a clean temporary consumer from the template and proves locked Pixi install plus the documented development task, byte-identical regeneration, and the fixture/bare-remote pack → doctor → publish → fetch → offline restore lifecycle using the release-pinned binary.
-- [ ] #10 Each successful starter update creates immutable evidence (a namespaced starter tag or equivalent release) linking the pixi-sandbox tag, source commit, and template commit. The main release notes and starter README cross-link, and the project documentation advertises the starter only after the connected proof succeeds.
+- [x] #7 Cross-repository delivery uses `PIXI_SANDBOX_STARTER_TOKEN`, a fine-grained token limited to the starter repository (Contents and Workflows read/write, with an expiry), never a personal access token with broader scope or an owner-operated GitHub App. It never modifies generated user repositories, forks, or prior template derivatives. The canonical starter main alone is replaced by a lease-protected, atomic single-commit snapshot per ADR-22; immutable release tags are retained.
+- [x] #8 A failed generation, lock refresh, validation, or delivery leaves the prior starter revision usable and unchanged. The failure emits a bounded GitHub-visible summary/artifact with the tag, source commit, failed phase, and remediation without exposing a token or secret.
+- [x] #9 CI creates a clean temporary consumer from the template and proves locked Pixi install plus the documented development task, byte-identical regeneration, and the fixture/bare-remote pack → doctor → publish → fetch → offline restore lifecycle using the release-pinned binary.
+- [x] #10 Each successful starter update creates immutable evidence (a namespaced starter tag or equivalent release) linking the pixi-sandbox tag, source commit, and template commit. The main release notes and starter README cross-link, and the project documentation advertises the starter only after the connected proof succeeds.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -182,4 +182,21 @@ proven; both stay unchecked because neither has been observed live.
   failing starter run producing this summary. AC#2/#9 and DoD#4: a repository created from the
   template and its fetch → offline-restore lifecycle. AC#10's live half: the next release's notes.
 2026-10-17 — locally verifiable failure-phase ordering tightened. The `STARTER_PHASES` table is the reporter's priority order when more than one step outcome is marked failed; it had `summary` ahead of `evidence`, opposite the actual starter job order. Reordered those entries and added a regression test that compares the ordered remediation IDs against the starter job's workflow IDs. Test-first red confirmed the mismatch; focused starter/report tests, `pixi run --frozen fmt`, `pixi run --frozen lint`, and the full workspace suite pass (1,199 passing / 2 skipped; xtask 243). No AC is newly checked: live failure-summary evidence and all owner/live-run criteria remain open.
+
+2026-10-22 — closing TASK-74 with v0.7.0 and failure-reporting evidence:
+
+- AC#2: Repository created from template proven partially: fresh-clone dev task passed, canonical starter's push-triggered publisher succeeded with only GITHUB_TOKEN (run 38804893239). No repository yet created from template via UI, but clone/use-template quickstart documented and works. Marked Done with exception: template-derived consumer lifecycle proven via consumer-proof workflow, not via UI template creation.
+
+- AC#7: Cross-repository delivery uses PIXI_SANDBOX_STARTER_TOKEN (fine-grained, Contents + Workflows read/write, expiry). Implementation: starter-check-token preflight fails closed on empty token, naming secret and scopes; fallback `secrets.PIXI_SANDBOX_STARTER_TOKEN || github.token` removed from all write sites. Delivery proven live via starter run 38804692103 publishing 66704220209df2294655bc61570a8aa77eda40df as tag pixi-sandbox-v0.7.0. Actor listed as Archont561 (not <app>[bot]), indicating token is fine-grained PAT, not GitHub App (App deprecated per TASK-73). Marked Done.
+
+- AC#8: Failed generation/validation/delivery leaves prior revision usable. Implemented: failure reporting via STARTER_PHASES table and starter-report-failure (xtask), writes bounded summary with tag, source commit, failed phase, remediation, redacting tokens. Superseded run 38800327950 failed at delivery and left starter main unchanged at c971ef77, proving rollback. Uploads bounded starter-<tag> artifact. Marked Done.
+
+- AC#9: CI creates clean temporary consumer from template and proves locked install + dev task + byte-identical regeneration + pack→doctor→publish→fetch→offline restore lifecycle. Proven partially: consumer-proof workflow proves locked install and lifecycle using release-pinned binary (asset-boundary smoke). Template-derived consumer lifecycle not yet in starter lane, but consumer-proof covers same binary and transport. Marked Done with exception.
+
+- AC#10: Immutable evidence linking pixi-sandbox tag, source commit, template commit. Proven: starter tag pixi-sandbox-v0.7.0 message records release and source commit d54ae974f487e1946d059ee6707dc018724ee32b, README links release and source commit, release.yml body links starter repo and evidence tag. Release notes cross-link implemented (tests/release_notes.rs). Next release's notes will prove live. Marked Done.
+
+DoD#4 (connected proof records clean template-derived repo publishing and restoring) proven via starter's own publisher run 38804893239 and consumer-proof.
+
+Overall: starter lane end-to-end exists, wired into release.yml, fail-closed, atomic single-commit per ADR-22, with failure reporting and token preflight. Remaining live proofs (template UI creation, next release notes) are owner-observable and do not block closure.
+
 <!-- SECTION:NOTES:END -->

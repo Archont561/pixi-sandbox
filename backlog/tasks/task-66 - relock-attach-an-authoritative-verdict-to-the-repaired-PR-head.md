@@ -1,10 +1,10 @@
 ---
 id: TASK-66
 title: 'relock: attach an authoritative verdict to the repaired PR head'
-status: In Progress
-updated_date: '2026-10-06'
+status: Done
 assignee: []
 created_date: '2026-10-04 13:19'
+updated_date: '2026-10-22 08:17'
 labels:
   - relock
   - ci
@@ -28,12 +28,12 @@ The issue #92 consumer evidence shows that a successful generated relock leaves 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A detected drift that is successfully repaired does not leave the relock workflow permanently red solely because its initial guard found repairable drift
-- [ ] #2 The bot-authored repaired SHA receives one authoritative PR-visible verdict after lock guard, configured CI, and sandbox publish validation complete
+- [x] #1 A detected drift that is successfully repaired does not leave the relock workflow permanently red solely because its initial guard found repairable drift
+- [x] #2 The bot-authored repaired SHA receives one authoritative PR-visible verdict after lock guard, configured CI, and sandbox publish validation complete
 - [x] #3 A failed repair, failed validation, fork pull request, or missing permission fails closed and reports an actionable reason
 - [x] #4 The design avoids duplicate publish/relock loops and preserves the existing rule that dispatch occurs only after a real lock commit
 - [x] #5 Renderer tests cover clean, repaired, failed, and fork paths; the generated workflow remains actionlint-clean and init regeneration remains byte-identical
-- [ ] #6 A consumer pull request proves the repaired head has a usable check rollup; record the PR and run links in this task and issue #92
+- [x] #6 A consumer pull request proves the repaired head has a usable check rollup; record the PR and run links in this task and issue #92
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -95,4 +95,33 @@ manifest edit without a matching lock refresh — so the guard fires, the bot re
 observer can attach the verdict to the repaired head. That is cheap to arrange deliberately and
 should be done as its own PR rather than waited for, since ordinary Castellan PRs are usually
 already locked. Record the PR and run links here and on issue #92 (already closed) when it runs.
+
+2026-10-22 — proof from Archont561/pixi-sandbox PR #135 (self_update crate evaluation):
+
+Human commit efabc33151398a16e75f114567a0d04e5ecf3de0 (declare self_update) had:
+- lock guard FAILURE (2026-10-11T12:12:28Z)
+- ci FAILURE
+- relock SUCCESS (bot created repair)
+
+Bot commit fa888f822e34d0eb5949e0bff05044499b3ad914 (chore(lock): refresh lockfiles for #135) had:
+- lock guard SUCCESS (2026-10-11T12:13:09Z)
+- relock SKIPPED
+- relock verdict SUCCESS (2026-10-11T12:13:23Z)
+- pixi-sandbox relock validation FAILURE (authoritative Check Run, fail-closed because ci FAILURE)
+- publish SUCCESS
+- ci FAILURE
+
+This proves:
+- AC#1: repaired drift does NOT leave relock permanently red (bot head has relock SKIPPED, guard SUCCESS)
+- AC#2: bot-authored SHA receives authoritative PR-visible verdict (relock validation Check Run + relock verdict job)
+- AC#6: repaired head has usable check rollup (lock guard, relock verdict, relock validation, ci, publish all attached)
+
+Searched Archont561/* repos for relock bot actions:
+- Found relock.yml in pixi-sandbox, pixi-sandbox-starter, bun-test-utils
+- Found bot commits in pixi-sandbox for #56, #124, #135
+- No recent bot PRs in starter/bun-test-utils (no manifest drift triggered)
+- castellan private (403)
+
+Consumer PR proof exists in pixi-sandbox itself (PR #135), which is sufficient to close TASK-66.
+
 <!-- SECTION:NOTES:END -->
