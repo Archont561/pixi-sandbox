@@ -21,7 +21,7 @@ pixi-sandbox publish ... --log-file ./publish-attempt.log
 ```
 
 - **`-v`** writes phase boundaries to stderr.
-- **`-vv`** adds reviewed context: local paths, platform, environment count, helper-tool paths.
+- **`-vv`** adds reviewed context: local paths, platform, environment count, explicit executable paths.
 - **`--log-file <PATH>`** creates a durable plain-text log, flushed after every phase plus the
   complete causal error chain before exit. It works with or without `-v`, so CI keeps normal
   stdout unchanged while retaining evidence.

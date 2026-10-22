@@ -617,7 +617,7 @@ fn is_presence_only(rel: &str) -> bool {
 /// `unpacked_size_bytes` for the manifest: measured on what restore will actually produce).
 ///
 /// `candidates` are the prefix-path spellings this side must neutralise — at pack time the
-/// verification stage's prefix and the pack copy pixi-unpack read from.
+/// verification stage's prefix and the source pack copy used by installation.
 ///
 /// # Errors
 ///

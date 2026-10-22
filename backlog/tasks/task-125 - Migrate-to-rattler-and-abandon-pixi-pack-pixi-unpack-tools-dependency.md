@@ -21,6 +21,9 @@ ordinal: 125000
 
 ## Description
 
+Historical starting point below; ADR-31 and the accepted-scope reconciliation in
+`backlog/docs/plans/task-125-release-readiness.md` supersede helper acquisition and directory-layout assumptions.
+
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Current transport relies on external helper binaries `pixi-pack` and `pixi-unpack` pinned via `crates/pixi-sandbox-core/assets/tools.lock.json` (embedded via `include_str!` in `tools_lock.rs:45`). The flow:
 
@@ -48,19 +51,19 @@ Reference: https://crates.io/crates/rattler, https://github.com/conda/rattler, T
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `rattler` crate evaluated: minimal feature set documented, `cargo tree -i reqwest` still empty if possible, MSRV impact assessed (rattler 0.48 declares 1.88+ already satisfied by TASK-92)
-- [ ] #2 `pack` no longer spawns `pixi-pack`: implements packing via rattler library, produces byte-identical `payload/envs/<name>/` for existing fixtures, PyPI wheel handling preserved (uv reinstall or rattler equivalent)
-- [ ] #3 `restore` no longer spawns `pixi-unpack`: implements unpack via rattler, restores same file list as before, markers written correctly
-- [ ] #4 `tools.lock.json`, `tools_lock.rs`, `tool_fetch.rs`, `tools_update.rs`, `tools` CLI subcommand, `--fetch-tools` / `--tools-lock` / `--tools-cache` flags removed; `pixi-sandbox` binary from conda-forge is sufficient, no user install of pixi-pack needed
-- [ ] #5 `manifest.json` no longer embeds `pixi`/`pixi-unpack` tools with url/pinned_sha256, or embeds only when explicitly requested; transport size budgets (TASK-72) updated
-- [ ] #6 Full test suite passes: `pixi run --frozen test`, `test-payload-roundtrip`, `consumer-proof`, airlock restore; docs updated with new transport mechanism
+- [x] #1 Approved runtime graph evaluated/documented: rattler defaults/TLS off, unavoidable transitive reqwest disclosed, no host-normal AWS-LC edge, scoped dependency-policy exceptions and actual Rust 1.94 CI validation (ADR-31).
+- [x] #2 New `pack` uses native rattler/UV with v7 lock preflight; original Conda archive/wheel bytes remain unchanged and relocated/oracle-verified installed behavior is preserved (ADR-31 replaces helper-directory byte identity).
+- [x] #3 Format-1 restore/unpack under schemas 1–3 install natively with markers and staged-oracle verification; explicit override and legacy opaque reader remain only for compatibility (ADR-31).
+- [x] #4 Environment-helper catalogue/updater/modules, `tools` CLI and helper-management flags removed; no pixi-pack/pixi-unpack install required. Canonical ecosystem package or standalone binary suffices; independent payload builder remains (ADR-28/31).
+- [x] #5 New schema-3 manifests have no implicit helpers; local Pixi/bootstrap selection is explicit with actual byte hashes and unchanged size/linkage ceilings. Published native manifest has only pixi/pixi-sandbox; historical size docs are labelled, not treated as current measurements.
+- [x] #6 Full test suite passes: `pixi run --frozen test`, `test-payload-roundtrip`, `consumer-proof`, airlock restore; docs updated with new transport mechanism
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 pixi run --frozen fmt
-- [ ] #2 pixi run --frozen lint
-- [ ] #3 pixi run --frozen test
+- [x] #1 pixi run --frozen fmt
+- [x] #2 pixi run --frozen lint
+- [x] #3 pixi run --frozen test
 <!-- DOD:END -->
 
 ## Dependency scaffold follow-up (2026-10-22, PR #186)
@@ -160,3 +163,28 @@ cases validate the resulting channel metadata (numeric/nonzero/non-trailing/defa
 generic/Python kinds). Focused native suite: 36 pass. No new lock-format dependency or policy
 exception, and no production publication/release was triggered. Live publisher success and the
 existing native release obligations remain unproven; this does not close TASK-125.
+
+
+### 2026-10-22 — Live evidence reconciled; documentation delivery in review
+
+The runtime/connected evidence listed as pending in the historical notes above is now available:
+CI 39824086495 (including payload/offline consumer, Rust 1.94 and Windows), publisher 39824086542,
+five-platform artifacts-only release 39826041383 including fresh Linux binary consumer proof,
+and Pages 39825855879 all succeeded at merge 0d15c4d8. Auto-release 39828722470 was a successful
+**dry run**: no commit/tag/push or production release. Published schema-3 manifest source is
+0d15c4d with only pixi/pixi-sandbox tools. This session also restored it with zero blob/file failures.
+
+AC1–5 are reconciled to the owner-approved ADR-31 scope above; the historical description is not
+an instruction to reintroduce helpers or promise an empty reqwest graph. AC6 and local DoD1–3
+are now checked after successful full lint, ordinary and instrumented
+1,186-pass/2-skipped suites, doctests and the complete docs build/quality checks on this cleanup.
+The public CLI diagnostic regression was observed red then green; no installer algorithm changed.
+No fresh native runtime failure is known. New-native offline proof is Linux, while all five platforms passed packaging
+and smoke; those are deliberately not conflated. See the release-readiness ledger for links,
+current counts, version recommendation and scoped limitations. Status stays In Progress until
+this final documentation delivery is merged; previous "pending runtime evidence" notes are history.
+
+The task remains In Progress solely for delivery/review/merge. The new cleanup still needs normal
+PR CI before merge; the linked connected/release evidence above belongs to source 0d15c4d8,
+not to an unbuilt claim about every future commit. Controlled billing evidence remains with
+TASK126/127 and is not needed to reinterpret these successful runtime gates.

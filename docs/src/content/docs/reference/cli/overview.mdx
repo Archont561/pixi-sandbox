@@ -28,7 +28,9 @@ The lifecycle pages are:
 | [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/) | `init`, `plan`, `pack`, `doctor` | producing and checking a transport |
 | [Publish transport branches](/pixi-sandbox/reference/cli/publish/) | `publish` | the orphan branch, naming, retention |
 | [Restore and inspect a transport](/pixi-sandbox/reference/cli/restore/) | `restore`, `unpack` | the airlock side |
-| [Tools and self-update](/pixi-sandbox/reference/cli/tools/) | `tools`, `self-update` | embedded tool pins and the binary |
+| [Tools and self-update](/pixi-sandbox/reference/cli/tools/) | explicit `pack` bundling flags, `self-update`, `fetch-release` | local executables and verified standalone releases |
+| [Payload channels](/pixi-sandbox/guides/payload-channels/) | `wrap-payload` | optional payload packaging, independent of environment helpers |
+| [CI publishing](/pixi-sandbox/guides/ci-publishing/) | `pipeline`, `upgrade` | generated publishing and reviewed regeneration |
 
 ## Pipeline diagnostics
 
@@ -43,7 +45,7 @@ pixi-sandbox publish ... --log-file ./publish-attempt.log
 ```
 
 `-v` writes phase boundaries to stderr; `-vv` also includes reviewed context such as local paths,
-platform, environment count, and helper-tool paths. `--log-file <PATH>` creates a durable plain
+platform, environment count, and explicit executable paths. `--log-file <PATH>` creates a durable plain
 text log and flushes every phase plus the complete causal error chain before exit. It works with
 or without `-v`, so CI can keep normal stdout unchanged while retaining evidence. The destination
 must not already exist: pixi-sandbox refuses to overwrite the only copy of an earlier failure.

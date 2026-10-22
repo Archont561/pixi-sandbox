@@ -192,3 +192,12 @@ runtime planner, safe CI step filtering and push-only docs artifacts. The depend
 CI verification because the offline vendor lacks the new sources. Task remains In Progress;
 no unmeasured billed-minute saving, release, live consumer lifecycle or native proof is claimed.
 <!-- SECTION:SUMMARY:END -->
+
+### 2026-10-22 — Runtime and release correctness evidence available
+
+Post-merge CI 39824086495 and native publisher 39824086542 succeeded at 0d15c4d8; artifacts-only
+release 39826041383 passed all five platform build/package/smoke legs plus the fresh Linux binary
+consumer proof. Auto-release 39828722470 passed preparation/validation in dry-run mode and did
+not tag/push. TASK125 release-readiness ledger reconciles these outcomes and the documentation
+cleanup. This does not establish controlled cold/warm or billed-minute savings, a live starter
+run, or every manual fallback: TASK126 remains In Progress for those explicit AC obligations.

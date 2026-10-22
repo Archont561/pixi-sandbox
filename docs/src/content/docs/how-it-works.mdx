@@ -37,7 +37,7 @@ what lives on each machine, what crosses the gap, and what is proven at every st
   </div>
   <div>
     <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:package" size={16} /> Pack and verify</strong>
-    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>pack</code> resolves the environments with the pinned <code>pixi-pack</code>, vendors Cargo crates, fetches sha256-pinned helper tools, and writes <code>manifest.json</code> with every blob's digest. <code>doctor --verify</code> re-checks every digest and writes nothing.</p>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>pack</code> reads the version-7 lock, copies verified Conda archives and wheels into a local channel, optionally vendors Cargo crates, and writes a schema-3 <code>manifest.json</code>. Native rattler/UV installation generates the file oracle; local executables are bundled only when explicitly selected. <code>doctor --verify</code> re-checks every digest and writes nothing.</p>
   </div>
 
   <div style="display: flex; flex-direction: column; align-items: center;">
@@ -63,7 +63,7 @@ what lives on each machine, what crosses the gap, and what is proven at every st
   </div>
   <div>
     <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:shield-check" size={16} /> Restore and prove it</strong>
-    <p style="margin: 0.25rem 0; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>./restore.sh</code> verifies every byte, then materializes environments, vendored crates, and the pinned tools — and the proof is an offline no-op: <code>pixi install --frozen --offline</code>.</p>
+    <p style="margin: 0.25rem 0; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>./restore.sh</code> verifies every byte, then materializes environments, vendored crates, and the explicitly bundled executables — and the proof is an offline no-op: <code>pixi install --frozen --offline</code>.</p>
   </div>
 </div>
 
@@ -88,8 +88,8 @@ The orphan branch and nothing else. Its root carries Markdown only; the payload 
 sandbox/developer-linux-64 (orphan branch)
 ├── .pixi-sandbox/
 │   ├── manifest.json              # SHA-256 catalog, source commit, tool versions
-│   ├── envs/<env>/pack/           # pixi-pack --directory-only output
-│   ├── tools/<platform>/          # pixi, pixi-pack, pixi-unpack, pixi-sandbox (static, verified)
+│   ├── envs/<env>/pack/           # native format-1 channel and wheels
+│   ├── tools/<platform>/          # explicitly selected pixi / standalone pixi-sandbox
 │   └── vendor/                    # cargo vendor tree (when vendoring is enabled)
 ├── README.md                      # human restore instructions
 └── AGENTS.md                      # agent instructions

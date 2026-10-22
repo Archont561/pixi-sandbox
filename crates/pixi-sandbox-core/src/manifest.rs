@@ -39,7 +39,8 @@ pub struct Manifest {
     /// Files above this size were split into `.partNNN` (GitHub blocks blobs > 100 MiB).
     pub shard_limit_bytes: u64,
     pub source: Source,
-    /// name → tool, e.g. `pixi`, `pixi-unpack`, `pixi-sandbox` (decision ADR-4).
+    /// Explicit executable entries for new producers, e.g. `pixi` and `pixi-sandbox`.
+    /// Older manifests may also record a legacy unpacker (ADR-31).
     #[serde(default)]
     pub tools: BTreeMap<String, ToolEntry>,
     /// environment name → packed environment.

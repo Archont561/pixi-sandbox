@@ -59,13 +59,13 @@ The existing sandbox publisher failure after PR #189 is a separate correctness i
 <!-- AC:BEGIN -->
 - [ ] #1 Record before/after run links, commit SHAs, runner OS/target, relevant compiler versions, cache hit/miss state and step/job timings. Compare successful cold-cache and warm-cache scenarios where practical, reporting wall time separately from aggregate runner time and actual billed minutes when available. Do not present estimates or failed runs as measured savings.
 - [ ] #2 Add correctly scoped Rust caching to source publisher planning/build jobs and the uncached automation jobs identified by the baseline. Document invalidation and trust boundaries; demonstrate warm-cache reuse without accepting stale binaries after relevant source/toolchain/flag changes.
-- [ ] #3 Publisher and airlock planning no longer require an optimized/LTO product build solely to produce a matrix. Preserve source-fresh config/override validation, platform mappings and equivalent plan output. Actual transported/released Linux bootstraps remain static musl and pass standalone verification.
-- [ ] #4 The release consumer lifecycle proof can start once its matching Linux standalone artifact is available, without waiting for unrelated matrix legs or package smoke tests. The publication job still requires all five platform artifacts, package smoke tests and the consumer proof; missing/failed artifacts or a failed proof prevent publication.
-- [ ] #5 Main CI and Pages deployment use one trusted same-revision docs build for the shared path, with frontmatter, links, accessibility and CLI snippet checks still enforced. Direct/manual docs builds retain a safe fallback. Deployments reject missing, mismatched or untrusted artifacts and cannot elevate fork/PR-produced artifacts into privileged execution.
+- [x] #3 Publisher and airlock planning no longer require an optimized/LTO product build solely to produce a matrix. Preserve source-fresh config/override validation, platform mappings and equivalent plan output. Actual transported/released Linux bootstraps remain static musl and pass standalone verification.
+- [x] #4 The release consumer lifecycle proof can start once its matching Linux standalone artifact is available, without waiting for unrelated matrix legs or package smoke tests. The publication job still requires all five platform artifacts, package smoke tests and the consumer proof; missing/failed artifacts or a failed proof prevent publication.
+- [x] #5 Main CI and Pages deployment use one trusted same-revision docs build for the shared path, with frontmatter, links, accessibility and CLI snippet checks still enforced. Direct/manual docs builds retain a safe fallback. Deployments reject missing, mismatched or untrusted artifacts and cannot elevate fork/PR-produced artifacts into privileged execution.
 - [x] #6 Evaluate the remaining cost of compiling the full product graph for small xtask commands. Either implement a tested lightweight dependency boundary or verified same-commit automation artifact reuse, or document measured reasons to defer it. Preserve typed automation behavior and avoid duplicating business logic in YAML/shell.
 - [x] #7 Optimize relock dependency-download reuse without weakening locked fetches, stale/edited/deleted-lock detection, fork refusal, repair-loop safeguards or the verdict. Change its generator and verify the committed render matches. Keep the small post-release asset-boundary proof unchanged unless measured savings justify a change.
-- [ ] #8 Public workflow/generator and automation CLI seams have regression coverage for changed behavior, agreed before implementation. Verify success and refusal paths for artifact identity, missing artifacts, failed matrix legs and publication gating; native/offline guarantees are demonstrated on the real applicable runners, not simulated labels.
-- [ ] #9 Actionlint, generated-workflow consistency, repository checks, formatting, lint and tests pass. Attach representative workflow evidence showing the optimizations preserve security and correctness, and document remaining bottlenecks and any latency-versus-cost tradeoffs without promising unmeasured minute savings.
+- [x] #8 Public workflow/generator and automation CLI seams have regression coverage for changed behavior, agreed before implementation. Verify success and refusal paths for artifact identity, missing artifacts, failed matrix legs and publication gating; native/offline guarantees are demonstrated on the real applicable runners, not simulated labels.
+- [x] #9 Actionlint, generated-workflow consistency, repository checks, formatting, lint and tests pass. Attach representative workflow evidence showing the optimizations preserve security and correctness, and document remaining bottlenecks and any latency-versus-cost tradeoffs without promising unmeasured minute savings.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -93,3 +93,14 @@ Validation: full lint 11/11, no cache; focused relock generator 7 passed; workfl
 
 Final current-tree pre-push proof: all 5 normal hooks passed (main integration, workspace Clippy, repository consistency, generated workflows, full uncached tests). Test baseline now 1175 passed/2 skipped: 54 git +295 core +575 product +251 xtask. No hook bypass. Evidence artifact name uses run ID/attempt so artifacts-only dispatches from branch names containing slashes remain uploadable. Safe PR CI/airlock evidence pending; do not close task on these local checks alone.
 <!-- SECTION:NOTES:END -->
+
+### 2026-10-22 — Live supporting-workflow evidence
+
+Publisher 39824086542 is now successful at 0d15c4d8. Artifacts-only release 39826041383 passed
+all native build/package/smoke legs and the built-artifact Linux lifecycle, which started and
+completed while unrelated native legs were still running. Final publication was skipped, as
+required for empty-version dispatch. Main CI 39824086495 and Pages reuse/deployment 39825855879
+passed; success/refusal policy tests and safe manual fallback remain covered locally. This closes
+the correctness/scheduling evidence in AC3/4/5/8/9, not the controlled cost/cache/billing evidence
+in AC1/2 or DoD4. Record compiler/cache/billing unknowns honestly. See TASK125 release-readiness
+ledger; no new dispatch or production release was performed by this cleanup.

@@ -199,7 +199,7 @@ the vendor mode. File it with the per-file oracle diff.
 
 ---
 
-## 9. `pixi-pack` refuses a non-wheel PyPI dependency
+## 9. `pack` refuses a non-wheel PyPI dependency
 
 **Symptom.** `pixi-sandbox pack` stops before creating its output and lists a selected environment,
 package and locked location that is not a wheel. The same lock issue is not reported by `plan`:
@@ -212,9 +212,9 @@ are accepted. A wheel can be platform-tagged, so confirm that each packed platfo
 compatible wheel; `.whl` alone does not establish compatibility.
 
 **Safe immediate action.** Stop and keep the lock and preflight output. Do not hand-edit the
-transport or assume the check can be bypassed with a `pixi-pack` flag: `pixi-sandbox pack` exposes
-neither upstream `--ignore-pypi-non-wheel` (which omits the dependency) nor `--inject <wheel>`
-(which does not verify wheel compatibility), and it has no arbitrary flag passthrough.
+transport or try to bypass the native preflight. `pixi-sandbox pack` has no
+`--ignore-pypi-non-wheel`, `--inject`, or arbitrary external packer flag passthrough. Supply a
+compatible wheel in the lock or remove that dependency from the packed environment.
 
 **Evidence.** The complete refusal output; the exact `pixi-sandbox pack` command, including its
 `--envs` and `--platform`; the matching `environments.<env>.packages.<platform>` entries and

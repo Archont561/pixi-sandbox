@@ -1287,10 +1287,9 @@ fn pack_refuses_a_pixi_global_trampoline_self_bin_before_embedding() {
 
 #[test]
 fn pack_refuses_a_non_wheel_pypi_dependency_before_creating_output() {
-    // Issue #157: pixi-pack carries a PyPI dependency only as a wheel, and refuses anything
-    // else late, from a subprocess, after the install phase. pack must name the dependency up
-    // front and leave no output directory behind. The refusal happens in the plan phase, before
-    // tools are resolved, so this test needs no fake packer on PATH.
+    // Issue #157: native packing must name non-wheel dependencies before output creation,
+    // without suggesting that the operator needs an external packing helper. The refusal
+    // happens in preflight, so this test needs no packer or network.
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("project-source");
     let transport = temp.path().join("transport");
@@ -1332,6 +1331,11 @@ packages:
         .assert()
         .failure();
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(
+        stderr.contains("native packing can carry a PyPI dependency only as a wheel")
+            && !stderr.contains("pixi-pack"),
+        "the diagnostic describes the native interface, not a retired dependency: {stderr}"
+    );
     assert!(
         stderr.contains("environment `orchestration`") && stderr.contains("`polyglot-runtime`"),
         "the refusal names the environment and package: {stderr}"

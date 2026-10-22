@@ -103,7 +103,7 @@ fn validate_env_names(envs: &[String]) -> Result<()> {
 /// `None` — meaning no section in the manifest at all — when no config was named, when the
 /// config declares no table, or when nothing resolves for that platform's host family. That is
 /// the backward-compatible half of the contract: a project that declares nothing keeps packing
-/// the same bytes earlier releases packed.
+/// the same native manifest without a host-requirements section.
 ///
 /// # Errors
 ///
@@ -127,13 +127,13 @@ pub fn resolve_host_requirements(
 /// Build the per-file oracle for one environment (ADR-13).
 ///
 /// Native installation is the default. An explicit legacy unpacker adapter is retained for
-/// old opaque payload compatibility. Record the resulting tree with prefix spellings canonicalised away
-/// (see `files_manifest`).
+/// old opaque payload compatibility. Record the resulting tree with prefix spellings
+/// canonicalised away (see `files_manifest`).
 ///
-/// The unpack runs on a *copy* of the pack: pixi-unpack writes its extraction cache into the
-/// pack directory it reads from, and the payload tree must stay exactly what pixi-pack
-/// produced. The scratch lives inside `out` (never `/tmp`, invariant 3) and is removed before
-/// returning, so a successful pack leaves no trace of it.
+/// Installation runs on a *copy* of the pack to isolate scratch and the optional legacy
+/// unpacker's extraction cache from the byte-verified transport payload. Scratch lives inside
+/// `out` (never `/tmp`, invariant 3) and is removed before returning, so a successful pack leaves
+/// no trace of it.
 ///
 /// # Errors
 ///

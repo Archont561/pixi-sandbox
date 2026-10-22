@@ -119,7 +119,7 @@ This emits a GitHub Actions matrix — one job per `bundle × platform`.
     <ContextChips chips={["connected"]} />
 
     ```bash
-    # Pack: envs + vendored crates + pinned tools
+    # Pack: locked artifacts + vendored crates + explicit executables
     pixi-sandbox pack \
       --repo-root . \
       --envs dev,docs \
@@ -181,12 +181,12 @@ This emits a GitHub Actions matrix — one job per `bundle × platform`.
 sandbox/developer-linux-64 (orphan branch)
 ├── .pixi-sandbox/
 │   ├── manifest.json              # SHA-256 catalog, source commit, tool versions
-│   ├── envs/dev/pack/             # pixi-pack --directory-only output
+│   ├── envs/dev/pack/             # native format-1 channel and wheels
 │   │   ├── channel/linux-64/*.conda
 │   │   ├── environment.yml
 │   │   └── pixi-pack.json
 │   ├── envs/docs/pack/            # second env, shared .conda files deduped by git
-│   ├── tools/linux-64/            # pixi, pixi-unpack, pixi-sandbox (static, verified)
+│   ├── tools/linux-64/            # explicitly selected pixi / standalone pixi-sandbox
 │   └── vendor/                    # cargo vendor --versioned-dirs (if enabled)
 ├── README.md                      # human restore instructions
 └── AGENTS.md                      # agent instructions
@@ -237,7 +237,7 @@ what is vendored, how the restore wires `CARGO_HOME`, and the offline build proo
   </div>
   <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
     <Icon aria-hidden="true" name="lucide:hard-drive" size={20} />
-    <div><strong>Work dir on same filesystem</strong> — default <code>.pixi/.restore-work</code>. Never use small tmpfs <code>/tmp</code> (pixi-unpack stages into TMPDIR).</div>
+    <div><strong>Work dir on same filesystem</strong> — default <code>.pixi/.restore-work</code>. Allow space for packs, package caches and staged prefixes; avoid small tmpfs <code>/tmp</code>.</div>
   </div>
   <div style="display: flex; gap: 0.75rem; padding: 0.75rem; background: var(--sl-color-gray-6); border-radius: 0.5rem;">
     <Icon aria-hidden="true" name="lucide:shield-check" size={20} />

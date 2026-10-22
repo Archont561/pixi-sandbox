@@ -12,8 +12,9 @@ The ten decisions in one glance:
 2. **Shard whole files** — git dedup makes incremental publishes cost the changed bytes
    only (+0.07 MiB for a one-crate bump).
 3. **One orphan branch per (platform, env-set)**, force-pushed, `manifest.json` authoritative.
-4. **CI fetches pinned tools; the branch embeds a static unpacker** — the `~/.pixi/bin`
-   shim is a trampoline, not a binary.
+4. **Native installation; explicit executable bundling** — new transports need no external
+   pack/unpack helper. Bundle Pixi and a standalone CLI bootstrap when needed; a `~/.pixi/bin`
+   shim is a trampoline, not a standalone binary.
 5. **Restore ends with a no-op `pixi install --frozen --offline`** — proven with an empty
    cache and no network.
 6. **Cargo crates go to `.pixi-sandbox/vendor/`**, a sibling of `envs/` and `tools/` — keyed
@@ -23,15 +24,16 @@ The ten decisions in one glance:
 9. **Git only behind a trait** (`GitProtocol`) — so publish and fetch are tested against an
    in-memory remote, and `--dry-run` is the same code path with a runner that does not run.
 10. **Tests use fixtures, never this repository** — the repository's own `default` environment
-    contains the packer, which would hide exactly the bugs worth catching.
+    contains the development toolchains, which would hide exactly the bugs worth catching.
 
 ## Where the code lives
 
 | crate | what it owns |
 | --- | --- |
-| `pixi-sandbox-core` | `manifest.json`, sharding, tool pins, verification |
+| `pixi-sandbox-core` | schema-3 manifests, sharding, optional builder pins, platform mappings, verification |
 | `pixi-sandbox-git` | `GitProtocol` + `ShellGit` + `FakeGit` |
-| `pixi-sandbox` | the CLI, and the fixtures the tests run against |
+| `pixi-sandbox` | the CLI, native packing/installation, and lifecycle fixtures |
+| `xtask` | typed repository, workflow and release automation |
 
 GitHub Actions is deliberately boring in this project: every step is one `pixi run
 <task>`, and anything longer lives in `pixi.toml`. See [Repository](/pixi-sandbox/project/repository/).

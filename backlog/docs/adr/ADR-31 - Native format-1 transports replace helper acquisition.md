@@ -51,3 +51,21 @@ and synthetic producer golden tests are retired, not counted as native compatibi
 Historical baseline was 1,203 passes / 2 skipped; final evidence must report the actual new count.
 Full lint, payload roundtrip, built-artifact consumer and airlock results remain completion gates;
 this decision does not treat unit success as proof those connected/native-platform gates ran.
+
+### Live gate closure — 2026-10-22
+
+The preceding pending-gate note is historical. At merged source 0d15c4d8, CI 39824086495
+passed strict lint, full coverage, doctests, real payload/network-denied consumer checks,
+Rust 1.94 and Windows. Native publisher 39824086542 succeeded and emitted schema 3 with only
+explicit pixi/pixi-sandbox executable entries. Artifacts-only release 39826041383 passed all
+five native build/package/smoke legs and the freshly built Linux binary's consumer lifecycle;
+production publication was skipped. Immutable older-release airlock 39822123949 is separate
+compatibility evidence, not a fresh-binary native proof. Auto-release 39828722470 passed dry-run
+preparation/validation without commit/tag/push. The actual suite is 1,186 passes / 2 skipped,
+not the historical 1,203 count.
+
+See `backlog/docs/plans/task-125-release-readiness.md` for linked evidence, accepted TASK125
+wording and release recommendation. Final documentation delivery remains in review. We do not
+claim all-platform native offline consumers or controlled cost/cache/billing savings; TASK126/127
+retain those measurement obligations. No gate bypass, protection change or production dispatch
+is part of this cleanup.

@@ -50,8 +50,10 @@ read-only: it runs `doctor --verify` and prints the explicit restore command.
 
 ### Order of operations
 
-Load manifest → verify everything → materialize tools (idempotent) → preflight disk → install
-envs (`pixi-unpack` → rename) → write markers (`conda-meta/pixi_env_prefix`, fingerprint) → vendor
+Load manifest → verify transported blobs → check destinations and disk space → materialize
+explicitly bundled tools → install each environment into same-filesystem staging with the native
+Conda/wheel libraries → write final-prefix markers and verify the staged file oracle → promote
+with rollback protection → vendor
 + Cargo wiring (`auto` uses `.pixi-sandbox/cargo-home` and per-env activation hooks, leaving project
 `.cargo/config.toml` untouched) → remove any legacy `.pixi/sandbox-env.sh` → verify the restored
 tree against the manifest's per-file digests → register user tools (launchers + profile/registry
@@ -71,40 +73,41 @@ sandbox-owned cargo home when vendored crates are restored in `--cargo-config au
 
 ## unpack
 
-Single-environment primitive, used by restore:
+Produce a raw single-environment prefix; unlike `restore`, this does not write project markers:
 
 <ContextChips chips={["airlock"]} />
 
 ```bash
 pixi-sandbox unpack \
   --input-dir .sandbox-out \
-  --output-dir /tmp/prefix \
+  --output-dir /srv/offline-prefix \
   --env dev \
-  --unpacker /path/to/pixi-unpack \
-  --force \
-  --work-dir /tmp/work \
-  --verify-only
+  --work-dir /srv/offline-work
 ```
 
 Accepts a transport dir, a `.pixi-sandbox/envs/<env>/pack` dir, or a bare pack dir. Leaves pixi
 markers to restore.
 
-For a **bare pixi-pack format-1 directory**, unpacking uses the in-process Conda and wheel
+For **format-1 directories**, including transport-backed input, unpacking uses the in-process Conda and wheel
 installers by default: it does not run an external helper or an interpreter. Artifacts must
 already be local, and the pack platform must match the host. `--verify-only` validates the
 local archive digests and wheel paths without creating a prefix or cache.
 
-An explicit `--unpacker` still selects the external helper. Transport-backed `unpack` and
-`restore` continue to use their existing embedded helper; the native migration is not yet
-complete. With `--force`, an existing output is retained until installation succeeds, and a
-failed promotion attempts to restore the previous output.
+Format-1 packs under manifest schemas 1, 2 and 3 restore natively. Only older opaque,
+non-format-1 transports retain their recorded legacy unpacker compatibility path. An explicit
+`unpack --unpacker PATH` selects an external executable; it is not needed for new transports.
+The `pixi-pack.json` metadata filename identifies the format, not an executable dependency.
+With `--force`, an existing prefix is retained until staged installation and oracle verification
+succeed; failed promotion attempts to restore the previous prefix. `--verify-only` writes no
+prefix, and `--force` is only needed when replacing an existing output.
 
 ## Safety implications
 
-- Verification runs **before** any write: a failed restore leaves the work dir for inspection and
-  the target untouched.
-- The work dir lives on the project's filesystem — never a small tmpfs `/tmp`, which
-  `pixi-unpack` stages into and which fails mid-restore with a confusing package-cache error.
+- Blob verification precedes materialization. A staged install/oracle failure leaves the existing
+  environment prefix untouched and preserves scratch for inspection; restore is not a transaction
+  over every environment, vendored tree and user registration.
+- The work dir lives on the project's filesystem for staging, package caches and same-filesystem
+  promotion. Avoid small tmpfs `/tmp`; reserve enough space for both existing and staged prefixes.
 - Registration touches nothing outside the project under `--user-tools skip` (the CI/shared-account
   policy); verification and project output are identical either way.
 
