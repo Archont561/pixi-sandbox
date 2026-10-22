@@ -22,6 +22,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: "publish-sandbox-${{ github.repository }}"
+  cancel-in-progress: false
+
 env:
   PIXI_SANDBOX_VERSION: 9.8.7
   PIXI_SANDBOX_CHANNEL: https://prefix.dev/archont561/archont561

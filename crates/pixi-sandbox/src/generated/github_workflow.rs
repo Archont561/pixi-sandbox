@@ -321,7 +321,18 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
             yaml_string(group),
             cancel_in_progress
         ),
-        None => "\n".to_string(),
+        None => {
+            // Default concurrency to prevent overlapping force-pushes to the same
+            // transport branch (issue #179 section 3). Repository-wide grouping is
+            // correct because the contended resource is the orphan branch every run
+            // writes, regardless of ref. cancel_in_progress false prevents aborting a
+            // running pack/publish mid-flight; GitHub still cancels a superseded pending
+            // run (at most one running + one pending).
+            format!(
+                "\nconcurrency:\n  group: {}\n  cancel-in-progress: false\n\n",
+                yaml_string("publish-sandbox-${{ github.repository }}")
+            )
+        }
     };
 
     let plan_timeout_block = match options.plan_timeout_minutes {
