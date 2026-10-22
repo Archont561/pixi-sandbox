@@ -99,8 +99,8 @@ publish = 60
 |-------|------|---------|-------------|
 | `push_paths` | string[] | derived (see below) once `[workflow]` is present; otherwise no filter | `on.push.paths:` allowlist. A plain entry is a path; a `!`-prefixed entry is GitHub's negation syntax. No `..` component or leading `/`. |
 | `permissions` | bool | `false` | When `true`, the workflow-level `permissions:` becomes `contents: read` and only the `publish` job regains `contents: write`, scoped to the job that needs it. `false` keeps the historical unconditional top-level `contents: write`. |
-| `concurrency.group` | string | unset | `concurrency: { group: ... }` for the whole workflow — prevents two publishes racing to force-push the same orphan branch. |
-| `concurrency.cancel_in_progress` | bool | `false` | Paired with `concurrency.group`. |
+| `concurrency.group` | string | `publish-sandbox-${{ github.repository }}` | `concurrency: { group: ... }` for the whole workflow — prevents two publishes racing to force-push the same orphan branch. Repository-wide grouping, `cancel-in-progress: false` by default. |
+| `concurrency.cancel_in_progress` | bool | `false` | Paired with `concurrency.group`. `false` prevents aborting a running publish mid-flight; GitHub still cancels a superseded pending run (at most one running + one pending). |
 | `timeouts.plan` | int (minutes) | unset | `timeout-minutes:` on the `plan` job. |
 | `timeouts.publish` | int (minutes) | unset | `timeout-minutes:` on the `publish` job — a hung `pack` should not hold a runner for the six-hour default. |
 | `pixi_version` | string | unset | Pins `setup-pixi`'s own `pixi-version:` input on every `setup-pixi` step. |

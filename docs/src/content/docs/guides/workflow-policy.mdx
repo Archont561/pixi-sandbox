@@ -45,8 +45,8 @@ publish = 60
 |-------|---------|------------------|
 | `push_paths` | derived once `[workflow]` is present; otherwise no filter | `on.push.paths:` allowlist. `!`-prefixed entries are GitHub negation syntax; no `..` component or leading `/` |
 | `permissions` | `false` | `true` scopes `contents: write` to the `publish` job; `false` keeps the historical unconditional top-level grant |
-| `concurrency.group` | unset | Prevents two publishes racing to force-push the same orphan branch |
-| `concurrency.cancel_in_progress` | `false` | Paired with the group |
+| `concurrency.group` | `publish-sandbox-${{ github.repository }}` | Prevents two publishes racing to force-push the same orphan branch — repository-wide grouping, `cancel-in-progress: false` |
+| `concurrency.cancel_in_progress` | `false` | Paired with the group — `false` keeps a running publish alive while GitHub cancels a superseded pending run |
 | `timeouts.plan` / `timeouts.publish` | unset | `timeout-minutes:` per job — the publish default is six hours |
 | `pixi_version` | unset | Pins `setup-pixi`'s own `pixi-version:` input on every step |
 | `setup_pixi_cache` | `false` once `[workflow]` is present | `setup-pixi`'s `cache:` input — see the hazard below |

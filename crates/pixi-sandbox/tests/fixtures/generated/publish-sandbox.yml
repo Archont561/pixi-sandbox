@@ -22,6 +22,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: "publish-sandbox-${{ github.repository }}"
+  cancel-in-progress: false
+
 env:
   PIXI_SANDBOX_VERSION: 9.8.7
   PIXI_SANDBOX_CHANNEL: https://prefix.dev/archont561/archont561
@@ -36,7 +40,7 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           run-install: false
       - name: Install pixi-sandbox CLI
@@ -63,7 +67,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           run-install: false
       - name: Install pixi-sandbox CLI
@@ -131,7 +135,7 @@ jobs:
           # still useful for checkout and the artifact-only fallback, but cannot deliver this PR.
           token: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN || github.token }}
           persist-credentials: true
-      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           run-install: false
       - name: Install pixi-sandbox CLI

@@ -121,7 +121,7 @@ __PLAN_TIMEOUT_BLOCK__    outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           run-install: false
 __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
@@ -148,7 +148,7 @@ __PUBLISH_TIMEOUT_BLOCK__    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           run-install: false
 __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
@@ -216,7 +216,7 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
           # still useful for checkout and the artifact-only fallback, but cannot deliver this PR.
           token: ${{ secrets.PIXI_SANDBOX_UPGRADE_TOKEN || github.token }}
           persist-credentials: true
-      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           run-install: false
 __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
@@ -321,7 +321,18 @@ __SETUP_PIXI_EXTRA__      - name: Install pixi-sandbox CLI
             yaml_string(group),
             cancel_in_progress
         ),
-        None => "\n".to_string(),
+        None => {
+            // Default concurrency to prevent overlapping force-pushes to the same
+            // transport branch (issue #179 section 3). Repository-wide grouping is
+            // correct because the contended resource is the orphan branch every run
+            // writes, regardless of ref. cancel_in_progress false prevents aborting a
+            // running pack/publish mid-flight; GitHub still cancels a superseded pending
+            // run (at most one running + one pending).
+            format!(
+                "\nconcurrency:\n  group: {}\n  cancel-in-progress: false\n\n",
+                yaml_string("publish-sandbox-${{ github.repository }}")
+            )
+        }
     };
 
     let plan_timeout_block = match options.plan_timeout_minutes {

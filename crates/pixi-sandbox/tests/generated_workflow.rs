@@ -684,12 +684,17 @@ mod workflow_policy {
     /// AC#1: an unconfigured render carries none of the new blocks at all — this is the
     /// byte-identical migration path for every existing consumer, held directly by the golden
     /// fixture test above; this test names the absence explicitly, block by block.
+    /// TASK-120: concurrency is now default-on to prevent overlapping force-pushes
+    /// (issue #179 section 3), so the default render DOES contain concurrency.
     #[test]
     fn default_options_add_no_new_yaml() {
         let rendered = workflow();
         assert!(!rendered.contains("    paths:"));
         assert!(rendered.contains("permissions:\n  contents: write"));
-        assert!(!rendered.contains("concurrency:"));
+        // TASK-120: concurrency is default-on now (repository-wide, cancel false)
+        assert!(rendered.contains("concurrency:"));
+        assert!(rendered.contains("group: \"publish-sandbox-${{ github.repository }}\""));
+        assert!(rendered.contains("cancel-in-progress: false"));
         assert!(!rendered.contains("timeout-minutes:"));
         assert!(!rendered.contains("pixi-version:"));
         assert!(!rendered.contains("cache:"));
