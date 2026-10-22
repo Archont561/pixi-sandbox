@@ -6,31 +6,141 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-## Unreleased — native transport migration
+## [v0.8.0](https://github.com/Archont561/pixi-sandbox/compare/v0.7.0...2e281ac12793fde76b29f5190bc705911bd6b699) (2026-10-22)
 
-### Breaking changes
+### ⚠ BREAKING CHANGE
 
-- Replace new environment pack/unpack helper processes with native rattler/UV installation.
-  Remove the helper catalogue, `tools` subcommand and `pack --fetch-tools` / `--tools-lock` /
-  `--tools-cache`; explicitly select local Pixi/bootstrap executables with `--pixi-bin` / `--self-bin`.
-- Write schema-3 manifests; read format-1 payloads under schemas 1–3 natively. Preserve legacy
-  opaque-payload unpacker compatibility and the explicit `unpack --unpacker` override.
-- Raise the source-build minimum to Rust 1.94. Use version-7 Pixi locks and compatible PyPI
-  wheels; no dependency solving or source builds occur during packing/restoration.
+* Document the native migration's removed tools command and
+helper flags, explicit Pixi/bootstrap bundling, schema-3 output, v7 locks
+and Rust 1.94 source minimum. Recommend v0.8.0 under the pre-1.0 minor policy;
+do not bump manifests, dispatch production or create a release in this change.
 
-### Fixes and validation
 
-- Decode compact v7 Conda build-number/noarch fields without losing explicit metadata.
-- Preserve existing prefixes until staged installation and file-oracle verification succeed.
-- Five-platform build/package/smoke validation and the fresh Linux binary's consumer proof passed.
-  CI and the source-built sandbox publisher also passed; these are not claimed billing savings.
 
-Recommended release: **0.8.0**, following the project's pre-1.0 breaking-change policy.
-See the [migration guide](docs/src/content/docs/guides/migration.mdx) for operator actions.
-This is a curated pre-release summary; release preparation regenerates the versioned changelog
-from Conventional Commits. The migration guide remains the durable upgrade runbook.
+### Features
 
-## [v0.7.0](https://github.com/Archont561/pixi-sandbox/compare/v0.6.2...648f6435c030e62f0305dbc19bf1182d11d25b09) (2026-10-15)
+* **transport:** pack and restore native format-1 environments
+([a858596](https://github.com/Archont561/pixi-sandbox/commit/a85859680de040b539593c72b2fc36c95b7f6619))
+* install bare packs with native rattler and wheel libraries
+([e502031](https://github.com/Archont561/pixi-sandbox/commit/e5020310da52a7bb7a1a28194000845efeb1a093))
+* **deps:** add rattler 0.48 (rustls) to replace pixi-pack/unpack – TASK-125
+([aac323f](https://github.com/Archont561/pixi-sandbox/commit/aac323f1109f9c42819deaf48e8d603b2e7ed642))
+* **backlog:** add TASK-125 rattler migration abandon tools and TASK-126 CI optimization follow-up
+([f1b8032](https://github.com/Archont561/pixi-sandbox/commit/f1b8032243796bedc9957a57e7a0e588b9da5790))
+* **self-update:** adopt self_update crate transport per ADR-27 (TASK-124)
+([260030d](https://github.com/Archont561/pixi-sandbox/commit/260030d8d15ce2de501b3fd2dfd2b2f54faacc31))
+* **backlog:** add TASK-124 adopt self_update transport per ADR-27
+([537fa50](https://github.com/Archont561/pixi-sandbox/commit/537fa50d721c0ce44b3698d8249e1292c378c534))
+* **relock:** add path filtering to reduce PR minutes (TASK-121, TASK-122)
+([fcd682d](https://github.com/Archont561/pixi-sandbox/commit/fcd682d8fca8e81601554da45b0779fc4185add0)),
+closes [#179](https://github.com/Archont561/pixi-sandbox/issues/179)
+[#179](https://github.com/Archont561/pixi-sandbox/issues/179)
+* **workflow:** add default concurrency to generated publish workflow
+([2c23d51](https://github.com/Archont561/pixi-sandbox/commit/2c23d5176bfc001e87c0094068eadaa905ec3623)),
+closes [#179](https://github.com/Archont561/pixi-sandbox/issues/179)
+
+### Fixes
+
+* decode compact locks and streamline CI builds
+([4a5955c](https://github.com/Archont561/pixi-sandbox/commit/4a5955c3a9a63f2288b9e6f2cec8b9f23852467d))
+* **ci:** remove unused rattler and refresh vulnerable TLS pins (#186)
+([71be6d5](https://github.com/Archont561/pixi-sandbox/commit/71be6d5deb9b63f07f290c81eae0c089094417be)),
+closes [#186](https://github.com/Archont561/pixi-sandbox/issues/186)
+* **xtask:** align starter failure priority with workflow order (#175)
+([84e8010](https://github.com/Archont561/pixi-sandbox/commit/84e8010a5dd9e8408a4f94da33c111a05244b23e)),
+closes [#175](https://github.com/Archont561/pixi-sandbox/issues/175)
+* **files-manifest:** collapse the installer's prefix-stamped script rows (#173)
+([897964d](https://github.com/Archont561/pixi-sandbox/commit/897964d28d7a69b86c97ed528d2a501320c5f07e)),
+closes [#173](https://github.com/Archont561/pixi-sandbox/issues/173)
+[#170](https://github.com/Archont561/pixi-sandbox/issues/170)
+[#170](https://github.com/Archont561/pixi-sandbox/issues/170)
+* **starter:** refuse a missing token early and report the failed phase
+([86a7ec4](https://github.com/Archont561/pixi-sandbox/commit/86a7ec48ad9a7f2df4ee416db024d4d6a31f6d30)),
+closes [#101](https://github.com/Archont561/pixi-sandbox/issues/101)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+[#10](https://github.com/Archont561/pixi-sandbox/issues/10)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#8](https://github.com/Archont561/pixi-sandbox/issues/8)
+[#2](https://github.com/Archont561/pixi-sandbox/issues/2)
+[#9](https://github.com/Archont561/pixi-sandbox/issues/9)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#10](https://github.com/Archont561/pixi-sandbox/issues/10)
+* **starter:** repair publication and default to latest release (#164)
+([e16884a](https://github.com/Archont561/pixi-sandbox/commit/e16884a2b8615aeb2c2de7da8b0a3abca33898bb)),
+closes [#164](https://github.com/Archont561/pixi-sandbox/issues/164)
+
+### Performance
+
+* **workflows:** reuse trusted builds and shorten supporting jobs
+([8729711](https://github.com/Archont561/pixi-sandbox/commit/8729711bd26a275a3e469cd4825b2ae2c921b86f))
+* **ci:** streamline verified workflow bootstrap (TASK-126)
+([dda8bea](https://github.com/Archont561/pixi-sandbox/commit/dda8bea7b6c4d40e3f25e4093378ac73a1df520c))
+
+### Refactoring
+
+* **prefix:** share staged-prefix promotion policy
+([618e7ce](https://github.com/Archont561/pixi-sandbox/commit/618e7ce1a2a183cce4d7e65d08acad32d5a4d0e9))
+
+### Documentation
+
+* document native transport migration and release readiness
+([fb9abb9](https://github.com/Archont561/pixi-sandbox/commit/fb9abb9d59441b48dd87a549f89e7c5c62a7220f))
+* **context:** record TASK-126 verification and remaining proof
+([cc997b4](https://github.com/Archont561/pixi-sandbox/commit/cc997b42ae9040eaa574784b4534a7d27b725b07))
+* **backlog:** close TASK-66,74,116 with live evidence and documented exceptions
+([ea7621c](https://github.com/Archont561/pixi-sandbox/commit/ea7621ca156fd9f17418a61010259c8c173ca01b)),
+closes [#135](https://github.com/Archont561/pixi-sandbox/issues/135)
+[#56](https://github.com/Archont561/pixi-sandbox/issues/56)
+* **backlog:** mark TASK-121,122 Done with ACs checked
+([b170e9a](https://github.com/Archont561/pixi-sandbox/commit/b170e9aaf7896e23a0c052a1caf2a0d3d280267f))
+* **backlog:** update TASK-118,119,121 with measurements and proposals, mark 120,123 Done
+([dafa073](https://github.com/Archont561/pixi-sandbox/commit/dafa073be54ee5af972003c0d6696b80089c039f))
+* **workflow:** reflect default concurrency now on by default
+([3fb0886](https://github.com/Archont561/pixi-sandbox/commit/3fb08861b0765e2682bf96bbfa563ee6e30a46a6))
+* **backlog:** record TASK-117 investigation evidence (#172)
+([abd2df3](https://github.com/Archont561/pixi-sandbox/commit/abd2df3f1345d4c3968293b0fcc65d49b64e18df)),
+closes [#172](https://github.com/Archont561/pixi-sandbox/issues/172)
+* **pack:** document PyPI wheel handling (#171)
+([ef21890](https://github.com/Archont561/pixi-sandbox/commit/ef21890156d390bf3b54c08d7f0d7c5c14882f4f)),
+closes [#171](https://github.com/Archont561/pixi-sandbox/issues/171)
+* **context:** record the merge of the starter failure-reporting session
+([6626180](https://github.com/Archont561/pixi-sandbox/commit/6626180ca507b17489c313da7077fd22668a1c0e)),
+closes [#168](https://github.com/Archont561/pixi-sandbox/issues/168)
+* **context:** record the starter failure-reporting session
+([6f2c83e](https://github.com/Archont561/pixi-sandbox/commit/6f2c83e2555b728a77f716ebb9cda7fbe29fffd8))
+* **backlog:** apply the TASK-74 owner decisions to the starter contract (#167)
+([6184724](https://github.com/Archont561/pixi-sandbox/commit/61847243078a0f8202a6819be9a6dc328d83f9c4)),
+closes [#167](https://github.com/Archont561/pixi-sandbox/issues/167)
+* **context:** record the GitHub App deprecation and next prompt
+([2a90b96](https://github.com/Archont561/pixi-sandbox/commit/2a90b960cb8537df042b36f5f1053e47c06f630e))
+* **backlog:** deprecate TASK-73, the owner-operated GitHub App task
+([2442978](https://github.com/Archont561/pixi-sandbox/commit/244297867a9c8269925f7d5c8f7e9eb3994c0cd9)),
+closes [#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+* **context:** record the v0.7.0 starter evidence and next prompt
+([cc73133](https://github.com/Archont561/pixi-sandbox/commit/cc731337bcc6c9493ac6daf3279094b240899320))
+* **readme:** retire the unreplaced-run claim from the v0.6.2 starter note
+([a37ba8c](https://github.com/Archont561/pixi-sandbox/commit/a37ba8c3d79e1a04d046cf9c6a500f2c110d4d01))
+* **backlog:** close TASK-85, TASK-94 and TASK-95 on the v0.7.0 starter run
+([32b41d7](https://github.com/Archont561/pixi-sandbox/commit/32b41d7bef4ecec3c43a28f2fa42d190982527dd)),
+closes [#5](https://github.com/Archont561/pixi-sandbox/issues/5)
+[#4](https://github.com/Archont561/pixi-sandbox/issues/4)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+[#6](https://github.com/Archont561/pixi-sandbox/issues/6)
+
+### Build System
+
+* **task125:** evaluate rattler with patched ZIP dependencies
+([6660542](https://github.com/Archont561/pixi-sandbox/commit/6660542926cefe68dcecdc17927b95cb93c177e9))
+* **task125:** provision verified sources for native package migration
+([05be8c3](https://github.com/Archont561/pixi-sandbox/commit/05be8c31aecf408ad63cf112c3ff75129774baf3))
+
+### CI
+
+* **release:** name the publish environment after what it gates (#174)
+([8e9d499](https://github.com/Archont561/pixi-sandbox/commit/8e9d49965a497c40bdc1bd6ea222004c37d13804)),
+closes [#174](https://github.com/Archont561/pixi-sandbox/issues/174)
+
+## [v0.7.0](https://github.com/Archont561/pixi-sandbox/compare/v0.6.2...v0.7.0) (2026-10-15)
 
 ### Features
 
