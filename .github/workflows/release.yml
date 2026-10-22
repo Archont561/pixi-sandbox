@@ -40,11 +40,67 @@ concurrency:
 permissions:
   contents: write
   # Needed to dispatch docs.yml after publishing the release (see "Trigger docs rebuild").
-  # docs.yml carries its own `concurrency: pages-${{ github.ref }}` group, so that dispatch
-  # cannot race the `push: [main]` trigger it shares a workflow with — it stays as it is.
+  # docs.yml serializes manual fallback builds with its trusted CI-artifact adoption lane
+  # under `pages-${{ github.ref }}`; the dispatch remains a safe independent fallback.
   actions: write
 
+env:
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+
 jobs:
+  # TASK-127: this job finishes at binary upload, not after unrelated package builds.
+  linux-binary:
+    name: build x86_64-unknown-linux-musl
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          run-install: false
+          cache: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: release-linux-musl
+      - run: rustup target add x86_64-unknown-linux-musl
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: pixi run -e package build-release-binary -- --target x86_64-unknown-linux-musl
+      - run: pixi run -e package xtask stage-release-binary x86_64-unknown-linux-musl
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binary-x86_64-unknown-linux-musl
+          path: pixi-sandbox-x86_64-unknown-linux-musl
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-package:
+    name: package linux-64
+    needs: linux-binary
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          run-install: false
+          cache: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: release-linux-musl
+      - run: pixi run -e package package
+      - run: pixi run -e package xtask smoke-conda-package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: conda-linux-64
+          path: .publish/out/*.conda
+          if-no-files-found: error
+          retention-days: 7
+
   build:
     name: build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
@@ -53,9 +109,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-musl
-            runner: ubuntu-latest
-            platform: linux-64
           - target: aarch64-unknown-linux-musl
             runner: ubuntu-24.04-arm
             platform: linux-aarch64
@@ -76,6 +129,8 @@ jobs:
 
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: release-${{ matrix.target }}
 
       # Before the build steps, because every remaining step is `pixi run -e package …`: the
       # empty `package` environment is the only one that resolves on every native runner
@@ -139,7 +194,7 @@ jobs:
   # whole grant here; this job is deliberately not in `environment: prefix`.
   consumer-proof:
     name: consumer proof (linux-64, built artifact)
-    needs: build
+    needs: linux-binary
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -154,12 +209,17 @@ jobs:
       # the repository and the pixi binary, neither of which the proof used to require.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.version || github.ref }}
           persist-credentials: false
 
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           run-install: false
           cache: false
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: support-host-automation
 
       - name: Prepare clean consumer fixture
         run: pixi run -e package xtask consumer-proof-fixture -- --consumer "$RUNNER_TEMP/consumer" --evidence "$RUNNER_TEMP/evidence" --label "$PROOF_LABEL"
@@ -186,14 +246,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: consumer-proof-${ env.PROOF_LABEL }
+          name: consumer-proof-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/evidence
           if-no-files-found: ignore
           retention-days: 14
 
   release:
     name: publish prefix.dev and GitHub Release
-    needs: [build, consumer-proof]
+    needs: [build, linux-binary, linux-package, consumer-proof]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # The publish gate, named for what this job publishes to (prefix.dev). It is a gate and not

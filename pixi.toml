@@ -166,6 +166,8 @@ package = "pixi publish --path crates/pixi-sandbox --build-dir $PIXI_PROJECT_ROO
 
 # `--target <triple>` (and any other cargo flags) pass through; locally with no flags it is a
 # plain host build, which is also what `stage-release-binary` defaults to staging.
+build-plan-binary = "cargo build -q -p pixi-sandbox"
+
 build-release-binary = { args = [
   { arg = "flags", default = "" },
 ], cmd = "cargo build -p pixi-sandbox --release {{ flags }}" }

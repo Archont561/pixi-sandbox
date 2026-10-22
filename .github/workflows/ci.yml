@@ -91,12 +91,19 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
       - if: steps.changes.outputs.code == 'false'
         run: pixi run lint-docs
+      - run: pixi run xtask check-release-scheduling
+      - run: pixi run xtask check-docs-artifacts
       - run: pixi run docs build
-      - if: github.event_name == 'push'
+      - run: pixi run docs-frontmatter-check
+      - run: pixi run docs-link-check
+      - run: pixi run docs-a11y-check
+      - run: pixi run docs-snippet-check
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: docs-site
+          name: docs-site-${{ github.sha }}
           path: docs/dist
+          if-no-files-found: error
           retention-days: 7
       # The main-integration guard (decision ADR-29): how did this push reach main — a pull
       # request merged on GitHub, the release commit, or one direct commit outside the

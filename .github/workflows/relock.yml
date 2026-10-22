@@ -49,6 +49,15 @@ jobs:
       # fail first with a message about installation, when the fact worth reporting is that the
       # lock no longer satisfies the manifest.
       - run: pixi lock --check
+      # Source downloads only: no credentials, Cargo configuration or target executables.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       # Cargo's locked fetch is the non-writing Cargo.lock counterpart to `pixi lock
       # --check`: it fails before CI or packing when a Rust manifest changed without a relock.
       - run: cargo fetch --locked
@@ -84,6 +93,15 @@ jobs:
       # Bare, not `pixi run <task>`: a task would first have to solve the very environment
       # whose lock is stale.
       - run: pixi lock
+      # Source downloads only: no credentials, Cargo configuration or target executables.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       # Resolves only what the new constraint forces; `cargo update` would move the
       # whole workspace, which is a different intent and a different pull request.
       - run: cargo fetch

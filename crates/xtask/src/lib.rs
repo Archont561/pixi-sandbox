@@ -19,3 +19,5 @@ pub mod starter;
 pub mod util;
 pub mod version;
 pub mod workflow;
+
+pub mod workflow_gates;

@@ -52,6 +52,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
   SOURCE_REPO: ${{ github.repository }}
   STARTER_REPO: Archont561/pixi-sandbox-starter
   ASSET: pixi-sandbox-x86_64-unknown-linux-musl
@@ -66,8 +68,7 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       commit: ${{ steps.release.outputs.commit }}
-    # A cargo build of xtask with no cache, which is what it costs to answer one question before
-    # the lane spends its forty minutes.
+    # The dispatch policy stays typed; the host automation cache avoids a cold rebuild.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -80,6 +81,10 @@ jobs:
         with:
           run-install: false
           cache: false
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: support-host-automation
 
       # Fail on a missing publication credential before the lane spends anything. The repository
       # `GITHUB_TOKEN` cannot push to another repository, and GitHub refuses it
@@ -120,6 +125,10 @@ jobs:
         with:
           run-install: false
           cache: false
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: support-host-automation
 
       # Fails closed on a draft, a tag that names a different commit than the one handed off,
       # or a release missing its standalone asset or SHA256SUMS (TASK-74 AC#4). Nothing has
