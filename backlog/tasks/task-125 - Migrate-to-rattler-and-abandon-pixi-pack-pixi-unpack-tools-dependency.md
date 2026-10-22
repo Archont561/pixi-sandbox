@@ -1,7 +1,7 @@
 ---
 id: TASK-125
 title: Migrate to rattler and abandon pixi-pack/pixi-unpack tools dependency
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-22'
 updated_date: '2026-10-22'
@@ -71,3 +71,28 @@ activated AWS-LC (airlock's debug link failed on `__isoc23_sscanf`) and vulnerab
 packages without implementing this task. Reintroduce a maintained, minimal-feature dependency
 with the actual migration, feature-tree/MSRV analysis, and all acceptance tests above. This
 removal does not complete TASK-125 or change the existing transport format/tool behavior.
+
+## Implementation session (2026-10-22)
+
+- User selected TASK-125 and approved the CLI pack/restore/unpack seams plus the public
+  local package-install boundary, using real Conda/wheel fixtures. Baseline after restoring
+  source commit 890158f: 1,188 passing / 2 skipped.
+- User explicitly approved narrow runtime unmaintained-YAML advisory exceptions and the
+  specific bzip2 license required by rattler. This does not authorize ignoring vulnerabilities.
+  Apply advisory-specific reasons only when the dependency actually ships.
+- User explicitly authorized a draft PR on this branch and a temporary connected source-
+  provisioning job. It verifies original .crate archives against registry lock checksums,
+  stores them as unreferenced GitHub blobs, and lets the airlocked developer retrieve them
+  through authenticated GitHub API. No generated dependency tree enters source history;
+  no release, merge or published transport is authorized by this provisioning approval.
+- Candidate minimal graph: rattler 0.48.7, conda_types 0.52.1, package_streaming 0.27.5
+  with TLS features off; rattler_lock 0.32.6 for the real lock parser. Use direct local
+  extraction/linking rather than the installer's network-capable fallback. Reuse ureq on
+  the connected packing side; reqwest remains an unavoidable transitive dependency of
+  rattler even with no TLS enabled, so AC#1's empty-reqwest goal cannot be promised.
+- Wheel evaluation: uv-install-wheel 0.0.57 is the low-level installer used by the existing
+  pixi-pack 0.7.11, without uv's HTTP/resolution/build layers. It requires Rust 1.94, unlike
+  rattler's 1.88 floor. Any adoption must explicitly document/validate this MSRV impact,
+  not retain a false rust-version claim. The installed development toolchain is 1.98.1.
+- Existing helper implementation remains intact until replacement behavior is proven. This
+  temporary preparation is not completion of any migration acceptance criterion.
