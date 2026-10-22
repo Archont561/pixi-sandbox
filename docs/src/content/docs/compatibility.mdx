@@ -28,7 +28,7 @@ hand — so it cannot rot against a release. Release notes and the full history:
 | **Release assets** | `pixi-sandbox-x86_64-unknown-linux-musl`, `-aarch64-unknown-linux-musl`, `-x86_64-apple-darwin`, `-aarch64-apple-darwin`, `-x86_64-pc-windows-msvc.exe` + `SHA256SUMS` | The verified bootstrap paths |
 | **Connected host** | Pixi (recent), Git, network to prefix.dev and GitHub | Pixi drives `pack`; the generated workflow can pin `setup-pixi`'s version via `[workflow].pixi_version` |
 | **Airlock** | Git and `tar`; **no network** | Pixi and pixi-sandbox do not need to be pre-installed — the restore registers both from the transport |
-| **Building from source** | Rust 1.88+ (workspace MSRV), edition 2024 | `cargo build -p pixi-sandbox --release` |
+| **Building from source** | Rust 1.94+ (workspace MSRV), edition 2024 | `cargo build -p pixi-sandbox --release` |
 | **Config schema** | `schema = 1` | Readers refuse a newer schema; an older config is accepted silently and reported by `init --check` |
 | **Generated workflow** | rendered by the release that wrote it | Every generated file carries a `pixi-sandbox-version` marker; see the upgrade policy below |
 

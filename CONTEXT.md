@@ -3700,3 +3700,52 @@ the preceding local counts are not presented as validating those new TLS sources
 
 TASK-126 remains In Progress for native standalone-bootstrap/live-consumer and billing
 proof even after this repair; a faster dynamic plan does not establish a billed minute saved.
+
+### TASK-125 native bare-pack checkpoint (2026-10-22, draft PR #187)
+
+Implemented a public `native_pack::{verify, install}` boundary and made bare format-1
+`unpack` use it by default. Explicit `--unpacker`, transport-backed `unpack`, `pack`, and
+`restore` still use the old helpers. No schema migration or helper removal is claimed.
+
+The implementation extracts/links local Conda archives with rattler 0.54.2, types 0.57.1,
+and streaming 0.27.15, all with default features disabled. Wheel linking uses exact
+uv-install-wheel/distribution-filename/pypi-types 0.0.57, ZIP 9.0.5 in Cargo.lock, and Copy
+mode; no interpreter, resolver, downloader, or helper is invoked by this boundary.
+`reqwest 0.13.5` remains an unavoidable normal transitive dependency of these rattler
+APIs, including its cache/networking layers. The host normal dependency tree has no active
+AWS-LC edge. This is not a claim of an empty reqwest tree or proof on every target.
+
+The owner explicitly approved raising the source-build MSRV from 1.88 to 1.94 and the
+exact-version 0BSD exceptions for mailparse 0.16.1 / quoted_printable 0.5.2. Previous narrowly
+approved YAML-unmaintained / libbz2 license exceptions remain. Vulnerability advisories
+remain enforced. Added a real Rust 1.94 CI check using host rustup, independent of Pixi's
+1.98.1 development compiler. **Do not infer that job has passed from the task definition.**
+
+Fifteen focused tests pass after independent red/green cycles for helper-free Conda,
+wheel installation, digest-failure output preservation, package-identity validation,
+absolute wheel-member rejection, corrupt-but-rehashed archive output preservation, and
+unsafe environment names. Further coverage proves source-pack byte/mode preservation and
+final-destination console-script shebangs. Real fixtures contain a deliberately unusable
+interpreter; these tests do not establish a functional interpreter/runtime smoke test.
+A full workspace run with the first six tests passed; a later run with all fifteen also
+passed. These observations do not establish the full migration's consumer/airlock gates.
+
+**Still not implemented / not claimed:**
+- Native pack writer / real lockfile environment selection and connected archive acquisition.
+- Native transport restore, verification/markers/offline lifecycle, and helper/config/CLI removal.
+- Schema 3/provenance/budget decisions and continued schema 1/2 reading required by ADR-24.
+- Per-file oracle compatibility: an actual pinned old helper installed the Conda fixture,
+  and its prefix record includes `extracted_package_dir` and `link` that the current low-level
+  native writer omits. Do not silently reuse existing transport oracles with this engine.
+- Fixed-width binary/Conda prefix relocation, `.conda` archives, ABI/platform wheel coverage,
+  working-interpreter runtime smoke tests, and late promotion/rollback failure tests.
+- Full TASK-125 payload-roundtrip / live consumer-proof / airlock evidence and decision updates.
+- Remove the temporary provisioning workflow/script/research manifest before task completion.
+
+Source provisioning is already complete: all 279 authentic registry archives were verified
+against lock checksums and imported into the ignored vendor. Manifest Git blob:
+`fc1cc7b3eec376b41baebf18daed0b8b5bda66d8`, provisioning source commit `66605429`,
+run `39772582346`, job `119803522167`. Do not fabricate or recommit generated dependency trees.
+Local memory-light profile settings were moved from ignored `.cargo/config.toml` into ignored
+`.pixi-sandbox/cargo-home/config.toml`; otherwise relock rendering incorrectly detects the
+local-only config as a consumer input. No unrelated generated workflow change is required.

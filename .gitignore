@@ -52,3 +52,6 @@ lcov.info
 # Written by prepare-release.sh so the release workflow can `git add` exactly what it changed
 # instead of keeping its own list. It is a report about a release in progress, not a source file.
 /.release-touched
+
+# Temporary isolated TASK-125 dependency-resolution output; never product source.
+/research/task125-dependencies/Cargo.lock

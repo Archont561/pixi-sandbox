@@ -105,6 +105,9 @@ test-doc = { depends-on = ["bun-install"], cmd = "bun run test" }
 # running image and Windows will not. This remains outside Turbo because the empty `package`
 # environment intentionally has neither Bun nor cargo-nextest.
 test-self-update-replace = "cargo test -p pixi-sandbox --test self_update_replace"
+# Run through the host rustup so Pixi's development Rust pin cannot hide an MSRV violation.
+# The toolchain is installed explicitly in CI; no automatic network bootstrap in this task.
+check-msrv = "rustup run 1.94.0 cargo check --locked --workspace --all-targets"
 coverage = { depends-on = ["bun-install"], cmd = "bun run coverage" }
 lint-rust = { depends-on = ["bun-install"], cmd = "bun run lint:rust" }
 deny = { depends-on = ["bun-install"], cmd = "bun run --cwd crates lint:deps" }

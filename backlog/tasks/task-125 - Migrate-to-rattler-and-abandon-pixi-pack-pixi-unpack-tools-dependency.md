@@ -1,7 +1,7 @@
 ---
 id: TASK-125
 title: Migrate to rattler and abandon pixi-pack/pixi-unpack tools dependency
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-22'
 updated_date: '2026-10-22'
@@ -71,3 +71,56 @@ activated AWS-LC (airlock's debug link failed on `__isoc23_sscanf`) and vulnerab
 packages without implementing this task. Reintroduce a maintained, minimal-feature dependency
 with the actual migration, feature-tree/MSRV analysis, and all acceptance tests above. This
 removal does not complete TASK-125 or change the existing transport format/tool behavior.
+
+## Implementation session (2026-10-22)
+
+- User selected TASK-125 and approved the CLI pack/restore/unpack seams plus the public
+  local package-install boundary, using real Conda/wheel fixtures. Baseline after restoring
+  source commit 890158f: 1,188 passing / 2 skipped.
+- User explicitly approved narrow runtime unmaintained-YAML advisory exceptions and the
+  specific bzip2 license required by rattler. This does not authorize ignoring vulnerabilities.
+  Apply advisory-specific reasons only when the dependency actually ships.
+- User explicitly authorized a draft PR on this branch and a temporary connected source-
+  provisioning job. It verifies original .crate archives against registry lock checksums,
+  stores them as unreferenced GitHub blobs, and lets the airlocked developer retrieve them
+  through authenticated GitHub API. No generated dependency tree enters source history;
+  no release, merge or published transport is authorized by this provisioning approval.
+- Candidate minimal graph: rattler 0.48.7, conda_types 0.52.1, package_streaming 0.27.5
+  with TLS features off; rattler_lock 0.32.6 for the real lock parser. Use direct local
+  extraction/linking rather than the installer's network-capable fallback. Reuse ureq on
+  the connected packing side; reqwest remains an unavoidable transitive dependency of
+  rattler even with no TLS enabled, so AC#1's empty-reqwest goal cannot be promised.
+- Wheel evaluation: uv-install-wheel 0.0.57 is the low-level installer used by the existing
+  pixi-pack 0.7.11, without uv's HTTP/resolution/build layers. It requires Rust 1.94, unlike
+  rattler's 1.88 floor. Any adoption must explicitly document/validate this MSRV impact,
+  not retain a false rust-version claim. The installed development toolchain is 1.98.1.
+- Existing helper implementation remains intact until replacement behavior is proven. This
+  temporary preparation is not completion of any migration acceptance criterion.
+
+### Dependency evaluation correction
+
+Connected source resolution shows rattler 0.48.7 / package_streaming 0.27.5 force zip 8.6.0;
+that line has no satisfactory patched candidate for the reported advisories. It is not an
+acceptable product dependency even with TLS disabled. The provisioning candidate therefore
+moves to rattler 0.54.2, conda_types 0.57.1, lock 0.34.8 and package_streaming 0.27.15,
+whose ZIP dependency uses the patched 9.x line. No ZIP advisory exception is authorized.
+The first real-fixture CLI test was run red: `unpack` with PATH empty fails because the
+current implementation requires pixi-unpack. Its red log is retained locally.
+
+### Native bare-pack checkpoint
+
+Implemented `native_pack::{verify, install}` and bare format-1 `unpack`'s default library path:
+local Conda extraction/linking plus UV wheel overlay, no helper or interpreter process. Explicit
+helper override and existing transport/restore behavior remain unchanged. Output replacement is
+staged and rolls back if promotion fails. Fifteen real-fixture CLI/public-boundary tests pass,
+including independent failing tests for corrupt-input preservation, inconsistent metadata,
+unsafe wheel paths, and unsafe environment names. Full workspace runs passed with six and then
+fifteen new tests. No migration AC is marked complete on this partial implementation.
+
+Owner subsequently approved Rust 1.94 as the new minimum and exact-version 0BSD license
+exceptions for mailparse 0.16.1 / quoted_printable 0.5.2. The selected runtime graph is rattler
+0.54.2 / types 0.57.1 / streaming 0.27.15 (defaults off), UV 0.0.57 and locked ZIP 9.0.5.
+reqwest remains transitive; host normal-tree inspection finds no AWS-LC edge. A Rust 1.94
+workspace/all-targets CI gate is added; its actual result, not the newer local compiler, must
+validate the floor. Remaining implementation and compatibility evidence are enumerated in
+CONTEXT.md's dated TASK-125 checkpoint. PR #187 remains draft; TASK-125 remains In Progress.

@@ -89,6 +89,16 @@ pixi-sandbox unpack \
 Accepts a transport dir, a `.pixi-sandbox/envs/<env>/pack` dir, or a bare pack dir. Leaves pixi
 markers to restore.
 
+For a **bare pixi-pack format-1 directory**, unpacking uses the in-process Conda and wheel
+installers by default: it does not run an external helper or an interpreter. Artifacts must
+already be local, and the pack platform must match the host. `--verify-only` validates the
+local archive digests and wheel paths without creating a prefix or cache.
+
+An explicit `--unpacker` still selects the external helper. Transport-backed `unpack` and
+`restore` continue to use their existing embedded helper; the native migration is not yet
+complete. With `--force`, an existing output is retained until installation succeeds, and a
+failed promotion attempts to restore the previous output.
+
 ## Safety implications
 
 - Verification runs **before** any write: a failed restore leaves the work dir for inspection and

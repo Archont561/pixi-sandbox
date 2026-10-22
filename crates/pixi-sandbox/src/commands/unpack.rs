@@ -22,12 +22,23 @@ pub fn run(args: &UnpackArgs) -> Result<()> {
         None => resolve_bare_pack(args, input)?,
     };
 
+    if let ResolvedInput::Bare {
+        source,
+        unpacker: None,
+        ..
+    } = &resolved
+    {
+        // Bare packs have no outer transport verification. Inspect their local
+        // channel before even --force is allowed to remove an existing output.
+        pixi_sandbox::native_pack::verify(source)?;
+    }
+
     if args.verify_only {
         println!("--verify-only: no output was written");
         return Ok(());
     }
 
-    prepare_output(&output, args.force)?;
+    check_output(&output, args.force)?;
     let output_parent = output
         .parent()
         .ok_or_else(|| anyhow::anyhow!("--output-dir has no parent: {}", output.display()))?;
@@ -54,7 +65,11 @@ pub fn run(args: &UnpackArgs) -> Result<()> {
             }
             (
                 packed,
-                resolve_unpacker(args.unpacker.as_deref(), manifest, branch)?,
+                Some(resolve_unpacker(
+                    args.unpacker.as_deref(),
+                    manifest,
+                    branch,
+                )?),
             )
         }
         ResolvedInput::Bare {
@@ -63,31 +78,38 @@ pub fn run(args: &UnpackArgs) -> Result<()> {
     };
 
     let environment = resolved.environment();
-    let mut command = Command::new(&unpacker);
-    command
-        .arg(&source)
-        .arg("-o")
-        .arg(&stage)
-        .arg("-e")
-        .arg(environment);
-    support::use_work_tmp(&mut command, &work);
-    support::run(&mut command).with_context(|| format!("unpacking environment {environment}"))?;
+    if let Some(unpacker) = &unpacker {
+        let mut command = Command::new(unpacker);
+        command
+            .arg(&source)
+            .arg("-o")
+            .arg(&stage)
+            .arg("-e")
+            .arg(environment);
+        support::use_work_tmp(&mut command, &work);
+        support::run(&mut command)
+            .with_context(|| format!("unpacking environment {environment}"))?;
+    } else {
+        pixi_sandbox::native_pack::install(
+            &source,
+            &stage.join(environment),
+            &output,
+            &stage.join("package-cache"),
+        )?;
+    }
 
     let prefix = stage.join(environment);
     if !prefix.is_dir() {
         bail!(
             "{} completed but did not create the expected prefix {}",
-            unpacker.display(),
+            unpacker.as_deref().map_or_else(
+                || "native installer".to_string(),
+                |path| path.display().to_string()
+            ),
             prefix.display()
         );
     }
-    fs::rename(&prefix, &output).with_context(|| {
-        format!(
-            "moving verified unpacked prefix {} to {}",
-            prefix.display(),
-            output.display()
-        )
-    })?;
+    promote_prefix(&prefix, &output, args.force)?;
     println!("unpacked {environment} -> {}", output.display());
     println!("  markers are restore's job; this is a raw prefix");
     Ok(())
@@ -101,7 +123,7 @@ enum ResolvedInput {
     },
     Bare {
         source: PathBuf,
-        unpacker: PathBuf,
+        unpacker: Option<PathBuf>,
         environment: String,
     },
 }
@@ -164,21 +186,28 @@ fn resolve_transport(args: &UnpackArgs, branch: PathBuf) -> Result<ResolvedInput
 
 fn resolve_bare_pack(args: &UnpackArgs, input: PathBuf) -> Result<ResolvedInput> {
     let environment = args.env.clone().unwrap_or_else(|| "env".to_string());
-    if environment.is_empty() {
-        bail!("--env must not be empty");
+    let mut components = Path::new(&environment).components();
+    if !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+        || environment.contains(['\\', ':'])
+    {
+        bail!("unsafe environment name {environment:?}");
     }
     println!(
         "no transport manifest above {}; treating it as a bare pack directory",
         input.display()
     );
-    let unpacker = match args.unpacker.as_deref() {
-        Some(path) => support::absolute(path)?,
-        None => support::find_executable("pixi-unpack")
-            .ok_or_else(|| anyhow::anyhow!("pixi-unpack is not on PATH; pass --unpacker"))?,
-    };
-    if !unpacker.is_file() {
-        bail!("unpacker is not a file: {}", unpacker.display());
+    let unpacker = args
+        .unpacker
+        .as_deref()
+        .map(support::absolute)
+        .transpose()?;
+    if let Some(path) = &unpacker
+        && !path.is_file()
+    {
+        bail!("unpacker is not a file: {}", path.display());
     }
+
     Ok(ResolvedInput::Bare {
         source: input,
         unpacker,
@@ -215,7 +244,7 @@ fn resolve_unpacker(
         .ok_or_else(|| anyhow::anyhow!("the transport has no pixi-unpack and none is on PATH"))
 }
 
-fn prepare_output(output: &Path, force: bool) -> Result<()> {
+fn check_output(output: &Path, force: bool) -> Result<()> {
     match fs::symlink_metadata(output) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error).with_context(|| format!("reading {}", output.display())),
@@ -232,11 +261,36 @@ fn prepare_output(output: &Path, force: bool) -> Result<()> {
                     output.display()
                 );
             }
-            support::remove_path(output)?;
         }
     }
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    }
     Ok(())
+}
+
+/// Do not retire an existing output until installation succeeds. Keep a same-parent
+/// backup until the stage rename succeeds, including when --work-dir crosses devices.
+fn promote_prefix(prefix: &Path, output: &Path, force: bool) -> Result<()> {
+    check_output(output, force)?;
+    if fs::symlink_metadata(output).is_err() {
+        return fs::rename(prefix, output)
+            .with_context(|| format!("promoting unpacked prefix to {}", output.display()));
+    }
+    let parent = output.parent().context("output has no parent")?;
+    let backup_dir = tempfile::Builder::new()
+        .prefix(".pixi-sandbox-unpack-")
+        .tempdir_in(parent)?;
+    let backup = backup_dir.path().join("previous");
+    fs::rename(output, &backup).context("retiring previous unpack output")?;
+    if let Err(error) = fs::rename(prefix, output) {
+        if let Err(rollback) = fs::rename(&backup, output) {
+            let saved = backup_dir.keep();
+            bail!(
+                "promotion failed: {error}; rollback failed: {rollback}; previous output retained in {}",
+                saved.join("previous").display()
+            );
+        }
+        return Err(error).context("promoting unpacked prefix; previous output restored");
+    }
+    backup_dir
+        .close()
+        .context("removing previous unpack output")
 }

@@ -10,9 +10,13 @@ yanked = "warn"
 # Owner-approved, advisory-specific exception (2026-10-22, PR #186). basic-toml has no
 # fixed release. It is used only by i18n-config in rstest-bdd's dev/test chain, not
 # the shipped CLI. Revisit when i18n-config replaces it; vulnerability advisories
-# remain enforced. This is not an exception for unsafe-libyaml or TLS/ZIP issues.
+# remain enforced. TLS/ZIP vulnerability advisories are never excepted.
 ignore = [
   { id = "RUSTSEC-2026-0374", reason = "Test-only rstest-bdd -> i18n-embed -> i18n-config -> basic-toml; unmaintained, no fixed release; owner accepted this specific risk in PR #186 on 2026-10-22" },
+  # Owner explicitly accepted this additional runtime risk for TASK-125 / PR #187.
+  # rattler_conda_types/lock require deprecated serde_yaml -> unsafe-libyaml.
+  # No fixed release exists; revisit when rattler moves to a maintained YAML parser.
+  { id = "RUSTSEC-2024-0449", reason = "TASK-125 owner-approved runtime unmaintained-only exception (2026-10-22, PR #187): rattler YAML chain; no fixed release; all vulnerability advisories remain enforced" },
 ]
 
 [licenses]
@@ -34,6 +38,16 @@ allow = [
   # `ureq` embeds webpki-roots for verified HTTPS release downloads. This is the
   # permissive data licence for Mozilla's trust-store distribution, not product code.
   "CDLA-Permissive-2.0",
+]
+# Owner-approved for TASK-125 (2026-10-22, PR #187), confined to the exact
+# bzip2 implementation/version rattler uses for legacy Conda archive extraction.
+# This does not add the license to the global allowlist.
+exceptions = [
+  { name = "libbz2-rs-sys", version = "=0.2.5", allow = ["bzip2-1.0.6"] },
+  # Owner-approved TASK-125 UV metadata-parser dependencies (2026-10-22).
+  # Confined to these versions; 0BSD is not globally allowed.
+  { name = "mailparse", version = "=0.16.1", allow = ["0BSD"] },
+  { name = "quoted_printable", version = "=0.5.2", allow = ["0BSD"] },
 ]
 confidence-threshold = 0.9
 # The list is deliberately broader than today's dependency tree: a new dependency that
