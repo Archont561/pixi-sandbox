@@ -44,8 +44,8 @@ fs2 = "0.4"
 tar = "0.4"
 # Connected-side fetching: HTTPS release assets are verified against the embedded tool pins before use.
 ureq = "3.4"
-# Pack/unpack via rattler (TASK-125) – replaces pixi-pack/pixi-unpack subprocesses so only pixi-sandbox binary from conda-forge is needed. Minimal set reuses rustls (already used by self_update) and avoids native-tls. Pulls reqwest/tokio which were previously avoided for self_update but now warranted for abandoning tools.
-rattler = { version = "0.48", default-features = false, features = ["rustls"] }
+# TASK-125: add the rattler library only with the pack/restore migration. The unused
+# scaffold pulled AWS-LC and vulnerable archive/YAML dependencies into every build.
 # The self-update transport (TASK-90 / doc-14, adopted as ADR-27): `self_update` supplies the
 # release-lookup, download and checksum-parse path; our `ownership` refusal ladder, `replace` swap
 # and the `mod.rs` orchestration stay hand-rolled. The feature set is the measured minimum: `ureq`

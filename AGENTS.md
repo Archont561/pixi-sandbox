@@ -125,8 +125,9 @@ shape — no multi-line `run:` block remains in any workflow, and `xtask check-r
 (check 9) fails any new one: a step must be `uses:`, a single `pixi run <task>` line, or a
 one-line host bootstrap. The restored-project airlock gate is a Cargo nextest archive of the
 e2e suite's `ci` feature, replayed in both tiers by one-line pixi tasks; `scripts/restore.sh`
-is the only sanctioned shell bootstrap. A reviewed exception (a generated consumer artifact,
-say) carries `multiline-run-allowed` on the step.
+is the only sanctioned shell bootstrap. A reviewed exception carries `multiline-run-allowed` on the step. ADR-30 permits only the
+shared checksum-verified pre-CLI bootstrap in the generated consumer publisher; asset spellings
+come from `Platform`, and post-bootstrap logic remains CLI verbs.
 
 **Workflow permission rule.** Every `permissions:` scope must be one GitHub accepts; check 11
 fails the rest. An invented scope is not a weaker permission, it is a parse error that takes

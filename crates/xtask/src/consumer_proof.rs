@@ -106,12 +106,11 @@ pub fn fixture(consumer: &Path, evidence: &Path, label: &str) -> Result<()> {
 
 /// The properties the proof asserts of the publisher the binary generates.
 ///
-/// These are the two `grep -F` literals the shell recipe carried, unchanged: the publisher must
-/// fetch the binary it publishes through `pixi-sandbox fetch-release`, and it must verify that
-/// download against the release's checksums. Repo check 13 reads this list and fails when the
-/// generator's source stops rendering one of them — which is the drift that shipped at v0.6.1.
+/// ADR-30 / TASK-126: require the release checksum manifest and an actual verification
+/// command, not the now-removed conda-installed fetch-release entrypoint. Repo check 13
+/// holds these literals against the generator's source; execution tests also corrupt bytes.
 #[doc(hidden)] // test boundary (tests/consumer_proof.rs)
-pub const PUBLISHER_ASSERTIONS: [&str; 2] = ["fetch-release --dest", "SHA256SUMS"];
+pub const PUBLISHER_ASSERTIONS: [&str; 2] = ["sha256sum --check selected.sha256", "SHA256SUMS"];
 
 /// Report every asserted property the generated publisher's text does not carry.
 ///

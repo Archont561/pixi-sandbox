@@ -113,8 +113,7 @@ fn a_publisher_missing_an_asserted_property_is_reported_by_name() {
     // The proof used to `grep -F` these two literals out of the generated publisher. The
     // assertions move into Rust unchanged: same two strings, same verdict, and the finding
     // names the literal so a red run says which property the generator dropped.
-    let complete =
-        "pixi-sandbox fetch-release --dest \"$PIXI_SANDBOX_BIN\"\n# against SHA256SUMS\n";
+    let complete = "pixi-sandbox sha256sum --check selected.sha256 \"$PIXI_SANDBOX_BIN\"\n# against SHA256SUMS\n";
     assert_eq!(
         consumer_proof::assert_publisher(complete),
         Vec::<String>::new(),
@@ -130,7 +129,7 @@ fn a_publisher_missing_an_asserted_property_is_reported_by_name() {
         );
     }
 
-    let partial = consumer_proof::assert_publisher("only fetch-release --dest here\n");
+    let partial = consumer_proof::assert_publisher("only sha256sum --check selected.sha256 here\n");
     assert_eq!(partial.len(), 1, "{partial:?}");
     assert!(
         partial[0].contains("SHA256SUMS"),
@@ -349,7 +348,7 @@ case "$1" in
     n=$(cat .render-count 2>/dev/null || echo 0)
     n=$((n+1))
     echo "$n" > .render-count
-    printf 'pixi-sandbox fetch-release --dest "$BIN"\n# SHA256SUMS\nrender %s\n' "$n" > .github/workflows/publish-sandbox.yml
+    printf 'pixi-sandbox sha256sum --check selected.sha256 "$BIN"\n# SHA256SUMS\nrender %s\n' "$n" > .github/workflows/publish-sandbox.yml
     ;;
 esac
 "#
@@ -358,7 +357,7 @@ esac
 case "$1" in
   init)
     mkdir -p .github/workflows
-    printf 'pixi-sandbox fetch-release --dest "$BIN"\n# SHA256SUMS\n' > .github/workflows/publish-sandbox.yml
+    printf 'pixi-sandbox sha256sum --check selected.sha256 "$BIN"\n# SHA256SUMS\n' > .github/workflows/publish-sandbox.yml
     ;;
 esac
 "#
@@ -388,7 +387,10 @@ fn a_byte_identical_regeneration_leaves_both_renders_as_evidence() {
     let first = read(&evidence, "publish-sandbox.first.yml");
     let second = read(&evidence, "publish-sandbox.yml");
     assert_eq!(first, second, "the two renders agree");
-    assert!(first.contains("fetch-release --dest"), "{first}");
+    assert!(
+        first.contains("sha256sum --check selected.sha256"),
+        "{first}"
+    );
     // The evidence is the render itself, not a copy of something else: this is the text the
     // assertions below were made against and the artifact a reviewer will open.
     assert_eq!(

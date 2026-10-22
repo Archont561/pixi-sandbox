@@ -49,3 +49,11 @@ precedent for this surfacing yet); or evidence the "safer once present" default 
 surprises consumers in practice, which would argue for splitting `[workflow]` into stricter
 sub-tables (`[workflow.safety]` always-on-if-present vs. `[workflow.preferences]` per-field)
 rather than one flat table with two specially-defaulted fields.
+
+## Amendment — TASK-120 / TASK-126 (2026-10-22)
+
+Concurrency is now default-on even without `[workflow]`: repository-wide
+`publish-sandbox-${{ github.repository }}`, `cancel-in-progress: false`. Explicit concurrency
+configuration still overrides that default. ADR-30 records the standalone bootstrap exception
+and retains the dynamic planner; absent-policy compatibility no longer means byte-identical
+workflow output across generator versions. Reviewed regeneration remains the migration boundary.

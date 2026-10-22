@@ -3605,3 +3605,98 @@ rules. Keep TASK-74 In Progress until the live proofs exist.
 ### 2026-10-18 — PR #175 coverage failure was a temp-path false positive
 
 The CI log supplied for PR #175 showed the coverage task's actual failure: `doctor_verify_fails_loudly_on_a_corrupted_branch` asserted that all stdout lacked the substring `OK`, but the fixture's temporary directory was `/tmp/.tmpOK1rqH`. The verifier correctly reported corruption; the test accidentally matched its path. Reproduced locally by setting `TMPDIR=/tmp/OK-regression` (red), then narrowed the assertion to the exact verifier success record `verify    OK — every declared byte matches the manifest` (green). Focused test, `pixi run --frozen fmt`, `lint`, `test`, and `coverage` all pass locally; coverage ran 1,199 passing / 2 skipped. Change is in `crates/pixi-sandbox/tests/cli.rs`; re-run PR checks after pushing the fix.
+
+### 2026-10-22 — TASK-126 local CI optimization; dependency gate and live measurements open
+
+Session skill loaded; the owner selected TASK-126. Restored the source-current developer transport
+for `943b709` (Pixi 0.81.0, pixi-sandbox 0.7.0, static; user tools registered). Initial suite:
+**1,175 passing / 2 skipped**. Local implementation commit: `dda8bea7`
+(`perf(ci): streamline verified workflow bootstrap (TASK-126)`). Nothing pushed or merged;
+no release, starter dispatch or other workflow dispatch was performed.
+
+**Implemented.** The generated plan/publish/upgrade jobs share one curl bootstrap that downloads
+an exact standalone release and checks SHA256SUMS before installation or PATH registration.
+OS+architecture and asset names come from the canonical Platform catalogue; Linux remains musl.
+Invalid/missing/duplicate checksums, extra fields, failed downloads and corrupted bytes fail closed.
+Mac shasum fallback and all five runner mappings are exercised on Linux with fake downloads;
+these simulations are not native-runner proof. The first execution test and the extra-field case
+were red before green; removing checksum verification also makes corruption detection red.
+
+The dynamic plan no longer installs Pixi or conda. Default repository-wide publish concurrency
+(false cancellation) and relock paths filtering were already implemented and are retained.
+`ci.yml` now filters expensive Rust steps on docs/backlog-only PRs while keeping the workflow's
+required check alive, docs lint/build, and every main push's ADR-29 guard. Missing filter outputs
+run full checks; a failed filter fails CI. `PIXI_SANDBOX_FULL_CI=true` disables filtering.
+Windows Rust proof waits for Linux CI and is skipped only for docs-only PRs. Docs-site upload
+is push-only. Generator goldens, CLI compatibility checks, consumer-proof assertions, repo
+consistency policy, docs and ADR-30 describe the new bootstrap exception.
+
+**Verification.** Final suite **1,188 passing / 2 skipped** (core 323, git 54, CLI/library 567,
+xtask 244); fmt, workspace pedantic clippy, docs build/Biome, TOML formatting, actionlint,
+check-repository, lint-generated-workflow and conventional-message checks pass. Coverage also
+passes all 1,188 tests; generated LCOV. To fit the disk, coverage used
+`CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 pixi run --frozen coverage --env-mode=loose`;
+no coverage scope or exclusion was weakened. The generated instrumented target directory was
+removed after reporting. The real freshly built CLI passes consumer-proof fixture + two renders +
+assertions. The full online consumer lifecycle was not attempted: prefix.dev is outside this
+sandbox's egress allowlist. Git hooks are installed.
+
+**Not implemented / not claimed.**
+1. Full `pixi run --frozen lint` is blocked by existing cargo-deny policy failures in the
+   unchanged lockfile: advisories in basic-toml, unsafe-libyaml, certificate/root packages and
+   zip, plus libbz2-rs-sys's rejected `bzip2-1.0.6` license. No Cargo manifests, Cargo.lock or
+   deny.toml were changed and no exception was added. Starting main's CI run 39755810540 is
+   already red at lint (and its main-push guard); Windows passed. Dependency remediation is
+   separate from optimizing CI and must not be hidden by weakening the gate.
+2. Static matrix mode was not implemented. A faster dynamic planner preserves config freshness
+   but still starts a VM: TASK-126 AC#2's one-billed-minute claim is not established. TASK-118's
+   10s/32% figures are historical, not a new measurement. Keep this repository's publisher
+   source-built for dogfooding; changing it to a release would avoid proving the checked-out code.
+3. Native Windows/macOS bootstrap smoke tests, full online consumer lifecycle, before/after
+   docs-only/manifest PRs and consecutive merges still need authorized GitHub work and a consumer
+   using this generator. Starter's latest run 39234092046 is upgrade-only, so it is not publish
+   after-evidence. No live or numeric saving was inferred from local wall time.
+
+TASK-126 remains **In Progress**: AC#3's existing concurrency policy verified; the other ACs
+retain live-evidence/billing or full-lint gaps. Its notes enumerate these explicitly.
+
+### PR #186 failure-log repair (2026-10-22)
+
+PR: https://github.com/Archont561/pixi-sandbox/pull/186 (branch
+`arena/1106ac98-pixi-sandbox`). The user asked for merge, then asked to fetch the actual
+failed job logs and repair, rather than merge red. Signed job-log URLs were minted with
+`gh api .../actions/jobs/.../logs` and read via the fetcher; ordinary gh downloads fail at
+this sandbox's Azure egress. Do not copy temporary signed URLs into documentation.
+
+Airlock run 39763600239 failed linking debug xtask: AWS-LC referenced `__isoc23_sscanf`
+not supplied by the conda sysroot. Removed the unused `rattler` workspace/CLI dependency;
+no Rust code imported it. This removes its active AWS-LC/archive/YAML build edges and
+151 locked packages without changing pack/restore's pinned subprocess implementation.
+Some optional AWS-LC entries still appear in Cargo.lock; `cargo tree -i aws-lc-sys
+--edges features --target all` has no active path. TASK-125 migration remains future work.
+
+The owner explicitly approved only the test-only basic-toml **unmaintained** advisory
+RUSTSEC-2026-0374 exception (no fixed release), documented in deny.toml. No vulnerability
+advisory or license exception was added. With rattler removed and that exception, local
+cargo-deny reports bans/licenses/sources OK and only the two TLS advisories outstanding.
+Their fixes are pinned to registry rustls-webpki 0.103.16 and webpki-roots 1.0.10. Checksums
+come from the authentic crates.io sparse index via GitHub; dependency/features metadata
+is unchanged. No broad dependency update or registry-source substitution was used.
+
+**Local verification boundary:** on the reduced graph *before those two TLS pin updates*,
+fmt, workspace/all-target clippy `-D warnings`, repository consistency, generated-workflow
+lint and actionlint pass; the full suite passes **1,188 / 2 skipped**. The first test rebuild
+filled the disk; removed generated target/debug and reran with
+`CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 pixi run
+--frozen test --env-mode=loose`. No test scope was reduced.
+
+The final TLS pins cannot be compiled here: the restored offline vendor lacks those two
+releases and direct crates.io downloads are blocked. Do not manufacture vendored sources
+or checksums. The owner separately approved a one-push exclusion of local hooks blocked
+by these missing crates, for verification by normal connected GitHub CI. This approval is
+not reusable. GitHub checks remain enabled and the merge request is conditional on all
+checks passing. PR #186's final commit checks are the authority for the refreshed TLS graph;
+the preceding local counts are not presented as validating those new TLS sources.
+
+TASK-126 remains In Progress for native standalone-bootstrap/live-consumer and billing
+proof even after this repair; a faster dynamic plan does not establish a billed minute saved.

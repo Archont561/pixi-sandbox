@@ -22,3 +22,13 @@ fn canonical_channel_drift_fires_check_5() {
         "{found:?}"
     );
 }
+
+#[test]
+fn the_workflow_bootstrap_uses_verified_standalone_assets_not_a_conda_resolve() {
+    let dir = valid_fixture();
+    fs::write(
+        dir.path().join("crates/pixi-sandbox/src/generated/github_workflow.rs"),
+        "crate::release::PIXI_SANDBOX_REPO\nsha256sum --check selected.sha256\nSHA256SUMS\nfetch-release --dest\n",
+    ).unwrap();
+    assert_eq!(headlines(dir.path()), Vec::<String>::new());
+}

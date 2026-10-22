@@ -42,11 +42,22 @@ present are in [Generated workflow policy](/pixi-sandbox/guides/workflow-policy/
 The workflow's "Fetch the pinned pixi-sandbox release" step always downloads the standalone
 `pixi-sandbox-<target>` asset and its `SHA256SUMS` manifest from this project's own
 repository (`github.com/Archont561/pixi-sandbox/releases/download/v<version>`) — never from
-the consumer repository the workflow runs in. The step runs `pixi-sandbox fetch-release` with
-the version pinned in the workflow, and the downloaded bytes are checksum-verified against
-`SHA256SUMS` before execution; a mismatch fails the job. The `pixi global install` step before
-it only provides `pixi` and the CLI that computes the plan — the checksum-verified binary that
-drives the publish is the downloaded one.
+the consumer repository the workflow runs in. One curl-based bootstrap downloads the exact
+pinned asset and checks its bytes against `SHA256SUMS` with `sha256sum` (or `shasum` on
+macOS) before installing it or putting it on PATH. Missing, duplicate or malformed checksum
+entries also fail the job. Asset selection uses the runner's OS and architecture; Linux uses
+the standalone musl binary, not the conda package.
+
+There is no preceding `pixi global install`: the plan, publish and upgrade jobs use this same
+verified bootstrap. The dynamic plan job needs no Pixi installation. Publish and upgrade keep
+`setup-pixi` for environment operations. To adopt this template in an existing consumer,
+regenerate with the CLI containing this change and review the generated workflow diff.
+This project's own source-built publisher intentionally remains different: it tests the
+checked-out source rather than an older release.
+
+The shorter bootstrap reduces wall-clock overhead; it does not guarantee a lower billed-minute
+count. The dynamic plan still starts a separate job and reads the latest config, so bundle
+changes do not require a static matrix to have been regenerated first.
 
 > **Regenerate if you generated this workflow with v0.4.3, v0.4.4, or v0.5.0.** Those
 > versions built the download URL from `$GITHUB_REPOSITORY` (the consumer's own repository),
