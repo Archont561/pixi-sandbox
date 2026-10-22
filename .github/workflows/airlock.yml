@@ -109,6 +109,10 @@ concurrency:
   group: airlock-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+
 jobs:
   plan:
     name: validate airlock plan
@@ -138,10 +142,13 @@ jobs:
         with:
           # The Cargo workspace is in project/, not the job root.
           workspaces: project
+          shared-key: support-host-plan
+          key: ${{ hashFiles('project/pixi.lock') }}
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Build the plan binary
         working-directory: project
-        run: pixi run -e default cargo build --release -q -p pixi-sandbox
+        run: pixi run --frozen build-plan-binary
 
       # airlock-matrix invokes the plan binary (config mode, or override mode when `--envs`
       # names a target), validates that `.include` is a non-empty array, and writes
@@ -150,7 +157,7 @@ jobs:
       - name: Emit the native matrix
         id: plan
         working-directory: project
-        run: pixi run xtask airlock-matrix -- --envs "${{ inputs.envs || '' }}" --platform "${{ inputs.platform || '' }}" --bundle "${{ inputs.bundle || '' }}" --branch-prefix "${{ inputs.branch-prefix || '' }}" --cargo-vendor "${{ inputs.cargo-vendor || '' }}"
+        run: pixi run xtask airlock-matrix -- --bin target/debug/pixi-sandbox --envs "${{ inputs.envs || '' }}" --platform "${{ inputs.platform || '' }}" --bundle "${{ inputs.bundle || '' }}" --branch-prefix "${{ inputs.branch-prefix || '' }}" --cargo-vendor "${{ inputs.cargo-vendor || '' }}"
 
       # Resolved here, once, on the one job that already has the toolchain: the proof job
       # consumes `needs.plan.outputs.tag` and stays free of a Rust build for everything the

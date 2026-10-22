@@ -42,6 +42,10 @@ enum Command {
     Version,
     /// Run every repository consistency check and report all failures in one pass.
     CheckRepository,
+    /// Validate early Linux consumer proof and fail-closed final release scheduling.
+    CheckReleaseScheduling,
+    /// Validate Pages artifact identity, trust and quality gates.
+    CheckDocsArtifacts,
     /// Rewrite this repository's committed render of the generated relock workflow.
     RenderRelock,
     /// Report every documented release reference that disagrees with the declared version.
@@ -424,6 +428,8 @@ fn run_args(args: Args) -> Result<()> {
         Command::RenderRelock => workflow::render_relock(&root),
         Command::Version => version::print_version(&root),
         Command::CheckRepository => repo_checks::run(&root),
+        Command::CheckReleaseScheduling => xtask::workflow_gates::check_release_scheduling(&root),
+        Command::CheckDocsArtifacts => xtask::workflow_gates::check_docs_artifacts(&root),
         Command::CheckReleaseRefs => {
             let findings = release_refs::scan(&root)?;
             if !findings.is_empty() {

@@ -269,3 +269,33 @@ fn rendered_cargo_guard_accepts_a_clean_lock_and_rejects_a_stale_one_without_wri
         "--locked must leave the stale lock untouched"
     );
 }
+
+#[test]
+fn the_guard_reuses_only_downloads_without_weakening_locked_validation() {
+    let workflow = render(true);
+    let guard = workflow.split_once("  relock:").unwrap().0;
+    assert!(
+        guard.contains("actions/cache@"),
+        "Cargo downloads should be cached"
+    );
+    assert!(guard.contains("~/.cargo/registry/cache"));
+    assert!(guard.contains("~/.cargo/registry/index"));
+    assert!(guard.contains("~/.cargo/git/db"));
+    assert!(
+        !guard.contains("path: ~/.cargo\n"),
+        "never cache credentials or configuration"
+    );
+    assert!(
+        !guard.contains("target/"),
+        "download cache must not carry executables"
+    );
+    assert!(guard.contains("hashFiles('**/Cargo.lock')"));
+    assert!(guard.contains("- run: cargo fetch --locked"));
+    assert!(guard.contains("- run: pixi lock --check"));
+    assert_eq!(
+        workflow.matches("~/.cargo/registry/cache").count(),
+        2,
+        "guard and repair must both reuse downloads"
+    );
+    assert!(!render(false).contains("~/.cargo/registry/cache"));
+}

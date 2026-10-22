@@ -95,6 +95,17 @@ pub fn plan_vendors_cargo(config: &Path) -> bool {
     })
 }
 
+const CARGO_DOWNLOAD_CACHE: &str = r"      # Source downloads only: no credentials, Cargo configuration or target executables.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+";
+
 /// Render the lockfile-refresh workflow.
 ///
 /// # Panics
@@ -417,12 +428,12 @@ __CARGO_REPAIRED_GUARD__      - name: Mark local validation failure on the repai
             core.setFailed('repaired-head validation timed out');
 "#;
     let cargo_guard = if options.cargo {
-        "      # Cargo's locked fetch is the non-writing Cargo.lock counterpart to `pixi lock\n      # --check`: it fails before CI or packing when a Rust manifest changed without a relock.\n      - run: cargo fetch --locked\n"
+        "__CARGO_DOWNLOAD_CACHE__      # Cargo's locked fetch is the non-writing Cargo.lock counterpart to `pixi lock\n      # --check`: it fails before CI or packing when a Rust manifest changed without a relock.\n      - run: cargo fetch --locked\n"
     } else {
         ""
     };
     let cargo_step = if options.cargo {
-        "      # Resolves only what the new constraint forces; `cargo update` would move the\n      # whole workspace, which is a different intent and a different pull request.\n      - run: cargo fetch\n"
+        "__CARGO_DOWNLOAD_CACHE__      # Resolves only what the new constraint forces; `cargo update` would move the\n      # whole workspace, which is a different intent and a different pull request.\n      - run: cargo fetch\n"
     } else {
         ""
     };
@@ -477,6 +488,7 @@ __CARGO_REPAIRED_GUARD__      - name: Mark local validation failure on the repai
         .replace("__PIXI_VERSION__", options.pixi_version)
         .replace("__CARGO_GUARD__", cargo_guard)
         .replace("__CARGO_STEP__", cargo_step)
+        .replace("__CARGO_DOWNLOAD_CACHE__", CARGO_DOWNLOAD_CACHE)
         .replace("__CARGO_REPAIRED_GUARD__", cargo_repaired_guard)
         .replace("__LOCK_FILES__", lock_files)
         .replace("__LOCK_COMMANDS__", lock_commands)

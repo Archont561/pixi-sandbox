@@ -14,6 +14,7 @@ pub mod native_pack;
 pub mod pack;
 pub mod pipeline;
 pub mod pixi_lock;
+pub mod prefix;
 pub mod prepare;
 pub mod rattler_build;
 pub mod release;

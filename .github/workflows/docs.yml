@@ -1,12 +1,12 @@
 name: docs
 
-# Build the Astro + Starlight site and publish it to GitHub Pages.
-# One line per step: `pixi run docs build` builds the site (install + build).
-
+# Main pushes build and quality-check the site once in ci.yml. This workflow never executes
+# code from a workflow_run artifact; the reuse job only downloads and re-uploads static files.
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
     branches: [main]
-    paths: ["docs/**", "crates/**", "backlog/**", "package.json", "bun.lock", "pixi.toml", "pixi.lock"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -15,44 +15,70 @@ concurrency:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
-  build:
-    name: build
+  reuse:
+    name: adopt trusted same-revision CI site
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_sha == github.sha }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      # No checkout, shell, dependency install or binary execution in this job.
+      # Explicit run + repository + SHA-bound name: a cache hit is never provenance.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: docs-site-${{ github.event.workflow_run.head_sha }}
+          run-id: ${{ github.event.workflow_run.id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: docs/dist
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/dist
+
+  build:
+    name: manual build and quality gates
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           environments: default
           cache: true
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: support-docs-pixi
+          key: ${{ hashFiles('pixi.lock') }}
       - run: pixi run docs build
-      # The docs quality gates (task-110): each is a `pixi run` task under scripts/, so CI and
-      # a laptop run the same gate. A dead internal link, an unquoted frontmatter colon, an
-      # inaccessible page, or a documented flag the CLI does not accept fails here — before
-      # the site is published.
       - run: pixi run docs-frontmatter-check
       - run: pixi run docs-link-check
       - run: pixi run docs-a11y-check
       - run: pixi run docs-snippet-check
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-        with:
-          enablement: true
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: docs/dist
 
   deploy:
-    needs: build
+    needs: [reuse, build]
+    # Exactly one producer must succeed; a missing/failed artifact cannot deploy.
+    if: ${{ always() && !cancelled() && ((needs.reuse.result == 'success' && needs.build.result == 'skipped') || (needs.build.result == 'success' && needs.reuse.result == 'skipped')) }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        with:
+          enablement: true
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
-        # Pages limits that matter here: 1 GB published site, ~100 GB/month bandwidth,
-        # 10-minute build timeout. Never publish the sandbox payload from this site;
-        # large channels belong on a package channel, not Pages (backlog/docs/specifications/transport-and-restore/doc-2 - Transport-and-Restore-Specification.md §6).
