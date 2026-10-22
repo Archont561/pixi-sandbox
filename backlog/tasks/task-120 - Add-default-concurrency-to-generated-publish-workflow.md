@@ -1,9 +1,10 @@
 ---
 id: TASK-120
 title: Add default concurrency to generated publish workflow
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-22 07:34'
+updated_date: '2026-10-22 07:49'
 labels:
   - ci
   - workflow

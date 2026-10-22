@@ -1,9 +1,10 @@
 ---
 id: TASK-123
 title: Bump prefix-dev/setup-pixi from 0.11.0 to 0.11.2 in generator templates
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-22 07:37'
+updated_date: '2026-10-22 07:49'
 labels:
   - ci
   - deps
