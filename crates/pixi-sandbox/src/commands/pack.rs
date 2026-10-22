@@ -93,10 +93,9 @@ impl PackPlan {
             validate_vendorable_lockfile(&root)?;
         }
 
-        // Issue #157: a PyPI dependency pixi-pack cannot carry (anything but a wheel) is a
-        // property of the selected environments, and the failure pixi-pack gives for it arrives
-        // after the install phase, from a subprocess, naming neither the environment nor what to
-        // change. Refuse it here, with the other pre-flight guards, so a refused pack leaves no
+        // Issue #157: a non-wheel PyPI dependency cannot be carried by the native writer.
+        // Refuse it with the selected environment/package named, before any acquisition or
+        // output creation. This keeps the other preflight guards' contract: refusal leaves no
         // output directory behind and says exactly which dependency to move out.
         pixi_sandbox::pixi_lock::refuse_non_wheel_pypi(
             &root.join("pixi.lock"),
@@ -169,9 +168,9 @@ impl PackPlan {
         })
     }
 
-    /// Pack one environment: run pixi-pack, then build the per-file oracle on the tree the
-    /// airlock will actually get (a copy — pixi-unpack writes a cache into the pack dir it
-    /// reads from). The oracle is also the honest `unpacked_size_bytes`: measured on the
+    /// Pack locked artifacts with the native writer, then install a scratch copy to record
+    /// the per-file oracle for the tree the airlock will receive. The oracle also provides
+    /// the honest `unpacked_size_bytes`: measured on the
     /// unpacked tree, not parsed from a version-dependent log line.
     fn pack_environment(&self, name: &str, envs: &mut BTreeMap<String, Env>) -> Result<()> {
         let target = self.payload.join("envs").join(name).join("pack");

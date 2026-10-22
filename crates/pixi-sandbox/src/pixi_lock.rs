@@ -1,26 +1,20 @@
 //! Read `pixi.lock` for the one preflight `pack` owes: whether each selected environment's
 //! locked `PyPI` dependencies are transportable as wheels (issue #157).
 //!
-//! `pixi-pack` carries a `PyPI` dependency only as a wheel — its `LockedPackage::Pypi` accepts a
-//! location whose file name ends in `whl`, and otherwise bails (or drops the package under
-//! `--ignore-pypi-non-wheel`). That refusal otherwise arrives after the install phase, from a
-//! subprocess, naming neither the environment nor what to change. This module reads the same
-//! decision out of the lock before any output exists (doc-2 §11).
+//! Native packing carries `PyPI` dependencies only as locked wheels: no solving, source builds
+//! or dependency omission. This preflight names every offending environment/package before
+//! output creation, rather than waiting for acquisition or installation (doc-2 §11).
 //!
-//! The lock is YAML, but only one shape matters here and pixi emits it verbatim: each
-//! environment's `packages.<platform>` is a block sequence of `- conda: …` / `- pypi: …`
-//! entries, and the top-level `packages` block repeats every `- pypi:` location with its `name`.
-//! A full YAML parser would be a new dependency in the airlocked vendor tree for this one
-//! query, so the scan is a deliberately small indentation reader — the same rule that keeps
-//! `base64_standard` local (`pipeline.rs`): a dependency is not worth a lockfile change.
+//! This diagnostic scan retains a small indentation reader for Pixi's environment selections
+//! and top-level location/name map. The separate native writer performs authoritative v7
+//! lock/record validation with the scoped YAML parser; this scan is not a general YAML parser.
 
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
-/// One `PyPI` dependency a selected environment locks that `pixi-pack` cannot carry, because its
-/// location is not a wheel.
+/// One `PyPI` dependency native packing cannot carry because its locked location is not a wheel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NonWheelPypi {
     /// The environment that pulls the dependency in.
@@ -74,8 +68,9 @@ struct Scan {
     names: BTreeMap<String, String>,
 }
 
-/// Match `pixi-pack`'s own test exactly (`LockedPackage::Pypi`): the location's file name ends
-/// in `whl`. A URL fragment or query is stripped first — `…#sha256=…` still names the wheel.
+/// Identify the wheel-shaped location for the diagnostic preflight: the filename ends in
+/// `whl`. The native writer additionally parses the wheel filename. A URL fragment or query
+/// is stripped first — `…#sha256=…` still names the wheel.
 fn is_wheel(location: &str) -> bool {
     let without_fragment = location.split(['#', '?']).next().unwrap_or(location);
     let file_name = without_fragment
@@ -219,7 +214,7 @@ impl Scan {
     }
 }
 
-/// Refuse a `pack` whose selected environments lock a `PyPI` dependency `pixi-pack` cannot carry.
+/// Refuse a `pack` whose selected environments lock a non-wheel `PyPI` dependency.
 ///
 /// # Errors
 ///
@@ -233,7 +228,7 @@ pub fn refuse_non_wheel_pypi(lock_path: &Path, envs: &[String], platform: &str) 
         return Ok(());
     }
     let mut message = String::from(
-        "pixi-pack can carry a PyPI dependency only as a wheel, but the selected environments \
+        "native packing can carry a PyPI dependency only as a wheel, but the selected environments \
          lock dependencies that are not wheels:\n",
     );
     for finding in &findings {

@@ -19,9 +19,10 @@ checks before any branch is force-pushed.
   maturity="Stable — budgets fail the publish read-only, before the force-push."
 />
 
-## Measured: a small project
+## Historical measurement: a helper-based small project
 
-2 environments, 33 crates, `linux-64`, tools included:
+This pre-native snapshot used 2 environments, 33 crates and `linux-64`, with helpers included.
+It is historical evidence, not a current native size baseline:
 
 | Part | Size |
 |------|------|
@@ -31,7 +32,10 @@ checks before any branch is force-pushed.
 | **transport dir** | **262 MB** |
 | **orphan branch after git dedup** | **~110 MB** |
 
-Tools dominate small bundles — expected, because Git stores each tool blob once and the tools are
+New schema-3 transports omit pack/unpack helpers; only explicitly selected Pixi/bootstrap
+executables count toward tool bytes. Measure the current manifest with `doctor` rather than
+subtracting guessed helper savings from this table. In the historical measurement, tools
+dominated small bundles — expected, because Git stores each tool blob once and the tools are
 identical across bundles. A second bundle that reuses the same tool versions adds only its own
 environment bytes.
 

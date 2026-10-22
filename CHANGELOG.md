@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## Unreleased — native transport migration
+
+### Breaking changes
+
+- Replace new environment pack/unpack helper processes with native rattler/UV installation.
+  Remove the helper catalogue, `tools` subcommand and `pack --fetch-tools` / `--tools-lock` /
+  `--tools-cache`; explicitly select local Pixi/bootstrap executables with `--pixi-bin` / `--self-bin`.
+- Write schema-3 manifests; read format-1 payloads under schemas 1–3 natively. Preserve legacy
+  opaque-payload unpacker compatibility and the explicit `unpack --unpacker` override.
+- Raise the source-build minimum to Rust 1.94. Use version-7 Pixi locks and compatible PyPI
+  wheels; no dependency solving or source builds occur during packing/restoration.
+
+### Fixes and validation
+
+- Decode compact v7 Conda build-number/noarch fields without losing explicit metadata.
+- Preserve existing prefixes until staged installation and file-oracle verification succeed.
+- Five-platform build/package/smoke validation and the fresh Linux binary's consumer proof passed.
+  CI and the source-built sandbox publisher also passed; these are not claimed billing savings.
+
+Recommended release: **0.8.0**, following the project's pre-1.0 breaking-change policy.
+See the [migration guide](docs/src/content/docs/guides/migration.mdx) for operator actions.
+This is a curated pre-release summary; release preparation regenerates the versioned changelog
+from Conventional Commits. The migration guide remains the durable upgrade runbook.
+
 ## [v0.7.0](https://github.com/Archont561/pixi-sandbox/compare/v0.6.2...648f6435c030e62f0305dbc19bf1182d11d25b09) (2026-10-15)
 
 ### Features

@@ -39,7 +39,7 @@ pub struct RelockWorkflowOptions<'a> {
     pub cli_version: &'a str,
     /// Exact pixi version the bot solves with.
     ///
-    /// This is the pin from the embedded tools lock, not "whatever is newest": the lockfile
+    /// This is the generator's explicit compatibility pin, not "whatever is newest": the lockfile
     /// this bot writes has to be readable by the pixi a *transport* carries, and a restored
     /// airlock host cannot upgrade its pixi to catch up with a lock format written by a newer
     /// one. Pinning here keeps the connected and disconnected sides on one pixi.
@@ -68,11 +68,10 @@ pub struct RelockWorkflowOptions<'a> {
     pub relock_paths: Option<&'a [String]>,
 }
 
-/// The pixi pin compiled into this binary — the pixi a transport packed by it will carry,
-/// and therefore the only version the bot may solve with.
-///
-/// Returns `None` only if the embedded catalogue stops declaring pixi at all, which the
-/// embedded-lock tests already forbid.
+/// Dedicated Pixi compatibility pin used to render the relock bot.
+/// Coordinate publisher overrides and explicitly bundled Pixi executables with this version.
+/// The historical optional signature is retained for callers; the current platform constant
+/// always yields `Some`, without consulting an environment-helper catalogue.
 #[must_use]
 pub fn embedded_pixi_pin() -> Option<String> {
     Some(pixi_sandbox_core::platform::PIXI_VERSION.to_string())

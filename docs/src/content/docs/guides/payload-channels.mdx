@@ -95,9 +95,9 @@ pixi-sandbox wrap-payload --config pixi-sandbox-payload.toml \
 The staged recipe defaults to `.pixi/payload-build/`; if `--channel` is omitted, the filesystem
 channel defaults to `.pixi/payload-channel/`. Both are under the project's ignored `.pixi/`.
 
-`--build` fetches `rattler-build` on demand into the tools cache (nothing is linked, embedded, or
-added to `tools.lock.json`), builds the staged recipe and publishes the package with
-rattler-build's own channel indexing. `--build-tool <path>` uses an existing `rattler-build` — for
+`--build` fetches the reviewed `rattler-build` executable on demand into its independent
+`--build-cache` (no environment-helper catalogue or transport tool entry is created), builds the
+staged recipe and publishes the package with rattler-build's own channel indexing. `--build-tool <path>` uses an existing `rattler-build` — for
 a mirror, an offline host, or CI. Budgets from `--budget-config <pixi-sandbox.toml>` fail the run
 with the measured size and a remedy before a package the channel would reject is produced.
 

@@ -180,14 +180,20 @@ cd /path/to/project
 ```
 
 What it does, in order: verifies the tools, stages a copy of each pack under a work dir on
-the project's filesystem, unpacks with the bundled `pixi-unpack`, moves each environment to
-`.pixi/envs/<env>`, writes pixi's `conda-meta` markers, materialises the vendored crates, writes
+the project's filesystem, installs format-1 packages using native rattler/UV libraries, writes
+final-prefix markers and verifies the staged file oracle before promoting each environment to
+`.pixi/envs/<env>`, materialises the vendored crates, writes
 Cargo source replacement to sandbox-owned `.pixi-sandbox/cargo-home/config.toml`, adds
 per-environment Pixi/Conda activation hooks that set `CARGO_HOME`, removes any legacy
 `.pixi/sandbox-env.sh`, verifies the restored tree against the manifest's per-file digests, and
 — only after that verification — registers the user tools (below).
 
-There is one supported command entrypoint after restore: **pixi**. A verified restore puts small
+For a self-bootstrapping transport, the producer must explicitly bundle Pixi and the standalone
+bootstrap with `--pixi-bin` and `--self-bin`. Registration applies only to executables actually
+recorded in the manifest. Legacy opaque packs retain their recorded unpacker compatibility path;
+format-1 restoration does not require an external helper.
+
+There is one supported package-command entrypoint after restore: **pixi**. A verified restore puts small
 managed launchers for `pixi` and `pixi-sandbox` into `~/.local/bin` (Windows:
 `%USERPROFILE%\.pixi-sandbox\bin`) and adds that directory to your shell profile's `PATH`
 (Windows: the user `PATH` in the registry — no administrator rights). In a **new** shell,
@@ -214,15 +220,15 @@ from the packed branch, which may predate the flag, and an unknown variable is i
 an unknown flag is a hard error. `--user-bin <dir>` relocates the launchers for sites with
 their own bin-directory policy.
 
-Two things follow from that staging. Before each environment is moved into place, every text file
-in it has the staging path rewritten to the final one, so nothing in `.pixi/envs/<env>` points
-into scratch — a `.pc` file, a CMake config or an activation script keeps working at the airlock
-path. And on success the work dir is removed: a completed restore leaves no scratch behind. A
+Native installation links packages for the eventual destination prefix, handling the package's
+text/binary prefix metadata before promotion. The legacy unpacker path additionally relocates
+textual staging-prefix references. The staged file oracle is checked before an existing prefix
+can be retired. And on success the work dir is removed: a completed restore leaves no scratch behind. A
 **failed** restore keeps it, because that is where the partial materialisation is worth looking at.
 
 :::caution[Never use a small `/tmp` as the work dir]
-`pixi-unpack` stages the pack into `$TMPDIR` before extracting. A tmpfs `/tmp` that is too
-small fails mid-restore with a confusing package-cache error. The default work dir is
+Restoration needs scratch for materialized archives, package caches and staged prefixes. A
+small tmpfs `/tmp` can exhaust space; promotion also requires the destination filesystem. The default work dir is
 `<project>/.pixi/.restore-work`; override it with `--work-dir` if the project lives on a
 small volume.
 :::

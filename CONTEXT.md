@@ -1,25 +1,28 @@
-## TASK-125 native producer continuation — 2026-10-22
+## Native transport release-readiness update — 2026-10-22
 
-Current session branch: `arena/6aceae22-pixi-sandbox` (not the historical branch below).
-PR #187 was merged as d9c84ab; this is the subsequent native producer/restore migration.
+Active cleanup branch: `arena/b4a9cf6a-pixi-sandbox`, based on merged PR191 / source 0d15c4d8.
+Runtime implementation and real validation are green: CI 39824086495 (payload/offline consumer,
+Rust 1.94, Windows), native publisher 39824086542, five-platform artifacts-only release
+39826041383 (fresh Linux artifact consumer lifecycle), and Pages 39825855879. Auto-release
+39828722470 was a successful dry run: no new release/tag. The published transport is schema 3,
+source 0d15c4d, and contains only explicitly selected pixi/pixi-sandbox executables. Native format-1
+restore is also verified locally from that transport with zero blob/file failures.
 
-Implemented native version-7/compact-lock packing and schema-3 manifests, native format-1
-restore/unpack under schemas 1–3, staged file-oracle verification before replacement, rollback
-promotion, and explicit-local executable SHA256 recording. Removed catalogue/update/tools CLI
-and helper flags. Optional ADR-28 builder download remains independent (`--build-cache`), with
-its download/hash/version/linkage security tests retained in build_tool_fetch/embedded_tools.
-Source Pixi manifest/lock no longer includes pack/unpack helpers. Publisher and consumer argv
-explicitly bundle Pixi; only the immutable-old-release airlock adapter capability-selects its
-former CLI. Older opaque transports retain an explicit compatibility unpacker path (ADR-31).
+Current work corrects remaining helper-era docs/comments and records the native API/CLI migration.
+TASK125 runtime ACs are reconciled to ADR-31; final documentation delivery/merge remains.
+The cleanup passes full lint, ordinary tests and coverage (both 1,186 pass / 2 skipped),
+doctests, and docs build/frontmatter/links/a11y/snippets (29 pages, 62 commands, 120 flags).
+The pre-cleanup ordinary/coverage inventory was 1,188 entries across 96 binaries; no test was
+added or removed by this cleanup. Tests retired during the migration were approved; do not
+resurrect helper APIs to
+satisfy obsolete task wording. Legacy opaque compatibility readers and optional payload building
+are intentional exceptions, not new-producer helper dependencies.
 
-Owner-approved obsolete helper/catalogue/synthetic producer tests retired: baseline 1,203 passes
-and 2 skips; latest workspace inventory 1,154 passes and 2 skips, including 26 genuine native
-lifecycle cases. Further explicit-local SHA256 and Option-based oracle refactor passed focused
-checks after that inventory. Full lint passed 11/11, fmt passed; the exact final full test/lint,
-connected payload roundtrip, artifacts-only built consumer proof and airlock results are still
-completion gates. No release or merge is authorized for this continuation. Do not claim TASK-125
-complete just because local tests pass. Temporary provisioning workflow/script/research project
-have been removed; authentic ignored vendor sources remain local and must not be committed.
+Recommend v0.8.0, a breaking pre-1.0 minor release; manifests/stamps stay 0.7.0 until auto-release
+preparation. This request authorizes cleanup and a recommendation, not production dispatch.
+See `backlog/docs/plans/task-125-release-readiness.md` for evidence and the remaining review step.
+TASK126/127 controlled cache/billing/fallback measurement obligations remain open and are not
+claimed as release correctness failures or measured savings.
 
 # Project Context
 

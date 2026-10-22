@@ -558,7 +558,7 @@ fn install_environment(
     support::remove_path(&pack)?;
     fs::create_dir_all(&pack).with_context(|| format!("creating {}", pack.display()))?;
     let source_root = branch.join(MANIFEST_DIR);
-    // Blob paths are rooted at `envs/<name>/pack/`; pixi-unpack expects the contents of
+    // Blob paths are rooted at `envs/<name>/pack/`; installers consume the contents of
     // that directory itself, not an additional nested `pack/` component.
     let prefix = format!("envs/{environment}/pack/");
     for blob in &entry.blobs {

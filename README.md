@@ -14,12 +14,25 @@
 **Self-contained, verifiable offline environments for [Pixi](https://pixi.sh) projects.**
 Pack a locked environment on a connected machine, publish it to a Git orphan branch, and restore
 it on an airlocked host without contacting package registries. The transport carries the packages,
-pinned tools, integrity manifest, and optionally vendored Rust crates—not just instructions for
+explicitly bundled executables, integrity manifest, and optionally vendored Rust crates—not just instructions for
 recreating them online.
 
 The CLI is published on [prefix.dev](https://prefix.dev/channels/@archont561/archont561) and as
 [standalone release binaries](https://github.com/Archont561/pixi-sandbox/releases).
 Documentation is at <https://archont561.github.io/pixi-sandbox/>.
+
+## Native transport upgrade
+
+This source tree replaces external environment pack/unpack helpers with native rattler/UV
+installation. New transports use schema 3; format-1 packs under schemas 1–3 restore natively.
+The `tools` command and helper-management flags are retired. Bundle Pixi/bootstrap executables
+explicitly with `--pixi-bin` / `--self-bin` when needed. Source builds require Rust 1.94+ and
+packing accepts version-7 Pixi locks with wheel-only PyPI dependencies. Legacy opaque transports
+retain their recorded unpacker compatibility path.
+
+Read the [native migration checklist](https://archont561.github.io/pixi-sandbox/guides/migration/)
+before upgrading producer scripts. Version `0.7.0` predates this interface; install a release
+containing the native migration before using the new flags.
 
 ## Quick start
 
@@ -95,7 +108,7 @@ verification, tool registration, and shared-machine policies.
 | :-- | :-- | :-- |
 | Git-native transport | Self-contained orphan branches, whole-file deduplication, and sharding for large blobs | [Design](https://archont561.github.io/pixi-sandbox/design/) |
 | Verified restore | SHA-256 checks before writing and a per-file check of the relocated environment | [Airlock restore](https://archont561.github.io/pixi-sandbox/restore/) |
-| Pinned tools | Release assets verified against checksums; static Linux bootstrap tools shipped with the transport | [Installation](https://archont561.github.io/pixi-sandbox/installation/) |
+| Explicit executables | Verified release bootstrap downloads; local Pixi/standalone CLI bundled only when selected, with recorded byte hashes | [Installation](https://archont561.github.io/pixi-sandbox/installation/) |
 | Generated CI | Native publish matrix, pack/doctor/publish pipeline, lockfile refresh, and reviewed upgrades | [CI publishing](https://archont561.github.io/pixi-sandbox/guides/ci-publishing/) |
 | Cargo vendoring | Optional vendored crates and sandbox-owned Cargo configuration for offline Rust builds | [Configuration](https://archont561.github.io/pixi-sandbox/reference/configuration/) |
 | Publish budgets | Limits for blobs, transport size, repository pushes, and restore disk requirements | [Configuration](https://archont561.github.io/pixi-sandbox/reference/configuration/) |

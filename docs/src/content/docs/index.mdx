@@ -53,7 +53,7 @@ your job — each card opens that role's first page:
   </div>
   <div>
     <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:package" size={16} /> Pack</strong>
-    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">Resolves envs via <code>pixi-pack</code>, vendors crates, fetches pinned tools (sha256-verified), writes <code>manifest.json</code> with every blob's digest.</p>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;">Copies SHA256-verified Conda archives and wheels from <code>pixi.lock</code>, vendors crates when requested, and writes a schema-3 <code>manifest.json</code>. Packing and restoration use native Rust libraries; executable bundling is explicit.</p>
   </div>
 
   <div style="display: flex; flex-direction: column; align-items: center;">

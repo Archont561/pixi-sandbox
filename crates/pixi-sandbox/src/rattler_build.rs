@@ -6,9 +6,8 @@
 //! indexing step (ADR-28 chose rattler-build's own indexing over a separate indexer).
 //!
 //! The tool is fetched on demand through the existing tool-fetch machinery (checksum, cache,
-//! version check) and is never linked, never embedded and never in `tools.lock.json` (AC#12).
-//! The pins are reviewed data in this module, not the embedded catalogue, because the tool is
-//! 31 MiB and the catalogue is packed into every transport (ADR-28).
+//! version check). The optional builder is not linked or bundled into environment transports;
+//! its reviewed pins and independent build cache belong only to this module (ADR-28).
 //!
 //! The subprocess is behind [`ProcessRunner`] so the argv and the package discovery are tested
 //! without a binary, the network or this checkout.
@@ -42,7 +41,7 @@ struct Pin {
 
 /// Reviewed from the `v0.76.1` release on 2026-10-12: the GitHub release `digest` field, and the
 /// linux-64 asset downloaded and `sha256sum`-checked against it. The digests are data, so a bump
-/// is a reviewable diff, exactly like `tools.lock.json`.
+/// is a reviewable data diff, separate from transport executable selection.
 const PINS: &[Pin] = &[
     Pin {
         platform: "linux-64",

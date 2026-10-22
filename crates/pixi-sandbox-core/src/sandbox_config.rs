@@ -278,12 +278,12 @@ pub const OVERRIDE_BUNDLE: &str = "custom";
 /// platform could be mapped one way in `.pixi-sandbox.toml` planning and another way the moment
 /// someone dispatched by hand — the precise drift ADR-11 exists to prevent. Composing a synthetic
 /// config and running the normal [`SandboxConfig::plan`] means an override cannot skip the
-/// runner-label check or the embedded helper-coverage check.
+/// runner-label check or native platform validation.
 ///
 /// # Errors
 ///
 /// Returns an error if the synthetic config fails validation: an unknown platform, a
-/// runner label no native matrix can serve, or a platform without complete helper pins.
+/// runner label no native matrix can serve.
 pub fn plan_override(
     bundle: &str,
     environments: &[String],
@@ -386,14 +386,12 @@ impl SandboxConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if the config fails validation, or a declared platform has no
-    /// complete embedded helper pins.
+    /// Returns an error if the config fails validation or a declared platform has no
+    /// supported native mapping.
     pub fn plan(&self) -> Result<PublishPlan> {
         self.validate()?;
-        // The release-driven publisher has no project-local tool lock input: it deliberately
-        // fetches only the reviewed catalogue compiled into its verified binary. Fail before a
-        // matrix job starts if a configured platform would later fail to fetch pixi, pack, or
-        // unpack helpers.
+        // Resolve supported platforms and explicit/default native runner labels before a
+        // matrix job starts. Environment packing has no per-platform helper catalogue.
         let mut include = Vec::new();
         for bundle in &self.bundles {
             let environments = bundle.environments.join(",");

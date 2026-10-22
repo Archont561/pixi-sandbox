@@ -160,3 +160,17 @@ Merge SHA `97bb24c68475d7e29e519cb2fffb22abcd145a57`:
 See the TASK126 follow-up plan for main-CI measurements and optimizations. Failed/successful runs
 are not comparable performance samples. TASK127 remains In Progress with native/cold/warm/billing
 and publisher evidence outstanding.
+
+## Live-evidence update after artifacts-only release (2026-10-22)
+
+The previous missing publisher/main Pages/new-artifact correctness evidence is now supplied by
+publisher 39824086542, CI 39824086495, Pages 39825855879 and release validation 39826041383 on
+0d15c4d8. The release validates five native build/package/smoke legs and the freshly built Linux
+consumer lifecycle; production publish was skipped. Early Linux proof overlapped the remaining
+platform work. Airlock compatibility run 39822123949 remains an older-release adapter proof.
+
+See `task-125-release-readiness.md` for the complete run links, exact scope and inspected native
+manifest. The earlier "still required" list is historical: controlled cold/warm/cache invalidation,
+billing and additional live fallback cases remain open; the successful publisher, same-SHA main
+Pages reuse and artifacts-only native release validation are no longer unknown. No numerical
+savings or all-platform offline-consumer claim is made.

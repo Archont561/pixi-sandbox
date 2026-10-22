@@ -34,9 +34,10 @@ pull request its guard job runs `pixi lock --check` ahead of any environment ins
 lock has drifted the second job refreshes `pixi.lock` (and `Cargo.lock`, when the plan vendors
 crates) onto the branch as `pixi-sandbox[bot]` with a conventional `chore(lock):` commit, then
 dispatches `--relock-ci-workflow` explicitly — a `GITHUB_TOKEN` push starts no workflow, so without
-that dispatch the lock commit would never be tested. It solves with the pixi version pinned in the
-embedded tool catalogue, so the lockfile it writes is one the pixi inside a transport can read. A
-fork pull request cannot be pushed to and the job says so instead of failing obscurely.
+that dispatch the lock commit would never be tested. It solves with the generator's dedicated
+Pixi compatibility pin rendered into the relock workflow. Keep the publisher's Pixi version (including any `[workflow].pixi_version` override)
+and the executable you explicitly bundle compatible with that pin; there is no embedded
+environment-helper catalogue. A fork pull request cannot be pushed to and the job says so instead of failing obscurely.
 
 Without `--config`, init prefers `pixi-sandbox.toml`, falls back to an existing
 `.pixi-sandbox.toml`, and creates the preferred name when neither exists. Generated workflow and
@@ -86,8 +87,8 @@ pixi-sandbox plan --config pixi-sandbox.toml
 pixi-sandbox plan --config pixi-sandbox.toml --json
 ```
 
-Rejects unsafe or implicit runner selection, and checks that every platform has embedded tool
-pins. `--json` is what the generated publisher consumes, and it surfaces the derived `push_paths`
+Rejects unsafe runner labels and unsupported platforms, and resolves each supported platform's
+native runner mapping. `--json` is what the generated publisher consumes, and it surfaces the derived `push_paths`
 allowlist under the same key.
 
 ## pack
@@ -152,20 +153,17 @@ at a location the lock can use; verify the resulting filename is a wheel, not an
 4. If the package cannot be supplied as a wheel, move it out of the packed environment (or split
 that workload into a separate environment) so the transport does not promise to carry it.
 
-Upstream `pixi-pack` has two related options, but `pixi-sandbox pack` does not expose them:
-`--ignore-pypi-non-wheel` lets upstream omit non-wheel dependencies, leaving an incomplete
-environment, and `--inject <wheel>` can add a separately supplied wheel without checking its
-compatibility with the target environment. Neither flag is a supported escape through this CLI;
-there is no arbitrary `pixi-pack` flag passthrough. Adding one would be a separate behavior
-change, not a documentation fix.
+Native packing does not provide `--ignore-pypi-non-wheel`, `--inject`, or arbitrary external
+packer flag passthrough. Supply a compatible locked wheel rather than silently omitting a
+runtime dependency. Source builds and dependency solving are not part of packing.
 
-At restore, `pixi-unpack` uses uv to install the transported wheel, so some install metadata is
+At restore, the in-process UV wheel installer recreates some install metadata, which is
 regenerated on the destination machine. ADR-21 explains why the per-file oracle checks the
 presence of uv's `uv_cache.json` and `direct_url.json` metadata and normalizes their rows in
 `RECORD` rather than digesting machine-specific values. That verification rule does not make a
 source distribution transportable: the lock still needs to name a wheel when `pack` runs.
 
-For the refusal and recovery checklist, see [PyPI wheel cannot be packed](/pixi-sandbox/troubleshooting/#9-pixi-pack-refuses-a-non-wheel-pypi-dependency).
+For the refusal and recovery checklist, see [PyPI wheel cannot be packed](/pixi-sandbox/troubleshooting/#9-pack-refuses-a-non-wheel-pypi-dependency).
 
 `--config` is optional and additive: with it, a project's `[host_requirements]` table — resolved
 for `--platform`'s host family — travels in `manifest.json`, so the restored branch still says what

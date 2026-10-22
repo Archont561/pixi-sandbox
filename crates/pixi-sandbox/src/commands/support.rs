@@ -136,7 +136,7 @@ pub(crate) fn verify_transport(
     );
 }
 
-/// Make a staging root on the destination filesystem. `pixi-unpack` uses temporary files too,
+/// Make a staging root on the destination filesystem. Installers also need scratch space,
 /// so its TMPDIR/TMP/TEMP children must live here rather than in a small system `/tmp`.
 pub(crate) fn work_dir(project_or_parent: &Path, explicit: Option<&Path>) -> Result<PathBuf> {
     let work = match explicit {

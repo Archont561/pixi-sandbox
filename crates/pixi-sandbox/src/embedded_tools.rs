@@ -21,7 +21,7 @@ pub struct ToolSource {
     pub pinned_sha256: Option<String>,
 }
 
-/// Embed one helper tool into the payload: copy, chmod, size-limit, digest-pin and
+/// Embed one explicitly selected local executable into the payload: copy, chmod, size-limit, digest-pin and
 /// linkage checks.
 ///
 /// # Errors

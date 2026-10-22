@@ -1,6 +1,6 @@
 ---
-title: Migration from composite Actions
-description: Map every retired composite Action and the reusable publisher to the generated direct-CLI workflow, with before/after commands and a checklist.
+title: Migration to native transports
+description: Upgrade to native packing and restoration, replace retired helper interfaces, and migrate historical composite Actions.
 ---
 
 import ContextChips from '../../../components/ContextChips.astro';
@@ -16,12 +16,72 @@ This page maps **every retired interface** to its replacement, with before/after
 generated workflow changes the migration requires, and the ordered upgrade checklist.
 
 <GuideMeta
-  outcome="Every retired interface replaced by the generated, project-owned publisher — nothing in this repository is called at runtime."
-  audience="Maintainers of projects still calling the retired composite Actions or the reusable publisher."
-  prerequisites="A v0.3.x consumer workflow and Pixi on a connected host."
+  outcome="Producer scripts and consumers upgraded to the native interface, with historical workflow migrations documented."
+  audience="Maintainers upgrading helper-based producers, transports or historical composite Actions."
+  prerequisites="An existing producer or consumer workflow, its lockfiles and Pixi on a connected host."
   machine="Connected host — the generated workflow runs on CI runners."
   maturity="Stable — immutable old refs stay resolvable for historical builds."
 />
+
+## Native transport migration
+
+Native transports replace environment pack/unpack helper processes with in-process rattler and
+UV libraries. This requires a **breaking pre-1.0 minor release**, not a patch: scripts using the
+removed helper interfaces must change. Version `0.7.0` predates the native interface; install a
+release containing this migration before using the new flags below.
+
+### Interface changes
+
+| Previous interface or assumption | Native replacement |
+|---|---|
+| `tools list` / `tools update` and the helper catalogue | Removed; packing and format-1 restoration require no `pixi-pack` or `pixi-unpack` executable |
+| `pack --fetch-tools`, `--tools-lock`, `--tools-cache` | Removed; delete these arguments, do not pass them through to another helper |
+| Implicit Pixi/bootstrap bundling | Select local executables with `pack --pixi-bin PATH --self-bin PATH` when the airlock needs a self-contained launcher and Pixi commands |
+| `wrap-payload --tools-cache` | Use the independent `wrap-payload --build-cache PATH`; `--build-tool PATH` chooses a local `rattler-build` for offline use |
+| Previous source-build Rust floor | **Rust 1.94+**, edition 2024; prebuilt binaries do not require Rust on the consumer |
+| Helper-driven packing | Read **Pixi lock version 7**; copy original SHA256-verified Conda archive/wheel bytes without solving or building dependencies |
+| Arbitrary PyPI source dependencies | Lock compatible wheels; source archives, VCS dependencies and non-wheel project paths are refused before output creation (wheel-only input was already enforced in v0.7.0) |
+
+`--pixi-bin` and `--self-bin` are independent optional selections. The bootstrap must be a
+standalone executable, not a Pixi-managed trampoline. Omitting them is valid for a transport
+consumed by an already installed CLI, but does not provide bundled Pixi or a self-bootstrap.
+Selected executables retain byte-hash, size and linkage checks; tool budgets were not relaxed.
+The `rattler-build` download is an independent optional payload-building feature, not a packing
+or restore dependency.
+
+### Transport compatibility
+
+- New producers write **manifest schema 3**, with no implicit helper entries.
+- Format-1 packs under manifest schemas **1, 2 and 3** use native installation. The retained
+  `pixi-pack.json` format marker is not a requirement for the `pixi-pack` binary.
+- Older **opaque/non-format-1** transports retain their recorded legacy unpacker reader. Keep
+  that legacy executable with the old transport where required; do not delete compatibility
+  bytes from historical snapshots merely because new transports no longer need them.
+- `unpack --unpacker PATH` remains an explicit external-executable override, not the default.
+- New transports should be consumed with the matching new standalone bootstrap. Do not assume
+  an older CLI understands schema 3. Retain an older snapshot for rollback.
+- `restore` writes project markers and Cargo integration; `unpack` produces a raw prefix.
+  Installation and staged-oracle verification precede per-prefix rollback-protected promotion.
+  Restoration is not an all-project transaction across environments, vendoring and registration.
+
+### Native upgrade checklist
+
+1. Install the new CLI on the connected producer. For a source build, use Rust 1.94 or newer.
+2. Remove helper packages from your project's dependencies only if your own workload does not
+   use them. Refresh the lock on a connected host and confirm it is version 7 with wheels for
+   every selected PyPI dependency and target platform.
+3. Remove retired helper-management arguments. Use the explicit local bundling flags if the
+   disconnected consumer needs Pixi and the bootstrap. Regenerate owned workflows/launchers
+   with the new `init`, then review and commit them; do not hand-edit version pins.
+4. Pack a **fresh** output directory, verify it with `doctor --verify`, and inspect the manifest:
+   schema 3, expected source commit, and only deliberately selected tool entries.
+5. Test the new transport at a different destination on a network-denied consumer, including
+   `doctor --verify-restored`, the frozen/offline Pixi check and the vendored Cargo build when
+   applicable. Preserve the old snapshot until these checks succeed.
+
+See [Create and verify a transport](/pixi-sandbox/reference/cli/create-verify/),
+[Restore and inspect a transport](/pixi-sandbox/reference/cli/restore/), and
+[Compatibility and releases](/pixi-sandbox/compatibility/) for exact flags and limitations.
 
 ## The migration matrix
 

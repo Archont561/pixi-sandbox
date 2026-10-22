@@ -262,8 +262,7 @@ pub struct PackArgs {
     /// current directory like `plan --config`). When given, the `[host_requirements]` table
     /// resolved for `--platform` is recorded in the transport manifest, so a restored branch
     /// still says what its workloads need from the machine (issue #109, TASK-75). Without the
-    /// flag, no host-requirement section is written and the manifest is byte-identical to what
-    /// earlier releases packed.
+    /// flag, no host-requirement section is written.
     #[arg(long)]
     pub config: Option<PathBuf>,
 }
@@ -405,7 +404,7 @@ pub struct UnpackArgs {
     pub force: bool,
 
     /// Scratch space for staging; must be on `--output-dir`'s filesystem. Defaults to
-    /// a sibling of the output, never `/tmp` (pixi-unpack stages into `$TMPDIR`).
+    /// a sibling of the output, never a small tmpfs `/tmp`; staging and promotion share a filesystem.
     #[arg(long)]
     pub work_dir: Option<PathBuf>,
 
@@ -518,7 +517,7 @@ pub struct PlanArgs {
     pub json: bool,
 
     /// Plan one ad-hoc target instead of the reviewed bundles, for a manual dispatch. Passing
-    /// this switches off config mode; the runner label and helper-pin coverage are still
+    /// this switches off config mode; the runner label and native platform mapping are still
     /// resolved and validated exactly as they are for a reviewed bundle.
     #[arg(long, value_name = "NAME", value_delimiter = ',')]
     pub envs: Option<Vec<String>>,

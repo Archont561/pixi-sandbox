@@ -60,7 +60,7 @@ Rules enforced by `plan`:
 
 - Runner label cannot contain control chars or outer whitespace
 - Every `[runners]` entry must be used by at least one bundle (stale typo = error)
-- Platform must have embedded pins for `pixi`, `pixi-pack`, `pixi-unpack` (compiled into the binary from `tools.lock.json`)
+- Platform must be one of the supported native platform mappings; unsupported platforms are refused. No helper catalogue or per-helper pins are required.
 
 ## `[workflow]` — generated-publisher CI policy
 
