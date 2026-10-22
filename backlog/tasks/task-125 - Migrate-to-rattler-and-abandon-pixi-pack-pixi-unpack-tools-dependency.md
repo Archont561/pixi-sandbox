@@ -106,3 +106,21 @@ moves to rattler 0.54.2, conda_types 0.57.1, lock 0.34.8 and package_streaming 0
 whose ZIP dependency uses the patched 9.x line. No ZIP advisory exception is authorized.
 The first real-fixture CLI test was run red: `unpack` with PATH empty fails because the
 current implementation requires pixi-unpack. Its red log is retained locally.
+
+### Native bare-pack checkpoint
+
+Implemented `native_pack::{verify, install}` and bare format-1 `unpack`'s default library path:
+local Conda extraction/linking plus UV wheel overlay, no helper or interpreter process. Explicit
+helper override and existing transport/restore behavior remain unchanged. Output replacement is
+staged and rolls back if promotion fails. Fifteen real-fixture CLI/public-boundary tests pass,
+including independent failing tests for corrupt-input preservation, inconsistent metadata,
+unsafe wheel paths, and unsafe environment names. Full workspace runs passed with six and then
+fifteen new tests. No migration AC is marked complete on this partial implementation.
+
+Owner subsequently approved Rust 1.94 as the new minimum and exact-version 0BSD license
+exceptions for mailparse 0.16.1 / quoted_printable 0.5.2. The selected runtime graph is rattler
+0.54.2 / types 0.57.1 / streaming 0.27.15 (defaults off), UV 0.0.57 and locked ZIP 9.0.5.
+reqwest remains transitive; host normal-tree inspection finds no AWS-LC edge. A Rust 1.94
+workspace/all-targets CI gate is added; its actual result, not the newer local compiler, must
+validate the floor. Remaining implementation and compatibility evidence are enumerated in
+CONTEXT.md's dated TASK-125 checkpoint. PR #187 remains draft; TASK-125 remains In Progress.

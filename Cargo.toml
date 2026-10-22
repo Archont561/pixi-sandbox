@@ -10,7 +10,7 @@ members = [
 [workspace.package]
 version = "0.7.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.94"
 license = "MIT"
 repository = "https://github.com/Archont561/pixi-sandbox"
 authors = ["Archont561"]
@@ -44,8 +44,19 @@ fs2 = "0.4"
 tar = "0.4"
 # Connected-side fetching: HTTPS release assets are verified against the embedded tool pins before use.
 ureq = "3.4"
-# TASK-125: add the rattler library only with the pack/restore migration. The unused
-# scaffold pulled AWS-LC and vulnerable archive/YAML dependencies into every build.
+# TASK-125 native, local-only package installation. TLS is provided only by the
+# connected ureq adapter; do not enable rattler's rustls/native-tls defaults.
+rattler = { version = "=0.54.2", default-features = false }
+rattler_conda_types = { version = "=0.57.1", default-features = false }
+rattler_package_streaming = { version = "=0.27.15", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "fs"] }
+url = "2"
+# Same low-level wheel writer as pixi-pack 0.7.11, without a network-capable
+# resolver/preparer or Python subprocess. Its declared MSRV sets our 1.94 floor.
+uv-install-wheel = "=0.0.57"
+uv-distribution-filename = "=0.0.57"
+uv-pypi-types = "=0.0.57"
+zip = { version = "9.0.3", default-features = false, features = ["deflate"] }
 # The self-update transport (TASK-90 / doc-14, adopted as ADR-27): `self_update` supplies the
 # release-lookup, download and checksum-parse path; our `ownership` refusal ladder, `replace` swap
 # and the `mod.rs` orchestration stay hand-rolled. The feature set is the measured minimum: `ureq`
@@ -54,7 +65,7 @@ ureq = "3.4"
 # SHA256SUMS path that mirrors the hand-rolled contract — so nothing here compiles reqwest, hyper,
 # tokio or indicatif. One consequence the declaration does not remove: the lock resolves the
 # crate's optional reqwest tree anyway (cargo locks optional dependencies no feature enables). The
-# crate declares rustc 1.88; the workspace `rust-version` above matches it since TASK-92, whose
+# crate declares rustc 1.88, satisfied since TASK-92 (TASK-125 now needs 1.94 for wheels). That
 # lift switched on clippy's MSRV-gated lints — the six `collapsible_if` sites in pixi-sandbox-core
 # collapsed in the same change.
 self_update = { version = "1.3", default-features = false, features = [

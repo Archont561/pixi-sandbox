@@ -472,3 +472,39 @@ pub fn file_tree(root: &Path) -> FileTree {
 pub fn file_tree_fixture() -> fn(&Path) -> FileTree {
     file_tree
 }
+
+/// A genuine Conda package/local channel, not a fake unpacker executable. Each test
+/// gets its own pack copy so it can exercise refusal without modifying fixtures.
+#[allow(dead_code)] // Shared support compiles into every test binary; only native_pack uses this owner.
+pub struct NativePackFixture {
+    pub home: tempfile::TempDir,
+    pub pack: PathBuf,
+}
+
+#[fixture]
+pub fn native_pack_fixture(isolated_home: tempfile::TempDir) -> NativePackFixture {
+    let pack = isolated_home.path().join("native-pack");
+    copy_tree(&crate_dir().join("tests/fixtures/native-pack"), &pack);
+    fs::write(
+        pack.join("pixi-pack.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "version": "1", "platform": host_platform(),
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    NativePackFixture {
+        home: isolated_home,
+        pack,
+    }
+}
+
+#[fixture]
+pub fn native_wheel_pack_fixture(native_pack_fixture: NativePackFixture) -> NativePackFixture {
+    copy_tree(
+        // stale-ref-allowed: runtime-package fixture, not the retired implementation.
+        &crate_dir().join("tests/fixtures/native-python-overlay"),
+        &native_pack_fixture.pack,
+    );
+    native_pack_fixture
+}

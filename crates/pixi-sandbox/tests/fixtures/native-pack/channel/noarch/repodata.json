@@ -1,0 +1,20 @@
+{
+  "info": {
+    "subdir": "noarch"
+  },
+  "packages": {
+    "native-fixture-1.0-0.tar.bz2": {
+      "name": "native-fixture",
+      "version": "1.0",
+      "build": "0",
+      "build_number": 0,
+      "subdir": "noarch",
+      "depends": [],
+      "noarch": "generic",
+      "sha256": "1240b698e0e8bf5db18bbc56b72ae0a3d5f71041d71fc45b6295d60a7bae02cc",
+      "size": 405
+    }
+  },
+  "packages.conda": {},
+  "repodata_version": 2
+}

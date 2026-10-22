@@ -30,6 +30,8 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 fs2 = { workspace = true }
+# Same-parent rollback directory for atomic unpack promotion.
+tempfile = { workspace = true }
 tar = { workspace = true }
 ureq = { workspace = true }
 # Adopted per ADR-27 (TASK-124): supplies release-lookup (backends::github ReleaseList),
@@ -37,6 +39,15 @@ ureq = { workspace = true }
 # swap stay hand-rolled; update() is never called.
 self_update = { workspace = true }
 sha2 = { workspace = true }
+rattler = { workspace = true }
+rattler_conda_types = { workspace = true }
+rattler_package_streaming = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+uv-install-wheel = { workspace = true }
+uv-distribution-filename = { workspace = true }
+uv-pypi-types = { workspace = true }
+zip = { workspace = true }
 
 [dev-dependencies]
 # Integration tests link against the crate's dependencies only if they are repeated here, and
@@ -50,7 +61,6 @@ proptest = { workspace = true }
 rstest = { workspace = true }
 rstest-bdd = { workspace = true }
 rstest-bdd-macros = { workspace = true }
-tempfile = { workspace = true }
 # Parses the `.feature` files for the BDD layer's binding oracle (`tests/support/bdd.rs`), which
 # is the only runtime parse left now that `#[scenario]` does its own at compile time. Same
 # version and feature set rstest-bdd itself declares, so the edge adds no package to the locked

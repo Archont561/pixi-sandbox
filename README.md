@@ -6,7 +6,7 @@
   <a href="https://github.com/Archont561/pixi-sandbox/releases"><img src="https://img.shields.io/github/v/release/Archont561/pixi-sandbox?label=release" alt="Release"></a>
   <a href="https://codecov.io/gh/Archont561/pixi-sandbox"><img src="https://codecov.io/gh/Archont561/pixi-sandbox/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://archont561.github.io/pixi-sandbox/"><img src="https://img.shields.io/badge/docs-Starlight-6d28d9" alt="Documentation"></a>
-  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/Rust-1.88%2B-orange.svg?logo=rust" alt="Rust 1.88 or newer"></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/Rust-1.94%2B-orange.svg?logo=rust" alt="Rust 1.94 or newer"></a>
   <img src="https://img.shields.io/badge/Platforms-linux--64%20%7C%20osx--arm64-brightgreen.svg" alt="Development workspace platforms">
   <a href="https://github.com/Archont561/pixi-sandbox/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>

@@ -105,6 +105,23 @@ jobs:
       - if: ${{ !cancelled() && github.event_name == 'push' }}
         run: pixi run xtask check-main-push -- ${{ github.event.before }} ${{ github.sha }}
 
+  # TASK-125: UV's wheel installer raises the source-build floor to Rust 1.94.
+  # Compile every workspace target with that compiler, not merely the newer dev pin.
+  msrv:
+    needs: ci
+    if: needs.ci.outputs.run-rust == 'true'
+    name: Rust 1.94 minimum
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          environments: default
+          cache: true
+      - run: rustup toolchain install 1.94.0 --profile minimal
+      - run: pixi run check-msrv
+
   # task-47 AC#2: the one thing the job above cannot prove. `self-update` replaces the binary
   # that is currently executing, and Windows forbids what Unix permits — a mapped image cannot
   # be unlinked or renamed onto, though it can be renamed aside. `windows_swap` is written for
