@@ -457,9 +457,11 @@ __CARGO_REPAIRED_GUARD__      - name: Mark local validation failure on the repai
         .expect("a workflow filename is serialisable");
     let relock_paths_block = match options.relock_paths {
         Some(paths) if !paths.is_empty() => {
-            let mut block = String::from("
+            let mut block = String::from(
+                "
     paths:
-");
+",
+            );
             for p in paths {
                 // YAML quoted string via serde_json for safety (handles special chars)
                 let json = serde_json::to_string(p).expect("path is serialisable");
