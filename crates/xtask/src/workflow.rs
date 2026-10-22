@@ -35,14 +35,42 @@ pub fn relock_render(root: &Path) -> Result<String> {
         .context("reading the workspace version for the relock workflow")?;
     let pixi_version =
         embedded_pixi_pin().context("the embedded tools lock declares no pixi pin")?;
-    Ok(render_relock_workflow(RelockWorkflowOptions {
-        cli_version: &cli_version,
-        pixi_version: &pixi_version,
-        cargo: plan_vendors_cargo(&root.join(DEFAULT_FILE)),
+    let config_path = root.join(DEFAULT_FILE);
+    let relock_paths = pixi_sandbox_core::sandbox_config::SandboxConfig::load(&config_path)
+        .ok()
+        .map(|cfg| cfg.resolved_relock_paths(root, DEFAULT_FILE))
+        .unwrap_or_default();
+    let relock_paths_ref = if relock_paths.is_empty() {
+        None
+    } else {
+        Some(relock_paths.as_slice())
+    };
+    // We need to keep relock_paths alive for the render call, so we pass reference to owned vec
+    // via a trick: render takes Option<&[String]>, we have owned vec, so we need to handle lifetime
+    // by rendering inside this block. We'll use a helper closure.
+    Ok(render_relock_workflow_with_paths(
+        &cli_version,
+        &pixi_version,
+        plan_vendors_cargo(&config_path),
+        relock_paths_ref,
+    ))
+}
+
+fn render_relock_workflow_with_paths(
+    cli_version: &str,
+    pixi_version: &str,
+    cargo: bool,
+    relock_paths: Option<&[String]>,
+) -> String {
+    render_relock_workflow(RelockWorkflowOptions {
+        cli_version,
+        pixi_version,
+        cargo,
         relock_workflow: "relock.yml",
         ci_workflow: "ci.yml",
         publisher_workflow: PUBLISHER_WORKFLOW,
-    }))
+        relock_paths,
+    })
 }
 
 /// Write this repository's render. The committed file is derived, so this is the one command
@@ -213,6 +241,7 @@ fn lint_relock_renders(actionlint: &Path, project: &Path) -> Result<()> {
             relock_workflow: "relock.yml",
             ci_workflow: "ci.yml",
             publisher_workflow: PUBLISHER_WORKFLOW,
+            relock_paths: None,
         });
         fs::write(&path, rendered)
             .with_context(|| format!("writing generated workflow {}", path.display()))?;

@@ -88,6 +88,7 @@ impl Targets {
 /// already uses — which is also exactly the pre-task-53 render (task-53 AC#1).
 struct ResolvedWorkflowPolicy {
     push_paths: Vec<String>,
+    relock_paths: Vec<String>,
     scoped_permissions: bool,
     concurrency: Option<(String, bool)>,
     plan_timeout_minutes: Option<u32>,
@@ -103,9 +104,14 @@ impl ResolvedWorkflowPolicy {
             .as_ref()
             .map(|c| c.resolved_push_paths(repo_root, config_display))
             .unwrap_or_default();
+        let relock_paths = loaded
+            .as_ref()
+            .map(|c| c.resolved_relock_paths(repo_root, config_display))
+            .unwrap_or_default();
         let policy = loaded.as_ref().and_then(|c| c.workflow.as_ref());
         Self {
             push_paths,
+            relock_paths,
             scoped_permissions: policy.is_some_and(|p| p.permissions),
             concurrency: policy
                 .and_then(|p| p.concurrency.as_ref())
@@ -198,6 +204,11 @@ fn render_targets(root: &Path, args: &InitArgs) -> Result<Targets> {
             .file_name()
             .context("publisher workflow path has no file name")?
             .to_string_lossy(),
+        relock_paths: if workflow_policy.relock_paths.is_empty() {
+            None
+        } else {
+            Some(&workflow_policy.relock_paths)
+        },
     });
     let script_content = launcher_kind.render(CLI_VERSION, &args.branch, &config_reference);
 

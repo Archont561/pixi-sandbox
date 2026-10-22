@@ -28,6 +28,7 @@ ever.
 ```toml
 [workflow]
 push_paths = ["pixi-sandbox.toml", "pixi.toml", "pixi.lock"]
+relock_paths = ["pixi.toml", "pixi.lock", "Cargo.toml", "Cargo.lock"]
 permissions = true
 pixi_version = "0.81.0"
 setup_pixi_cache = true
@@ -43,7 +44,8 @@ publish = 60
 
 | Field | Default | What it controls |
 |-------|---------|------------------|
-| `push_paths` | derived once `[workflow]` is present; otherwise no filter | `on.push.paths:` allowlist. `!`-prefixed entries are GitHub negation syntax; no `..` component or leading `/` |
+| `push_paths` | derived once `[workflow]` is present; otherwise no filter | `on.push.paths:` allowlist for publish workflow. `!`-prefixed entries are GitHub negation syntax; no `..` component or leading `/` |
+| `relock_paths` | derived once `[workflow]` is present; otherwise no filter | `on.pull_request.paths:` allowlist for relock workflow (TASK-121). Safe default includes manifests + lockfiles so hand-edited/deleted locks still trigger guard |
 | `permissions` | `false` | `true` scopes `contents: write` to the `publish` job; `false` keeps the historical unconditional top-level grant |
 | `concurrency.group` | `publish-sandbox-${{ github.repository }}` | Prevents two publishes racing to force-push the same orphan branch — repository-wide grouping, `cancel-in-progress: false` |
 | `concurrency.cancel_in_progress` | `false` | Paired with the group — `false` keeps a running publish alive while GitHub cancels a superseded pending run |
@@ -51,11 +53,11 @@ publish = 60
 | `pixi_version` | unset | Pins `setup-pixi`'s own `pixi-version:` input on every step |
 | `setup_pixi_cache` | `false` once `[workflow]` is present | `setup-pixi`'s `cache:` input — see the hazard below |
 
-:::caution[The presence of the table moves two defaults]
+:::caution[The presence of the table moves three defaults]
 No `[workflow]` table at all renders byte-identically to the historical template — nothing changes
 for an existing project until it opts in. Once the table is present **at all**, even empty,
-`setup_pixi_cache` defaults to `false` and `push_paths` defaults to a derivation. Write both
-explicitly when you add the table.
+`setup_pixi_cache` defaults to `false`, `push_paths` defaults to a derivation, and `relock_paths`
+defaults to a derivation that includes lockfiles. Write them explicitly when you add the table.
 :::
 
 ## Why the cache defaults off
@@ -64,14 +66,20 @@ pixi-sandbox owns the native `pixi install` while packing. A `setup-pixi` cache 
 consumer manifest can restore a solve the pack will not reuse — a correctness hazard, not mere
 staleness. Set `setup_pixi_cache = true` explicitly to keep the old best-effort caching.
 
-## The `push_paths` derivation
+## The `push_paths` and `relock_paths` derivation
 
-Unset (with `[workflow]` present), `init` derives the allowlist from the transport inputs `plan`
-already depends on: the sandbox config itself, `pixi.toml`, `pixi.lock` (always), plus whichever of
-`package.json`, `bun.lock`, `Cargo.toml`, `Cargo.lock` actually exist in the project.
-`pixi-sandbox plan --config pixi-sandbox.toml --json` surfaces the same derivation under its
-`push_paths` key, so you can diff what the next `init` would write before running it. An explicit
-`push_paths` always overrides the derivation.
+Unset (with `[workflow]` present), `init` derives the allowlists from the transport inputs `plan`
+already depends on:
+
+- `push_paths`: the sandbox config itself, `pixi.toml`, `pixi.lock` (always), plus whichever of
+  `package.json`, `bun.lock`, `Cargo.toml`, `Cargo.lock` actually exist in the project.
+- `relock_paths`: same as `push_paths` but lockfiles are included unconditionally (`pixi.lock`,
+  `Cargo.lock` always) plus `**/Cargo.toml` for workspace members and `.cargo/config.toml` when
+  present — the safe default that still catches hand-edited or deleted locks (TASK-121).
+
+`pixi-sandbox plan --config pixi-sandbox.toml --json` surfaces the derived `push_paths` under its
+own key, so you can diff what the next `init` would write before running it. An explicit
+`push_paths` or `relock_paths` always overrides its derivation.
 
 ## Regeneration is the upgrade path
 

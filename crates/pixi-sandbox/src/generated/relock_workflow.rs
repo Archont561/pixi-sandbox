@@ -61,6 +61,11 @@ pub struct RelockWorkflowOptions<'a> {
     /// Without this the published transport carries the pre-relock lockfile indefinitely, and
     /// nothing reports the drift.
     pub publisher_workflow: &'a str,
+    /// Optional `on.pull_request.paths:` allowlist for the relock workflow. When `Some`, the
+    /// guard only runs when a matching file changes (TASK-121). `None` keeps the unconditional
+    /// trigger (pre-TASK-121 behavior). The safe default includes manifests + lockfiles so
+    /// hand-edited or deleted locks are still caught.
+    pub relock_paths: Option<&'a [String]>,
 }
 
 /// The pixi pin compiled into this binary — the pixi a transport packed by it will carry,
@@ -113,11 +118,12 @@ name: relock
 # Refresh lockfiles for a manifest edit that was made where the network is not.
 #
 # The guard job reports on every pull request; the relock job runs only when the guard found
-# drift, which is why this workflow carries no `paths:` filter — a stale lock arriving by any
-# route (a transitive manifest, a hand-edited lock, a deleted one) is caught the same way.
+# drift. When `[workflow]` is present, `on.pull_request.paths:` limits the guard to manifest
+# and lock changes (TASK-121) — the safe default includes lockfiles so a hand-edited or
+# deleted lock is still caught. Without `[workflow]`, no filter (pre-TASK-121 behavior).
 
 on:
-  pull_request:
+  pull_request:__RELOCK_PATHS_BLOCK__
   workflow_dispatch:
     inputs:
       repaired_sha:
@@ -449,7 +455,22 @@ __CARGO_REPAIRED_GUARD__      - name: Mark local validation failure on the repai
         .expect("a workflow filename is serialisable");
     let relock_workflow_json = serde_json::to_string(options.relock_workflow)
         .expect("a workflow filename is serialisable");
+    let relock_paths_block = match options.relock_paths {
+        Some(paths) if !paths.is_empty() => {
+            let mut block = String::from("
+    paths:
+");
+            for p in paths {
+                // YAML quoted string via serde_json for safety (handles special chars)
+                let json = serde_json::to_string(p).expect("path is serialisable");
+                block.push_str(&format!("      - {json}\n"));
+            }
+            block
+        }
+        _ => String::new(),
+    };
     template
+        .replace("__RELOCK_PATHS_BLOCK__", &relock_paths_block)
         .replace("__GENERATED_MARKER__", GENERATED_MARKER)
         .replace(
             "__VERSION_STAMP__",
@@ -491,6 +512,7 @@ mod tests {
             relock_workflow: "relock.yml",
             ci_workflow: "ci.yml",
             publisher_workflow: "publish-sandbox.yml",
+            relock_paths: None,
         })
     }
 
@@ -626,6 +648,7 @@ mod tests {
             relock_workflow: "refresh-locks.yaml",
             ci_workflow: "ci.yml",
             publisher_workflow: "publish-fork-sandbox.yaml",
+            relock_paths: None,
         });
         assert!(
             workflow.contains("RELOCK_WORKFLOW: \"refresh-locks.yaml\""),
@@ -650,6 +673,7 @@ mod tests {
             relock_workflow: "relock.yml",
             ci_workflow: "build-and-test.yml",
             publisher_workflow: "publish-sandbox.yml",
+            relock_paths: None,
         });
         assert!(
             workflow.contains("CI_WORKFLOW: \"build-and-test.yml\""),
@@ -761,6 +785,7 @@ mod tests {
             relock_workflow: "relock.yml",
             ci_workflow: "ci.yml",
             publisher_workflow: "publish-sandbox.yml",
+            relock_paths: None,
         });
         assert_eq!(
             crate::generated::parse_version_stamp(&workflow),

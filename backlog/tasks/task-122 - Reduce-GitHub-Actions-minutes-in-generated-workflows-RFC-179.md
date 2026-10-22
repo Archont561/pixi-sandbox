@@ -1,10 +1,10 @@
 ---
 id: TASK-122
 title: Reduce GitHub Actions minutes in generated workflows RFC 179
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-22 07:37'
-updated_date: '2026-10-22 07:37'
+updated_date: '2026-10-22 08:06'
 labels:
   - ci
   - workflow

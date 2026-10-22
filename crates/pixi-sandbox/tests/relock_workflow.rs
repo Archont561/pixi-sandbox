@@ -11,6 +11,7 @@ fn render(cargo: bool) -> String {
         relock_workflow: "relock.yml",
         ci_workflow: "ci.yml",
         publisher_workflow: "publish-sandbox.yml",
+        relock_paths: None,
     })
 }
 

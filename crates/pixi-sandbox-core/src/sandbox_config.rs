@@ -190,6 +190,12 @@ pub struct WorkflowPolicy {
     /// transport inputs instead (task-53 AC#3; see [`derive_push_paths`]).
     #[serde(default)]
     pub push_paths: Option<Vec<String>>,
+    /// Explicit `on.pull_request.paths:` allowlist for the relock workflow. Unset, the relock
+    /// guard derives one from the known lock inputs when `[workflow]` is present (TASK-121);
+    /// absent no `[workflow]` table, no filter at all (empty), matching the unconditional
+    /// pre-TASK-121 trigger.
+    #[serde(default)]
+    pub relock_paths: Option<Vec<String>>,
     /// Scope `permissions:` to least privilege: `contents: read` top-level, `contents: write`
     /// only on the `publish` job (default `false`, today's unconditional top-level
     /// `contents: write`, unchanged by the table's mere presence).
@@ -328,6 +334,38 @@ pub fn derive_push_paths(repo_root: &Path, config_display: &str) -> Vec<String> 
     paths
 }
 
+/// Derive the `on.pull_request.paths:` allowlist for the relock workflow.
+///
+/// Like `derive_push_paths` but includes lockfiles unconditionally (a deleted or hand-edited
+/// lock must still trigger the guard) and adds `.cargo/config.toml` which affects
+/// `cargo fetch --locked`. When `[workflow]` is present, this is the default if
+/// `relock_paths` is unset (TASK-121); absent the table, no filter at all.
+#[must_use]
+pub fn derive_relock_paths(repo_root: &Path, config_display: &str) -> Vec<String> {
+    let mut paths = vec![
+        config_display.to_string(),
+        "pixi.toml".to_string(),
+        "pixi.lock".to_string(),
+        "Cargo.lock".to_string(),
+    ];
+    for candidate in [
+        "package.json",
+        "bun.lock",
+        "Cargo.toml",
+        "**/Cargo.toml",
+        ".cargo/config.toml",
+    ] {
+        // `**/Cargo.toml` is a GitHub paths glob, not a filesystem check — always include it
+        // in the derived set so workspace members are covered.
+        if candidate.contains("**") || repo_root.join(candidate).is_file() {
+            paths.push(candidate.to_string());
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 impl SandboxConfig {
     /// Read and validate a project declaration.
     ///
@@ -415,6 +453,20 @@ impl SandboxConfig {
                 .push_paths
                 .clone()
                 .unwrap_or_else(|| derive_push_paths(repo_root, config_display)),
+        }
+    }
+
+    /// Resolve the `on.pull_request.paths:` allowlist for the relock workflow: explicit
+    /// `relock_paths` wins; otherwise, once `[workflow]` is present, derive from lock inputs
+    /// (TASK-121); absent the table, no filter (empty), matching pre-TASK-121 trigger.
+    #[must_use]
+    pub fn resolved_relock_paths(&self, repo_root: &Path, config_display: &str) -> Vec<String> {
+        match &self.workflow {
+            None => Vec::new(),
+            Some(policy) => policy
+                .relock_paths
+                .clone()
+                .unwrap_or_else(|| derive_relock_paths(repo_root, config_display)),
         }
     }
 
@@ -622,6 +674,18 @@ fn validate_workflow_policy(workflow: &WorkflowPolicy) -> Result<()> {
         if paths.is_empty() {
             return Err(Error::Invalid(
                 "workflow.push_paths must not be empty when present; omit the key to derive it \
+                 or to keep the unfiltered trigger"
+                    .to_string(),
+            ));
+        }
+        for path in paths {
+            validate_workflow_path(path)?;
+        }
+    }
+    if let Some(paths) = &workflow.relock_paths {
+        if paths.is_empty() {
+            return Err(Error::Invalid(
+                "workflow.relock_paths must not be empty when present; omit the key to derive it \
                  or to keep the unfiltered trigger"
                     .to_string(),
             ));
