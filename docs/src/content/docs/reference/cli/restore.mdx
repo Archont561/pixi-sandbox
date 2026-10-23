@@ -52,7 +52,7 @@ read-only: it runs `doctor --verify` and prints the explicit restore command.
 
 Load manifest → verify transported blobs → check destinations and disk space → materialize
 explicitly bundled tools → install each environment into same-filesystem staging with the native
-Conda/wheel libraries → write final-prefix markers and verify the staged file oracle → promote
+Conda/wheel libraries → write final-prefix markers and verify the staged per-file oracle → promote
 with rollback protection → vendor
 + Cargo wiring (`auto` uses `.pixi-sandbox/cargo-home` and per-env activation hooks, leaving project
 `.cargo/config.toml` untouched) → remove any legacy `.pixi/sandbox-env.sh` → verify the restored
@@ -97,13 +97,13 @@ Format-1 packs under manifest schemas 1, 2 and 3 restore natively. Only older op
 non-format-1 transports retain their recorded legacy unpacker compatibility path. An explicit
 `unpack --unpacker PATH` selects an external executable; it is not needed for new transports.
 The `pixi-pack.json` metadata filename identifies the format, not an executable dependency.
-With `--force`, an existing prefix is retained until staged installation and oracle verification
+With `--force`, an existing prefix is retained until staged installation and per-file-oracle verification
 succeed; failed promotion attempts to restore the previous prefix. `--verify-only` writes no
 prefix, and `--force` is only needed when replacing an existing output.
 
 ## Safety implications
 
-- Blob verification precedes materialization. A staged install/oracle failure leaves the existing
+- Blob verification precedes materialization. A staged install or per-file-oracle failure leaves the existing
   environment prefix untouched and preserves scratch for inspection; restore is not a transaction
   over every environment, vendored tree and user registration.
 - The work dir lives on the project's filesystem for staging, package caches and same-filesystem

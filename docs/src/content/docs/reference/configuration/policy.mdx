@@ -36,8 +36,8 @@ without replacing the last healthy orphan branch.
 
 | Field | Type | Default | Measures | Remedy |
 |-------|------|---------|----------|--------|
-| `max_blob_mib` | float | `95` | Largest stored Git object: an unsplit blob, split part, embedded tool, or oracle file | Lower `--shard-limit-mib` or remove the single oversized payload. This value cannot exceed `95`. |
-| `max_transport_mib` | float | `2048` | Declared bytes verified by `doctor`: env pack blobs, file-oracle blobs, tools, and vendored Cargo blobs | Split the reviewed environment set into separate `[[bundle]]` entries. |
+| `max_blob_mib` | float | `95` | Largest stored Git object: an unsplit blob, split part, embedded tool, or per-file oracle blob | Lower `--shard-limit-mib` or remove the single oversized payload. This value cannot exceed `95`. |
+| `max_transport_mib` | float | `2048` | Declared bytes verified by `doctor`: env pack blobs, per-file-oracle blobs, tools, and vendored Cargo blobs | Split the reviewed environment set into separate `[[bundle]]` entries. |
 | `max_repository_push_mib` | float | `2048` | File bytes staged into the orphan snapshot before Git compression | Split the reviewed environment set into separate `[[bundle]]` entries. |
 | `max_restore_required_mib` | float | `8192` | Restore preflight estimate: packed + unpacked env bytes plus two vendor copies | Split the reviewed environment set into separate `[[bundle]]` entries. |
 

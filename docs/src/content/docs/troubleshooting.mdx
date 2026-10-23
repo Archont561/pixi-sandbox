@@ -227,7 +227,7 @@ every packed platform; (3) build a wheel from the source and publish it where th
 it; or (4) move the dependency out of the packed environment, splitting the workload if needed.
 Then refresh the lock and pack again. At restore, uv reinstalls the transported wheel and
 regenerates install metadata; ADR-21 records which metadata is presence-checked or normalized in
-`RECORD`, not digested. That oracle rule does not permit packing an sdist.
+`RECORD`, not digested. That verification rule does not permit packing an sdist.
 
 **Escalate when** the reported location's filename ends in `whl` but the preflight refuses it, or
 no compatible wheel or conda package can be supplied. File the lock entry, selected platform,

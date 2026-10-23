@@ -51,17 +51,17 @@ or restore dependency.
 
 ### Transport compatibility
 
-- New producers write **manifest schema 3**, with no implicit helper entries.
-- Format-1 packs under manifest schemas **1, 2 and 3** use native installation. The retained
+- New producers write **manifest schema 4**, with no implicit helper entries.
+- Format-1 packs under manifest schemas **1, 2, 3 and 4** use native installation. The retained
   `pixi-pack.json` format marker is not a requirement for the `pixi-pack` binary.
 - Older **opaque/non-format-1** transports retain their recorded legacy unpacker reader. Keep
   that legacy executable with the old transport where required; do not delete compatibility
   bytes from historical snapshots merely because new transports no longer need them.
 - `unpack --unpacker PATH` remains an explicit external-executable override, not the default.
 - New transports should be consumed with the matching new standalone bootstrap. Do not assume
-  an older CLI understands schema 3. Retain an older snapshot for rollback.
+  an older CLI understands schema 4. Retain an older snapshot for rollback.
 - `restore` writes project markers and Cargo integration; `unpack` produces a raw prefix.
-  Installation and staged-oracle verification precede per-prefix rollback-protected promotion.
+  Installation and staged per-file-oracle verification precede per-prefix rollback-protected promotion.
   Restoration is not an all-project transaction across environments, vendoring and registration.
 
 ### Native upgrade checklist
@@ -74,7 +74,7 @@ or restore dependency.
    disconnected consumer needs Pixi and the bootstrap. Regenerate owned workflows/launchers
    with the new `init`, then review and commit them; do not hand-edit version pins.
 4. Pack a **fresh** output directory, verify it with `doctor --verify`, and inspect the manifest:
-   schema 3, expected source commit, and only deliberately selected tool entries.
+   schema 4, expected source commit, and only deliberately selected tool entries.
 5. Test the new transport at a different destination on a network-denied consumer, including
    `doctor --verify-restored`, the frozen/offline Pixi check and the vendored Cargo build when
    applicable. Preserve the old snapshot until these checks succeed.

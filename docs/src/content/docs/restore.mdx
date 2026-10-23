@@ -181,7 +181,7 @@ cd /path/to/project
 
 What it does, in order: verifies the tools, stages a copy of each pack under a work dir on
 the project's filesystem, installs format-1 packages using native rattler/UV libraries, writes
-final-prefix markers and verifies the staged file oracle before promoting each environment to
+final-prefix markers and verifies the staged prefix's per-file oracle before promoting each environment to
 `.pixi/envs/<env>`, materialises the vendored crates, writes
 Cargo source replacement to sandbox-owned `.pixi-sandbox/cargo-home/config.toml`, adds
 per-environment Pixi/Conda activation hooks that set `CARGO_HOME`, removes any legacy
@@ -222,7 +222,7 @@ their own bin-directory policy.
 
 Native installation links packages for the eventual destination prefix, handling the package's
 text/binary prefix metadata before promotion. The legacy unpacker path additionally relocates
-textual staging-prefix references. The staged file oracle is checked before an existing prefix
+textual staging-prefix references. The staged prefix's per-file oracle is checked before an existing prefix
 can be retired. And on success the work dir is removed: a completed restore leaves no scratch behind. A
 **failed** restore keeps it, because that is where the partial materialisation is worth looking at.
 
