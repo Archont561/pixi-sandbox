@@ -4,7 +4,7 @@ title: Bundle explicitly declared nested Pixi workspaces
 status: To Do
 assignee: []
 created_date: '2026-10-23 16:57'
-updated_date: '2026-10-23 18:29'
+updated_date: '2026-10-23 18:44'
 labels:
   - pack
   - restore
@@ -44,13 +44,14 @@ Opt-in bundling of nested Pixi workspaces (GitHub issue #194; issue #193 is a du
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Seams are agreed with the user before implementation: the config surface, the plan text/--json shape, and the public library boundaries the tests will use (fixture projects and tempdirs, never this repository — ADR-10).
-- [ ] #2 A bundle can declare explicit nested manifests with an optional environment selection; an unknown or escaping path, a duplicate target, a nested manifest without a lockfile, or one already claimed by another bundle is refused with a named diagnostic, and configs without the new declaration keep parsing unchanged under schema 1.
-- [ ] #3 plan (text and --json) names every declared manifest, its selected environments and resolved package set, and refuses conflicts (differing channels, platforms or package identities) instead of silently merging them; the rendered workflow still derives its matrix from validated plan output.
-- [ ] #4 pack carries the declared nested environments into the transport with per-environment identity, so the manifest distinguishes the root prefix from each nested prefix without weakening budget ceilings, the per-file oracle or byte verification.
-- [ ] #5 restore materialises every declared nested environment into its own prefix with Pixi markers and staged-oracle verification, keeps verify-before-write (invariant 1) and never leaves a half-populated nested environment; the failure policy for one failed nested environment is the agreed one and is tested.
-- [ ] #6 Offline lifecycle is proven on fixtures locally: a nested workspace packs, restores and runs a delegated task inside a denied-egress namespace with no solve or channel fetch. Native-runner airlock replay is claimed only from the CI gate that actually ran it, never inferred from fixture tests.
-- [ ] #7 Documentation and generated artifacts are updated through their generators (configure-bundles guide, CLI reference, transport layout notes, golden workflow files), and the full suite's pass count rises or holds with fmt, lint and test green.
+- [ ] #1 Slice 0 is recorded before any transport code exists: a fixture demonstrates that declaring the nested project as a [workspace] member of the root pixi.toml cannot serve the case (conflicting channels, versions or platforms). If the member route works, this task closes as a documentation change instead.
+- [ ] #2 Config schema is bumped to 2: a bundle declares explicit nested manifest paths with an optional environment selection, while an unknown or escaping path, a duplicate target, a manifest already claimed by another bundle, a missing lockfile, or a nested Rust workspace with its own Cargo.lock is refused with a named diagnostic pointing at TASK-131. Schema-1 configs keep parsing unchanged, and an older binary refuses a schema-2 config naming the version it needs.
+- [ ] #3 plan (text and --json) names every declared manifest, its selected environments, resolved package set and workspace-qualified size estimate, and refuses conflicts (differing channels, platforms or package identities) plus a nested manifest that is a member of the root Pixi workspace; the rendered workflow still derives its matrix from validated plan output.
+- [ ] #4 pack resolves every selected environment to its own project root for the lock and native preflights, and carries nested environments into the transport with per-environment identity under .pixi-sandbox/envs/workspaces/<slug>/<env>/pack/ — root paths stay byte-identical, and budget ceilings, the per-file oracle and byte verification are unchanged.
+- [ ] #5 restore materialises each nested environment into its own project's .pixi/envs/<env> with markers and staged-oracle verification; destination resolution lives in core so restore and doctor --verify-restored agree, staging directories are workspace-qualified, a user-supplied environment id is validated against the manifest and never becomes a path component, and the sequential-abort policy (first failure stops the run, staged packs retained) is specified and tested.
+- [ ] #6 Every new transport writes manifest schema 4, including root-only bundles, while readers keep accepting schemas 1-3; manifest fixtures and goldens cover 4 and the consumer upgrade requirement is documented.
+- [ ] #7 Offline evidence asserts both observables: the nested project's pixi install --frozen --offline is a no-op, and a delegated pixi run --manifest-path <nested>/pixi.toml <task> succeeds inside the denied-egress namespace. The no-op is the discriminating assertion; a native-runner airlock result is claimed only from the CI gate that actually ran it.
+- [ ] #8 Documentation and generated artifacts are updated through their generators (configure-bundles guide, CLI reference, transport layout notes, golden workflow files), and the full suite's pass count rises or holds with fmt, lint and test green.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -65,12 +66,13 @@ Opt-in bundling of nested Pixi workspaces (GitHub issue #194; issue #193 is a du
 <!-- SECTION:PLAN:BEGIN -->
 Slice order, each locally provable before the next starts:
 
-1. Agreement (AC#1): the config surface, the plan/--json shape and the public test seams. Open decision: one bundle-level list of explicit manifest paths with an optional environment selection (recommended) versus per-bundle named workspace entries.
-2. Config + validation (AC#2): parsing, refusals and the unchanged schema-1 shape, as library tests over tempdir fixtures.
-3. Plan reporting (AC#3): text and JSON output over a fixture repository, including the conflict refusals; the rendered workflow keeps consuming validated plan output.
-4. Transport (AC#4): per-nested-environment identity in the manifest and packing, without touching budget or oracle policy.
-5. Restore (AC#5): materialise each nested prefix with markers and staged-oracle verification, including the agreed failure policy.
-6. Offline proof and docs (AC#6, AC#7): denied-egress fixture lifecycle, documentation, regenerated artifacts, full gates.
+0. Premise proof (AC#1): a fixture showing the [workspace]-member route cannot serve the case. If it can, stop — this task becomes a docs change.
+1. Agreement (AC#2, AC#6): config schema-2 surface, manifest schema-4 policy, plan shape, and the public test seams.
+2. Config + validation (AC#2): parsing, named refusals, schema-1 compatibility.
+3. Plan reporting (AC#3): text and JSON over a fixture repo, including conflict refusals.
+4. Transport identity (AC#4): per-environment roots for preflight, nested blob namespace, oracle untouched.
+5. Restore (AC#5): core-owned destination resolution, qualified staging, validated ids, sequential abort.
+6. Evidence and docs (AC#7, AC#8): the two AC#6 observables, docs, regenerated artifacts, full gates.
 
 Evidence boundary: the local denied-egress fixture tier is no substitute for a native-runner airlock run; that claim waits for the CI gate that actually executes it.
 <!-- SECTION:PLAN:END -->
@@ -78,9 +80,14 @@ Evidence boundary: the local denied-egress fixture tier is no substitute for a n
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design recorded in `backlog/docs/plans/task-129-nested-workspaces.md`, with ADR-32 fixing the branch topology. No code written yet; the slice order above is unchanged.
+Ratified during the design grilling on 2026-10-23; the full record is `backlog/docs/plans/task-129-nested-workspaces.md` § Ratified decisions. No code written yet.
 
-Settled from the code, not from intent: a nested workspace is another project root for `native_pack::preflight/write`, which already read `<project>/pixi.lock`; blobs stay namespaced per environment, so nested ones take `.pixi-sandbox/envs/workspaces/<slug>/<env>/pack/…` (a fixed, checkout-safe segment — `python:default` inside the branch would be illegal on NTFS) while root paths stay byte-identical. Each nested environment restores into its own project `.pixi/envs/<env>`, the layout `pixi run --manifest-path …` reads. The per-file oracle, markers, budget accounting and verify-before-write keep working per environment; `ensure_destinations_available` must widen to every declared destination so a refused restore still leaves the project untouched. CLI env ids become `<workspace>/<env>`; a bare name still means the root environment. `plan --json` gains `workspaces[]` and stays the workflow matrix source, so `publish-sandbox.yml` keeps one-line steps. `plan` must also refuse a nested `pixi.toml` that is a member of the root Pixi workspace, since it would duplicate a prefix.
+1. The premise is unproven. Nobody has demonstrated that the reporting project cannot declare its subprojects as [workspace] members of the root pixi.toml. Slice 0 proves that first; a working member route closes this task as a docs change.
+2. Config schema bumps to 2. `Bundle` is deny_unknown_fields, so a config carrying `workspaces` makes every older binary refuse the whole config; the owner chose the loud failure with the required version named, and rejected relaxing the attribute because that turns typos into silently ignored config.
+3. Manifest schema is 4 for every new transport, not only nested ones: one writer path and one reader matrix. Accepted cost is that a schema-3-era consumer must upgrade before reading any transport produced after this lands. Readers keep schemas 1-3. Rejected: 4-only-when-nested, and staying at 3 additively (an old binary would restore root envs, skip nested ones and still print `restore complete`).
+4. Restore keeps the sequential abort: first failure stops the run, earlier siblings stay installed, staged packs are retained, exit non-zero. Rejected all-or-nothing rollback as new behaviour that needs its own decision.
+5. A nested Rust workspace with its own Cargo.lock is refused with a named diagnostic pointing at TASK-131, which now owns per-workspace vendor trees. Rejected: per-workspace vendor entries inside this task, and one repository-wide lockfile.
+6. AC#6 asserts both observables: the nested `pixi install --frozen --offline` no-op (the discriminating one) and the delegated `pixi run --manifest-path` under denied egress, which alone can pass on a local-only-channel fixture and prove nothing.
 
-Open decisions before slice 1: (1) schema — recommended bump to 4 only when nested workspaces are declared, so an older binary refuses loudly instead of restoring the root envs and reporting success; (2) restore failure policy — recommended keeping today's sequential abort with staged packs retained rather than inventing an all-or-nothing transaction; (3) per-workspace Cargo vendor — `Manifest.vendor` is a single `Option<Vendor>`, so a nested Rust workspace with its own `Cargo.lock` needs either a per-workspace vendor entry, a single repository-wide lockfile, or an explicit deferral.
+Hazards folded into the slices: pack preflights one root for all --envs; validate_slug forbids `/`, so ids must be resolved through the manifest rather than path-joined; restore stages into `work/pack-<environment>`, which collides for two `default`s; verify_restored derives the destination from the env name, so destination resolution moves into core.
 <!-- SECTION:NOTES:END -->

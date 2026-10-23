@@ -2,8 +2,8 @@
 
 Design record for [TASK-129](../../tasks/task-129%20-%20Bundle-explicitly-declared-nested-Pixi-workspaces.md)
 and GitHub issue [#194](https://github.com/Archont561/pixi-sandbox/issues/194). Nothing here is
-implemented yet: the sections marked **settled** are recorded conclusions, the ones marked **open**
-still need the owner's ruling before slice 1 starts.
+implemented yet. The decisions below were ratified by the owner on 2026-10-23 during the design
+grilling; each one records what was rejected as well, so a later session cannot quietly reopen it.
 
 Read [ADR-32](../adr/ADR-32%20-%20A%20transport%20branch%20is%20one%20bundle%20for%20one%20platform%20and%20its%20payload%20stays%20self-contained.md)
 first — the branch topology is fixed, so everything below extends the payload *inside* one branch.
@@ -77,34 +77,80 @@ workspace* resolves its environments from the root `.pixi/envs`; declaring it se
 duplicate or fight over a prefix. `plan` detects the root `[workspace]` section and refuses such a
 declaration with a named remedy.
 
-## Open decisions
+## Ratified decisions (2026-10-23)
 
-### 1. Schema policy
+### 0. The premise is unproven — prove it first
 
-- **Recommended:** the writer emits `schema: 4` **iff** the bundle declares nested workspaces;
-  root-only transports stay schema 3 and byte-identical.
-- Rationale: readers refuse anything newer (`schema_supported`), so an older binary facing a nested
-  transport refuses loudly instead of restoring only the root envs and printing `restore complete`.
-  The alternative — keep 3, add fields additively — costs nothing to root-only bundles but turns a
-  real hazard into silence.
-- Not ratified yet. If the owner chooses "stay at 3", the reader must instead *detect* unknown
-  nested content and refuse, which is strictly more code.
+The owner has **not** verified that the reporting project's subprojects cannot simply be declared
+`[workspace]` members of the root `pixi.toml`. A member layout resolves everything from one
+lockfile and one `.pixi/envs/`, which would reduce TASK-129 to documentation plus a plan-time
+diagnostic.
 
-### 2. Restore failure policy
+**Ruling:** slice 0 is a fixture-only proof that the member route cannot serve the case (conflicting
+channels, versions or platforms). If the member route works, TASK-129 is closed as a docs change
+before any transport code is written. No transport work starts until slice 0 is recorded.
 
-- **Recommended:** keep today's sequential contract — abort on the first failed environment, leave
-  earlier siblings installed, retain staged packs as evidence, exit non-zero.
-- The alternative (all-or-nothing across a bundle) is new behaviour that the current restore does
-  not have for root environments either; it deserves its own decision rather than riding in on
-  this task.
+### 1. Config schema is bumped to 2
 
-### 3. Per-workspace Cargo vendor
+`Bundle` is `#[serde(deny_unknown_fields)]` (`sandbox_config.rs:95`), so a config carrying
+`workspaces = […]` makes every older binary refuse the *whole* config. The owner chose the loud
+failure: `CONFIG_SCHEMA` becomes `2`, `schema_supported` keeps reading schema 1, and a schema-2
+config on an older binary is refused with the version requirement named.
 
-`Manifest.vendor` is a single `Option<Vendor>`. A nested Rust workspace with its own `Cargo.lock`
-therefore cannot be carried today. Options: (a) one vendor entry per workspace, mirroring `envs`;
-(b) require a single repository-wide lockfile for bundles that declare nested workspaces;
-(c) leave Rust nested workspaces out of scope for TASK-129 and file a follow-up. This must be
-settled inside AC#4 rather than discovered mid-implementation.
+Rejected: accepting the bare parse failure (indistinguishable from a typo), and relaxing
+`deny_unknown_fields` (turns typos into silently ignored configuration).
+
+### 2. Manifest schema is 4 for every new transport
+
+Not "only when nested". Uniform producer output: every new `pack` writes `schema: 4`, root-only
+bundles included, so there is one writer path and one reader matrix rather than two spellings of
+the same transport.
+
+Accepted cost: every consumer on a schema-3-era binary must upgrade before it can read a transport
+produced after this lands, even one with no nested workspaces. Readers stay able to read schemas
+1–3 (ADR-24/31), and `tests/manifest.rs` grows fixtures for 4.
+
+Rejected: schema 4 only-when-nested (two writer paths, cheapest migration) and staying at 3
+additively (an old binary restores the root environments, skips nested ones and still prints
+`restore complete`).
+
+### 3. Restore keeps the sequential abort
+
+First failed environment stops the run, earlier siblings stay installed, staged packs are retained
+as evidence, exit non-zero — the behaviour root-only restore already has, now specified for a
+bundle with several environments.
+
+Rejected: all-or-nothing rollback (new behaviour that root-only restores do not have either, so it
+needs its own decision) and "preflight-complete then best effort" (still needs the abort during
+install, so it adds a second policy for a narrower failure window).
+
+### 4. A nested Rust workspace with its own lockfile is refused, not carried
+
+`Manifest.vendor` is a single `Option<Vendor>` with one `cargo_lock_sha256`. TASK-129 refuses such a
+declaration with a named diagnostic and points at the follow-up task; per-workspace vendor entries
+would touch ADR-6, `--no-vendor` semantics and the budget/provenance model, which is its own task.
+
+Rejected: per-workspace vendor entries inside this task, and requiring one repository-wide
+lockfile (contradicts the feature's premise).
+
+### 5. AC#6 asserts both observables
+
+The nested project's `pixi install --frozen --offline` is a **no-op** (proves the prefix is
+complete and deterministic), and the delegated `pixi run --manifest-path … <task>` succeeds inside
+the denied-egress namespace (proves the user-visible outcome). The no-op is the assertion that
+discriminates; the denied-egress run alone can pass on a fixture whose only channel is a local
+directory, which is exactly the false proof the AC must not allow.
+
+## Hazards found while grilling (folded into the slices)
+
+| Hazard | Where | Handling |
+| --- | --- | --- |
+| `pack` preflights `refuse_non_wheel_pypi` and `native_pack::preflight` against **one** `root` for **all** `--envs` | `commands/pack.rs` | the workspace selector resolves each environment to its own project root; `--envs` entries keep one id syntax everywhere (`<workspace>/<env>`), resolved through the manifest, never a path join |
+| `validate_slug` forbids `/`, so a slash exists only in CLI text | `sandbox_config.rs:620` | parse → validate → look up in the manifest's declared set → rebuild the destination from the **manifest's** descriptor; user text never becomes a path component |
+| Restore stages into `work/pack-<environment>` and `clean_work_dir` iterates the same names | `restore.rs:391`, `:557` | staging identity becomes workspace-qualified; root `default` and nested `default` must not share a directory |
+| `verify_restored` derives the destination from the env name (`project/.pixi/envs/<name>`) | `verify.rs:239` | destination resolution moves into core, shared by restore, `doctor --verify-restored` and the prefix-candidate logic |
+| TASK-129 and TASK-130 both claim a plan-time size estimate | task files | TASK-129 owns the environment/workspace estimate; TASK-130 owns the provider estimate and cites it |
+
 
 ## Evidence plan
 
