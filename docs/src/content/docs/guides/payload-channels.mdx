@@ -167,6 +167,30 @@ pixi install --frozen
 The `add` step updates the manifest and lock against the local mirror; keep the canonical channel
 URL in the committed manifest and lock, and keep the mirror config uncommitted.
 
+### What a lock may contain when a channel is local
+
+A lock is not always made of URLs. When a project resolves against a directory channel or an
+`http://` mirror, pixi writes the location it actually used, and `pack` accepts all of these
+spellings for both Conda packages and wheels:
+
+| Locked location | Where it comes from |
+| --- | --- |
+| `https://channel.example/example/noarch/pkg-1.0-0.tar.bz2` | the canonical channel |
+| `http://127.0.0.1:8899/noarch/pkg-1.0-0.tar.bz2` | a local or intranet mirror |
+| `file:///srv/channel/noarch/pkg-1.0-0.tar.bz2` | a `file://` channel entry |
+| `/srv/channel/noarch/pkg-1.0-0.tar.bz2` | a `file://` channel entry, as pixi actually writes it |
+
+The last two are the same archive; the bare path is what pixi produces for a directory channel, and
+it is machine-specific, so such a lock is for local iteration rather than a commit. Every artifact
+is checked against the `sha256` in the lock after it is read, so the scheme decides where bytes come
+from, never whether they are trusted. Plain `http` is accepted for a mirror and carries no
+confidentiality — use a channel URL you would be willing to fetch from in the clear.
+
+An archive is expected under `<channel>/<subdir>/<filename>`: the subdir segment is what
+identifies a package as `noarch` or as the target platform, so an archive in a flat directory is
+refused with a message naming the directory it found.
+
+
 ## Ordering, and the standalone-binary rule
 
 The flow has a fixed order: **install the driver (`pixi` and the `pixi-sandbox` standalone binary)

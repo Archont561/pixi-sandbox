@@ -632,3 +632,225 @@ fn compact_locks_preserve_build_numbers_and_noarch_in_the_local_channel(
     );
     assert_eq!(actual["packages"][&filename]["noarch"], expected_noarch);
 }
+
+/// Rewrite every locked Conda location through `rewrite`, in the records and in the selected
+/// environment alike, and leave the lock as the only thing the writer sees.
+fn rewrite_conda_locations(project: &std::path::Path, rewrite: impl Fn(&str) -> String) {
+    let path = project.join("pixi.lock");
+    let mut lock: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let mut replacements = std::collections::BTreeMap::new();
+    for record in lock["packages"].as_array_mut().unwrap() {
+        if let Some(location) = record["conda"].as_str().map(str::to_string) {
+            replacements.insert(location.clone(), rewrite(&location));
+        }
+    }
+    for record in lock["packages"].as_array_mut().unwrap() {
+        if let Some(location) = record["conda"].as_str().map(str::to_string)
+            && let Some(new) = replacements.get(&location)
+        {
+            record["conda"] = new.clone().into();
+        }
+    }
+    for environment in lock["environments"].as_object_mut().unwrap().values_mut() {
+        for packages in environment["packages"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+        {
+            for entry in packages.as_array_mut().unwrap() {
+                if let Some(location) = entry["conda"].as_str().map(str::to_string)
+                    && let Some(new) = replacements.get(&location)
+                {
+                    entry["conda"] = new.clone().into();
+                }
+            }
+        }
+    }
+    std::fs::write(&path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+}
+
+/// Serve `files` once each over loopback HTTP, so an `http://` mirror can be exercised
+/// without touching a network the tests are not allowed to use.
+fn serve_http_files(
+    files: std::collections::BTreeMap<String, Vec<u8>>,
+) -> (String, std::thread::JoinHandle<()>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let handle = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let mut served = 0;
+        while served < files.len() && std::time::Instant::now() < deadline {
+            let Ok((mut stream, _)) = listener.accept() else {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                continue;
+            };
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                .unwrap();
+            let mut request = [0_u8; 2048];
+            let read = stream.read(&mut request).unwrap_or(0);
+            let line = String::from_utf8_lossy(&request[..read])
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let path = line
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("/")
+                .trim_start_matches('/')
+                .to_string();
+            match files.get(&path) {
+                Some(bytes) => {
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        bytes.len()
+                    );
+                    stream.write_all(header.as_bytes()).unwrap();
+                    stream.write_all(bytes).unwrap();
+                    served += 1;
+                }
+                None => stream
+                    .write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    )
+                    .unwrap(),
+            }
+        }
+    });
+    (format!("http://127.0.0.1:{port}"), handle)
+}
+
+// TASK-132: pixi writes a bare absolute path for a `file://` channel, so the writer must read
+// that shape rather than demanding a URL it never produced.
+#[rstest]
+fn a_lock_with_bare_absolute_paths_packs_and_is_not_rewritten(
+    native_locked_project_fixture: NativePackFixture,
+) {
+    let fixture = native_locked_project_fixture;
+    rewrite_conda_locations(&fixture.pack, |location| {
+        url::Url::parse(location)
+            .unwrap()
+            .to_file_path()
+            .unwrap()
+            .display()
+            .to_string()
+    });
+    let lock_before = std::fs::read(fixture.pack.join("pixi.lock")).unwrap();
+    let output = fixture.home.path().join("bare-path-pack");
+    pixi_sandbox::native_pack::write(&fixture.pack, "default", support::host_platform(), &output)
+        .unwrap();
+    pixi_sandbox::native_pack::verify(&output).unwrap();
+    assert_eq!(
+        std::fs::read(fixture.pack.join("pixi.lock")).unwrap(),
+        lock_before,
+        "packing rewrote the consumer's lock"
+    );
+    assert!(
+        output
+            .join("channel/noarch/native-fixture-1.0-0.tar.bz2")
+            .is_file()
+    );
+}
+
+// TASK-132: an unsupported scheme must name the entry and the forms that would work, rather
+// than reporting only the scheme's name.
+#[rstest]
+fn an_unsupported_scheme_names_the_entry_and_the_accepted_forms(
+    native_locked_project_fixture: NativePackFixture,
+) {
+    let fixture = native_locked_project_fixture;
+    rewrite_conda_locations(&fixture.pack, |location| {
+        let name = location.rsplit('/').next().unwrap();
+        format!("ftp://mirror.invalid/noarch/{name}")
+    });
+    let output = fixture.home.path().join("refused-pack");
+    let error = pixi_sandbox::native_pack::write(
+        &fixture.pack,
+        "default",
+        support::host_platform(),
+        &output,
+    )
+    .expect_err("an ftp artifact cannot be acquired");
+    let text = format!("{error:#}");
+    assert!(text.contains("ftp://mirror.invalid/noarch/"), "{text}");
+    assert!(text.contains("file://"), "{text}");
+    assert!(text.contains("https://"), "{text}");
+    assert!(
+        !output.exists(),
+        "a refused selection created transport output"
+    );
+}
+
+// TASK-132: a mirror served over plain HTTP is acquired and still digest-verified.
+#[rstest]
+fn an_http_mirror_is_acquired_and_digest_verified(
+    native_locked_project_fixture: NativePackFixture,
+) {
+    let fixture = native_locked_project_fixture;
+    // The archives the fixture's lock already points at, served under their channel subdir.
+    let lock: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixture.pack.join("pixi.lock")).unwrap()).unwrap();
+    let mut files = std::collections::BTreeMap::new();
+    for record in lock["packages"].as_array().unwrap() {
+        let Some(location) = record["conda"].as_str() else {
+            continue;
+        };
+        let archive = url::Url::parse(location).unwrap().to_file_path().unwrap();
+        let name = archive.file_name().unwrap().to_string_lossy().to_string();
+        files.insert(format!("noarch/{name}"), std::fs::read(&archive).unwrap());
+    }
+    let (base, server) = serve_http_files(files);
+    rewrite_conda_locations(&fixture.pack, |location| {
+        let name = location.rsplit('/').next().unwrap();
+        format!("{base}/noarch/{name}")
+    });
+    let output = fixture.home.path().join("mirror-pack");
+    pixi_sandbox::native_pack::write(&fixture.pack, "default", support::host_platform(), &output)
+        .unwrap();
+    pixi_sandbox::native_pack::verify(&output).unwrap();
+    server.join().unwrap();
+    assert!(
+        output
+            .join("channel/noarch/native-fixture-1.0-0.tar.bz2")
+            .is_file()
+    );
+}
+
+// TASK-132 AC#3: a bare path whose parent is not a channel subdir must be reported by name,
+// not as a generic platform mismatch.
+#[rstest]
+fn a_flat_artifact_path_reports_the_missing_channel_subdir(
+    native_locked_project_fixture: NativePackFixture,
+) {
+    let fixture = native_locked_project_fixture;
+    let flat = fixture.home.path().join("flat-cache");
+    std::fs::create_dir(&flat).unwrap();
+    let archive = fixture
+        .home
+        .path()
+        .join("native-pack/channel/noarch/native-fixture-1.0-0.tar.bz2");
+    std::fs::copy(&archive, flat.join("native-fixture-1.0-0.tar.bz2")).unwrap();
+    rewrite_conda_locations(&fixture.pack, |location| {
+        let name = location.rsplit('/').next().unwrap();
+        flat.join(name).display().to_string()
+    });
+    let output = fixture.home.path().join("flat-pack");
+    let error = pixi_sandbox::native_pack::write(
+        &fixture.pack,
+        "default",
+        support::host_platform(),
+        &output,
+    )
+    .expect_err("an archive outside a channel subdir cannot be packed");
+    let text = format!("{error:#}");
+    assert!(text.contains("flat-cache"), "{text}");
+    assert!(text.contains("<subdir>"), "{text}");
+    assert!(
+        !output.exists(),
+        "a refused selection created transport output"
+    );
+}
