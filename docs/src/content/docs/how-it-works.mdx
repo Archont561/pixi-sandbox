@@ -37,7 +37,7 @@ what lives on each machine, what crosses the gap, and what is proven at every st
   </div>
   <div>
     <strong style="display: flex; align-items: center; gap: 0.5rem;"><Icon aria-hidden="true" name="lucide:package" size={16} /> Pack and verify</strong>
-    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>pack</code> reads the version-7 lock, copies verified Conda archives and wheels into a local channel, optionally vendors Cargo crates, and writes a schema-3 <code>manifest.json</code>. Native rattler/UV installation generates the file oracle; local executables are bundled only when explicitly selected. <code>doctor --verify</code> re-checks every digest and writes nothing.</p>
+    <p style="margin: 0.25rem 0 1rem; color: var(--sl-color-gray-2); font-size: 0.9rem;"><code>pack</code> reads the version-7 lock, copies verified Conda archives and wheels into a local channel, optionally vendors Cargo crates, and writes a schema-4 <code>manifest.json</code>. Native rattler/UV installation generates the per-file oracle; local executables are bundled only when explicitly selected. <code>doctor --verify</code> re-checks every digest and writes nothing.</p>
   </div>
 
   <div style="display: flex; flex-direction: column; align-items: center;">

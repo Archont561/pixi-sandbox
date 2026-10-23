@@ -34,8 +34,8 @@ hand — so it cannot rot against a release. Release notes and the full history:
 
 ## Native transport implementation
 
-New transports use manifest schema 3 and native format-1 packing/restoration. Schema-1 and
-schema-2 format-1 payloads remain readable without external helpers. Legacy opaque payloads
+New transports use manifest schema 4 and native format-1 packing/restoration. Schema-1 through
+schema-3 format-1 payloads remain readable without external helpers. Legacy opaque payloads
 retain their recorded unpacker compatibility path. No helper catalogue is embedded in new binaries;
 `--pixi-bin` and `--self-bin` explicitly select local executables when needed for bootstrapping.
 The existing 95 MiB per-blob/tool limit and total transport budgets still apply to selected tools;

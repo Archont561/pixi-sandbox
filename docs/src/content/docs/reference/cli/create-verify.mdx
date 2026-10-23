@@ -127,7 +127,7 @@ pixi-sandbox pack \
 Packing reads a version-7 Pixi lock and copies SHA256-verified Conda archives and wheels into a
 format-1 local channel. No solver, Python interpreter, or external packing helper runs. Artifacts
 must use HTTPS or absolute `file://` URLs; source distributions are refused before output exists.
-Tools are bundled only when explicitly requested. New transports use manifest schema 3.
+Tools are bundled only when explicitly requested. New transports use manifest schema 4; readers still accept schemas 1–3.
 
 ### PyPI dependencies must lock to wheels
 
@@ -241,7 +241,7 @@ example.
 
 Reports all failures, not first. Checks size + sha256 + tool linkage (rejects dynamic).
 `--verify-restored` additionally checks every file of the restored prefix (content, symlink
-targets, exec bits, the fingerprint marker) against the `files.json` oracle the packer recorded,
+targets, exec bits, the fingerprint marker) against the per-file oracle (`files.json`) the packer recorded,
 flags any file present that the transport never carried, and reports schema-1 environments as
 `unverifiable` rather than failed. The airlock workflow's archived `ci`-feature e2e gate runs it
 against the restored project and extracted transport.

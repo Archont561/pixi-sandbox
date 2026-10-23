@@ -7,8 +7,8 @@ import ContextChips from '../../../../components/ContextChips.astro';
 
 ## Explicit executable bundling
 
-Packing, file-oracle generation, and format-1 restoration use native rattler and UV libraries.
-Neither `pixi-pack` nor `pixi-unpack` is required. New schema-3 transports contain no helper
+Packing, per-file-oracle generation, and format-1 restoration use native rattler and UV libraries.
+Neither `pixi-pack` nor `pixi-unpack` is required. New schema-4 transports contain no helper
 executables by default, and there is no embedded helper catalogue or `tools` subcommand.
 
 To make a transport self-bootstrapping and support subsequent frozen-offline Pixi commands,

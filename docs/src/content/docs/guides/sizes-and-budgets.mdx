@@ -32,7 +32,7 @@ It is historical evidence, not a current native size baseline:
 | **transport dir** | **262 MB** |
 | **orphan branch after git dedup** | **~110 MB** |
 
-New schema-3 transports omit pack/unpack helpers; only explicitly selected Pixi/bootstrap
+New schema-4 transports omit pack/unpack helpers; only explicitly selected Pixi/bootstrap
 executables count toward tool bytes. Measure the current manifest with `doctor` rather than
 subtracting guessed helper savings from this table. In the historical measurement, tools
 dominated small bundles — expected, because Git stores each tool blob once and the tools are
@@ -64,8 +64,8 @@ transport fails without replacing the last healthy orphan branch:
 
 | Field | Default | Measures |
 |-------|---------|----------|
-| `max_blob_mib` | `95` | Largest stored Git object: an unsplit blob, split part, embedded tool, or oracle file |
-| `max_transport_mib` | `2048` | Declared bytes verified by `doctor`: env pack blobs, oracle blobs, tools, vendored crates |
+| `max_blob_mib` | `95` | Largest stored Git object: an unsplit blob, split part, embedded tool, or per-file oracle blob |
+| `max_transport_mib` | `2048` | Declared bytes verified by `doctor`: env pack blobs, per-file-oracle blobs, tools, vendored crates |
 | `max_repository_push_mib` | `2048` | File bytes staged into the orphan snapshot before Git compression |
 | `max_restore_required_mib` | `8192` | Restore preflight estimate: packed + unpacked env bytes plus two vendor copies |
 
