@@ -172,3 +172,62 @@ airlock tier stays a CI claim, never inferred from the fixture.
 Consequence: Rust and Go providers can ship **one** vendor tree per branch (ADR-32 holds), while
 NuGet and Maven providers must resolve per-platform inputs rather than mirror `Cargo.lock`'s
 single-lock model.
+
+## Slice 0 — premise check (2026-10-23, executed)
+
+Run against **pixi 0.83.0**, the version this repository pins, in a throwaway fixture
+(`/home/user/slice0`, deleted afterwards) with a real Conda package served from a local
+`file://` channel so nothing touched the network.
+
+### What was tested and what came back
+
+| # | Claim | Command | Result |
+| --- | --- | --- | --- |
+| 1 | A root manifest can declare members | `members = ["python"]` in `[workspace]` | **Rejected**: `'members' was not expected here`, with the accepted key list (name, version, channels, platforms, … dependencies) |
+| 2 | A nested manifest is an independent workspace | `pixi info -m python/pixi.toml`, `pixi run -m python/pixi.toml hello` | Name `python-side`, manifest `…/python/pixi.toml`, env materialised at `python/.pixi/envs/default` |
+| 3 | Packing a nested workspace on its own works | `pixi-sandbox pack --repo-root python --envs default …` then `restore --output-path python/` | transport verified (4 blobs), restored into `python/.pixi/envs/default`, `pixi install --frozen --offline` → “The default environment has been installed.”, `pixi run hello` → `python-hello` with the channel directory renamed away |
+| 4 | Negative control: the restored env is what makes it work | delete `python/.pixi/envs/default`, channel absent | `pixi run hello` → `failed to fetch native-fixture-1.0-0.tar.bz2` — exactly the symptom issue #194 reports |
+| 5 | A merged root workspace serves the same goal | `[feature.py.dependencies]` + `[environments] py = ["py"]`, `pack --envs py`, restore, channel absent | `pixi run -e py hello-py` → `py-hello`; `pixi install --frozen --offline` a no-op |
+| 6 | Channels do not have to be workspace-global | `pixi workspace channel add --help` | `-f <feature>` and `-e <environment>` exist, so a merged manifest can carry per-subproject channels |
+
+### What it means
+
+- **The “member” route does not exist in pixi 0.83.** The key is rejected outright, so “declare
+  the subproject as a member” is not an action a consumer can take. That part of the premise is
+  settled by evidence, not opinion.
+- **The nearest equivalent — merging the subproject into the root manifest as a feature and
+  environment — does work**, and it works with today’s multi-environment `pack`. It is not
+  blocked by channel differences, because pixi allows per-feature and per-environment channels.
+- **What merging costs** is exactly what issue #194 asked to avoid: one manifest and one lockfile
+  for the whole repository, workspace-global environment names (two `default`s collide, so
+  subproject environments must be renamed or composed), subproject tasks moved into the root
+  manifest, and the nested project losing the standalone `pixi.toml` it uses for its own
+  development.
+- **Packing each workspace separately also works today** (row 3), at the cost of one branch,
+  one restore and one `--branch-location` per workspace — and the sandbox config has no per-bundle
+  repository-root field, so it is a scripted routine rather than a declared one.
+
+### Consequence for the task
+
+TASK-129 is therefore **not** “the only way to be offline”; it is the unification: one bundle, one
+branch, one restore, and the subproject manifests left exactly where they are. Whether that is
+worth a transport change is an owner decision, and the honest options are:
+
+1. **Proceed** with TASK-129 as scoped, on the unification argument (one declared list, one
+   branch, no consumer restructuring).
+2. **Close TASK-129 as a documentation change** and publish the two workarounds above, if
+   restructuring the consumer project is acceptable.
+3. **Proceed but re-scope**: ship `plan`-time reporting and the workaround recipe first, defer the
+   transport half until a consumer needs it.
+
+AC#1 stays unchecked until that ruling: the slice is recorded, but “the member route cannot serve
+the case” is only half true — members do not exist, while a merge can serve it at a structural
+cost.
+
+### Product defect found (filed as TASK-132)
+
+`native_pack::writer::select` parses every locked `conda:` entry as a URL and refuses anything but
+`https`/`file`. Pixi writes a **bare absolute path** for `file://` channels, so a lock produced
+against a local or mirrored channel fails with `locked artifact must have an absolute URL` until
+the lock is hand-patched to `file://…` plus an explicit `subdir`. Consumers behind a mirror hit
+this, and it makes an offline pack fixture impossible to write without editing a lockfile by hand.

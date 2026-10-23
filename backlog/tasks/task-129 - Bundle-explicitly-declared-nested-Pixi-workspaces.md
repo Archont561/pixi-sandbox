@@ -4,7 +4,7 @@ title: Bundle explicitly declared nested Pixi workspaces
 status: To Do
 assignee: []
 created_date: '2026-10-23 16:57'
-updated_date: '2026-10-23 18:44'
+updated_date: '2026-10-23 18:48'
 labels:
   - pack
   - restore
@@ -80,14 +80,11 @@ Evidence boundary: the local denied-egress fixture tier is no substitute for a n
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Ratified during the design grilling on 2026-10-23; the full record is `backlog/docs/plans/task-129-nested-workspaces.md` § Ratified decisions. No code written yet.
+Slice 0 (premise check) executed on 2026-10-23 against pixi 0.83.0 with a local file channel; full evidence table is `backlog/docs/plans/task-129-nested-workspaces.md` § Slice 0.
 
-1. The premise is unproven. Nobody has demonstrated that the reporting project cannot declare its subprojects as [workspace] members of the root pixi.toml. Slice 0 proves that first; a working member route closes this task as a docs change.
-2. Config schema bumps to 2. `Bundle` is deny_unknown_fields, so a config carrying `workspaces` makes every older binary refuse the whole config; the owner chose the loud failure with the required version named, and rejected relaxing the attribute because that turns typos into silently ignored config.
-3. Manifest schema is 4 for every new transport, not only nested ones: one writer path and one reader matrix. Accepted cost is that a schema-3-era consumer must upgrade before reading any transport produced after this lands. Readers keep schemas 1-3. Rejected: 4-only-when-nested, and staying at 3 additively (an old binary would restore root envs, skip nested ones and still print `restore complete`).
-4. Restore keeps the sequential abort: first failure stops the run, earlier siblings stay installed, staged packs are retained, exit non-zero. Rejected all-or-nothing rollback as new behaviour that needs its own decision.
-5. A nested Rust workspace with its own Cargo.lock is refused with a named diagnostic pointing at TASK-131, which now owns per-workspace vendor trees. Rejected: per-workspace vendor entries inside this task, and one repository-wide lockfile.
-6. AC#6 asserts both observables: the nested `pixi install --frozen --offline` no-op (the discriminating one) and the delegated `pixi run --manifest-path` under denied egress, which alone can pass on a local-only-channel fixture and prove nothing.
+Findings: (1) pixi 0.83 rejects `[workspace] members` outright, so the "declare it as a member" route does not exist; (2) a nested pixi.toml is an independent workspace with its own lock and `python/.pixi/envs/default`; (3) packing that workspace separately works today — restored, `pixi install --frozen --offline` is a no-op and `pixi run hello` succeeds with the channel directory renamed away; (4) removing the restored env reproduces issue #194 exactly (`failed to fetch native-fixture-1.0-0.tar.bz2`), which is the negative control; (5) the nearest member equivalent — merging the subproject into the root manifest as `[feature.py]` + `[environments] py = ["py"]` — also packs and restores offline, so the merge route can technically serve the goal; (6) per-feature and per-environment channels exist (`pixi workspace channel add -f/-e`), so differing channels alone do not defeat a merge.
 
-Hazards folded into the slices: pack preflights one root for all --envs; validate_slug forbids `/`, so ids must be resolved through the manifest rather than path-joined; restore stages into `work/pack-<environment>`, which collides for two `default`s; verify_restored derives the destination from the env name, so destination resolution moves into core.
+Conclusion: TASK-129 is not the only way to be offline. It is the unification — one bundle, one branch, one restore, subproject manifests untouched — and the alternatives cost either a consumer restructuring (one manifest, one lock, renamed environments, tasks moved) or one branch/restore per workspace with no config support. AC#1 is deliberately left unchecked pending the owner ruling between proceeding as scoped, closing as documentation, or re-scoping plan reporting first.
+
+Product defect found and filed as TASK-132: `native_pack::writer` requires an absolute URL for every locked `conda:` entry, but pixi writes bare paths for file channels, so a mirrored/offline project cannot pack without hand-editing the lock (`file://` plus an explicit `subdir`).
 <!-- SECTION:NOTES:END -->
