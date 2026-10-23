@@ -234,19 +234,32 @@ pub fn verify_restored(
             continue;
         };
         let failures_before = restored.report.failures.len();
+        // The destination is asked of the manifest, not rebuilt from the environment's name:
+        // a nested environment lands in its own project's Pixi env directory, and `restore`
+        // and this check must agree about that or one writes what the other cannot find.
+        let Ok(destination) = manifest.env_destination(project, name) else {
+            restored.report.failures.push(Check {
+                path: name.clone(),
+                kind: Kind::Missing,
+                detail: format!("environment {name} has no resolvable destination"),
+            });
+            continue;
+        };
+        let env_name = manifest.env_name(name).unwrap_or(name);
         verify_env_restored(
             branch_location,
-            &project.join(".pixi").join("envs").join(name),
+            &destination,
             name,
             env,
             files,
             &prefix_candidates(
-                &project.join(".pixi").join("envs").join(name),
+                &destination,
                 &work_dir.map_or_else(
                     || project.join(".pixi").join(".restore-work"),
                     Path::to_path_buf,
                 ),
-                name,
+                env_name,
+                &manifest.staging_component(name),
             ),
             &mut restored,
         );
@@ -274,7 +287,12 @@ pub fn verify_staged(
         restored.unverifiable.push(name.to_string());
         return restored;
     };
-    let mut candidates = prefix_candidates(prefix, work, name);
+    let mut candidates = prefix_candidates(
+        prefix,
+        work,
+        manifest.env_name(name).unwrap_or(name),
+        &manifest.staging_component(name),
+    );
     candidates.push(final_prefix.to_string_lossy().into_owned().into_bytes());
     if let Ok(path) = final_prefix.canonicalize() {
         candidates.push(path.to_string_lossy().into_owned().into_bytes());
@@ -369,7 +387,7 @@ fn verify_env_restored(
 /// The prefix-path spellings this side must neutralise: the final prefix (in both its
 /// literal and canonical form — a symlinked `.pixi` must not defeat the check), plus the
 /// restore-scratch paths that survive inside NUL-fixed binaries and conda-meta records.
-fn prefix_candidates(prefix: &Path, work: &Path, name: &str) -> Vec<Vec<u8>> {
+fn prefix_candidates(prefix: &Path, work: &Path, env_name: &str, staging: &str) -> Vec<Vec<u8>> {
     let mut candidates: Vec<Vec<u8>> = Vec::new();
     let mut push_candidate = |path: &Path| {
         let bytes = path.to_string_lossy().into_owned().into_bytes();
@@ -381,8 +399,8 @@ fn prefix_candidates(prefix: &Path, work: &Path, name: &str) -> Vec<Vec<u8>> {
     if let Ok(canonical) = prefix.canonicalize() {
         push_candidate(&canonical);
     }
-    push_candidate(&work.join(format!("stage-{name}")).join(name));
-    push_candidate(&work.join(format!("pack-{name}")));
+    push_candidate(&work.join(format!("stage-{staging}")).join(env_name));
+    push_candidate(&work.join(format!("pack-{staging}")));
     candidates
 }
 

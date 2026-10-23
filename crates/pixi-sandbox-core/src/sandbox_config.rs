@@ -26,7 +26,11 @@ use std::str::FromStr;
 /// is their edit to make. No `config migrate` command exists while this constant is
 /// still `1`: there is only one schema shape to migrate *from*, so there is nothing for
 /// it to do yet.
-pub const CONFIG_SCHEMA: u32 = 1;
+/// Schema 2 adds `[[bundle.workspaces]]` (TASK-129). Every earlier shape parses unchanged, so
+/// schema 1 and 2 mean the same thing for a bundle that declares no nested workspace; the bump
+/// exists because [`Bundle`] is `deny_unknown_fields`, and an older binary must say "this config
+/// needs a newer build" rather than report a typo it cannot tell apart from a new table.
+pub const CONFIG_SCHEMA: u32 = 2;
 
 /// True when this build can act on a config's schema (see [`CONFIG_SCHEMA`]).
 #[must_use]
@@ -104,6 +108,57 @@ pub struct Bundle {
     /// Override the top-level cargo-vendor policy for this bundle.
     #[serde(default)]
     pub cargo_vendor: Option<bool>,
+    /// Nested Pixi workspaces this bundle carries (TASK-129). Explicit, never discovered: a
+    /// subproject may pin conflicting versions, channels or platforms on purpose, so scanning
+    /// every `pixi.toml` is exactly the behaviour this list exists to prevent.
+    #[serde(default)]
+    pub workspaces: Vec<WorkspaceDecl>,
+}
+
+/// One nested Pixi workspace declared by a bundle (TASK-129).
+///
+/// The declared path is a *manifest*, not a directory, so a reviewer can see the file the
+/// environments come from. Nothing here is a filesystem join: the path is validated as a
+/// relative `pixi.toml`, resolved once against the repository root, and afterwards addressed by
+/// the slug this type derives from it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceDecl {
+    /// Path to the nested `pixi.toml`, relative to the repository root: `subproject/pixi.toml`.
+    pub manifest: String,
+    /// Environments to carry from that workspace. Omitted means its `default` environment —
+    /// the same default `pixi` itself uses when no `-e` is given.
+    #[serde(default)]
+    pub environments: Option<Vec<String>>,
+}
+
+impl WorkspaceDecl {
+    /// Environments this declaration carries, with the "omitted means `default`" rule applied.
+    #[must_use]
+    pub fn selected_environments(&self) -> Vec<String> {
+        self.environments
+            .clone()
+            .unwrap_or_else(|| vec!["default".to_string()])
+    }
+
+    /// The nested project's directory, relative to the repository root: `subproject`.
+    ///
+    /// # Errors
+    /// Returns an error for a declared path that is not `<directory>/…/pixi.toml`, which
+    /// [`validate_workspace_manifest`] has already refused on a loaded config.
+    pub fn directory(&self) -> Result<&str> {
+        workspace_directory(&self.manifest)
+    }
+
+    /// Stable, checkout-safe identity for this workspace inside a transport: the declared
+    /// directory with its separators turned into hyphens (`tools/py` → `tools-py`).
+    ///
+    /// # Errors
+    /// Returns an error for the same shapes [`Self::directory`] refuses, plus a directory whose
+    /// characters cannot survive as a slug.
+    pub fn slug(&self) -> Result<String> {
+        workspace_slug(&self.manifest)
+    }
 }
 
 /// `[budgets]`: hard size thresholds enforced by the generated publisher before it pushes
@@ -253,6 +308,36 @@ pub struct PublishPlan {
     /// safe the same way `schema` already is (see this struct's own doc comment above).
     #[serde(default)]
     pub push_paths: Vec<String>,
+    /// Nested workspaces the declared bundles carry (TASK-129). Filled by `commands::plan`,
+    /// which is the only caller with a repository root to read the nested locks from — the same
+    /// division [`SandboxConfig::plan`] already uses for `push_paths`. Empty for every config
+    /// that declares none, so a root-only plan serialises exactly as it did before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspaces: Vec<WorkspacePlan>,
+}
+
+/// One nested workspace, as `plan` reports it (TASK-129 AC#3).
+///
+/// This is a *report*, never an input: the generated workflow derives its matrix from
+/// `include` alone, so adding an array here cannot change a runner's behaviour.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkspacePlan {
+    /// The bundle that carries it.
+    pub bundle: String,
+    /// Declared manifest, relative to the repository root.
+    pub manifest: String,
+    /// The nested project's directory, relative to the repository root.
+    pub directory: String,
+    /// Transport identity: the directory with separators folded to hyphens.
+    pub slug: String,
+    /// Environments this bundle carries from that workspace.
+    pub environments: Vec<String>,
+    /// How many packages the nested `pixi.lock` resolves for those environments, summed across
+    /// this bundle's platforms. Reported so a reviewer can see the cost before packing.
+    pub packages: usize,
+    /// Sum of the locked artifacts' recorded sizes, in bytes. `0` when the lock records none —
+    /// an estimate that says "unknown" rather than inventing a number.
+    pub size_bytes: u64,
 }
 
 /// One native job: it creates exactly one orphan branch.
@@ -301,6 +386,7 @@ pub fn plan_override(
             environments: environments.to_vec(),
             platforms: vec![platform.to_string()],
             cargo_vendor: None,
+            workspaces: Vec::new(),
         }],
         budgets: BudgetPolicy::default(),
         workflow: None,
@@ -379,6 +465,9 @@ impl SandboxConfig {
                 reason: error.to_string(),
             })?;
         config.validate()?;
+        if let Some(repo_root) = path.parent() {
+            config.validate_workspaces_on_disk(repo_root)?;
+        }
         Ok(config)
     }
 
@@ -417,6 +506,7 @@ impl SandboxConfig {
             // unaffected by task-53): callers that care call `resolved_push_paths` themselves
             // and assign it in, the same way `commands::plan` does for `plan --json`.
             push_paths: Vec::new(),
+            workspaces: Vec::new(),
         })
     }
 
@@ -498,6 +588,9 @@ impl SandboxConfig {
         let mut names = BTreeSet::new();
         let mut branches = BTreeSet::new();
         let mut requested_platforms = BTreeSet::<&str>::new();
+        // One nested workspace belongs to exactly one bundle: two bundles carrying the same
+        // environments would publish two branches that restore over each other's prefix.
+        let mut claimed = BTreeMap::<&str, &str>::new();
         for bundle in &self.bundles {
             validate_slug("bundle name", &bundle.name)?;
             if !names.insert(&bundle.name) {
@@ -530,6 +623,8 @@ impl SandboxConfig {
                 }
             }
 
+            Self::validate_bundle_workspaces(bundle, &mut claimed)?;
+
             let mut platforms = BTreeSet::new();
             for platform in &bundle.platforms {
                 validate_platform(platform)?;
@@ -554,6 +649,118 @@ impl SandboxConfig {
                 return Err(Error::Invalid(format!(
                     "runner override for {platform:?} is unused; remove it or declare that platform in a bundle"
                 )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Shape rules for the workspaces a bundle declares. Filesystem-free, like the rest of
+    /// [`SandboxConfig::validate`]; what the declaration points at is checked by
+    /// [`SandboxConfig::validate_workspaces_on_disk`], which is only reachable through
+    /// [`SandboxConfig::load`] where a repository root exists.
+    fn validate_bundle_workspaces<'a>(
+        bundle: &'a Bundle,
+        claimed: &mut BTreeMap<&'a str, &'a str>,
+    ) -> Result<()> {
+        if bundle.workspaces.is_empty() {
+            return Ok(());
+        }
+        // A root environment called `workspaces` would sit exactly where nested environments
+        // live inside the transport. It cannot collide (blob matching is prefix-anchored), but a
+        // reader should never have to work that out, so it is a refusal with the reason named.
+        if let Some(reserved) = bundle
+            .environments
+            .iter()
+            .find(|env| *env == WORKSPACES_SEGMENT)
+        {
+            return Err(Error::Invalid(format!(
+                "bundle {:?} declares the root environment {reserved:?}, which is the segment \
+                 nested workspaces are stored under; rename it or drop it from this bundle",
+                bundle.name
+            )));
+        }
+
+        let mut slugs = BTreeSet::new();
+        for declaration in &bundle.workspaces {
+            validate_workspace_manifest(&declaration.manifest)?;
+            let slug = declaration.slug()?;
+            if !slugs.insert(slug.clone()) {
+                return Err(Error::Invalid(format!(
+                    "bundle {:?} declares the nested workspace {:?} more than once",
+                    bundle.name, declaration.manifest
+                )));
+            }
+            if let Some(other) = claimed.insert(&declaration.manifest, &bundle.name) {
+                return Err(Error::Invalid(format!(
+                    "nested workspace {:?} is already claimed by bundle {other:?}; one workspace \
+                     belongs to one bundle",
+                    declaration.manifest
+                )));
+            }
+            let environments = declaration.selected_environments();
+            let mut seen = BTreeSet::new();
+            for environment in &environments {
+                validate_slug("environment", environment)?;
+                if !seen.insert(environment) {
+                    return Err(Error::Invalid(format!(
+                        "bundle {:?} requests nested environment {environment:?} of {:?} more \
+                         than once",
+                        bundle.name, declaration.manifest
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuse a declaration the filesystem cannot serve, with the reason named.
+    ///
+    /// Called from [`SandboxConfig::load`] only: `plan`, `pack` and `doctor` all reach a config
+    /// through it, and a nested manifest with no lockfile beside it would otherwise fail much
+    /// later, on the connected runner, after the root environments had already been packed.
+    ///
+    /// # Errors
+    /// Returns an error when a declared manifest is missing, has no `pixi.lock`, or sits in a
+    /// nested Rust workspace that carries its own `Cargo.lock` (TASK-131 covers carrying those).
+    pub fn validate_workspaces_on_disk(&self, repo_root: &Path) -> Result<()> {
+        for bundle in &self.bundles {
+            for declaration in &bundle.workspaces {
+                let manifest_path = repo_root.join(&declaration.manifest);
+                if !manifest_path.is_file() {
+                    return Err(Error::Invalid(format!(
+                        "bundle {:?} declares nested workspace {:?}, but {} does not exist",
+                        bundle.name,
+                        declaration.manifest,
+                        manifest_path.display()
+                    )));
+                }
+                let directory = manifest_path
+                    .parent()
+                    .ok_or_else(|| {
+                        Error::Invalid(format!(
+                            "nested workspace manifest {:?} has no parent directory",
+                            declaration.manifest
+                        ))
+                    })?
+                    .to_path_buf();
+                if !directory.join("pixi.lock").is_file() {
+                    return Err(Error::Invalid(format!(
+                        "bundle {:?} declares nested workspace {:?}, but {} has no pixi.lock — \
+                         run `pixi install` in that workspace before packing",
+                        bundle.name,
+                        declaration.manifest,
+                        directory.display()
+                    )));
+                }
+                if directory.join("Cargo.lock").is_file() {
+                    return Err(Error::Invalid(format!(
+                        "bundle {:?} declares nested workspace {:?}, which is a Rust workspace \
+                         with its own Cargo.lock; one transport carries one vendored crate tree, \
+                         so this needs TASK-131 (per-workspace Cargo vendor trees) — either drop \
+                         the declaration or move the crate tree into the root workspace",
+                        bundle.name, declaration.manifest
+                    )));
+                }
             }
         }
         Ok(())
@@ -629,6 +836,107 @@ fn validate_slug(kind: &str, value: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// Refuse a declared nested-manifest path that is not a plain relative `<dir>/…/pixi.toml`.
+///
+/// Every rule here exists because the value ends up in a filesystem join on the *consumer's*
+/// machine: an absolute path, a `..` component, a Windows drive prefix or a backslash would all
+/// resolve outside the repository the config was reviewed against.
+fn validate_workspace_manifest(path: &str) -> Result<()> {
+    if path.is_empty() {
+        return Err(Error::Invalid(
+            "bundle.workspaces[].manifest must not be empty; name the nested `pixi.toml`"
+                .to_string(),
+        ));
+    }
+    if path.contains('\\') {
+        return Err(Error::Invalid(format!(
+            "nested workspace manifest {path:?} must use `/` as its separator"
+        )));
+    }
+    let as_path = Path::new(path);
+    if as_path.is_absolute() || path.starts_with('/') {
+        return Err(Error::Invalid(format!(
+            "nested workspace manifest {path:?} must be relative to the repository root"
+        )));
+    }
+    let mut components = as_path.components();
+    let first = components.next();
+    let drive = matches!(first, Some(std::path::Component::Prefix(_)));
+    if drive {
+        return Err(Error::Invalid(format!(
+            "nested workspace manifest {path:?} must be relative to the repository root"
+        )));
+    }
+    if as_path
+        .components()
+        .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(Error::Invalid(format!(
+            "nested workspace manifest {path:?} must not contain `.` or `..` components"
+        )));
+    }
+    if as_path.file_name().and_then(|name| name.to_str()) != Some("pixi.toml") {
+        return Err(Error::Invalid(format!(
+            "nested workspace manifest {path:?} must name a `pixi.toml`"
+        )));
+    }
+    if as_path.components().count() < 2 {
+        return Err(Error::Invalid(format!(
+            "nested workspace manifest {path:?} must sit in a subdirectory; the repository root \
+             manifest is declared by `environments`, not by `workspaces`"
+        )));
+    }
+    Ok(())
+}
+
+/// The directory a declared nested manifest sits in, relative to the repository root.
+///
+/// # Errors
+/// Returns an error for a path [`validate_workspace_manifest`] would refuse.
+pub fn workspace_directory(manifest: &str) -> Result<&str> {
+    validate_workspace_manifest(manifest)?;
+    let directory = Path::new(manifest)
+        .parent()
+        .and_then(Path::to_str)
+        .ok_or_else(|| {
+            Error::Invalid(format!(
+                "nested workspace manifest {manifest:?} has no usable directory"
+            ))
+        })?;
+    Ok(directory)
+}
+
+/// The transport identity of a declared nested workspace: its directory with each separator
+/// turned into a hyphen, so `tools/py` becomes the single path component `tools-py`.
+///
+/// A separator cannot survive into a transport path: `envs/workspaces/tools/py/default/` reads
+/// back as a deeper hierarchy than it is, and the same text is illegal on NTFS. The mapping is
+/// one-way and documented, so a restore can address the workspace without re-deriving it from a
+/// path the operator typed.
+///
+/// # Errors
+/// Returns an error when the declared directory is not already a valid slug aside from its
+/// separators — an uppercase or space-bearing directory would otherwise produce an identity that
+/// does not match itself on a case-insensitive filesystem.
+pub fn workspace_slug(manifest: &str) -> Result<String> {
+    let directory = workspace_directory(manifest)?;
+    let slug = directory.replace('/', "-");
+    validate_slug("nested workspace slug", &slug).map_err(|error| {
+        Error::Invalid(format!(
+            "{error}; rename the directory or declare a manifest directly under a \
+             lowercase, hyphen-safe path"
+        ))
+    })?;
+    Ok(slug)
+}
+
+/// The fixed transport segment nested environments live under (TASK-129).
+///
+/// Prefix-anchored blob matching means a root environment cannot collide with it; `plan` still
+/// refuses a root environment named exactly this, because a silent overlap between a legitimate
+/// name and a reserved segment is not something a reader should have to reason about.
+pub const WORKSPACES_SEGMENT: &str = "workspaces";
 
 fn validate_platform(value: &str) -> Result<()> {
     if !value

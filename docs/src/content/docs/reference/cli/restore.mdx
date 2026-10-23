@@ -39,7 +39,7 @@ read-only: it runs `doctor --verify` and prints the explicit restore command.
 | `--branch-location` | Fetched branch dir (read-only) |
 | `--output-path` | Project output |
 | `--path-to-main-repo-code` | Alias for `--output-path` (backward compat) |
-| `--envs` | Partial restore (vendor always materialized) |
+| `--envs` | Partial restore (vendor always materialized). A nested workspace environment is named `<workspace>/<env>` — the same id `pack` took, e.g. `--envs default,subproject/default` |
 | `--verify-only` | Verify, write nothing |
 | `--force` | Overwrite existing envs; also replaces unmanaged `pixi`/`pixi-sandbox` entries in the user bin directory |
 | `--no-vendor` | Skip vendor |

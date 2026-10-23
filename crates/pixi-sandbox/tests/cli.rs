@@ -437,7 +437,10 @@ platforms = ["linux-64", "win-64"]
         .stdout
         .clone();
     let plan: Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(plan["schema"], 1);
+    assert_eq!(
+        plan["schema"],
+        pixi_sandbox_core::sandbox_config::CONFIG_SCHEMA
+    );
     assert_eq!(plan["include"].as_array().unwrap().len(), 2);
     assert_eq!(plan["include"][0]["branch"], "sandbox/developer-linux-64");
     assert_eq!(plan["include"][1]["branch"], "sandbox/developer-win-64");

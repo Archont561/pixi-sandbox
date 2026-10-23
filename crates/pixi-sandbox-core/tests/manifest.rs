@@ -483,3 +483,118 @@ fn split_parts_must_sum_to_the_blob_size() {
     let err = parse(&text).validate().expect_err("must refuse");
     assert!(err.to_string().contains("parts sum"), "got: {err}");
 }
+
+/// TASK-129: schema 4 carries nested Pixi workspaces, and the destination of every environment is
+/// decided by the manifest rather than rebuilt from the environment's name.
+mod nested_workspaces {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// The valid fixture with one nested environment added: `subproject/default`, sitting in the
+    /// nested `subproject/` project, with its own blobs under the reserved `workspaces/` segment.
+    fn nested_manifest() -> Manifest {
+        let mut value: serde_json::Value = serde_json::from_str(&valid_manifest()).unwrap();
+        let dev = value["envs"]["dev"].clone();
+        value["envs"]["subproject/default"] = dev;
+        value["envs"]["subproject/default"]["pack_path"] =
+            ".pixi-sandbox/envs/workspaces/subproject/default/pack".into();
+        value["envs"]["subproject/default"]["workspace"] = serde_json::json!({
+            "manifest": "subproject/pixi.toml",
+            "directory": "subproject"
+        });
+        value["envs"]["subproject/default"]["blobs"] = serde_json::json!([
+            { "path": "envs/workspaces/subproject/default/pack/channel/noarch/a.conda", "size": 4,
+              "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }
+        ]);
+        value["envs"]["subproject/default"]["files"]["blob"]["path"] =
+            "envs/workspaces/subproject/default/files.json".into();
+        value["workspaces"] = serde_json::json!([{
+            "slug": "subproject",
+            "manifest": "subproject/pixi.toml",
+            "directory": "subproject",
+            "environments": ["default"]
+        }]);
+        serde_json::from_value(value).expect("nested fixture parses")
+    }
+
+    #[test]
+    fn a_nested_environment_restores_into_its_own_project() {
+        let manifest = nested_manifest();
+        manifest.validate().expect("nested fixture must be valid");
+        let project = Path::new("/repo");
+        assert_eq!(
+            manifest
+                .env_destination(project, "subproject/default")
+                .unwrap(),
+            PathBuf::from("/repo/subproject/.pixi/envs/default")
+        );
+        assert_eq!(
+            manifest.pack_prefix("subproject/default").unwrap(),
+            "envs/workspaces/subproject/default/pack/"
+        );
+        // The workspace's own name, not the id, is what its project's Pixi directory holds.
+        assert_eq!(manifest.env_name("subproject/default").unwrap(), "default");
+        // And the two environments must not share restore scratch.
+        assert_ne!(
+            manifest.staging_component("subproject/default"),
+            manifest.staging_component("default")
+        );
+    }
+
+    #[test]
+    fn a_root_environment_keeps_the_layout_it_always_had() {
+        let manifest = parse(&valid_manifest());
+        assert_eq!(
+            manifest.env_destination(Path::new("/repo"), "dev").unwrap(),
+            PathBuf::from("/repo/.pixi/envs/dev")
+        );
+        assert_eq!(manifest.pack_prefix("dev").unwrap(), "envs/dev/pack/");
+        assert_eq!(manifest.staging_component("dev"), "dev");
+        // A root-only transport writes no `workspaces` key, so schema 3 readers see the same
+        // shape they always did apart from `schema`.
+        assert!(manifest.workspaces.is_empty());
+        assert!(
+            !serde_json::to_string(&manifest)
+                .unwrap()
+                .contains("\"workspaces\"")
+        );
+    }
+
+    #[test]
+    fn a_slashing_id_without_a_workspace_descriptor_is_refused() {
+        let mut value: serde_json::Value = serde_json::from_str(&valid_manifest()).unwrap();
+        value["envs"]["subproject/default"] = value["envs"]["dev"].clone();
+        let manifest: Manifest = serde_json::from_value(value).unwrap();
+        let message = manifest.validate().unwrap_err().to_string();
+        assert!(message.contains("means a nested workspace"), "{message}");
+    }
+
+    #[test]
+    fn a_nested_id_that_does_not_carry_its_slug_is_refused() {
+        let mut value: serde_json::Value = serde_json::from_str(&valid_manifest()).unwrap();
+        value["envs"]["other/default"] = value["envs"]["dev"].clone();
+        value["envs"]["other/default"]["workspace"] =
+            serde_json::json!({ "manifest": "subproject/pixi.toml", "directory": "subproject" });
+        let manifest: Manifest = serde_json::from_value(value).unwrap();
+        let message = manifest.validate().unwrap_err().to_string();
+        assert!(
+            message.contains("must start with `subproject/`"),
+            "{message}"
+        );
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    fn an_older_schema_is_still_readable(#[case] schema: u32) {
+        let text = valid_manifest().replace(
+            &format!("\"schema\": {SCHEMA_VERSION}"),
+            &format!("\"schema\": {schema}"),
+        );
+        let manifest = parse(&text);
+        manifest
+            .validate()
+            .expect("an older schema must stay readable");
+    }
+}

@@ -911,9 +911,14 @@ mod tests {
         fn a_newer_config_schema_is_a_named_finding() {
             let project = project();
             let config = project.path().join("pixi-sandbox.toml");
+            // Derived from the shipped constant: hardcoding the next schema made this assertion
+            // stop testing anything the moment the schema was bumped (TASK-129).
+            let newer = pixi_sandbox_core::sandbox_config::CONFIG_SCHEMA + 1;
             fs::write(
                 &config,
-                "schema = 2\nbranch_prefix = \"sandbox\"\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n",
+                format!(
+                    "schema = {newer}\nbranch_prefix = \"sandbox\"\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n"
+                ),
             )
             .unwrap();
             let finding = config_schema_finding(&config).unwrap().unwrap();
