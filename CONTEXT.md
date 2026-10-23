@@ -3780,3 +3780,97 @@ TASK-125 final-local update (2026-10-22): full `pixi run --frozen test` passed a
 tasks, 1,154 passes / 2 skips; full lint rerun passed 11/11 after extracting raw-unpack staged
 verification; fmt passed. Connected payload/native built-artifact consumer/airlock proofs remain
 outstanding. No task-completion or merge claim is warranted until their actual outcomes are known.
+
+### 2026-10-23 — TASK-132 landed; the lint gate is red on new advisories (TASK-133)
+
+Merged as PR #196 (merge commit 54f7e1a5). What landed: `fix(pack)` resolving locked artifacts by
+shape (https/http/file URL or an absolute path), four tests at the `native_pack::{write, verify}`
+seam, `payload-channels.mdx` documenting the four lock spellings, ADR-32 (branch topology),
+TASK-129 slice-0 evidence with its premise ruling, and TASK-131/132/133 created.
+
+**Test-first was real, not retrofitted:** three of the four new pack tests failed on the shipped
+behaviour with `locked artifact must have an absolute URL`, and the HTTP-mirror test failed once
+because of a test-side path bug (it read the project directory, not the fixture pack) before it
+was allowed to pass. `native_pack` went 36 → 40; the workspace went 1,186 → 1,190 passed / 2
+skipped.
+
+**Slice 0 answer to "should we build nested workspaces at all?"** pixi 0.83 rejects
+`[workspace] members`, so the cheap route does not exist; a nested `pixi.toml` is an independent
+workspace whose environment packs and restores on its own; and merging the subproject into the root
+manifest as a feature/environment also works offline. TASK-129 is therefore the *unification* (one
+bundle, one branch, one restore), not the only offline path. AC#1 stays unchecked until the owner
+picks between proceeding, closing as documentation, or re-scoping plan reporting first.
+
+**Red gate, deliberately not hidden.** `cargo deny check advisories` fails on RUSTSEC-2026-0385
+(`ctutils` 0.4.3 → ≥0.4.4) and RUSTSEC-2026-0386 (`tokio` 1.53.2 → ≥1.53.3), both published after
+v0.8.0. No manifest or lockfile changed in #196; `static.crates.io` and `index.crates.io` are
+blocked here, so the crates cannot be fetched or vendored from this machine, and inventing vendor
+data is not an option. `ci` on main (40009302163) is therefore red at the lint step, and `docs`
+skipped behind it. TASK-133 carries the fix. Merging #196 was an explicit owner instruction with
+this consequence stated in the PR body.
+
+Next session should start with:
+
+> Restore the sandbox and baseline the suite (expect 1,190 passing / 2 skipped — the transport came
+> from pixi-sandbox 0.8.0, and the first build needs
+> `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` or the 21 GiB disk fills at ~16 GiB).
+> `ci` on main is RED at lint for two advisories published after v0.8.0, not for anything in the
+> tree: RUSTSEC-2026-0385 (`ctutils` 0.4.3) and RUSTSEC-2026-0386 (`tokio` 1.53.2). Neither fixed
+> release is in the offline vendor and `static.crates.io`/`index.crates.io` are unreachable here,
+> so read TASK-133 before deciding anything.
+>
+> Read `CONTEXT.md` § Session scratchpad — the **2026-10-23** entry lists those items and the
+> TASK-129 premise evidence.
+>
+> I want TASK-133 first: move `ctutils` to >= 0.4.4 and `tokio` to >= 1.53.3, re-vendor the new
+> sources from a connected runner, and make `cargo deny check` green without adding an advisory
+> exception. Then, if you have egress, re-run the suite and confirm 1,190 / 2. This is the only
+> thing standing between main and a green `ci`; do not paper over it with `deny.toml` ignores.
+>
+> After that, the open decision is TASK-129: slice 0 proved `[workspace] members` do not exist in
+> pixi 0.83 and that both a merged-feature layout and one-branch-per-workspace already work
+> offline, so decide between proceeding as scoped, closing it as a documentation change, or
+> shipping plan-time reporting first. Do not start the transport half before that ruling.
+>
+> Propose the slice and stop. House rules are in `AGENTS.md`, the session procedure and its
+> four templates are in `.agents/skills/session/`.
+
+### 2026-10-23 (second session) — TASK-133 landed; `ci` on main is green again
+
+`ctutils` 0.4.3 → 0.4.4 and `tokio` 1.53.2 → 1.53.3, closing RUSTSEC-2026-0385 and
+RUSTSEC-2026-0386. PR #197, merge `2db0c937`; `ci`, `publish sandbox` and `docs` are green on main
+afterwards, so the red lint gate recorded in the entry above is closed.
+
+**The provisioning route, and why it was not done here.** This sandbox has no crates.io egress and
+the restored vendor carried only the vulnerable releases, so a temporary `deps-provision.yml` ran on
+a connected runner: two `cargo update --precise` calls, then this repository's own gates
+(`cargo deny check advisories`, `pixi run lint`, `pixi run test`), then a commit of `Cargo.lock` back
+to the branch. That run (40012769426) is green on all three. Two probes were wasted before the
+working version: `actionlint` refuses a `: ` inside a `run:` scalar (fold the message with `>-`, or
+drop the colon), and the second probe re-ran `cargo update -p ctutils@0.4.3` against a lock that was
+already at 0.4.4 and failed with "did not match any packages" — the run was pointless because the
+first run had already moved the lock.
+
+**Two-phase verification, stated as it happened.** The lockfile half was provable only on CI before
+merge: the offline vendor cannot resolve a lock that names crates it does not hold (`locked to
+1.53.3 / candidate versions found which didn't match: 1.53.2`). The re-vendor is the transport
+`publish sandbox` run that `Cargo.lock` in `push_paths` triggers on main — transport `1486dae2` →
+`244614af`, 590 crates. After a fresh restore from that transport (29,954 blobs, 0 failures) the
+offline half was verifiable and passed: `cargo metadata --locked --offline` resolves; the vendored
+`ctutils-0.4.4` / `tokio-1.53.3` `.cargo-checksum.json` `package` fields equal the lock checksums;
+`cargo deny check` reports advisories/bans/licenses/sources ok with `deny.toml` untouched; `lint`
+passes 7/7; the suite is 1,190 passed / 2 skipped, unchanged from the baseline.
+
+**Lockfile noise worth knowing about.** Six crates (`errno`, `quinn-udp`, `rustix`,
+`rustls-platform-verifier`, `tempfile`, `winapi-util`) had their `windows-sys` edge rewritten
+`0.61.2` → `0.52.0` by the same re-resolution. Both versions stay in the lock, nothing entered or
+left the graph, and `--locked` accepts the file. Expect this shape again on any future `cargo
+update` here; it is a resolution artefact, not a downgrade.
+
+**Next session.** TASK-133 is closed; nothing is pending from it. The open decision is still
+TASK-129: slice 0 proved `[workspace] members` do not exist in pixi 0.83 and that both a
+merged-feature layout and one-branch-per-workspace already work offline, so the owner has to pick
+between proceeding as scoped, closing it as a documentation change, or shipping plan-time reporting
+first. TASK-130 and TASK-131 remain To Do. Two items still need a human: issue #193 needs closing
+by hand (this token is 403 on issue writes), and the sandbox has no egress, so any dependency
+change needs the runner-provisioning route described above.
