@@ -33,6 +33,15 @@ pub fn run(args: &PlanArgs) -> Result<()> {
         let config = SandboxConfig::load(&path)
             .with_context(|| format!("loading sandbox publish config {}", path.display()))?;
         let mut plan = config.plan().context("planning sandbox publish jobs")?;
+        // Nested workspaces need the repository root: their locks, their platforms and their
+        // package counts all live on disk. This is the same division `push_paths` already uses,
+        // and it keeps `SandboxConfig::plan` filesystem-free for every other caller.
+        let repo_root_for_workspaces = path.parent().map_or_else(
+            || support::absolute(Path::new(".")).unwrap_or_default(),
+            Path::to_path_buf,
+        );
+        plan.workspaces = pixi_sandbox::nested::plan_workspaces(&config, &repo_root_for_workspaces)
+            .context("resolving the declared nested workspaces")?;
         // `push_paths` is surfaced here, not inside `SandboxConfig::plan`, because deriving
         // it needs a repo root to check which optional vendor manifests actually exist
         // (task-53 AC#3) — every other caller of `plan()` stays filesystem-free.
@@ -52,6 +61,17 @@ pub fn run(args: &PlanArgs) -> Result<()> {
         return Ok(());
     }
 
+    for workspace in &plan.workspaces {
+        println!(
+            "  workspace {}: {} · {} · {} package(s) · {} MiB · bundle {}",
+            workspace.slug,
+            workspace.manifest,
+            workspace.environments.join(","),
+            workspace.packages,
+            support::mib(workspace.size_bytes),
+            workspace.bundle,
+        );
+    }
     println!("schema {} · {} target(s)", plan.schema, plan.include.len());
     for target in plan.include {
         let vendor = if target.cargo_vendor {

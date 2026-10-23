@@ -462,11 +462,20 @@ fn peek_schema_reads_the_field_even_when_the_rest_of_the_file_is_unrecognisable(
 /// anything — naming both the found and the understood schema so the remedy is obvious.
 #[test]
 fn load_refuses_a_schema_newer_than_this_build_understands() {
-    let message = config_error(
-        "schema = 2\nbranch_prefix = \"sandbox\"\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n",
+    // Derived from the constant: a hardcoded `2` here silently becomes "supported" the day the
+    // schema is bumped, which is how this assertion stopped testing anything during TASK-129.
+    let newer = CONFIG_SCHEMA + 1;
+    let message = config_error(&format!(
+        "schema = {newer}\nbranch_prefix = \"sandbox\"\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n"
+    ));
+    assert!(
+        message.contains(&format!("schema {newer} is not supported")),
+        "{message}"
     );
-    assert!(message.contains("schema 2 is not supported"), "{message}");
-    assert!(message.contains("understands 1..=1"), "{message}");
+    assert!(
+        message.contains(&format!("understands 1..={CONFIG_SCHEMA}")),
+        "{message}"
+    );
 }
 
 /// task-53: an optional `[workflow]` table, within schema 1 (issue #79 / AC#1).
@@ -655,5 +664,171 @@ publish = 60
             config.resolved_push_paths(dir.path(), "pixi-sandbox.toml"),
             vec!["only-this.toml".to_string()]
         );
+    }
+}
+
+/// TASK-129: a bundle may declare nested Pixi workspaces explicitly.
+mod nested_workspaces {
+    use super::*;
+    use std::path::Path;
+
+    /// Build a repository root holding the declared nested manifests, so `load`'s filesystem
+    /// half has something real to check.
+    fn repo(manifests: &[(&str, bool)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for (manifest, with_lock) in manifests {
+            let path = dir.path().join(manifest);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "[workspace]\nname = 'nested'\n").unwrap();
+            if *with_lock {
+                fs::write(path.parent().unwrap().join("pixi.lock"), "{}\n").unwrap();
+            }
+        }
+        dir
+    }
+
+    fn write_config(dir: &Path, text: &str) -> std::path::PathBuf {
+        let path = dir.join(".pixi-sandbox.toml");
+        fs::write(&path, text).unwrap();
+        path
+    }
+
+    const DECLARED: &str = r#"
+schema = 2
+branch_prefix = "sandbox"
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+
+[[bundle.workspaces]]
+manifest = "subproject/pixi.toml"
+"#;
+
+    #[test]
+    fn a_schema_two_bundle_declares_nested_workspaces() {
+        let dir = repo(&[("subproject/pixi.toml", true)]);
+        let config = SandboxConfig::load(&write_config(dir.path(), DECLARED)).unwrap();
+        assert_eq!(config.schema, 2);
+        let bundle = &config.bundles[0];
+        assert_eq!(bundle.workspaces.len(), 1);
+        assert_eq!(bundle.workspaces[0].directory().unwrap(), "subproject");
+        assert_eq!(bundle.workspaces[0].slug().unwrap(), "subproject");
+        // Omitted `environments` means the nested project's own default, the same default pixi
+        // itself uses.
+        assert_eq!(
+            bundle.workspaces[0].selected_environments(),
+            vec!["default".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_nested_directory_becomes_one_transport_slug() {
+        let dir = repo(&[("tools/py/pixi.toml", true)]);
+        let text = DECLARED.replace("subproject/pixi.toml", "tools/py/pixi.toml");
+        let config = SandboxConfig::load(&write_config(dir.path(), &text)).unwrap();
+        assert_eq!(config.bundles[0].workspaces[0].slug().unwrap(), "tools-py");
+    }
+
+    #[test]
+    fn a_schema_one_config_still_parses_and_plans() {
+        let dir = repo(&[]);
+        let config = SandboxConfig::load(&write_config(
+            dir.path(),
+            "schema = 1\n\n[[bundle]]\nname = \"developer\"\nenvironments = [\"default\"]\nplatforms = [\"linux-64\"]\n",
+        ))
+        .unwrap();
+        assert!(config.bundles[0].workspaces.is_empty());
+        assert_eq!(config.plan().unwrap().include.len(), 1);
+    }
+
+    #[rstest]
+    #[case::absolute("/etc/pixi.toml", "must be relative")]
+    #[case::parent("../subproject/pixi.toml", "must not contain")]
+    #[case::not_a_manifest("subproject/pixi.yaml", "must name a `pixi.toml`")]
+    #[case::root_manifest("pixi.toml", "must sit in a subdirectory")]
+    #[case::backslash("subproject\\pixi.toml", "must use `/`")]
+    fn an_unsafe_nested_manifest_path_is_refused(#[case] manifest: &str, #[case] reason: &str) {
+        let dir = repo(&[]);
+        // TOML basic strings treat `\` as an escape, so the backslash case has to be written
+        // as TOML would write it — otherwise the test fails to parse instead of refusing.
+        let escaped = manifest.replace('\\', "\\\\");
+        let text = DECLARED.replace("subproject/pixi.toml", &escaped);
+        let message = SandboxConfig::load(&write_config(dir.path(), &text))
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains(reason), "{message}");
+    }
+
+    #[test]
+    fn one_workspace_cannot_be_claimed_by_two_bundles() {
+        let dir = repo(&[("subproject/pixi.toml", true)]);
+        let text = r#"
+schema = 2
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+[[bundle.workspaces]]
+manifest = "subproject/pixi.toml"
+
+[[bundle]]
+name = "docs"
+environments = ["default"]
+platforms = ["osx-arm64"]
+[[bundle.workspaces]]
+manifest = "subproject/pixi.toml"
+"#;
+        let message = SandboxConfig::load(&write_config(dir.path(), text))
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("already claimed by bundle"), "{message}");
+    }
+
+    #[test]
+    fn a_root_environment_named_workspaces_is_refused_when_workspaces_are_declared() {
+        let dir = repo(&[("subproject/pixi.toml", true)]);
+        let text = DECLARED.replace(
+            "environments = [\"default\"]",
+            "environments = [\"workspaces\"]",
+        );
+        let message = SandboxConfig::load(&write_config(dir.path(), &text))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("segment nested workspaces are stored under"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn a_declared_manifest_that_does_not_exist_is_named() {
+        let dir = repo(&[]);
+        let message = SandboxConfig::load(&write_config(dir.path(), DECLARED))
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("subproject/pixi.toml"), "{message}");
+        assert!(message.contains("does not exist"), "{message}");
+    }
+
+    #[test]
+    fn a_nested_workspace_without_a_lockfile_is_named() {
+        let dir = repo(&[("subproject/pixi.toml", false)]);
+        let message = SandboxConfig::load(&write_config(dir.path(), DECLARED))
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("has no pixi.lock"), "{message}");
+    }
+
+    #[test]
+    fn a_nested_rust_workspace_is_refused_and_points_at_task_131() {
+        let dir = repo(&[("subproject/pixi.toml", true)]);
+        fs::write(dir.path().join("subproject/Cargo.lock"), "").unwrap();
+        let message = SandboxConfig::load(&write_config(dir.path(), DECLARED))
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("TASK-131"), "{message}");
     }
 }

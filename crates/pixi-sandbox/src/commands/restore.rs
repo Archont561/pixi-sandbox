@@ -39,6 +39,7 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
     // Refuse all pre-existing destinations before materialising even an otherwise harmless
     // tool. A failed non-force restore should leave the project exactly as it found it.
     ensure_destinations_available(
+        &manifest,
         &project,
         &environments,
         manifest.vendor.as_ref(),
@@ -98,7 +99,11 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
     // 5.5 GiB of `.restore-work` surviving a restore that reported `restore complete`. A failed
     // restore returns above and keeps the staged packs as evidence, which is why the cleanup
     // lives here and not in a drop guard.
-    clean_work_dir(&work, &environments, vendored)?;
+    let staging: Vec<String> = environments
+        .iter()
+        .map(|id| manifest.staging_component(id))
+        .collect();
+    clean_work_dir(&work, &staging, vendored)?;
 
     // The last step, and only after both verifications passed: make the manifest-verified
     // `pixi` and `pixi-sandbox` copies persistently discoverable. A refusal here (an
@@ -385,11 +390,11 @@ fn print_registration(
 /// Remove this restore's scratch: the unpacker's TMPDIR, one materialised pack and one stage per
 /// environment, and the vendor stage. The directory itself goes only when we emptied it, so an
 /// explicit `--work-dir` that was holding something else survives the restore that borrowed it.
-fn clean_work_dir(work: &Path, environments: &[String], vendored: bool) -> Result<()> {
+fn clean_work_dir(work: &Path, staging: &[String], vendored: bool) -> Result<()> {
     support::remove_path(&work.join("tmp"))?;
-    for environment in environments {
-        support::remove_path(&work.join(format!("pack-{environment}")))?;
-        support::remove_path(&work.join(format!("stage-{environment}")))?;
+    for component in staging {
+        support::remove_path(&work.join(format!("pack-{component}")))?;
+        support::remove_path(&work.join(format!("stage-{component}")))?;
     }
     if vendored {
         support::remove_path(&work.join("vendor-stage"))?;
@@ -429,6 +434,7 @@ fn required_space(manifest: &Manifest, environments: &[String]) -> Result<u64> {
 }
 
 fn ensure_destinations_available(
+    manifest: &Manifest,
     project: &Path,
     environments: &[String],
     vendor: Option<&Vendor>,
@@ -439,7 +445,10 @@ fn ensure_destinations_available(
         return Ok(());
     }
     for environment in environments {
-        let target = project.join(".pixi").join("envs").join(environment);
+        // Every declared destination, nested or not: a restore that writes three environments
+        // and then refuses the fourth has already changed the project, which is exactly what
+        // this guard exists to prevent.
+        let target = manifest.env_destination(project, environment)?;
         if target.exists() {
             bail!(
                 "{} already exists — pass --force to replace it",
@@ -546,21 +555,28 @@ fn install_environment(
         .envs
         .get(environment)
         .expect("select_envs checked requested environment");
-    let target = project.join(".pixi").join("envs").join(environment);
+    // The destination comes from core, so `restore` and `doctor --verify-restored` cannot
+    // disagree about where a nested environment belongs (TASK-129).
+    let target = manifest.env_destination(project, environment)?;
     if target.exists() && !force {
         bail!(
             "{} already exists — pass --force to replace it",
             target.display()
         );
     }
+    // The environment's name inside its own project, and a staging identity that is qualified
+    // by workspace so root `default` and `subproject/default` never share scratch.
+    let env_name = manifest.env_name(environment)?.to_string();
+    let staging = manifest.staging_component(environment);
 
-    let pack = work.join(format!("pack-{environment}"));
+    let pack = work.join(format!("pack-{staging}"));
     support::remove_path(&pack)?;
     fs::create_dir_all(&pack).with_context(|| format!("creating {}", pack.display()))?;
     let source_root = branch.join(MANIFEST_DIR);
-    // Blob paths are rooted at `envs/<name>/pack/`; installers consume the contents of
-    // that directory itself, not an additional nested `pack/` component.
-    let prefix = format!("envs/{environment}/pack/");
+    // Blob paths are rooted at `envs/<name>/pack/` (nested: `envs/workspaces/<slug>/<env>/pack/`);
+    // installers consume the contents of that directory itself, not an additional nested `pack/`
+    // component. Both sides ask the manifest, so a layout change cannot desynchronise them.
+    let prefix = manifest.pack_prefix(environment)?;
     for blob in &entry.blobs {
         let relative = support::relative_after(&blob.path, &prefix)?;
         shard::materialise(&source_root, blob, &pack.join(relative))?;
@@ -571,13 +587,13 @@ fn install_environment(
         pack.display()
     );
 
-    let stage = work.join(format!("stage-{environment}"));
+    let stage = work.join(format!("stage-{staging}"));
     support::remove_path(&stage)?;
     fs::create_dir_all(&stage).with_context(|| format!("creating {}", stage.display()))?;
     if unpacker.is_none() {
         pixi_sandbox::native_pack::install(
             &pack,
-            &stage.join(environment),
+            &stage.join(&env_name),
             &target,
             &stage.join("cache"),
         )?;
@@ -588,13 +604,13 @@ fn install_environment(
             .arg("-o")
             .arg(&stage)
             .arg("-e")
-            .arg(environment);
+            .arg(&env_name);
         support::use_work_tmp(&mut command, work);
         support::run(&mut command)
             .with_context(|| format!("unpacking environment {environment}"))?;
     }
 
-    let prefix = stage.join(environment);
+    let prefix = stage.join(&env_name);
     if !prefix.is_dir() {
         bail!(
             "{} completed but did not create {}",
@@ -619,7 +635,7 @@ fn install_environment(
 
     let parent = target.parent().expect("environment has a parent");
     fs::create_dir_all(parent)?;
-    let final_prefix = parent.canonicalize()?.join(environment);
+    let final_prefix = parent.canonicalize()?.join(&env_name);
     write_markers(&prefix, entry, &final_prefix)?;
     let checked =
         verify::verify_staged(manifest, branch, &final_prefix, environment, &prefix, work);

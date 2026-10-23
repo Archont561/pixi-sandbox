@@ -11,6 +11,7 @@ pub mod generated;
 pub mod github;
 pub mod host_probe;
 pub mod native_pack;
+pub mod nested;
 pub mod pack;
 pub mod pipeline;
 pub mod pixi_lock;

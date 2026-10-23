@@ -62,6 +62,109 @@ pub fn plan_layout(
     })
 }
 
+/// One environment this run packs, resolved to the project root that owns its lock.
+///
+/// A nested workspace is not a special kind of environment: it is a different *project root*
+/// (TASK-129). Everything downstream — the lock, the native preflight, the fingerprint — is the
+/// same code path pointed at `root` instead of the repository root.
+#[derive(Debug, Clone)]
+pub struct PackTarget {
+    /// Environment id inside the transport: `default`, or `subproject/default` for a nested one.
+    pub id: String,
+    /// The environment's name in its own project's manifest.
+    pub env: String,
+    /// The project root that owns `pixi.lock` and `.pixi/envs/<env>`.
+    pub root: PathBuf,
+    /// Present for a nested target.
+    pub workspace: Option<WorkspaceTargetRef>,
+}
+
+/// The declared nested workspace a [`PackTarget`] belongs to.
+#[derive(Debug, Clone)]
+pub struct WorkspaceTargetRef {
+    /// Transport identity; the first half of the target's id.
+    pub slug: String,
+    /// The nested `pixi.toml`, relative to the repository root.
+    pub manifest: String,
+    /// The nested project's directory, relative to the repository root.
+    pub directory: String,
+}
+
+/// Resolve `--envs` ids against the repository root and, for `<slug>/<env>` ids, against the
+/// workspaces the sandbox config declares.
+///
+/// The id syntax is the same one `restore --envs` and `doctor --verify-restored --envs` take, so
+/// a branch and a restore are always described by the same words. A nested id is resolved through
+/// the declaration — never by joining the text the operator typed — which is what keeps a
+/// user-supplied name from becoming a path component.
+///
+/// # Errors
+/// Returns an error for an unsafe or duplicate id, for a nested id with no config, and for a
+/// nested id naming a workspace that config does not declare.
+pub fn resolve_targets(
+    repo_root: &Path,
+    envs: &[String],
+    config: Option<&SandboxConfig>,
+) -> Result<Vec<PackTarget>> {
+    validate_env_names(envs)?;
+    let mut seen = BTreeSet::new();
+    let mut targets = Vec::new();
+    for id in envs {
+        if !seen.insert(id.as_str()) {
+            bail!("environment {id:?} was requested more than once");
+        }
+        match id.split_once('/') {
+            None => targets.push(PackTarget {
+                id: id.clone(),
+                env: id.clone(),
+                root: repo_root.to_path_buf(),
+                workspace: None,
+            }),
+            Some((slug, env)) => {
+                let Some(config) = config else {
+                    bail!(
+                        "environment {id:?} names a nested workspace, which only `--config` can \
+                         resolve; pass the sandbox config that declares it"
+                    );
+                };
+                let declaration = config
+                    .bundles
+                    .iter()
+                    .flat_map(|bundle| &bundle.workspaces)
+                    .find(|declaration| declaration.slug().is_ok_and(|derived| derived == slug))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "environment {id:?} names the nested workspace {slug:?}, which the \
+                             sandbox config does not declare"
+                        )
+                    })?;
+                if !declaration
+                    .selected_environments()
+                    .iter()
+                    .any(|declared| declared == env)
+                {
+                    bail!(
+                        "environment {id:?} is not selected by the {slug:?} declaration; it \
+                         carries {:?}",
+                        declaration.selected_environments()
+                    );
+                }
+                targets.push(PackTarget {
+                    id: id.clone(),
+                    env: env.to_string(),
+                    root: repo_root.join(declaration.directory()?),
+                    workspace: Some(WorkspaceTargetRef {
+                        slug: slug.to_string(),
+                        manifest: declaration.manifest.clone(),
+                        directory: declaration.directory()?.to_string(),
+                    }),
+                });
+            }
+        }
+    }
+    Ok(targets)
+}
+
 fn shard_limit_bytes(mebibytes: f64) -> Result<u64> {
     if !mebibytes.is_finite() || mebibytes <= 0.0 {
         bail!("--shard-limit-mib must be a positive finite number");
@@ -82,6 +185,25 @@ fn shard_limit_bytes(mebibytes: f64) -> Result<u64> {
 fn validate_env_names(envs: &[String]) -> Result<()> {
     let mut seen = BTreeSet::new();
     for name in envs {
+        // A nested id is `<slug>/<env>`: two single-segment names joined by exactly one slash.
+        if name.matches('/').count() == 1 {
+            let (slug, env) = name.split_once('/').expect("exactly one slash");
+            for part in [slug, env] {
+                let path = Path::new(part);
+                if part.is_empty()
+                    || part == "."
+                    || part == ".."
+                    || path.is_absolute()
+                    || path.components().count() != 1
+                {
+                    bail!("unsafe environment name {name:?}");
+                }
+            }
+            if !seen.insert(name.as_str()) {
+                bail!("environment {name:?} was requested more than once");
+            }
+            continue;
+        }
         let path = Path::new(name);
         if name.is_empty()
             || name == "."
@@ -91,7 +213,7 @@ fn validate_env_names(envs: &[String]) -> Result<()> {
         {
             bail!("unsafe environment name {name:?}");
         }
-        if !seen.insert(name) {
+        if !seen.insert(name.as_str()) {
             bail!("environment {name:?} was requested more than once");
         }
     }
@@ -143,11 +265,15 @@ pub fn build_files_oracle(
     out: &Path,
     payload: &Path,
     env: &str,
+    env_dir: &str,
     pack: &Path,
     unpacker: Option<&Path>,
     shard_limit: u64,
 ) -> Result<(EnvFiles, u64)> {
-    let scratch = out.join(format!(".pixi-sandbox-verify-{env}"));
+    // The scratch name is one path component: an environment id may carry a workspace prefix
+    // (`subproject/default`), which would otherwise turn scratch into a nested directory that
+    // `remove_path` has to walk back out of.
+    let scratch = out.join(format!(".pixi-sandbox-verify-{}", env.replace('/', "--")));
     support::remove_path(&scratch)?;
     let pack_copy = scratch.join("pack");
     let stage = scratch.join("stage");
@@ -224,7 +350,10 @@ pub fn build_files_oracle(
             .context("scanning the verification-unpacked environment")?;
     support::remove_path(&scratch)?;
 
-    let relative = pixi_sandbox_core::files_manifest::list_rel_path(env);
+    // The oracle lives beside the environment's pack directory, not at a path rebuilt from the
+    // environment's id: a nested environment's `files.json` belongs under the same
+    // `envs/workspaces/<slug>/<env>/` segment as its blobs (TASK-129).
+    let relative = format!("{env_dir}/{}", pixi_sandbox_core::files_manifest::FILE_NAME);
     let list_path = payload.join(&relative);
     let encoded = doc.to_bytes()?;
     fs::write(&list_path, &encoded).with_context(|| format!("writing {}", list_path.display()))?;

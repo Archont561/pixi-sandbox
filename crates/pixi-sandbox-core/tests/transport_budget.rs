@@ -74,8 +74,10 @@ fn manifest() -> Manifest {
                     blob: blob("envs/default/files.json", 5),
                     entries: 1,
                 }),
+                workspace: None,
             },
         )]),
+        workspaces: Vec::new(),
         vendor: Some(Vendor {
             mode: "loose".to_string(),
             crates: 1,

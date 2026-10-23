@@ -105,6 +105,73 @@ pixi-sandbox plan --config pixi-sandbox.toml --json
 
 This emits a GitHub Actions matrix — one job per `bundle × platform`.
 
+### Nested Pixi workspaces (schema 2)
+
+A repository whose root tasks delegate to subprojects (`pixi run --manifest-path subproject/pixi.toml …`)
+needs those subprojects' environments restored too, or the delegated task re-solves and fetches on a
+machine that cannot reach a channel. Declare them explicitly:
+
+```toml
+# pixi-sandbox.toml
+schema = 2
+
+[[bundle]]
+name = "developer"
+environments = ["default"]
+platforms = ["linux-64"]
+
+[[bundle.workspaces]]
+manifest = "subproject/pixi.toml"   # the nested project's lock and prefix
+environments = ["default"]          # optional; omitted means that project's `default`
+```
+
+Nothing is discovered. The list is reviewed configuration, because subprojects commonly pin
+conflicting versions, channels or platforms on purpose — a scan would carry whatever it found and
+call it a decision.
+
+`plan` names every declared workspace, its environments, how many packages its lock resolves and
+the size those artifacts add:
+
+```bash
+pixi-sandbox plan --config pixi-sandbox.toml
+#   workspace subproject: subproject/pixi.toml · default · 42 package(s) · 380 MiB · bundle developer
+```
+
+and `plan --json` carries the same data under `workspaces`. The workflow matrix still comes from
+`include` alone.
+
+**What is refused, and why:**
+
+| Declaration | Refusal |
+| --- | --- |
+| a path outside the repository, or a `.`/`..` component | the value ends up in a join on the consumer's machine |
+| a file that is not a `pixi.toml`, or the repository root's own | the root's environments are declared by `environments` |
+| the same manifest in two bundles | two branches would restore over one prefix |
+| a nested workspace with no `pixi.lock` | pack would fail after the root environments were already packed |
+| a nested workspace with its own `Cargo.lock` | one transport carries one vendored crate tree — see TASK-131 |
+| a root environment named `workspaces` | that is the transport segment nested environments live under |
+| a nested manifest missing a platform the bundle publishes, or a lock that cannot resolve the selected environment | the matrix job would fail on the runner |
+
+Packing takes the same `<workspace>/<env>` ids as restoring:
+
+```bash
+pixi-sandbox pack --repo-root . --config pixi-sandbox.toml \
+  --envs default,subproject/default --platform linux-64 --output-dir .sandbox-out
+```
+
+Each environment is resolved to **its own project root** for its lock, its preflight and its
+per-file oracle. Inside the transport, the root environment keeps the layout it always had
+(`.pixi-sandbox/envs/<env>/pack/…`) and nested ones sit under one fixed segment
+(`.pixi-sandbox/envs/workspaces/<slug>/<env>/pack/…`), where `<slug>` is the declared directory
+with `/` folded to `-` (`tools/py` → `tools-py`). Restore puts the root environment back in
+`.pixi/envs/<env>` and each nested one in **its own project's** `.pixi/envs/<env>` — the layout
+`pixi run --manifest-path …` reads, which is what makes the delegated task offline.
+
+Transport manifests written by this build are **schema 4** whether or not a bundle declares a
+nested workspace, so there is one writer path rather than two. Readers still accept schemas 1–3;
+a consumer on a schema-3-era binary must upgrade before it can read a transport packed after this
+change.
+
 ## 3. Local pack → doctor → publish
 
 <Tabs>

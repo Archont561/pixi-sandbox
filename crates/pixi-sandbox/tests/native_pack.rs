@@ -285,7 +285,7 @@ fn a_locked_project_packs_without_external_helpers(
         &pixi_sandbox_core::manifest::Manifest::path_in(&output),
     )
     .unwrap();
-    assert_eq!(manifest.schema, 3);
+    assert_eq!(manifest.schema, pixi_sandbox_core::manifest::SCHEMA_VERSION);
     assert!(
         manifest.tools.is_empty(),
         "native packing must not implicitly bundle tools"

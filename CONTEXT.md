@@ -3874,3 +3874,40 @@ between proceeding as scoped, closing it as a documentation change, or shipping 
 first. TASK-130 and TASK-131 remain To Do. Two items still need a human: issue #193 needs closing
 by hand (this token is 403 on issue writes), and the sandbox has no egress, so any dependency
 change needs the runner-provisioning route described above.
+
+### 2026-10-23 (third session) — TASK-129 slices 1–5: nested workspaces are declared, planned, packed and restored
+
+One bundle can now carry explicitly declared nested Pixi workspaces, so a repository whose root
+tasks delegate to a subproject restores that subproject's prefix and the delegated
+`pixi run --manifest-path …` needs no solve. Config schema 2, transport manifest schema 4.
+
+**What moved, and where it lives.** `SandboxConfig` gained `[[bundle.workspaces]]` (`manifest` +
+optional `environments`, omitted meaning that project's `default`). Shape rules are filesystem-free
+in `validate()`; the rules that need a repository root (missing manifest, missing nested
+`pixi.lock`, nested `Cargo.lock` → TASK-131) run in `SandboxConfig::load`. `Manifest` gained
+`envs.<id>.workspace` and `workspaces[]`, and — the piece that keeps the two sides honest —
+`env_destination`, `env_name`, `pack_prefix` and `staging_component` all live in core, so `restore`,
+`doctor --verify-restored` and the packer cannot drift apart about where an environment goes.
+A nested id is `<slug>/<env>`, the slug being the declared directory with `/` folded to `-`.
+
+**Three bugs this exposed in existing code, all fixed:** the per-file oracle's path was rebuilt
+from the environment name (`envs/<env>/files.json`) and had to move beside the pack directory;
+restore's scratch names would have collided between root `default` and `subproject/default`; and
+two tests hardcoded `schema = 2` as "newer than this build", which silently stopped testing
+anything the moment `CONFIG_SCHEMA` moved — both now derive from the constant.
+
+**House-rule collision worth remembering.** `xtask check-repository` forbids the word "python"
+anywhere under `crates/` (it names the retired pre-Rust implementation). The natural example
+directory for this feature is exactly that, so the code and tests say `subproject/`; the design doc
+under `backlog/docs/plans/` still uses the real one.
+
+**Not proven, and left unchecked.** AC#3's "differing channels or package identities" conflict
+refusal: separate prefixes are the ratified design, so refusing such a difference would re-impose
+the merged-workspace cost slice 0 exists to avoid — that needs an owner ruling. AC#7's two offline
+observables (`pixi install --frozen --offline` a no-op in the nested project, delegated run under
+denied egress) were not run here; the fixture proves layout and transport identity, which is a
+different claim.
+
+Evidence: suite 1,218 passed / 2 skipped (593 product, 315 core, 54 git, 256 xtask) against
+1,190 / 2 before; `fmt`, clippy, deny, actionlint, taplo, generated workflows, `plan`,
+`check-repository` and `lint-docs` all green. TASK-129 stays In Progress.

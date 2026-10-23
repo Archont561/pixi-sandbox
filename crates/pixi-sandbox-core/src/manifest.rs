@@ -20,7 +20,14 @@ use std::path::{Path, PathBuf};
 /// Schema 2 added `envs.<name>.files` (the per-file oracle for a restored prefix, ADR-13);
 /// a schema-1 transport simply has no oracle and `doctor --verify-restored` says so
 /// instead of guessing.
-pub const SCHEMA_VERSION: u32 = 3;
+///
+/// Schema 4 added nested Pixi workspaces (TASK-129): `envs.<id>.workspace` says which nested
+/// project an environment belongs to, `workspaces[]` lists the declared set, and a nested
+/// environment's id is `<slug>/<env>`. Producers write 4 for **every** transport, root-only
+/// bundles included, so there is one writer path rather than two spellings of the same bytes;
+/// the accepted cost is that a schema-3-era consumer must upgrade before it can read a transport
+/// packed after this change. Readers still accept 1–3 (ADR-24/31).
+pub const SCHEMA_VERSION: u32 = 4;
 
 /// Directory that holds the payload inside a transport / on a branch.
 pub const MANIFEST_DIR: &str = ".pixi-sandbox";
@@ -46,6 +53,10 @@ pub struct Manifest {
     /// environment name → packed environment.
     #[serde(default)]
     pub envs: BTreeMap<String, Env>,
+    /// Nested Pixi workspaces this transport carries (schema 4, TASK-129). A root-only transport
+    /// omits the key entirely, so its manifest stays byte-identical apart from `schema`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspaces: Vec<WorkspaceEntry>,
     /// Present only when the transport carries `cargo vendor` output (decision ADR-6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vendor: Option<Vendor>,
@@ -110,6 +121,37 @@ pub struct Env {
     /// rather than claiming a check it cannot make.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files: Option<EnvFiles>,
+    /// Set when this environment belongs to a nested workspace (schema 4, TASK-129). The env's
+    /// key is then `<slug>/<env>`; everything else about it — the oracle, the blobs, the
+    /// fingerprint — is unchanged, because a nested workspace is just another *project root*.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<WorkspaceRef>,
+}
+
+/// Which nested project an environment belongs to, as the restore side needs it.
+///
+/// Repeated per environment rather than looked up in [`Manifest::workspaces`] so that a manifest
+/// with one missing list entry cannot silently restore a prefix into the wrong project: the
+/// destination is decided by the environment itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceRef {
+    /// The nested `pixi.toml`, relative to the project root: `subproject/pixi.toml`.
+    pub manifest: String,
+    /// The nested project's directory, relative to the project root: `subproject`.
+    pub directory: String,
+}
+
+/// One declared nested workspace, as the transport records it (schema 4, TASK-129).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceEntry {
+    /// Transport identity, the first half of every `<slug>/<env>` id it owns.
+    pub slug: String,
+    /// The nested `pixi.toml`, relative to the project root.
+    pub manifest: String,
+    /// The nested project's directory, relative to the project root.
+    pub directory: String,
+    /// Environments this transport carries from it.
+    pub environments: Vec<String>,
 }
 
 /// The per-file oracle for one environment: `envs/<name>/files.json`.
@@ -227,6 +269,40 @@ impl Manifest {
                     )));
                 }
             }
+            if let Some(workspace) = &env.workspace {
+                check_rel_path(&workspace.manifest, "workspace manifest")?;
+                check_rel_path(&workspace.directory, "workspace directory")?;
+                if workspace.directory.contains('/') {
+                    return Err(Error::Invalid(format!(
+                        "env {name}: workspace directory must be one path segment: {}",
+                        workspace.directory
+                    )));
+                }
+                let expected = format!("{}/", workspace.directory.replace('/', "-"));
+                if !name.starts_with(&expected) {
+                    return Err(Error::Invalid(format!(
+                        "env {name}: a nested environment id must start with `{expected}`"
+                    )));
+                }
+            } else if name.strip_suffix(' ').is_some() || name.contains('/') {
+                return Err(Error::Invalid(format!(
+                    "env {name}: a `/` in an environment id means a nested workspace, but no \
+                     workspace descriptor is recorded"
+                )));
+            }
+        }
+        for workspace in &self.workspaces {
+            if workspace.slug.is_empty() {
+                return Err(Error::Invalid("workspace with an empty slug".to_string()));
+            }
+            check_rel_path(&workspace.manifest, "workspace manifest")?;
+            check_rel_path(&workspace.directory, "workspace directory")?;
+            if workspace.environments.is_empty() {
+                return Err(Error::Invalid(format!(
+                    "workspace {}: no environments declared",
+                    workspace.slug
+                )));
+            }
         }
         if let Some(vendor) = &self.vendor {
             for blob in &vendor.blobs {
@@ -266,6 +342,76 @@ impl Manifest {
             }
         }
         out
+    }
+
+    /// Where this environment's prefix is materialised inside `project`.
+    ///
+    /// The single place both `restore` and `doctor --verify-restored` ask, so the tree one
+    /// command writes is the tree the other one checks. A root environment lands at
+    /// `<project>/.pixi/envs/<env>` exactly as before; a nested one lands in its own project's
+    /// Pixi env directory — `<project>/<directory>/.pixi/envs/<env>` — which is the layout
+    /// `pixi run --manifest-path …` reads, and the reason a delegated task needs no solve.
+    ///
+    /// # Errors
+    /// Returns an error when a nested environment's id does not carry its workspace slug, which
+    /// [`Manifest::validate`] already refuses on a loaded manifest.
+    pub fn env_destination(&self, project: &Path, id: &str) -> Result<PathBuf> {
+        let env = self.envs.get(id).ok_or_else(|| {
+            Error::Invalid(format!("environment {id:?} is not in this transport"))
+        })?;
+        let name = env_name_of(id, env)?;
+        Ok(match &env.workspace {
+            None => project.join(".pixi").join("envs").join(name),
+            Some(workspace) => project
+                .join(&workspace.directory)
+                .join(".pixi")
+                .join("envs")
+                .join(name),
+        })
+    }
+
+    /// The environment's own name, without the `<slug>/` prefix a nested id carries.
+    ///
+    /// # Errors
+    /// Returns an error for an id this transport does not hold, or one whose prefix does not
+    /// match its own workspace descriptor.
+    pub fn env_name<'a>(&self, id: &'a str) -> Result<&'a str> {
+        let env = self.envs.get(id).ok_or_else(|| {
+            Error::Invalid(format!("environment {id:?} is not in this transport"))
+        })?;
+        env_name_of(id, env)
+    }
+
+    /// The restore scratch directory for an environment id, workspace-qualified.
+    ///
+    /// Root `default` and a nested `subproject/default` must not share a staging directory: the
+    /// first failure of a restore leaves the staged packs in place as evidence, and evidence
+    /// filed under the wrong name is worse than none.
+    #[must_use]
+    pub fn staging_component(&self, id: &str) -> String {
+        id.replace('/', "--")
+    }
+
+    /// The transport directory an environment's blobs are recorded under, with its trailing
+    /// slash: `envs/<id>/pack/` for the root, `envs/workspaces/<slug>/<env>/pack/` for a nested
+    /// one. Both `pack` records blobs under it and `restore` strips it, so it lives here once.
+    ///
+    /// # Errors
+    /// Returns an error for an id this transport does not hold.
+    pub fn pack_prefix(&self, id: &str) -> Result<String> {
+        let env = self.envs.get(id).ok_or_else(|| {
+            Error::Invalid(format!("environment {id:?} is not in this transport"))
+        })?;
+        let name = env_name_of(id, env)?;
+        Ok(match &env.workspace {
+            None => format!("envs/{name}/pack/"),
+            Some(workspace) => format!(
+                "envs/{}/{}/{}/pack/",
+                crate::sandbox_config::WORKSPACES_SEGMENT,
+                workspace.directory.replace('/', "-"),
+                name
+            ),
+        })
     }
 
     /// Bytes the payload occupies inside the branch (packed environments, not unpacked).
@@ -374,4 +520,19 @@ fn check_digest(digest: &str, what: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+/// The environment's own name, without the `<slug>/` prefix a nested id carries.
+fn env_name_of<'a>(id: &'a str, env: &Env) -> Result<&'a str> {
+    match &env.workspace {
+        None => Ok(id),
+        Some(workspace) => {
+            let slug = workspace.directory.replace('/', "-");
+            id.strip_prefix(&format!("{slug}/")).ok_or_else(|| {
+                Error::Invalid(format!(
+                    "env {id}: a nested environment id must start with `{slug}/`"
+                ))
+            })
+        }
+    }
 }

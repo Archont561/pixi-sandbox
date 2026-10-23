@@ -9,12 +9,16 @@ use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox::branch_docs::write_branch_docs;
 use pixi_sandbox::embedded_tools::{ToolSource, embed_tool, reported_version};
-use pixi_sandbox::pack::{build_files_oracle, fingerprint_of, record_tree, sum_files};
+use pixi_sandbox::pack::{
+    PackTarget, build_files_oracle, fingerprint_of, record_tree, resolve_targets, sum_files,
+};
 use pixi_sandbox::vendor::{VendorInfo, VendorMode, validate_vendorable_lockfile, vendor_tree};
 use pixi_sandbox_core::host_requirements::HostRequirementSet;
 use pixi_sandbox_core::manifest::{
-    Env, MANIFEST_DIR, MANIFEST_FILE, Manifest, SCHEMA_VERSION, Source, ToolEntry, ToolInfo, Vendor,
+    Env, MANIFEST_DIR, MANIFEST_FILE, Manifest, SCHEMA_VERSION, Source, ToolEntry, ToolInfo,
+    Vendor, WorkspaceEntry, WorkspaceRef,
 };
+use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::shard;
 use std::collections::BTreeMap;
 use std::fs;
@@ -49,6 +53,10 @@ pub fn run(args: PackArgs) -> Result<()> {
 struct PackPlan {
     args: PackArgs,
     root: PathBuf,
+    /// Every environment this run packs, each resolved to the project root that owns its lock
+    /// (TASK-129). A root-only run resolves to one target per `--envs` entry with `root`, which
+    /// is exactly what this command did before the type existed.
+    targets: Vec<PackTarget>,
     out: PathBuf,
     payload: PathBuf,
     shard_limit: u64,
@@ -93,28 +101,46 @@ impl PackPlan {
             validate_vendorable_lockfile(&root)?;
         }
 
-        // Issue #157: a non-wheel PyPI dependency cannot be carried by the native writer.
-        // Refuse it with the selected environment/package named, before any acquisition or
-        // output creation. This keeps the other preflight guards' contract: refusal leaves no
-        // output directory behind and says exactly which dependency to move out.
-        pixi_sandbox::pixi_lock::refuse_non_wheel_pypi(
-            &root.join("pixi.lock"),
-            &args.envs,
-            &args.platform,
-        )?;
+        // Loaded once, before any preflight that depends on it: the config resolves which
+        // project root each `--envs` id belongs to, and (when it declares one) the host
+        // requirements the manifest will carry.
+        let config = args
+            .config
+            .as_deref()
+            .map(|path| {
+                let path = support::absolute(path)?;
+                SandboxConfig::load(&path)
+                    .with_context(|| format!("loading sandbox config {}", path.display()))
+            })
+            .transpose()?;
+        let targets = resolve_targets(&root, &args.envs, config.as_ref())?;
 
-        for environment in &args.envs {
-            pixi_sandbox::native_pack::preflight(&root, environment, &args.platform)?;
+        for target in &targets {
+            // Issue #157: a non-wheel PyPI dependency cannot be carried by the native writer.
+            // Refuse it with the selected environment/package named, before any acquisition or
+            // output creation. A nested workspace gets the same guard against its *own* lock,
+            // which is the whole point of resolving a project root per environment.
+            pixi_sandbox::pixi_lock::refuse_non_wheel_pypi(
+                &target.root.join("pixi.lock"),
+                std::slice::from_ref(&target.env),
+                &args.platform,
+            )?;
+            pixi_sandbox::native_pack::preflight(&target.root, &target.env, &args.platform)?;
         }
 
         // Resolved here, with the other pre-flight guards: a config that cannot be read or
         // does not validate is a refusal that must leave no output directory behind.
-        let host_requirements =
-            pixi_sandbox::pack::resolve_host_requirements(args.config.as_deref(), &args.platform)?;
+        let host_requirements = match &config {
+            None => None,
+            Some(config) => config
+                .host_requirements_for(&args.platform)?
+                .filter(|set| !set.is_empty()),
+        };
 
         Ok(Self {
             args,
             root,
+            targets,
             out,
             payload,
             shard_limit,
@@ -135,8 +161,8 @@ impl PackPlan {
             self.args.platform
         );
         let mut envs = BTreeMap::new();
-        for name in &self.args.envs {
-            self.pack_environment(name, &mut envs)?;
+        for target in &self.targets {
+            self.pack_environment(target, &mut envs)?;
         }
 
         println!("embed tools");
@@ -172,33 +198,56 @@ impl PackPlan {
     /// the per-file oracle for the tree the airlock will receive. The oracle also provides
     /// the honest `unpacked_size_bytes`: measured on the
     /// unpacked tree, not parsed from a version-dependent log line.
-    fn pack_environment(&self, name: &str, envs: &mut BTreeMap<String, Env>) -> Result<()> {
-        let target = self.payload.join("envs").join(name).join("pack");
-        let parent = target
+    fn pack_environment(
+        &self,
+        target: &PackTarget,
+        envs: &mut BTreeMap<String, Env>,
+    ) -> Result<()> {
+        let id = target.id.as_str();
+        // Where this environment's blobs live inside the transport. A nested one sits under the
+        // reserved `workspaces/` segment, so a prefix-anchored blob match can never confuse it
+        // with a root environment called `subproject`.
+        let relative = match &target.workspace {
+            None => PathBuf::from("envs").join(&target.env).join("pack"),
+            Some(workspace) => PathBuf::from("envs")
+                .join(pixi_sandbox_core::sandbox_config::WORKSPACES_SEGMENT)
+                .join(&workspace.slug)
+                .join(&target.env)
+                .join("pack"),
+        };
+        let destination = self.payload.join(&relative);
+        let parent = destination
             .parent()
             .expect("pack target always has an env parent");
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
 
-        pixi_sandbox::native_pack::write(&self.root, name, &self.args.platform, &target)?;
+        pixi_sandbox::native_pack::write(
+            &target.root,
+            &target.env,
+            &self.args.platform,
+            &destination,
+        )?;
 
-        let files = shard::files_under(&target)
-            .with_context(|| format!("reading native pack output for environment {name}"))?;
+        let files = shard::files_under(&destination)
+            .with_context(|| format!("reading native pack output for environment {id}"))?;
         if files.is_empty() {
-            bail!("native pack produced no files for environment {name}");
+            bail!("native pack produced no files for environment {id}");
         }
         let packed_size = sum_files(&files)?;
 
+        let env_dir = relative.to_string_lossy().replace('\\', "/");
         let (oracle, unpacked_size) = build_files_oracle(
             &self.out,
             &self.payload,
-            name,
-            &target,
+            id,
+            &env_dir,
+            &destination,
             None,
             self.shard_limit,
         )
-        .with_context(|| format!("building the per-file oracle for environment {name}"))?;
+        .with_context(|| format!("building the per-file oracle for environment {id}"))?;
         println!(
-            "  {name}: {} files · {} MiB packed · {} MiB unpacked · {} file entries recorded",
+            "  {id}: {} files · {} MiB packed · {} MiB unpacked · {} file entries recorded",
             files.len(),
             support::mib(packed_size),
             support::mib(unpacked_size),
@@ -206,15 +255,22 @@ impl PackPlan {
         );
 
         envs.insert(
-            name.to_string(),
+            id.to_string(),
             Env {
                 platform: self.args.platform.clone(),
-                pack_path: format!("{MANIFEST_DIR}/envs/{name}/pack"),
+                pack_path: format!(
+                    "{MANIFEST_DIR}/{}",
+                    relative.to_string_lossy().replace('\\', "/")
+                ),
                 packed_size_bytes: packed_size,
                 unpacked_size_bytes: unpacked_size,
-                pixi_environment_fingerprint: fingerprint_of(&self.root, name),
+                pixi_environment_fingerprint: fingerprint_of(&target.root, &target.env),
                 blobs: Vec::new(),
                 files: Some(oracle),
+                workspace: target.workspace.as_ref().map(|workspace| WorkspaceRef {
+                    manifest: workspace.manifest.clone(),
+                    directory: workspace.directory.clone(),
+                }),
             },
         );
         Ok(())
@@ -317,6 +373,32 @@ impl PackPlan {
         Ok(())
     }
 
+    /// The declared workspaces this run actually carries, one entry per slug.
+    ///
+    /// Only workspaces whose environments were selected appear, in declaration order, so a
+    /// `--envs` subset does not advertise a workspace the transport has no environment for.
+    fn workspace_entries(&self) -> Vec<WorkspaceEntry> {
+        let mut entries: Vec<WorkspaceEntry> = Vec::new();
+        for target in &self.targets {
+            let Some(workspace) = &target.workspace else {
+                continue;
+            };
+            match entries
+                .iter_mut()
+                .find(|entry| entry.slug == workspace.slug)
+            {
+                Some(entry) => entry.environments.push(target.env.clone()),
+                None => entries.push(WorkspaceEntry {
+                    slug: workspace.slug.clone(),
+                    manifest: workspace.manifest.clone(),
+                    directory: workspace.directory.clone(),
+                    environments: vec![target.env.clone()],
+                }),
+            }
+        }
+        entries
+    }
+
     /// Shard oversized blobs, assemble and validate the manifest, write it (and the branch
     /// docs built from it) under `--output-dir`, and print the summary an operator reads.
     fn write_manifest_and_docs(&self, artifacts: PackedArtifacts) -> Result<()> {
@@ -328,8 +410,16 @@ impl PackPlan {
         } = artifacts;
 
         println!("record manifest and shard oversized files");
-        for (name, environment) in &mut envs {
-            let root = self.payload.join("envs").join(name).join("pack");
+        for (id, environment) in &mut envs {
+            // `pack_path` was computed from the same relative directory the writer used, so the
+            // blob walk asks the manifest where the tree is instead of rebuilding the layout
+            // from the environment's name (which is not a path: `subproject/default`).
+            let relative = environment
+                .pack_path
+                .strip_prefix(MANIFEST_DIR)
+                .with_context(|| format!("env {id}: pack path outside {MANIFEST_DIR}"))?
+                .trim_start_matches('/');
+            let root = self.payload.join(relative);
             environment.blobs = record_tree(&self.payload, &root, self.shard_limit)?;
         }
         if let Some(vendor) = &mut vendor {
@@ -352,6 +442,7 @@ impl PackPlan {
             },
             tools,
             envs,
+            workspaces: self.workspace_entries(),
             vendor,
             host_requirements: self.host_requirements.clone(),
         };
