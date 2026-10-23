@@ -85,3 +85,5 @@ would recreate `backlog/decisions/` starting again at `decision-1`, which would 
 - ADR-30 — Generated CI bootstraps directly from verified standalone releases (TASK-126).
 - ADR-31 — Native format-1 transports replace helper acquisition (TASK-125); supersedes
   ADR-2/3/4/24 for new producers, preserving legacy transport reading.
+- ADR-32 — A transport branch is one bundle for one platform, and its payload stays
+  self-contained (TASK-129); records the shipped topology and forbids a separate vendor branch.
