@@ -5,6 +5,46 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, io, path::Path};
 use url::Url;
 
+/// Every locked-artifact spelling the writer accepts, in the wording every refusal repeats.
+const ACCEPTED_LOCATIONS: &str =
+    "an https:// or http:// URL, a file:// URL, or an absolute local path";
+
+/// Resolve one locked `conda:`/`pypi:` location to a URL the rest of the writer can use.
+///
+/// Lock v7 does not carry a URL for every artifact. Pixi writes a **bare absolute path** when
+/// the channel is a local directory or a `file://` URL (issue #157's neighbouring shape, reported
+/// as TASK-132), so a scheme test alone refuses a lock pixi itself produced. A location is a URL
+/// only when it starts with one of the schemes below; anything else must be an absolute path,
+/// which also keeps a Windows drive letter (`C:\…`) out of URL parsing, where `c` would look
+/// like a scheme.
+///
+/// # Errors
+/// Returns an error naming the offending entry for an unsupported scheme, a relative path, or a
+/// path that cannot be expressed as a file URL.
+fn artifact_location(location: &str) -> Result<Url> {
+    let scheme = location
+        .split_once("://")
+        .map(|(scheme, _)| scheme.to_ascii_lowercase());
+    match scheme.as_deref() {
+        Some("https" | "http" | "file") => Url::parse(location)
+            .with_context(|| format!("locked artifact {location:?} is not a usable URL")),
+        Some(other) => bail!(
+            "unsupported locked artifact scheme {other:?} in {location:?}; expected {ACCEPTED_LOCATIONS}"
+        ),
+        None => {
+            let path = Path::new(location);
+            if !path.is_absolute() {
+                bail!(
+                    "locked artifact {location:?} is neither a URL nor an absolute path; expected {ACCEPTED_LOCATIONS}"
+                );
+            }
+            Url::from_file_path(path).map_err(|()| {
+                anyhow::anyhow!("locked artifact {location:?} is not a usable local file path")
+            })
+        }
+    }
+}
+
 struct Artifact {
     location: Url,
     filename: String,
@@ -128,10 +168,7 @@ fn select(lock: &Value, environment: &str, platform: &str) -> Result<Vec<Artifac
             .find(|record| record[kind].as_str() == Some(location))
             .with_context(|| format!("missing locked package record for {location}"))?
             .clone();
-        let url = Url::parse(location).context("locked artifact must have an absolute URL")?;
-        if !matches!(url.scheme(), "https" | "file") {
-            bail!("unsupported locked artifact scheme: {}", url.scheme());
-        }
+        let url = artifact_location(location)?;
         let filename = url
             .path_segments()
             .and_then(Iterator::last)
@@ -151,7 +188,9 @@ fn select(lock: &Value, environment: &str, platform: &str) -> Result<Vec<Artifac
             let package = conda_record(&mut record, &url, &filename)?;
             let subdir = package.subdir.clone();
             if subdir != "noarch" && subdir != platform {
-                bail!("locked package platform mismatch");
+                bail!(
+                    "locked artifact {location:?} sits in a directory named {subdir:?}, which is neither \"noarch\" nor the requested platform {platform:?}; a locked archive must live under <channel>/<subdir>/{filename}"
+                );
             }
             if !identities.insert(format!("conda:{}", package.name.as_normalized())) {
                 bail!("duplicate locked Conda package");
@@ -183,7 +222,11 @@ fn conda_record(record: &mut Value, url: &Url, filename: &str) -> Result<Package
     let url_subdir = url
         .path_segments()
         .and_then(|mut parts| parts.nth_back(1))
-        .context("Conda URL has no subdir")?;
+        .with_context(|| {
+            format!(
+                "locked Conda artifact {filename:?} has no channel subdir segment; expected <channel>/<subdir>/{filename}"
+            )
+        })?;
     let fields = record
         .as_object_mut()
         .context("invalid locked package record")?;
