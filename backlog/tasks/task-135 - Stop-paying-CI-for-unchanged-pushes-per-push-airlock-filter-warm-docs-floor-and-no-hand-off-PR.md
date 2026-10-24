@@ -4,7 +4,7 @@ title: 'Stop paying CI for unchanged pushes: per-push airlock filter, the warm d
 status: In Progress
 assignee: []
 created_date: '2026-10-24 22:50'
-updated_date: '2026-10-24 23:22'
+updated_date: '2026-10-24 23:59'
 labels:
   - ci
   - workflow
@@ -123,7 +123,7 @@ own proposals.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A before/after ledger is attached: run ids, commit SHAs, runner OS, cache hit/miss state and job/step timings for a docs-only push and a code push, with wall time and aggregate runner minutes kept separate. Failed runs and estimates are never presented as measured savings.
+- [x] #1 A before/after ledger is attached: run ids, commit SHAs, runner OS, cache hit/miss state and job/step timings for a docs-only push and a code push, with wall time and aggregate runner minutes kept separate. Failed runs and estimates are never presented as measured savings.
 - [ ] #2 A markdown-only (or otherwise non-airlock-path) `synchronize` push on a PR that previously touched an airlock path skips both airlock jobs while the required checks report green; an `opened`/`reopened`/`ready_for_review` run and any push touching one of the five airlock globs still runs the full two-tier proof, and draft PRs still skip it. The filter evaluates the push range (`before`..`after`) on synchronize, never the whole PR diff.
 - [ ] #3 `schedule`, `workflow_dispatch` and `workflow_call` airlock runs behave exactly as before — full proof, no filter short-circuit — and the concurrency group, `AIRLOCK_SKIP_CARGO_BUILD` split, self-bin cache and separate rust-cache identities are untouched.
 - [ ] #4 A docs-only PR run restores the Rust cache without saving it (`save-if` bound to the code filter; option A), the `check-ci-builds` step shows a measured drop from the 61 s cold floor toward the warm 0 s observed on code PRs, and every previously gated check still executes on code PRs and on every main push. If option B is chosen instead, the reason and its measured trade-off are recorded and the three xtask checks are shown to still run on every push event.
@@ -136,7 +136,7 @@ own proposals.
 <!-- DOD:BEGIN -->
 - [x] #1 `pixi run --frozen fmt --check`, `pixi run --frozen lint` and `pixi run --frozen test` green, with the before/after suite counts recorded.
 - [ ] #2 Before/after measurements link real workflow runs and state cache hit/miss; no unapproved dispatch, release, tag or transport publish was performed.
-- [ ] #3 The workflow evidence shows skipped jobs satisfying required checks (never Pending) and a code-bearing push still running the full airlock proof and full ci.
+- [x] #3 The workflow evidence shows skipped jobs satisfying required checks (never Pending) and a code-bearing push still running the full airlock proof and full ci.
 - [ ] #4 The task file is completed in house format only once every AC has evidence; anything provable solely on a native runner is left open and named, not checked.
 <!-- DOD:END -->
 
@@ -236,6 +236,26 @@ Vertical slices, biggest measured waste first; agree the filter expression befor
   `some` quantifier, each with a refusal mutation.
 - **Local-mode positive path.** Run `40135970226` (push touching `airlock.yml` and
   `crates/xtask/**`): changes → plan → linux-64 proof all green under local git mode; ci run
-  `40135970225` green. The next push is markdown-only on purpose and is the skip
-  demonstration for AC#2.
+  `40135970225` green.
+- **Skip proven on a real runner (AC#2 clauses 1 and 4).** The markdown-only synchronize
+  push `a6630f50` produced airlock run `40136460735`: **10 s wall time, `changes` success,
+  plan and linux-64 proof skipped, run conclusion success** — the required check is
+  satisfied, not Pending. Because token-mode API diffing would have returned the whole PR
+  (which contains `crates/**`) and run the proof, the skip itself demonstrates that local
+  `before..after` range evaluation is in effect. Runner cost: one ~10 s job instead of
+  plan 491 s + proof 386 s measured on run `40135970226` (ubuntu-latest throughout).
+- **Warm docs floor measured (AC#4 core claim).** On that same push the ci job
+  (`40136460732`) now runs the rust-cache step on the docs path — restore 15 s where the
+  step used to be gated off entirely — and `xtask check-ci-builds` takes **5 s warm versus
+  61 s cold** on PR #206's run `40130578805`; the new `check-airlock-filter` step is
+  sub-second. Caveat, stated plainly: ci.yml's own paths-filter is deliberately PR-wide, so
+  this code-carrying PR still ran its full Rust gates; a PR whose *whole* diff is markdown
+  (the #206 shape) is what shows the full floor-to-floor comparison, and no such PR has run
+  since the change. Main-push behaviour likewise only becomes observable after merge.
+- **Gaps still open, named rather than checked.** AC#2's draft-skip clause was not
+  re-exercised (no draft PR was opened; the expression and the gate test pin the clause).
+  AC#3's `schedule`/`workflow_dispatch`/`workflow_call` paths were deliberately not
+  re-run — no dispatch is authorized for benchmarking; the output defaults to "run"
+  outside `pull_request` events and the gate pins that expression. AC#6 awaits the merge.
+  No release, tag, transport publish or workflow dispatch was performed at any point.
 <!-- SECTION:NOTES:END -->
