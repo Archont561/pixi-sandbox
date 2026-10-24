@@ -3970,3 +3970,30 @@ of each other (run 40116802710).
 new config. `check_ci_test_route` still pins the coverage/doctest/payload steps to
 `steps.changes.outputs.code`, which is why `ci` keeps its own copy of the filter instead of
 reading the new job's output.
+
+### 2026-10-24 (sixth session) — the cargo gate's two halves, split by cost
+
+**What the numbers forced.** Removing vendored crates from the airlock proof (attempted, measured,
+then reconsidered in PR #203) saved only ~25 s in the publisher push; the 118 s that vanished came
+from Tier A alone, because Tier A was running `cargo check --offline --locked` over every
+dependency in a freshly restored tree with no `target/`. The vendor bytes are nearly free; the
+compile is not. So dropping the vendor was the wrong lever for the cost, and keeping it while
+dropping the compile is the right one — except that `skip_cargo` skipped the *wiring* assertion
+too, and the wiring assertion is a file read.
+
+**The split.** `PIXI_SANDBOX_GATE_SKIP_CARGO` still means "this transport vendored nothing, so
+there is nothing to assert". A second switch, `PIXI_SANDBOX_GATE_SKIP_CARGO_BUILD`, keeps the
+wiring assertions and skips only the compile, announcing itself with a `::notice::`. `airlock.yml`
+sets it from `github.event_name == 'pull_request'`, so a PR asserts the wiring and skips ~118 s
+while the Monday cron and any dispatch run both halves. Transports stay the shape the publisher
+ships, on every trigger.
+
+**Where the remaining proof lives.** A PR no longer proves that a real vendored tree compiles
+offline; that claim is now a *scheduled* one, so doc-18 §5.3 gained an explicit criterion: the
+milestone gate reads the last scheduled or dispatched airlock, not a release PR's. Without that
+line "airlock green" would mean the cheap half only.
+
+Evidence: `actionlint`, `taplo`, `cargo fmt --check`, `check-repository`, `check-ci-builds` and
+`cargo check -p pixi-sandbox --tests --features ci` green locally. The step-level saving is
+unmeasured until a PR run of this branch; the expectation is Tier A back to ~22 s with the vendor
+present, and the wiring notice in the log.
