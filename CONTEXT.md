@@ -3993,6 +3993,22 @@ on `main` plus `consumer-proof` installing from that branch. `.pixi-sandbox.toml
 `cargo_vendor = true` because that is what `plan --json` hands the publisher; the file now says so
 next to the value instead of leaving it to be guessed.
 
-Evidence so far: `actionlint`, `check-repository`, `check-ci-builds` and `plan --json` green
-locally. The step-level saving is unmeasured until the next airlock run; the steps that should
-move are pack (39 s), publish (74 s), fetch (12 s) and restore (34 s).
+**Measured (run 40122170602).** The publisher push halved: 74 s → 43 s. Tier A went 140 s → 18 s,
+and that is *not* the transport shrinking — most of those 140 s were the gate's `cargo check
+--offline` against the restored vendor tree, which `skip_cargo` now skips. So the honest ledger is
+"we stopped running a check that cost ~120 s", not "we made the proof cheaper". Pack, fetch and
+restore did not move (39→44, 12→32, 34→34): the vendor was smaller than the four-step arithmetic
+assumed, and the job total was masked anyway by two first-run cache misses.
+
+**Cache scoping, learned the hard way.** `actions/cache` entries are scoped per pull request, so a
+new PR re-warms both the e2e archive (9 s → 83 s) and the released binary (hit → 88 s download).
+Cross-PR cache reuse does not happen; only the default branch's caches are widely restorable. That
+is why consecutive PR runs disagree by ±100 s on the same steps, and it is worth remembering before
+reading any single run as a regression.
+
+**The gap this leaves.** A PR no longer restores a vendored transport, so restore's cargo-vendor
+wiring and the offline-build assertion are proven only where a vendored transport exists — the
+publish run on `main` packs one, `consumer-proof` installs from that branch. If the assertion is
+worth keeping, the weekly `schedule` trigger is the cheap place: `AIRLOCK_CARGO_VENDOR` can stay
+`true` there for one vendored proof a week instead of one per push. That is an owner decision, not
+taken here.
