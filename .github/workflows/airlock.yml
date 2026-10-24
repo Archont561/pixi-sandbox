@@ -283,8 +283,15 @@ jobs:
       # the published branch ships — it may predate `--user-tools`, and an unknown variable is
       # ignored where an unknown flag is a hard error. The restore output must be
       # identical either way — registration is a post-verification step, not payload.
+      # `.pixi` is deliberately not copied. Pixi environments are non-relocatable and pixi
+      # enforces that by recording the prefix path: a copied `.pixi` is a *moved* environment,
+      # and the `package` env this job creates with `pixi run -e package` is never replaced by
+      # the restore, so the first `pixi run` inside the copy dies with "the environment
+      # directory has moved" (TASK-134). An airlock reconstructs a checkout, not a fat clone —
+      # every environment under `restored/.pixi` must therefore come from the transport, which
+      # is also what makes the gate's no-op install assertion mean something.
       - name: Copy the project for the restore
-        run: cp -r project "${{ runner.temp }}/restored"
+        run: rsync -a --exclude .pixi project/ "${{ runner.temp }}/restored/"
 
       - name: Restore into a copy of the project
         working-directory: project
