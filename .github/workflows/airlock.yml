@@ -140,7 +140,10 @@ jobs:
         id: filter
         if: github.event_name == 'pull_request'
         with:
-          predicate-quantifier: every
+          # `some`, not `every`: the proof runs when the push touched AT LEAST ONE watched
+          # path. `every` would skip it on any mixed push (code plus an unrelated markdown
+          # edit) — observed on PR #207's opening run, which skipped the proof entirely.
+          predicate-quantifier: some
           # synchronize judges only what this push changed; opened/reopened/ready_for_review
           # fall back to base..head, so the first proof still sees the whole PR diff.
           base: ${{ github.event.action == 'synchronize' && github.event.before || github.event.pull_request.base.sha }}

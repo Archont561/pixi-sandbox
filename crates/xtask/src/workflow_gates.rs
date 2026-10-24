@@ -417,6 +417,11 @@ pub fn check_airlock_filter(root: &Path) -> Result<()> {
         "per-push filter runs only on pull_request events and keeps id `filter`"
     );
     let with = &filter_step["with"];
+    ensure!(
+        with["predicate-quantifier"].as_str() == Some("some"),
+        "per-push filter must use `some` semantics: one watched path touched must run the \
+         proof, while `every` skips it on any mixed code-and-docs push"
+    );
     let base = with["base"]
         .as_str()
         .context("per-push filter must name an explicit base")?;
