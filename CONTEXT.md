@@ -3997,3 +3997,68 @@ Evidence: `actionlint`, `taplo`, `cargo fmt --check`, `check-repository`, `check
 `cargo check -p pixi-sandbox --tests --features ci` green locally. The step-level saving is
 unmeasured until a PR run of this branch; the expectation is Tier A back to ~22 s with the vendor
 present, and the wiring notice in the log.
+
+### 2026-10-24 (seventh session) — a local push stops paying for delta search
+
+**Measured before touching anything.** 1.2 GiB of incompressible blobs (300 × 4 MiB, the closest
+analogue to conda payloads, which are already-compressed archives) pushed `--force` into a fresh
+bare repo on 2 cores: **117.5 s** by default, 92.0 s with `pack.compression=0`, 30.9 s with
+`core.bigFileThreshold=1`, and **9.6 s** with both — at an identical 1201 MiB on the wire in every
+case. The delta search was pure waste: it compared blobs that cannot delta, and it was 87 s of the
+117. zlib was the smaller half. `pack.threads=1` changed nothing (9.7 s), `pack.window=0` was
+slower than `bigFileThreshold` (12.9 s).
+
+**The decision.** `ShellGit::push` now sends an uncompressed, delta-free pack when the remote names
+something on this machine (`is_local_remote`: a path, a `file://` URL, or a single-letter Windows
+drive), and leaves the packer alone otherwise. The airlock's throwaway remote is
+`$RUNNER_TEMP/airlock-remote.git`, so its ~74 s publish step is the one this targets. The publisher's
+push to `https://github.com` keeps the default packer, because the same flags can inflate an upload
+that *does* contain real deltas — the 1201 MiB identity above is a property of random test data, not
+a proof about `repodata.json`.
+
+**How it is held.** A previewed rstest pins the argv for five remote shapes (path, `file://`, drive
+letter, `https`, scp-like `git@host:owner/repo`): the two `-c` pairs must appear exactly when the
+remote is local. Previewed rather than executed, so a case list containing a real URL never reaches
+for the network to observe its own argv.
+
+**The airlock cannot measure this, and that is by design.** Run 40127613325 on this branch's own
+commit printed 77 s for "Publish to the throwaway remote" — the same number as before the change.
+The publish step runs `pixi run -e package airlock-publish`, whose task is `pixi-sandbox publish`,
+and that binary is the **released** one: `airlock-install-released` is
+`pixi global install --channel https://prefix.dev/archont561/archont561 pixi-sandbox`. A real
+airlock starts from a released asset, so every product-side improvement shows up there one release
+later — which also explains why the 74 s baseline read the same across three unrelated branches.
+The benchmark and the argv test are the evidence for this change; the airlock number becomes a
+measurement after the next release ships it.
+
+**Evidence.** Git crate 59 tests green (was 54: five new cases); product crate 593 green in the
+turbo run; `fmt --check`, `clippy -D warnings` on the crate, `check-repository` and `check-ci-builds`
+green. The full local suite could not be linked here — the workspace's test binaries need ~16 GiB
+and this sandbox has 21 GiB of disk, so `ld` died with a bus error (ENOSPC) on the xtask test
+binaries; that is a sandbox limit, not a result.
+
+### 2026-10-24 (eighth session) — `target/` stops being mostly DWARF
+
+**The anatomy, measured before the change.** A linked `xtask` test binary was 213 MiB, of which
+205 MiB was `.debug_*` and 8 MiB was `.text`; a BDD test binary carried 65 MiB of DWARF against
+16 MiB of code; `target/debug/pixi-sandbox` was 258 MB. The workspace declared only
+`[profile.release]`, so every local build produced full debug info for every dependency, and CI
+never noticed because it exports `CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0`.
+
+**The change.** `[profile.dev.package."*"] debug = 0` and its `[profile.test.package."*"]` twin.
+Dependency crates lose their DWARF; the workspace's own crates keep theirs, so a failing test still
+prints `file:line` for our code. Both entries are needed: `test` does not inherit a `dev` *package*
+override, which is the kind of thing that looks redundant and is not.
+
+**Measured after, same target on the same machine.** `repo_checks_badges` went from 223,179,104
+bytes to 43,842,256 — **213 MiB → 41.8 MiB, −80%** — with debug sections 205 MiB → 29 MiB. The
+surviving 29 MiB is our own crates' debug info, which is the point. A cold build of this one test
+target (full dependency graph included) took 1 m 41 s and left `target/` at 1.4 GiB.
+
+**What was deliberately not done.** `incremental = false`, which the note in `Cargo.toml` records as
+worth a further ~191 MiB here and ~1.1 GiB on a full build. It buys disk by spending the
+edit-compile loop it exists to serve, and the DWARF was the 90% win; the knob stays documented at
+the setting rather than flipped. The `release` profile was already at the floor (`opt-level = "z"`,
+fat LTO, one codegen unit, stripped): assets are 7.1 MiB musl, 2.8–3.2 MiB per `.conda`, so
+`panic = "abort"` would win ~0.3–0.7 MiB and nothing at transport scale.
+

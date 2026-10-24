@@ -102,3 +102,24 @@ codegen-units = 1
 lto = true
 strip = true
 opt-level = "z"
+
+# Debug artifacts for local builds. `target/` is the largest thing this repository produces on a
+# developer's disk — 16 GiB on a cold build of this workspace (2026-10-24, 21 GiB volume) — and
+# almost all of it is DWARF, not code: one linked xtask test binary measured 223 MiB, of which
+# 205 MiB was `.debug_*` sections and 8 MiB was `.text`; a BDD test binary carried 65 MiB of DWARF
+# against 16 MiB of code. Nothing here reduced that, because the only profile this file declared
+# was `release`, and CI masked it with `CARGO_PROFILE_DEV_DEBUG=0` / `_TEST_DEBUG=0`.
+#
+# Dependency crates are the bulk of that DWARF and are never the code being debugged, so their
+# debug info goes. The workspace's own crates keep theirs, which is what keeps `file:line` and
+# locals in a failing test's backtrace. Declared for both profiles because `test` does not
+# inherit a `dev` package override — the twin entries are load-bearing, not redundant.
+#
+# `incremental` is deliberately left at its default. Disabling it reclaims a further ~1 GiB of
+# `target/debug/incremental` (measured) and costs the edit-compile loop it exists to serve;
+# the DWARF above is the 90% win and this is not. Flip it here if disk, not latency, is scarce.
+[profile.dev.package."*"]
+debug = 0
+
+[profile.test.package."*"]
+debug = 0
