@@ -225,4 +225,17 @@ Vertical slices, biggest measured waste first; agree the filter expression befor
   `.github/workflows/airlock.yml` and `crates/xtask/**`): changes → plan → linux-64 proof all
   ran and succeeded; the changes job's real work is checkout 1 s + paths-filter 1 s against
   ~390–490 s of proof it gates. ci run `40134414604` green on the same push.
+- **Second runner fault, root-caused to the action contract.** The markdown-only
+  synchronize push that followed nevertheless ran the full proof (run `40135163133`).
+  dorny/paths-filter's pinned source (`src/main.ts`, commit `ceb8a2b`) shows that on
+  `pull_request` events a non-empty `token` (the default `${{ github.token }}`) makes it
+  ignore `base`/`ref` and read the whole-PR file list through the API. Fix `34ffc421` sets
+  `token: ''`, routing to local git diff where the explicit `before..after` range applies;
+  verified locally that `git diff --name-status d3bafe54..d087805a` is exactly the one
+  markdown file and matches no watched glob. The gate now pins the empty token and the
+  `some` quantifier, each with a refusal mutation.
+- **Local-mode positive path.** Run `40135970226` (push touching `airlock.yml` and
+  `crates/xtask/**`): changes → plan → linux-64 proof all green under local git mode; ci run
+  `40135970225` green. The next push is markdown-only on purpose and is the skip
+  demonstration for AC#2.
 <!-- SECTION:NOTES:END -->
