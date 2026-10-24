@@ -4138,3 +4138,22 @@ Stage D needs the owner's sanction for the tag push and the release dispatch. Pr
 and stop. House rules are in AGENTS.md (invariant 10: anything you do not implement goes in
 CONTEXT.md), the procedure and these templates are in .agents/skills/session/.
 ```
+
+### 2026-10-25 — the milestone tag starts the release lane (doc-18 §5.2)
+
+**Landed** (so: not proposals): `auto-release.yml` triggers on the single
+`push: tags: milestone-v*` glob; a new `xtask resolve-milestone-tag` step (id `milestone`,
+guarded to `github.event_name == 'push'`) turns `milestone-vX.Y.Z` into the `vX.Y.Z` selector
+`prepare-release` already accepts, while dispatch/call keep their `inputs.version`/`inputs.bump`
+fallback; `xtask check-release-triggers` (fixture-tested, wired into `ci.yml` next to
+`check-release-scheduling`) pins the exact glob split so `release.yml`'s `v*.*.*` cannot
+double-build a milestone tag. The resolver is fail-closed on malformed tags.
+
+**Open proposal, not agreed:**
+
+- **`bump=auto` for a milestone tag that carries no version** (the alternative doc-18 §5.2
+  originally sketched). Not built: the `milestone-v*` glob already promises a `v`-version, so
+  every tag reaching the resolver claims strict `X.Y.Z`, and silently auto-bumping after an
+  operator typo (e.g. `milestone-vent`) is the worse failure. If version-less milestone tags are
+  ever wanted, the work is a second explicit glob (e.g. `milestone-latest`) plus a resolver arm
+  that returns `auto`, and a gate test that the two globs stay disjoint from `v*.*.*`.

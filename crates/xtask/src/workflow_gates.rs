@@ -121,6 +121,87 @@ pub fn check_release_scheduling(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The exact tag globs that split the two release workflows (doc-18 §5.2): milestone tags
+/// start the prepare-and-push half, strict semver tags the build-and-publish half.
+const MILESTONE_TAG_GLOB: &str = "milestone-v*";
+const RELEASE_TAG_GLOB: &str = "v*.*.*";
+
+/// Guard the milestone auto-release trigger.
+///
+/// `milestone-v*` starts `auto-release.yml`, whose resolver step turns the tag into the
+/// explicit version `prepare-release` cuts; `release.yml` keeps the strict `v*.*.*` glob,
+/// whose leading-`v` anchor cannot match a milestone tag, so one tag can never build twice.
+///
+/// # Errors
+/// Refuses a missing/widened/duplicated tag glob, a removed manual trigger lane, a missing
+/// or unguarded milestone resolver step, or a prepare step that ignores its resolved output.
+pub fn check_release_triggers(root: &Path) -> Result<()> {
+    let auto = load(root, "auto-release.yml")?;
+    let on = &auto["on"];
+    let milestone_tags = names(&on["push"]["tags"]);
+    ensure!(
+        milestone_tags == [MILESTONE_TAG_GLOB].into_iter().collect(),
+        "auto-release.yml must trigger on push tags of exactly {MILESTONE_TAG_GLOB} (one glob, no widening, no overlap with release.yml)"
+    );
+    ensure!(
+        on["workflow_dispatch"].is_object(),
+        "auto-release.yml must keep its workflow_dispatch lane for manual cuts"
+    );
+    ensure!(
+        on["workflow_call"].is_object(),
+        "auto-release.yml must keep its workflow_call lane for reusable pipelines"
+    );
+    let cut_steps: Vec<_> = steps(&auto["jobs"]["cut"]).collect();
+    let resolver = cut_steps
+        .iter()
+        .copied()
+        .find(|s| s["run"].as_str().is_some_and(|r| r.contains("resolve-milestone-tag")))
+        .context(
+            "auto-release.yml needs a step running `xtask resolve-milestone-tag` before prepare-release",
+        )?;
+    ensure!(
+        resolver["id"].as_str() == Some("milestone"),
+        "the resolve-milestone-tag step must keep id `milestone` so prepare reads steps.milestone.outputs.version"
+    );
+    ensure!(
+        resolver["if"].as_str() == Some("github.event_name == 'push'"),
+        "the resolve-milestone-tag step must run only when github.event_name == 'push': a dispatch or call has no milestone ref_name and would fail the resolve"
+    );
+    ensure!(
+        resolver["run"]
+            .as_str()
+            .is_some_and(|r| r.contains("github.ref_name")),
+        "the resolve-milestone-tag step must read the pushed name from github.ref_name"
+    );
+    let prep = cut_steps
+        .iter()
+        .copied()
+        .find(|s| s["id"].as_str() == Some("prep"))
+        .context("auto-release.yml must keep its `prep` prepare-release step")?;
+    let prep_run = prep["run"]
+        .as_str()
+        .context("the prepare step must keep its one-line run")?;
+    ensure!(
+        prep_run.contains("steps.milestone.outputs.version"),
+        "the prepare step must consume steps.milestone.outputs.version on tag pushes"
+    );
+    ensure!(
+        prep_run.contains("inputs.bump"),
+        "the prepare step must keep its dispatch/call fallback (inputs.version then inputs.bump)"
+    );
+
+    let release = load(root, "release.yml")?;
+    let release_tags = names(&release["on"]["push"]["tags"]);
+    ensure!(
+        release_tags == [RELEASE_TAG_GLOB].into_iter().collect(),
+        "release.yml must keep exactly the {RELEASE_TAG_GLOB} tag glob: its leading-v anchor is what stops a milestone tag double-building the artifacts"
+    );
+    println!(
+        "release triggers: {MILESTONE_TAG_GLOB} starts auto-release; {RELEASE_TAG_GLOB} alone starts the build half"
+    );
+    Ok(())
+}
+
 const DOCS_TRUST: &str = "${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_sha == github.sha }}";
 const DOCS_DEPLOY: &str = "${{ always() && !cancelled() && ((needs.reuse.result == 'success' && needs.build.result == 'skipped') || (needs.build.result == 'success' && needs.reuse.result == 'skipped')) }}";
 

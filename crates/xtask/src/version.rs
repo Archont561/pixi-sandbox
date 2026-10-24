@@ -5,8 +5,11 @@
 //! restating it. The docs site reads the same table itself at build time
 //! (docs/astro.config.mjs), so a release rewrites zero documentation lines there.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use std::path::Path;
+
+/// The prefix of the tag that starts the auto-release lane (doc-18 §5.2).
+pub const MILESTONE_TAG_PREFIX: &str = "milestone-";
 
 /// Read `[workspace.package].version` from `<root>/Cargo.toml`, parsed as TOML rather than
 /// matched by line shape, so a dependency pin or a member manifest can never be mistaken for
@@ -43,4 +46,27 @@ pub fn workspace_version(root: &Path) -> Result<String> {
 pub fn print_version(root: &Path) -> Result<()> {
     print!("{}", workspace_version(root)?);
     Ok(())
+}
+
+/// Resolve a milestone tag into the explicit release selector it promises.
+///
+/// The workflow only starts on the `milestone-v*` glob, so every tag reaching this command
+/// claims to carry a `vX.Y.Z`. A tag that does not is operator error: fail closed rather than
+/// silently cutting an `auto`-bumped release from an unexpected ref. The returned selector
+/// (`vX.Y.Z`) is the explicit-version arm `prepare-release` already understands.
+///
+/// # Errors
+///
+/// Fails when `tag` is not `milestone-v` followed by a strict `X.Y.Z` version.
+pub fn milestone_tag_version(tag: &str) -> Result<String> {
+    let rest = tag
+        .strip_prefix(MILESTONE_TAG_PREFIX)
+        .filter(|rest| rest.starts_with('v'))
+        .with_context(|| format!("{tag:?} is not a milestone-vX.Y.Z tag"))?;
+    let version = &rest[1..];
+    ensure!(
+        crate::util::is_strict_semver(version),
+        "{tag:?} does not carry a strict X.Y.Z version after milestone-v"
+    );
+    Ok(format!("v{version}"))
 }
