@@ -5,10 +5,12 @@ ships *inside a sandbox branch*, see the generated `AGENTS.md` under `.pixi-sand
 branch — different audience, different file.
 
 **Start of session?** Follow `.agents/skills/session/SKILL.md` — it sequences the whole loop:
-the environment bootstrap on an airlocked machine, the backlog survey, the session proposal,
-and, after the pull request merges, the session report that closes the task files and writes
-the next session's opening prompt. Its four templates are in
-`.agents/skills/session/standup-template.md`.
+the environment bootstrap on an airlocked machine, the backlog survey, the **sprint** proposal
+(a session is a sprint by default: one milestone, one version, one release), the staged work,
+and, after the release runs, the sprint report that closes the task files and the milestone and
+writes the next session's opening prompt. Its four templates are in
+`.agents/skills/session/standup-template.md`, and the current sprint train plus what the release
+lane still needs is `backlog/docs/plans/doc-18 - Sprint-Train-and-the-Milestone-Release-Gate.md`.
 
 **Adding a feature or fixing a bug?** Two skills are mandatory, in order, not merged into one
 pass:

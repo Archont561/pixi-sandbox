@@ -1,19 +1,44 @@
 ---
 name: session
-description: Run a pixi-sandbox work session on an airlocked machine, start to finish — bring the offline environment up, survey the backlog, propose the session, and once the work lands on main (a merged pull request or a direct push) report it and write the next session's opening prompt. Use at the start of any session on this repository, when the user says to initialize/bootstrap the environment, pick up tasks from the backlog, or asks what to work on; and again at the end, when work has landed or the user asks for a session report, a hand-off, or what the next session should start with.
+description: Run a pixi-sandbox work session on an airlocked machine, start to finish. A session is a sprint by default — one milestone, one version, one release — not one task: bring the offline environment up, survey the backlog, propose the sprint, work its stages, then cut the release, close the milestone and hand the next session its opening prompt. Use at the start of any session on this repository, when the user says to initialize/bootstrap the environment, pick up a sprint or a milestone, or asks what to work on; and again at the end, when the work has landed, the release has run, or the user asks for a session report, a hand-off, or what the next session should start with.
 ---
 
 # Session lifecycle for pixi-sandbox
 
 A session is a loop with five phases, and this file sequences all of them: **(1)** bring the
-environment up, **(2)** survey the backlog, **(3)** propose the session and stop, **(4)** work
-the tasks under the house rules, **(5)** after the PR merges, report and hand the next session
+environment up, **(2)** survey the backlog, **(3)** propose the **sprint** and stop, **(4)** work
+its stages under the house rules, **(5)** cut the release, then report and hand the next session
 its opening prompt. The four artifacts those phases produce have templates in
 [`standup-template.md`](standup-template.md), cited below as *template §1* … *template §4*.
 
 Two rules span the whole loop. Never propose work you cannot execute — an environment that is
 down changes what is possible. And never close on an unproven claim: the proof an airlocked
 machine cannot produce is an open item, not a checked box.
+
+## 0. A session is a sprint
+
+The default unit of work is a **sprint**, not a task, and the chain is fixed:
+
+> **sprint → one milestone → one version → one release.**
+
+- A **milestone** is exactly one version plus the exit criteria that make it releasable
+  (`backlog/milestones/m-N`). A **sprint** is the work that reaches it, and it is what this
+  session proposes and finishes. The plan that orders it lives in
+  `backlog/docs/plans/doc-N …`, and [doc-18](../../../backlog/docs/plans/doc-18%20-%20Sprint-Train-and-the-Milestone-Release-Gate.md)
+  is the current train plus the list of what must exist for the release lane to run.
+- A sprint has **four stages, always in this order**: **spike** (the one unknown that could
+  invalidate the rest — timeboxed, output is evidence, not a feature), **build** (the
+  milestone's tasks on what the spike proved), **gate** (fmt, lint, the full suite, and
+  `airlock linux-64` on the release branch), **release** (version, PR, merge, milestone tag,
+  watched release runs).
+- A sprint ends when the milestone tag has run the release lane and the milestone file is
+  closed — not when the pull request merges. §5 sequences that.
+
+**Task-long is the exception, and it is chosen explicitly.** Run a single task when the user asks
+for one, or when the sprint's next proof needs many workflow runs, a native runner or a
+maintainer's click — the airlock and release lanes both qualify. Say so in the proposal, name the
+run you are waiting on, and do not let a task-long session drift into a sprint.
+
 
 ## 1. Bring the environment up (airlocked machine)
 
@@ -143,21 +168,36 @@ Facts about this sandbox that shape every command:
    decisions, and published releases stay done; re-running a release that already exists is
    an error, not work.
 
-## 3. Propose the session, then stop
+## 3. Propose the sprint, then stop
 
-Fill in the **Session standup** (template §2) in [`standup-template.md`](standup-template.md)
+Fill in the **Sprint proposal** (template §2) in [`standup-template.md`](standup-template.md)
 and **wait for the user to pick** — do not start implementing.
+
+A sprint proposal names, at minimum: the **milestone and the version** it targets, the **four
+stages** with the tasks in each, the **spike** that starts it and the decision it settles, the
+**gates** that will prove it, the **release step**, and every **decision the user owns** (tag
+vocabulary, sprint scope, whether the release automation lands in this sprint). Propose the whole
+sprint even when the user named a single task: say which stage that task belongs to and what the
+sprint around it would be, then let them choose the narrower scope.
+
+Board changes are proposed, not assumed. Attaching tasks to the milestone, closing a task whose
+criteria are already met, and filing the milestone's release-gate task are all separate edits;
+list them under "what the sprint needs" and wait.
 
 That file carries all four phases of the lifecycle, and a session is only closed when every one
 of them has been produced: the **opening prompt** (template §1) that started this session,
-the **standup** (template §2) you are writing now, a **task hand-off** (template §3) at the end
-of each task, and the **session report** (template §4) after the PR merges — which ends by
-emitting the next opening prompt.
+the **sprint proposal** (template §2) you are writing now, a **task hand-off** (template §3) at
+the end of each task inside the sprint, and the **sprint report** (template §4) after the release
+— which ends by emitting the next opening prompt.
 Use them at those points rather than inventing a shape; the templates are the hand-off protocol
 between sessions, and the loop only closes because the last artifact is the first one.
 
 ## 4. While you work — house rules (AGENTS.md is the full list)
 
+- **Work the sprint stage by stage**, spike first. Do not start stage B on an unproven stage A
+  assumption: if the spike cannot settle its question, that is a proposal amendment for the user,
+  not a reason to build on a guess. Stage C's hygiene tasks run on spare capacity and never at
+  the cost of the stage that gates the release.
 - **One focused conventional commit per task.** The hooks are split by cost, so match your
   rhythm to them:
   - while committing: `pixi run --frozen fmt`. `pre-commit` adds taplo, biome and actionlint
@@ -181,14 +221,48 @@ between sessions, and the loop only closes because the last artifact is the firs
   Watch the required checks; when a platform job fails, read that job's log before changing
   code. What happens after the merge is § 5, not an afterthought.
 
-## 5. After the work lands on main — report, then hand the next session its prompt
+## 5. Close the sprint — cut the release, then report, then hand the next session its prompt
 
-A merge is not the end of a session; it is the first moment you can tell the truth about it.
-The close is the same whether the work arrived by a pull request merge or by one of the direct
-pushes `main` still takes (the release commit, or one commit outside the airlock's paths —
-AGENTS.md invariant 12; `ci`'s last step judges which). §5 step 1 covers the runs either way;
-the report says `Merged: PR #N …` or `Pushed straight to main at <sha>`. Do these in order, and
-do not skip to the report:
+A merge is not the end of a session; it is the first moment you can tell the truth about it. Even
+that is only true for a task-long session: a sprint-long one closes at the release, so this phase
+starts one step earlier.
+
+### 5a. Cut the release (sprint-long sessions)
+
+The version is the sprint's deliverable, so the release is part of the work, not a follow-up.
+In order, and stopping at the first failure:
+
+1. **Prepare.** `pixi run --frozen xtask prepare-release -- <auto|minor|patch|vX.Y.Z>`. It bumps
+   the workspace version, refreshes `Cargo.lock`, regenerates `CHANGELOG.md` and restamps the
+   committed relock render, reporting every file it touched. Read that list; nothing else may be
+   in the release commit.
+2. **Review the bump.** The selector must match the milestone's version policy (`backlog/milestones/m-N`):
+   pre-1.0, a breaking transport or manifest change is a **minor** bump. A `vX.Y.Z` selector
+   bypasses convention — use it only when the milestone names the version explicitly, and say so
+   in the release PR.
+3. **Open the release PR**, house style, with the prepared diff, the airlock verdict for the
+   release branch and the suite count in the body. The release PR is the last place the version
+   can still be questioned.
+4. **Gate it for real.** `ci` green is not an airlock (§5.7 of
+   [doc-18](../../../backlog/docs/plans/doc-18%20-%20Sprint-Train-and-the-Milestone-Release-Gate.md)):
+   if the release PR touches no airlock path, run `airlock.yml` deliberately and wait for both
+   tiers, or say plainly that the release ships without that proof. Never claim it by association.
+5. **Merge, then tag.** `auto-release.yml` today triggers only on `workflow_dispatch` and
+   `workflow_call`; nothing reacts to a milestone tag until doc-18 §5.2 lands. So either dispatch
+   it (`gh workflow run auto-release.yml -f version=vX.Y.Z`) or push the milestone tag once that
+   trigger exists — then watch `release.yml` (five platforms, conda, GitHub Release) and
+   `publish-sandbox.yml` (transport repack) to their verdicts.
+6. **Close the milestone** — its release-gate task's criteria checked, the milestone file's exit
+   criteria satisfied — and write the **next** sprint's plan document and milestone file. A sprint
+   that ends without the next milestone written has handed the next session a planning job.
+
+A release that cannot be cut in this session (no token, a red platform job, a missing asset) is
+reported as an open item with the run id that shows why: the sprint stays open, never quietly
+"done".
+
+### 5b. Report and hand over
+
+Do these in order, and do not skip to the report:
 
 1. **Watch the post-merge runs.** `gh run list --branch main --limit 5`, then read the verdict
    of every workflow the merge triggered (`ci`, `docs`, and — since 2026-10-01 —
@@ -220,4 +294,6 @@ do not skip to the report:
    and have an agent reach the same understanding you have now, without reading the diff.
 
 A session that merged nothing still reports — "Merged: nothing", the ideas in the scratchpad,
-and an opening prompt that says what to decide first.
+and an opening prompt that says what to decide first. So does a sprint that shipped its code but
+could not cut its version: report the merged work, the release blocker and the run that shows it,
+and leave the milestone open.
