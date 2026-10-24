@@ -298,7 +298,13 @@ jobs:
       # policy are explicit inputs; missing inputs fail before a false-positive pass is possible.
       - name: Tier B — gate with the network reachable
         working-directory: project
-        run: pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"
+        run: set -o pipefail && pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}" 2>&1 | tee "${{ runner.temp }}/tier-b.log"
+
+      # TEMPORARY (TASK-134 diagnosis): job-log storage is unreachable from the machine
+      # investigating this, but check-run annotations are. Remove with the fix.
+      - name: Report the Tier B output
+        if: always()
+        run: tail -c 3500 "${{ runner.temp }}/tier-b.log" 2>/dev/null | awk 'BEGIN{ORS=""} {gsub(/%/,"%25"); gsub(/\r/,""); print $0 "%0A"}' > "${{ runner.temp }}/ann.txt" || true; test -f "${{ runner.temp }}/ann.txt" && printf '::error title=Tier B::%s\n' "$(cat "${{ runner.temp }}/ann.txt")" || true
 
       # deny-egress re-execs the same archived tests under `sudo unshare -n` on Linux and
       # `sudo sandbox-exec` with outbound denied on macOS, and fails loudly on any other OS — a
