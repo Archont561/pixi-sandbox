@@ -4036,3 +4036,29 @@ turbo run; `fmt --check`, `clippy -D warnings` on the crate, `check-repository` 
 green. The full local suite could not be linked here — the workspace's test binaries need ~16 GiB
 and this sandbox has 21 GiB of disk, so `ld` died with a bus error (ENOSPC) on the xtask test
 binaries; that is a sandbox limit, not a result.
+
+### 2026-10-24 (eighth session) — `target/` stops being mostly DWARF
+
+**The anatomy, measured before the change.** A linked `xtask` test binary was 213 MiB, of which
+205 MiB was `.debug_*` and 8 MiB was `.text`; a BDD test binary carried 65 MiB of DWARF against
+16 MiB of code; `target/debug/pixi-sandbox` was 258 MB. The workspace declared only
+`[profile.release]`, so every local build produced full debug info for every dependency, and CI
+never noticed because it exports `CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0`.
+
+**The change.** `[profile.dev.package."*"] debug = 0` and its `[profile.test.package."*"]` twin.
+Dependency crates lose their DWARF; the workspace's own crates keep theirs, so a failing test still
+prints `file:line` for our code. Both entries are needed: `test` does not inherit a `dev` *package*
+override, which is the kind of thing that looks redundant and is not.
+
+**Measured after, same target on the same machine.** `repo_checks_badges` went from 223,179,104
+bytes to 43,842,256 — **213 MiB → 41.8 MiB, −80%** — with debug sections 205 MiB → 29 MiB. The
+surviving 29 MiB is our own crates' debug info, which is the point. A cold build of this one test
+target (full dependency graph included) took 1 m 41 s and left `target/` at 1.4 GiB.
+
+**What was deliberately not done.** `incremental = false`, which the note in `Cargo.toml` records as
+worth a further ~191 MiB here and ~1.1 GiB on a full build. It buys disk by spending the
+edit-compile loop it exists to serve, and the DWARF was the 90% win; the knob stays documented at
+the setting rather than flipped. The `release` profile was already at the floor (`opt-level = "z"`,
+fat LTO, one codegen unit, stripped): assets are 7.1 MiB musl, 2.8–3.2 MiB per `.conda`, so
+`panic = "abort"` would win ~0.3–0.7 MiB and nothing at transport scale.
+
