@@ -1,10 +1,10 @@
 ---
 id: TASK-125
 title: Migrate to rattler and abandon pixi-pack/pixi-unpack tools dependency
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-22'
-updated_date: '2026-10-22'
+updated_date: '2026-10-25'
 labels:
   - rattler
   - tools
@@ -188,3 +188,29 @@ The task remains In Progress solely for delivery/review/merge. The new cleanup s
 PR CI before merge; the linked connected/release evidence above belongs to source 0d15c4d8,
 not to an unbuilt claim about every future commit. Controlled billing evidence remains with
 TASK126/127 and is not needed to reinterpret these successful runtime gates.
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-25 closure: the delivery/merge this task waited on has shipped. The native transport is
+the released format as of v0.8.0 — published manifests declare schema 4 with only
+`pixi`/`pixi-sandbox` tools (no pixi-pack/pixi-unpack), `pixi-sandbox-unpack` no longer exists,
+and the packed transport restores through rattler/UV native install paths (ADR-31). All six
+acceptance criteria and all three DoD items are checked above; the connected evidence named in
+the historical notes (CI `39824086495`, publisher `39824086542`, five-platform artifacts-only
+release `39826041383`, Pages `39825855879`) is merged history, and subsequent airlock runs
+exercise the native restore on every PR plus the weekly scheduled full offline compile.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+TASK-125 delivered the rattler migration: pack resolves and installs Conda archives plus UV
+wheels through native libraries instead of pixi-pack/pixi-unpack subprocesses, restore and the
+format-1 compatibility reader need no helper binaries, the tools CLI/catalogue/updater and all
+helper-management flags are removed, and manifests carry explicit, hash-verified tool
+selections. It shipped incrementally through PR #187 and the following native-transport series,
+released as v0.8.0 under ADR-31's accepted scope (rattler 0.54.2 line, TLS off; reqwest
+accepted as unavoidable transitive; Rust 1.94 floor; scoped 0BSD/mailparse license
+exceptions). Closing now that every criterion has merged, released evidence behind it.
+<!-- SECTION:FINAL_SUMMARY:END -->

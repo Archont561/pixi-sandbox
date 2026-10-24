@@ -12,6 +12,7 @@ labels:
   - config
   - plan
   - offline
+milestone: m-1
 dependencies: []
 references:
   - crates/pixi-sandbox-core/src/sandbox_config.rs
