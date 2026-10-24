@@ -236,7 +236,17 @@ fn collect_lock_facts(
 /// dashes/underscores, so the split is anchored on the right side.
 fn package_identity(record: &serde_yaml::Value, location: &str) -> Option<String> {
     let filename = location.rsplit('/').next().unwrap_or(location);
-    if record["conda"].is_string() {
+    if record["pypi"].is_string() {
+        if let (Some(name), Some(version)) = (record["name"].as_str(), record["version"].as_str()) {
+            return Some(format!("{name}=={version}"));
+        }
+        let stem = filename.strip_suffix(".whl")?;
+        let mut parts = stem.split('-');
+        let name = parts.next()?;
+        let version = parts.next()?;
+        Some(format!("{name}=={version}"))
+    } else {
+        // The caller matched this record on its `conda` location, so the else branch is Conda.
         if let (Some(name), Some(version), Some(build)) = (
             record["name"].as_str(),
             record["version"].as_str(),
@@ -257,16 +267,5 @@ fn package_identity(record: &serde_yaml::Value, location: &str) -> Option<String
             .collect::<Vec<_>>()
             .join("-");
         (!name.is_empty()).then(|| format!("{name}=={version}={build}"))
-    } else if record["pypi"].is_string() {
-        if let (Some(name), Some(version)) = (record["name"].as_str(), record["version"].as_str()) {
-            return Some(format!("{name}=={version}"));
-        }
-        let stem = filename.strip_suffix(".whl")?;
-        let mut parts = stem.split('-');
-        let name = parts.next()?;
-        let version = parts.next()?;
-        Some(format!("{name}=={version}"))
-    } else {
-        None
     }
 }

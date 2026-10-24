@@ -261,6 +261,133 @@ fn plan_json_surfaces_record_channels_and_field_based_identities(nested_project:
             .contains(&serde_json::json!("native-fixture==1.0=0")),
         "record fields supply the same identity shape: {workspace}"
     );
+
+    // The same data on the text line, including the non-empty channel join branch.
+    support::bin()
+        .args([
+            "plan",
+            "--config",
+            project.root.join(".pixi-sandbox.toml").to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "channels: file:///local/mirror,https://prefix.dev/example",
+        ))
+        .stdout(predicate::str::contains("native-fixture==1.0=0"));
+}
+
+#[rstest]
+fn plan_text_uses_dashes_when_the_lock_records_no_channel_or_identity(
+    nested_project: NestedProject,
+) {
+    let project = nested_project;
+    let platform = host_platform();
+    // Every selected record is unparseable as an identity or missing from the top-level list,
+    // so the text line must say "-" rather than print an empty segment.
+    let odd = "file:///cache/not-an-archive.zip";
+    let ghost = "file:///cache/ghost-9.9-0.conda";
+    let lock = serde_json::json!({
+        "version": 7,
+        "environments": {
+            "default": {
+                "channels": [],
+                "packages": { platform: [ { "conda": odd }, { "conda": ghost } ] }
+            }
+        },
+        "packages": [ { "conda": odd } ]
+    });
+    fs::write(
+        project.root.join("subproject/pixi.lock"),
+        serde_json::to_vec_pretty(&lock).unwrap(),
+    )
+    .unwrap();
+
+    support::bin()
+        .args([
+            "plan",
+            "--config",
+            project.root.join(".pixi-sandbox.toml").to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("channels: -"))
+        .stdout(predicate::str::contains("set: -"));
+}
+
+#[rstest]
+fn plan_keeps_reporting_when_lock_records_strip_or_omit_identity_data(
+    nested_project: NestedProject,
+) {
+    let project = nested_project;
+    let platform = host_platform();
+    // Every defensive branch in the fact collector in one lock: a url-less channel entry,
+    // a wheel record without name/version fields, a Conda location whose suffix is not an
+    // archive, and a selected location no top-level record matches.
+    let conda_good = "file:///cache/real-conda-2.0-1.tar.bz2";
+    let wheel_bare = "file:///cache/wheelpkg-7.7-py3-none-any.whl";
+    let conda_odd = "file:///cache/not-an-archive.zip";
+    let ghost = "file:///cache/ghost-9.9-0.conda";
+    let lock = serde_json::json!({
+        "version": 7,
+        "environments": {
+            "default": {
+                "channels": [ { "url": "https://example.com/chan" }, {} ],
+                "packages": {
+                    platform: [
+                        { "conda": conda_good },
+                        { "pypi": wheel_bare },
+                        { "conda": conda_odd },
+                        { "conda": ghost }
+                    ]
+                }
+            }
+        },
+        "packages": [
+            { "conda": conda_good, "subdir": "noarch" },
+            { "pypi": wheel_bare },
+            { "conda": conda_odd }
+        ]
+    });
+    fs::write(
+        project.root.join("subproject/pixi.lock"),
+        serde_json::to_vec_pretty(&lock).unwrap(),
+    )
+    .unwrap();
+
+    let output = plan_json(&project.root.join(".pixi-sandbox.toml"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let plan: Value = serde_json::from_slice(&output).unwrap();
+    let workspace = &plan["workspaces"][0];
+    assert_eq!(
+        workspace["channels"],
+        serde_json::json!(["https://example.com/chan"]),
+        "the url-less channel entry is skipped without failing: {workspace}"
+    );
+    assert_eq!(
+        workspace["packages"].as_u64().unwrap(),
+        4,
+        "the count sums every selected entry, including ones without an identity"
+    );
+    let identities = workspace["identities"].as_array().unwrap();
+    assert!(
+        identities.contains(&serde_json::json!("real-conda==2.0=1")),
+        "the Conda identity is parsed from the archive filename: {workspace}"
+    );
+    assert!(
+        identities.contains(&serde_json::json!("wheelpkg==7.7")),
+        "the wheel identity falls back to its PEP 427 filename: {workspace}"
+    );
+    assert!(
+        !identities.iter().any(|value| value
+            .as_str()
+            .is_some_and(|s| s.contains("not-an-archive") || s.contains("ghost"))),
+        "unparseable and unmatched records contribute no identity: {workspace}"
+    );
 }
 
 #[rstest]
