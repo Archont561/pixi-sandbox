@@ -4062,3 +4062,79 @@ the setting rather than flipped. The `release` profile was already at the floor 
 fat LTO, one codegen unit, stripped): assets are 7.1 MiB musl, 2.8–3.2 MiB per `.conda`, so
 `panic = "abort"` would win ~0.3–0.7 MiB and nothing at transport scale.
 
+
+### 2026-10-24 (ninth session) — CI graph, cargo gate, push cost and debug size: the session that measured
+
+**Merged.** PR #202 (sprint-long sessions + the CI graph: `changes` job, Tier B → diagnostic, draft
+skip, markdown out of the code filter, `push_paths` no longer `crates/**`), PR #204 (the cargo gate
+split into a wiring assertion on every PR and the offline compile on the weekly cron), PR #205
+(local-remote pushes stop paying for delta search; dependency DWARF leaves local builds).
+
+**Re-baseline on merged main (`3d715827`).** Full suite **1,223 passed / 2 skipped** — 593 product,
+315 core, 59 git, 256 xtask — up from 1,218, the five new git cases. Post-merge runs: `ci` 122 s
+success, `publish sandbox` 239 s success, `docs` 27 s success.
+
+**The debug-profile change incidentally fixed this sandbox.** Before it, the workspace's test
+binaries demanded ~16 GiB and `ld` died with a bus error (ENOSPC) on a 21 GiB volume; the full suite
+had not been linkable here for the whole session. After it, the same suite builds and runs with
+`target/` at **5.7 GiB**. That is the strongest evidence the change did what it claims.
+
+**Learned about the airlock, all of it written into the workflow or doc-18.** It publishes with the
+**released** binary (`pixi global install … pixi-sandbox`), so a product-side improvement shows up
+in its numbers one release later — not a defect, but it means the airlock is the wrong instrument
+for judging this session's two `pixi-sandbox-git` changes. `actions/cache` is scoped **per pull
+request**, so every new PR re-warms the e2e archive and the released binary (9 s → ~100 s on first
+run). `paths:` on a `pull_request` trigger matches the **whole PR diff**, so a PR that ever touched
+`crates/**` runs the airlock on every later push regardless of that push's content.
+
+**Open, and not started.**
+- **Vendor filtering** — `cargo vendor` ships the whole lockfile graph: 805 MiB, of which 368 MiB is
+  Windows crates and 69 MiB `aws-lc` that a linux-64 transport can never compile
+  (`cargo tree --target x86_64-unknown-linux-gnu` contains none of them). `cargo-vendor-filterer`
+  would take ~350–400 MiB off every published branch. Measured, not approved, not implemented.
+- **The docs-only floor is 83 s, and 61 s of it is `check-ci-builds`.** PR #206 (this file, one
+  markdown commit) skipped fmt, lint, doctests, coverage, codecov *and* rust-cache — then compiled
+  the workspace from scratch to run `pixi run xtask check-ci-builds`. The gate is correct to run;
+  the cache is the thing gated wrongly, since `rust-cache` sits behind the same code filter that
+  the Rust steps do. Two ways out: restore the cache unconditionally (it is a download, not a
+  build), or gate the xtask checks like the rest. Either is ~55 s off every documentation PR.
+- **Per-step budgets** (T4) — the reason every question this session cost four API calls instead of
+  a glance at `$GITHUB_STEP_SUMMARY`.
+- **doc-18 §7's four owner decisions** — tag vocabulary, sprint scope, who pushes the tag, whether
+  the tag trigger lands this sprint. Deferred again on 2026-10-24; they are the whole gate in front
+  of the m-1 sprint train.
+- **`incremental = false`** — documented in `Cargo.toml` at its setting, worth a further ~1.1 GiB
+  locally, not taken.
+
+**The next session's opening prompt.**
+
+```
+Restore the sandbox (`bash scripts/restore.sh`, then export PATH="$HOME/.local/bin:$PATH") and
+baseline the suite: expect 1,223 passing / 2 skipped (593 product, 315 core, 59 git, 256 xtask).
+The full suite now links here — target/ lands at ~5.7 GiB because dependency DWARF is off; if it
+fails with a bus error from `ld`, check `df -h /` before blaming the tree. Then read CONTEXT.md
+§ Session scratchpad — "2026-10-24 (ninth session)" lists four open items.
+
+This session is sprint 1 of milestone m-1 (0.9.0, "Nested workspaces in one transport"). The plan
+is `backlog/docs/plans/doc-18 - Sprint-Train-and-the-Milestone-Release-Gate.md`: stage A is the
+spike on TASK-129's observables criterion (it needs a pixi-generated lock; the hand-built fixture
+lock is rejected with "missing field 'subdir'"), stage B is TASK-129 then TASK-131, stage C is the
+gate (fmt, lint, the full suite, and `airlock linux-64` on the release branch — note that a PR
+airlock now asserts the vendor wiring but skips the offline compile, which only the weekly cron and
+a dispatch run), stage D is the release (prepare-release, release PR, milestone tag
+`milestone-v0.9.0`).
+
+Decisions already made, do not re-open: tag vocabulary is `milestone-v0.9.0`; the tag is pushed by
+a human after the merge, not by the merge itself; `release.yml`'s `v*.*.*` does not match it. Still
+open with the owner, and the reason the sprint has not started: the sprint's scope (TASK-129 +
+TASK-131 assumed), the tag push, and whether the milestone-tag trigger lands in this sprint — ask
+for those three before proposing stages, since doc-18 §5.2 does not exist yet.
+
+Do not restart the CI optimisation work: #202, #204 and #205 landed and are measured. The two open
+items there are vendor filtering (measured at ~350–400 MiB, unapproved) and per-step budgets; both
+are worth a proposal, neither is this sprint.
+
+Stage D needs the owner's sanction for the tag push and the release dispatch. Propose the sprint
+and stop. House rules are in AGENTS.md (invariant 10: anything you do not implement goes in
+CONTEXT.md), the procedure and these templates are in .agents/skills/session/.
+```
