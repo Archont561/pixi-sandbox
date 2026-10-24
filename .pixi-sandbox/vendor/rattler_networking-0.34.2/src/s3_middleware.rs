@@ -1,0 +1,800 @@
+//! Middleware to handle `s3://` URLs to pull artifacts from an S3 bucket
+use std::{collections::HashMap, sync::Arc};
+
+use async_once_cell::OnceCell;
+use async_trait::async_trait;
+use aws_config::BehaviorVersion;
+use aws_sdk_s3::{
+    config::SharedCredentialsProvider,
+    presigning::{PresigningConfig, PresigningConfigError},
+};
+use http::Method;
+use reqwest::{Request, Response};
+use reqwest_middleware::{Middleware, Next, Result as MiddlewareResult};
+use url::Url;
+
+use crate::{Authentication, AuthenticationStorage};
+
+/// An error that occurred while turning an `s3://` request into a presigned
+/// HTTPS one.
+#[derive(Debug, thiserror::Error)]
+pub enum S3MiddlewareError {
+    /// The URL has no host, so there is no bucket to talk to.
+    #[error("no bucket name in the S3 URL '{0}'")]
+    MissingBucket(Url),
+
+    /// The URL's path does not name an object within the bucket.
+    #[error("no object key in the S3 URL '{0}'")]
+    MissingKey(Url),
+
+    /// The URL could not be interpreted as a URL at all. Only reachable through
+    /// the generic [`reqwest::IntoUrl`] bound of the authentication storage
+    /// lookup.
+    #[error(transparent)]
+    InvalidUrl(#[from] reqwest::Error),
+
+    /// The authentication storage holds credentials for the bucket, but not of a
+    /// kind that can sign an S3 request.
+    #[error("the credentials stored for '{0}' are not S3 credentials")]
+    UnsupportedAuthentication(Url),
+
+    /// The requested expiry is not one the AWS SDK accepts for a presigned URL.
+    #[error("cannot presign an S3 request that expires in {}s", expiration.as_secs())]
+    Expiration {
+        /// The expiry that was asked for.
+        expiration: std::time::Duration,
+        /// The reason the AWS SDK rejected it.
+        #[source]
+        source: PresigningConfigError,
+    },
+
+    /// The AWS SDK could not sign the request — most commonly because it could
+    /// not resolve credentials for the bucket, or because the ones it resolved
+    /// have expired.
+    #[error("failed to presign the S3 {method} request for '{url}'")]
+    Presign {
+        /// The HTTP method the request was to be signed for.
+        method: Method,
+        /// The `s3://` URL that was being signed.
+        url: Url,
+        /// The error reported by the AWS SDK. Boxed because the SDK's
+        /// per-operation error types are large and differ per method.
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    /// The AWS SDK handed back a presigned URI that is not a valid URL.
+    #[error("the AWS SDK returned an unparsable presigned URL '{uri}'")]
+    InvalidPresignedUrl {
+        /// The URI as the SDK returned it.
+        uri: String,
+        /// The reason it could not be parsed.
+        #[source]
+        source: url::ParseError,
+    },
+
+    /// The request cannot be replayed against the presigned URL.
+    #[error("cannot send the presigned S3 request: its body is a stream that cannot be cloned")]
+    UnclonableRequest,
+}
+
+/// How to address an S3 bucket.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum S3AddressingStyle {
+    /// Address the bucket as a virtual host, e.g.
+    /// <https://bucket-name.s3.us-east-1.amazonaws.com>.
+    #[default]
+    VirtualHost,
+
+    /// Address the bucket through the path, e.g.
+    /// <https://s3.us-east-1.amazonaws.com/bucket-name>.
+    Path,
+}
+
+#[cfg(feature = "rattler_config")]
+impl From<rattler_config::config::s3::S3AddressingStyle> for S3AddressingStyle {
+    fn from(value: rattler_config::config::s3::S3AddressingStyle) -> Self {
+        match value {
+            rattler_config::config::s3::S3AddressingStyle::VirtualHost => Self::VirtualHost,
+            rattler_config::config::s3::S3AddressingStyle::Path => Self::Path,
+        }
+    }
+}
+
+/// Configuration for the S3 middleware.
+#[derive(Clone, Debug)]
+pub enum S3Config {
+    /// Use the default AWS configuration.
+    ///
+    /// Credentials come from the default provider chain of the AWS SDK, which
+    /// renews the temporary credentials of AWS SSO, an assumed role or the
+    /// instance metadata service as they expire.
+    FromAWS,
+    /// Use a custom configuration.
+    Custom {
+        /// The endpoint URL to use for the S3 client.
+        endpoint_url: Url,
+        /// The region to use for the S3 client.
+        region: String,
+        /// How to address the bucket.
+        addressing_style: S3AddressingStyle,
+        /// The provider to ask for the credentials to sign requests with.
+        ///
+        /// `None` takes the credentials from the authentication storage, and
+        /// falls back to the default provider chain of the AWS SDK if the
+        /// storage holds none for the bucket.
+        ///
+        /// Pass a provider for anything that runs longer than the lifetime of a
+        /// single set of temporary credentials: the access keys in the
+        /// authentication storage are static, so a run that outlives them fails
+        /// with `ExpiredToken`, while a provider is asked again for a fresh set.
+        credentials_provider: Option<SharedCredentialsProvider>,
+    },
+}
+
+#[cfg(feature = "rattler_config")]
+/// Compute the S3 configuration from the given S3 options.
+pub fn compute_s3_config<M>(s3_options: &M) -> HashMap<String, S3Config>
+where
+    M: IntoIterator<Item = (String, rattler_config::config::s3::S3Options)> + Clone,
+{
+    s3_options
+        .clone()
+        .into_iter()
+        .map(|(k, v)| {
+            (
+                k,
+                S3Config::Custom {
+                    endpoint_url: v.endpoint_url,
+                    region: v.region,
+                    addressing_style: v.addressing_style.into(),
+                    credentials_provider: None,
+                },
+            )
+        })
+        .collect()
+}
+
+#[cfg(feature = "rattler_config")]
+/// Compute the S3 configuration from the `s3-options` of the shared rattler
+/// configuration (see [`rattler_config`]).
+///
+/// Accepts a [`rattler_config::config::CommonConfig`]; a `&ConfigBase<T>` of
+/// any extension coerces into it.
+pub fn compute_s3_config_from_config(
+    config: &rattler_config::config::CommonConfig,
+) -> HashMap<String, S3Config> {
+    config
+        .s3_options
+        .0
+        .iter()
+        .map(|(bucket, options)| {
+            (
+                bucket.clone(),
+                S3Config::Custom {
+                    endpoint_url: options.endpoint_url.clone(),
+                    region: options.region.clone(),
+                    addressing_style: options.addressing_style.into(),
+                    credentials_provider: None,
+                },
+            )
+        })
+        .collect()
+}
+
+/// Wrapper around S3 client.
+#[derive(Clone, Debug)]
+pub struct S3 {
+    auth_storage: AuthenticationStorage,
+    config: HashMap<String, S3Config>,
+    expiration: std::time::Duration,
+    default_client: Arc<async_once_cell::OnceCell<aws_config::SdkConfig>>,
+}
+
+/// S3 middleware to authenticate requests.
+#[derive(Clone, Debug)]
+pub struct S3Middleware {
+    s3: S3,
+}
+
+impl S3Middleware {
+    /// Create a new S3 middleware.
+    pub fn new(config: HashMap<String, S3Config>, auth_storage: AuthenticationStorage) -> Self {
+        tracing::trace!("Creating S3 middleware using {:?}", config);
+        Self {
+            s3: S3::new(config, auth_storage),
+        }
+    }
+}
+
+impl S3 {
+    /// Create a new S3 client wrapper.
+    pub fn new(config: HashMap<String, S3Config>, auth_storage: AuthenticationStorage) -> Self {
+        Self {
+            config,
+            auth_storage,
+            expiration: std::time::Duration::from_secs(300),
+            default_client: Arc::new(OnceCell::new()),
+        }
+    }
+
+    /// Create an S3 client.
+    ///
+    /// A client is created per request, and the credential provider behind it is
+    /// asked for credentials while the request is signed, so expiring
+    /// credentials are renewed as the run goes on. The loaded
+    /// [`aws_config::SdkConfig`] is cached, not the credentials it resolves.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The S3 URL to obtain authentication information from the
+    ///   authentication storage. Only respected for custom (non-AWS-based)
+    ///   configuration without a credential provider of its own.
+    #[allow(clippy::result_large_err)] // boxing fields of the public error type would be breaking
+    pub async fn create_s3_client(
+        &self,
+        url: Url,
+    ) -> Result<aws_sdk_s3::Client, S3MiddlewareError> {
+        let sdk_config = self
+            .default_client
+            .get_or_init(aws_config::defaults(BehaviorVersion::latest()).load())
+            .await;
+
+        let bucket_name = url
+            .host_str()
+            .ok_or_else(|| S3MiddlewareError::MissingBucket(url.clone()))?
+            .to_owned();
+        if let S3Config::Custom {
+            endpoint_url,
+            region,
+            addressing_style,
+            credentials_provider,
+        } = self
+            .config
+            .get(&bucket_name)
+            .unwrap_or(&S3Config::FromAWS)
+            .clone()
+        {
+            let config_builder = aws_sdk_s3::config::Builder::from(sdk_config)
+                .endpoint_url(endpoint_url)
+                .region(aws_sdk_s3::config::Region::new(region))
+                .force_path_style(addressing_style == S3AddressingStyle::Path);
+
+            // A provider handed to us can produce a fresh set of credentials
+            // whenever the ones it handed out before expire, so it takes
+            // precedence over the static access keys in the storage.
+            let config_builder = if let Some(credentials_provider) = credentials_provider {
+                config_builder.credentials_provider(credentials_provider)
+            } else {
+                match self.auth_storage.get_by_url(url.clone())? {
+                    (
+                        _,
+                        Some(Authentication::S3Credentials {
+                            access_key_id,
+                            secret_access_key,
+                            session_token,
+                        }),
+                    ) => config_builder.credentials_provider(aws_sdk_s3::config::Credentials::new(
+                        access_key_id,
+                        secret_access_key,
+                        session_token,
+                        None,
+                        "rattler",
+                    )),
+                    (_, Some(_)) => {
+                        return Err(S3MiddlewareError::UnsupportedAuthentication(url));
+                    }
+                    (_, None) => {
+                        tracing::debug!(
+                            "No S3 credentials in rattler auth storage for bucket '{}', \
+                             falling back to AWS SDK default credential chain",
+                            bucket_name
+                        );
+                        config_builder
+                    }
+                }
+            };
+            let s3_config = config_builder.build();
+            Ok(aws_sdk_s3::Client::from_conf(s3_config))
+        } else {
+            let mut s3_config_builder = aws_sdk_s3::config::Builder::from(sdk_config);
+
+            // Set the region from the default provider chain.
+            s3_config_builder.set_region(sdk_config.region().cloned());
+
+            // Infer if we expect path-style addressing from the endpoint URL.
+            if let Some(endpoint_url) = sdk_config.endpoint_url() {
+                // If the endpoint URL is localhost, we probably have to use path-style
+                // addressing. xref: https://github.com/awslabs/aws-sdk-rust/issues/1230
+                if endpoint_url.starts_with("http://localhost") {
+                    s3_config_builder = s3_config_builder.force_path_style(true);
+                }
+                // same with cloudflare R2
+                if endpoint_url.starts_with("r2.cloudflarestorage.com") {
+                    s3_config_builder = s3_config_builder.force_path_style(true);
+                }
+            }
+            Ok(aws_sdk_s3::Client::from_conf(s3_config_builder.build()))
+        }
+    }
+
+    /// Generate a pre-signed S3 `GetObject` request.
+    #[allow(clippy::result_large_err)]
+    async fn generate_presigned_s3_url(
+        &self,
+        url: Url,
+        method: &Method,
+    ) -> Result<Url, S3MiddlewareError> {
+        let client = self.create_s3_client(url.clone()).await?;
+
+        let presign_config = PresigningConfig::expires_in(self.expiration).map_err(|source| {
+            S3MiddlewareError::Expiration {
+                expiration: self.expiration,
+                source,
+            }
+        })?;
+
+        let bucket_name = url
+            .host_str()
+            .ok_or_else(|| S3MiddlewareError::MissingBucket(url.clone()))?;
+        let key = url
+            .path()
+            .strip_prefix("/")
+            .ok_or_else(|| S3MiddlewareError::MissingKey(url.clone()))?;
+
+        // Every arm signs with the same bucket and key, and reports a failure to
+        // sign the same way; only the operation the SDK is asked for differs.
+        let presign_failed =
+            |source: Box<dyn std::error::Error + Send + Sync>| S3MiddlewareError::Presign {
+                method: method.clone(),
+                url: url.clone(),
+                source,
+            };
+        let presigned_request = match *method {
+            Method::HEAD => client
+                .head_object()
+                .bucket(bucket_name)
+                .key(key)
+                .presigned(presign_config)
+                .await
+                .map_err(|e| presign_failed(Box::new(e)))?,
+            Method::POST => client
+                .put_object()
+                .bucket(bucket_name)
+                .key(key)
+                .presigned(presign_config)
+                .await
+                .map_err(|e| presign_failed(Box::new(e)))?,
+            Method::GET => client
+                .get_object()
+                .bucket(bucket_name)
+                .key(key)
+                .presigned(presign_config)
+                .await
+                .map_err(|e| presign_failed(Box::new(e)))?,
+            _ => unimplemented!("Only HEAD, POST and GET are supported for S3 requests"),
+        };
+
+        Url::parse(presigned_request.uri()).map_err(|source| {
+            S3MiddlewareError::InvalidPresignedUrl {
+                uri: presigned_request.uri().to_string(),
+                source,
+            }
+        })
+    }
+}
+
+#[async_trait]
+impl Middleware for S3Middleware {
+    /// Create a new authentication middleware for S3.
+    async fn handle(
+        &self,
+        mut req: Request,
+        extensions: &mut http::Extensions,
+        next: Next<'_>,
+    ) -> MiddlewareResult<Response> {
+        // Only intercept `s3://` requests.
+        if req.url().scheme() != "s3" {
+            return next.run(req, extensions).await;
+        }
+
+        let url = req.url().clone();
+        let presigned_url = self
+            .s3
+            .generate_presigned_s3_url(url, req.method())
+            .await
+            .map_err(reqwest_middleware::Error::middleware)?;
+        *req.url_mut() = presigned_url;
+        let cloned_req = req.try_clone().ok_or_else(|| {
+            reqwest_middleware::Error::middleware(S3MiddlewareError::UnclonableRequest)
+        })?;
+        next.run(cloned_req, extensions).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use aws_credential_types::provider::{ProvideCredentials, future};
+    use aws_sdk_s3::config::Credentials;
+    use rstest::{fixture, rstest};
+    use temp_env::async_with_vars;
+    use tempfile::{TempDir, tempdir};
+
+    use super::*;
+    use crate::authentication_storage::backends::file::FileStorage;
+
+    /// Guard against regressions in the AWS SDK / reqwest crypto provider
+    /// alignment.
+    ///
+    /// `reqwest` 0.13's `rustls` feature uses `aws-lc-rs` as its rustls
+    /// crypto backend. We rely on `aws-smithy-http-client/rustls-aws-lc`
+    /// (plus `default-https-client` on `aws-config` and `aws-sdk-s3`) to
+    /// make the AWS SDK pick the same backend, so the process only pulls
+    /// in one rustls crypto crate and we don't have to hand-build an HTTP
+    /// client to align them.
+    ///
+    /// Without those features, building an SDK operation panics with
+    /// "a `http_client` is required". This exercises that path so a
+    /// regression surfaces here, alongside reqwest, in the same process.
+    #[tokio::test]
+    async fn aws_sdk_and_reqwest_share_default_https_client() {
+        // Force reqwest to initialize its rustls stack (uses aws-lc-rs via
+        // the `rustls` feature in reqwest 0.13).
+        let _reqwest_client = reqwest::Client::builder()
+            .build()
+            .expect("reqwest client builds");
+
+        // Force the AWS SDK to initialize its default HTTPS client and
+        // build an operation. If `default-https-client` /
+        // `rustls-aws-lc` are not wired up, this panics.
+        let s3 = S3::new(HashMap::new(), AuthenticationStorage::empty());
+        let _ = s3
+            .create_s3_client(Url::parse("s3://example-bucket/key").unwrap())
+            .await
+            .expect("S3 client builds");
+    }
+
+    #[tokio::test]
+    async fn test_presigned_s3_request_endpoint_url() {
+        let s3 = S3::new(HashMap::new(), AuthenticationStorage::empty());
+        let presigned = async_with_vars(
+            [
+                ("AWS_ACCESS_KEY_ID", Some("minioadmin")),
+                ("AWS_SECRET_ACCESS_KEY", Some("minioadmin")),
+                ("AWS_REGION", Some("eu-central-1")),
+                ("AWS_ENDPOINT_URL", Some("http://custom-aws")),
+            ],
+            async {
+                s3.generate_presigned_s3_url(
+                    Url::parse("s3://rattler-s3-testing/channel/noarch/repodata.json").unwrap(),
+                    &Method::GET,
+                )
+                .await
+                .unwrap()
+            },
+        )
+        .await;
+        assert!(
+            presigned
+                .to_string()
+                .starts_with("http://rattler-s3-testing.custom-aws/channel/noarch/repodata.json?"),
+            "Unexpected presigned URL: {presigned:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_presigned_s3_request_aws() {
+        let s3 = S3::new(HashMap::new(), AuthenticationStorage::empty());
+        let presigned = async_with_vars(
+            [
+                ("AWS_ACCESS_KEY_ID", Some("minioadmin")),
+                ("AWS_SECRET_ACCESS_KEY", Some("minioadmin")),
+                ("AWS_REGION", Some("eu-central-1")),
+            ],
+            async {
+                s3.generate_presigned_s3_url(
+                    Url::parse("s3://rattler-s3-testing/channel/noarch/repodata.json").unwrap(),
+                    &Method::GET,
+                )
+                .await
+                .unwrap()
+            },
+        )
+        .await;
+        assert!(presigned.to_string().starts_with("https://rattler-s3-testing.s3.eu-central-1.amazonaws.com/channel/noarch/repodata.json?"), "Unexpected presigned URL: {presigned:?}"
+        );
+    }
+
+    #[fixture]
+    fn aws_config() -> (TempDir, std::path::PathBuf) {
+        let temp_dir = tempdir().unwrap();
+        let aws_config = r#"
+[profile default]
+aws_access_key_id = minioadmin
+aws_secret_access_key = minioadmin
+region = eu-central-1
+
+[profile packages]
+aws_access_key_id = minioadmin
+aws_secret_access_key = minioadmin
+endpoint_url = http://localhost:9000
+region = eu-central-1
+
+[profile public]
+endpoint_url = http://localhost:9000
+region = eu-central-1
+"#;
+        let aws_config_path = temp_dir.path().join("aws.config");
+        std::fs::write(&aws_config_path, aws_config).unwrap();
+        (temp_dir, aws_config_path)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_presigned_s3_request_custom_config_from_env(
+        aws_config: (TempDir, std::path::PathBuf),
+    ) {
+        let s3 = S3::new(HashMap::new(), AuthenticationStorage::empty());
+        let presigned = async_with_vars(
+            [
+                ("AWS_CONFIG_FILE", Some(aws_config.1.to_str().unwrap())),
+                ("AWS_PROFILE", Some("packages")),
+            ],
+            async {
+                s3.generate_presigned_s3_url(
+                    Url::parse("s3://rattler-s3-testing/channel/noarch/repodata.json").unwrap(),
+                    &Method::GET,
+                )
+                .await
+                .unwrap()
+            },
+        )
+        .await;
+        assert!(
+            presigned.to_string().contains("localhost:9000"),
+            "Unexpected presigned URL: {presigned:?}"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_presigned_s3_request_env_precedence(aws_config: (TempDir, std::path::PathBuf)) {
+        let s3 = S3::new(HashMap::new(), AuthenticationStorage::empty());
+        let presigned = async_with_vars(
+            [
+                ("AWS_ENDPOINT_URL", Some("http://localhost:9000")),
+                ("AWS_CONFIG_FILE", Some(aws_config.1.to_str().unwrap())),
+            ],
+            async {
+                s3.generate_presigned_s3_url(
+                    Url::parse("s3://rattler-s3-testing/channel/noarch/repodata.json").unwrap(),
+                    &Method::GET,
+                )
+                .await
+                .unwrap()
+            },
+        )
+        .await;
+        assert!(
+            presigned.to_string().contains("localhost:9000"),
+            "Unexpected presigned URL: {presigned:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_presigned_s3_request_custom_config() {
+        let temp_dir = tempdir().unwrap();
+        let credentials = r#"
+        {
+            "s3://rattler-s3-testing/channel": {
+                "S3Credentials": {
+                    "access_key_id": "minioadmin",
+                    "secret_access_key": "minioadmin"
+                }
+            }
+        }
+        "#;
+        let credentials_path = temp_dir.path().join("credentials.json");
+        std::fs::write(&credentials_path, credentials).unwrap();
+        let mut store = AuthenticationStorage::empty();
+        store.add_backend(Arc::from(FileStorage::from_path(credentials_path).unwrap()));
+        let s3 = S3::new(
+            HashMap::from([("rattler-s3-testing".into(), custom_config(None))]),
+            store,
+        );
+
+        let presigned = s3
+            .generate_presigned_s3_url(
+                Url::parse("s3://rattler-s3-testing/channel/noarch/repodata.json").unwrap(),
+                &Method::GET,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            presigned.path(),
+            "/rattler-s3-testing/channel/noarch/repodata.json"
+        );
+        assert_eq!(presigned.scheme(), "http");
+        assert_eq!(presigned.host_str().unwrap(), "localhost");
+        assert!(presigned.query().unwrap().contains("X-Amz-Credential"));
+    }
+
+    #[tokio::test]
+    async fn test_presigned_s3_request_no_credentials() {
+        // When there are no rattler auth storage credentials for a Custom S3Config,
+        // the middleware should fall back to the AWS SDK default credential chain
+        // (env vars, AWS config files, IMDS, etc.) rather than hard-failing.
+        let s3 = S3::new(
+            HashMap::from([("rattler-s3-testing".into(), custom_config(None))]),
+            AuthenticationStorage::empty(),
+        );
+
+        // Provide credentials via env vars (the AWS SDK default chain) so that the
+        // fallback path succeeds and produces a valid presigned URL using the custom
+        // endpoint and region from the S3Config.
+        let presigned = async_with_vars(
+            [
+                ("AWS_ACCESS_KEY_ID", Some("minioadmin")),
+                ("AWS_SECRET_ACCESS_KEY", Some("minioadmin")),
+            ],
+            async {
+                s3.generate_presigned_s3_url(
+                    Url::parse("s3://rattler-s3-testing/channel/noarch/repodata.json").unwrap(),
+                    &Method::GET,
+                )
+                .await
+                .unwrap()
+            },
+        )
+        .await;
+
+        // The custom endpoint and addressing style should be respected.
+        assert_eq!(presigned.scheme(), "http");
+        assert_eq!(presigned.host_str().unwrap(), "localhost");
+        assert_eq!(
+            presigned.path(),
+            "/rattler-s3-testing/channel/noarch/repodata.json"
+        );
+        assert!(presigned.query().unwrap().contains("X-Amz-Credential"));
+    }
+
+    /// A provider that hands out a different access key ID every time it is
+    /// asked, standing in for one that renews expiring credentials.
+    #[derive(Debug)]
+    struct CountingProvider(AtomicUsize);
+
+    impl CountingProvider {
+        fn shared() -> SharedCredentialsProvider {
+            SharedCredentialsProvider::new(Self(AtomicUsize::new(0)))
+        }
+    }
+
+    impl ProvideCredentials for CountingProvider {
+        fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
+        where
+            Self: 'a,
+        {
+            let round = self.0.fetch_add(1, Ordering::Relaxed);
+            future::ProvideCredentials::ready(Ok(Credentials::new(
+                format!("key-{round}"),
+                "secret",
+                None,
+                None,
+                "test",
+            )))
+        }
+    }
+
+    fn custom_config(credentials_provider: Option<SharedCredentialsProvider>) -> S3Config {
+        S3Config::Custom {
+            endpoint_url: Url::parse("http://localhost:9000").unwrap(),
+            region: "eu-central-1".into(),
+            addressing_style: S3AddressingStyle::Path,
+            credentials_provider,
+        }
+    }
+
+    fn signing_key(presigned: &Url) -> String {
+        presigned
+            .query_pairs()
+            .find(|(key, _)| key == "X-Amz-Credential")
+            .map(|(_, value)| value.split('/').next().unwrap_or_default().to_owned())
+            .expect("presigned URL carries the credentials it was signed with")
+    }
+
+    #[tokio::test]
+    async fn test_presigned_s3_request_renews_credentials() {
+        let s3 = S3::new(
+            HashMap::from([(
+                "rattler-s3-testing".into(),
+                custom_config(Some(CountingProvider::shared())),
+            )]),
+            AuthenticationStorage::empty(),
+        );
+
+        let url = Url::parse("s3://rattler-s3-testing/channel/noarch/repodata.json").unwrap();
+        let first = s3
+            .generate_presigned_s3_url(url.clone(), &Method::GET)
+            .await
+            .unwrap();
+        let second = s3
+            .generate_presigned_s3_url(url, &Method::GET)
+            .await
+            .unwrap();
+
+        // The provider is asked per request, so the second request is signed
+        // with whatever it hands out by then. That is what keeps a run going
+        // once the credentials it started with have expired.
+        assert_eq!(signing_key(&first), "key-0");
+        assert_eq!(signing_key(&second), "key-1");
+    }
+
+    #[tokio::test]
+    async fn test_presigned_s3_request_provider_takes_precedence_over_storage() {
+        let temp_dir = tempdir().unwrap();
+        let credentials = r#"
+        {
+            "s3://rattler-s3-testing/channel": {
+                "S3Credentials": {
+                    "access_key_id": "from-storage",
+                    "secret_access_key": "minioadmin"
+                }
+            }
+        }
+        "#;
+        let credentials_path = temp_dir.path().join("credentials.json");
+        std::fs::write(&credentials_path, credentials).unwrap();
+        let mut store = AuthenticationStorage::empty();
+        store.add_backend(Arc::from(FileStorage::from_path(credentials_path).unwrap()));
+
+        let s3 = S3::new(
+            HashMap::from([(
+                "rattler-s3-testing".into(),
+                custom_config(Some(CountingProvider::shared())),
+            )]),
+            store,
+        );
+
+        let presigned = s3
+            .generate_presigned_s3_url(
+                Url::parse("s3://rattler-s3-testing/channel/noarch/repodata.json").unwrap(),
+                &Method::GET,
+            )
+            .await
+            .unwrap();
+
+        // The static access keys in the storage cannot be renewed, so they lose
+        // against a provider that can.
+        assert_eq!(signing_key(&presigned), "key-0");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_presigned_s3_request_public_bucket_aws(
+        aws_config: (TempDir, std::path::PathBuf),
+    ) {
+        let s3 = S3::new(HashMap::new(), AuthenticationStorage::empty());
+        async_with_vars(
+            [
+                ("AWS_CONFIG_FILE", Some(aws_config.1.to_str().unwrap())),
+                ("AWS_PROFILE", Some("public")),
+            ],
+            async {
+                let result = s3
+                    .generate_presigned_s3_url(
+                        Url::parse("s3://rattler-s3-testing/channel/noarch/repodata.json").unwrap(),
+                        &Method::GET,
+                    )
+                    .await;
+                assert!(result.is_err());
+            },
+        )
+        .await;
+    }
+}

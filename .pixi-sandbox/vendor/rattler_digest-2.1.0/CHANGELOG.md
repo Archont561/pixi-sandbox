@@ -1,0 +1,210 @@
+# Changelog
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [2.1.0](https://github.com/conda/rattler/compare/rattler_digest-v2.0.0...rattler_digest-v2.1.0) - 2026-10-05
+
+### Added
+
+- add rattler_virtual_package_detectors ([#2863](https://github.com/conda/rattler/pull/2863))
+
+## [2.0.0](https://github.com/conda/rattler/compare/rattler_digest-v1.4.0...rattler_digest-v2.0.0) - 2026-09-29
+
+### Other
+
+- *(ci)* Update Rust crate generic-array to v0.14.9 ([#2747](https://github.com/conda/rattler/pull/2747))
+
+## [1.4.0](https://github.com/conda/rattler/compare/rattler_digest-v1.3.2...rattler_digest-v1.4.0) - 2026-09-23
+
+### Added
+
+- add standalone Sigstore attestation verification ([#2794](https://github.com/conda/rattler/pull/2794))
+
+## [1.3.2](https://github.com/conda/rattler/compare/rattler_digest-v1.3.1...rattler_digest-v1.3.2) - 2026-07-14
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.3.1](https://github.com/conda/rattler/compare/rattler_digest-v1.3.0...rattler_digest-v1.3.1) - 2026-06-02
+
+### Other
+
+- update some crates (sigstore, md5, sha2, ...) ([#2444](https://github.com/conda/rattler/pull/2444))
+
+## [1.3.0](https://github.com/conda/rattler/compare/rattler_digest-v1.2.5...rattler_digest-v1.3.0) - 2026-05-19
+
+### Added
+
+- channel index options (TOML) for `rattler-index` ([#2390](https://github.com/conda/rattler/pull/2390))
+- support conda-pypi channel ([#2435](https://github.com/conda/rattler/pull/2435))
+
+## [1.2.5](https://github.com/conda/rattler/compare/rattler_digest-v1.2.4...rattler_digest-v1.2.5) - 2026-05-13
+
+### Other
+
+- bump Rust edition to 2024 ([#2429](https://github.com/conda/rattler/pull/2429))
+
+## [1.2.4](https://github.com/conda/rattler/compare/rattler_digest-v1.2.3...rattler_digest-v1.2.4) - 2026-04-30
+
+### Other
+
+- Added a getting started explainer to README ([#2334](https://github.com/conda/rattler/pull/2334))
+
+## [1.2.3](https://github.com/conda/rattler/compare/rattler_digest-v1.2.2...rattler_digest-v1.2.3) - 2026-03-18
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.2.2](https://github.com/conda/rattler/compare/rattler_digest-v1.2.1...rattler_digest-v1.2.2) - 2025-12-18
+
+### Other
+
+- update README.md with new banner image ([#1926](https://github.com/conda/rattler/pull/1926))
+
+## [1.2.1](https://github.com/conda/rattler/compare/rattler_digest-v1.2.0...rattler_digest-v1.2.1) - 2025-12-08
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.2.0](https://github.com/conda/rattler/compare/rattler_digest-v1.1.7...rattler_digest-v1.2.0) - 2025-11-13
+
+### Added
+
+- expose crate features on docs.rs ([#1835](https://github.com/conda/rattler/pull/1835))
+
+## [1.1.7](https://github.com/conda/rattler/compare/rattler_digest-v1.1.6...rattler_digest-v1.1.7) - 2025-10-17
+
+### Fixed
+
+- use byte string instead of array for hash encoding ([#1755](https://github.com/conda/rattler/pull/1755))
+
+## [1.1.6](https://github.com/conda/rattler/compare/rattler_digest-v1.1.5...rattler_digest-v1.1.6) - 2025-10-14
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.1.5](https://github.com/conda/rattler/compare/rattler_digest-v1.1.4...rattler_digest-v1.1.5) - 2025-07-21
+
+### Other
+
+- bump rust 1.88.0 ([#1536](https://github.com/conda/rattler/pull/1536))
+
+## [1.1.4](https://github.com/conda/rattler/compare/rattler_digest-v1.1.3...rattler_digest-v1.1.4) - 2025-07-01
+
+### Fixed
+
+- *(ci)* run pre-commit-run for all files ([#1481](https://github.com/conda/rattler/pull/1481))
+
+## [1.1.3](https://github.com/conda/rattler/compare/rattler_digest-v1.1.2...rattler_digest-v1.1.3) - 2025-06-23
+
+### Other
+
+- update npm name ([#1368](https://github.com/conda/rattler/pull/1368))
+- update readme ([#1364](https://github.com/conda/rattler/pull/1364))
+
+## [1.1.2](https://github.com/conda/rattler/compare/rattler_digest-v1.1.1...rattler_digest-v1.1.2) - 2025-05-16
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.1.1](https://github.com/conda/rattler/compare/rattler_digest-v1.1.0...rattler_digest-v1.1.1) - 2025-04-10
+
+### Fixed
+
+- Add location to the cache key ([#1143](https://github.com/conda/rattler/pull/1143))
+
+## [1.1.0](https://github.com/conda/rattler/compare/rattler_digest-v1.0.8...rattler_digest-v1.1.0) - 2025-04-04
+
+### Added
+
+- derive `Debug` and `Clone` for `SerializableHash` ([#1226](https://github.com/conda/rattler/pull/1226))
+
+## [1.0.8](https://github.com/conda/rattler/compare/rattler_digest-v1.0.7...rattler_digest-v1.0.8) - 2025-03-10
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.0.7](https://github.com/conda/rattler/compare/rattler_digest-v1.0.6...rattler_digest-v1.0.7) - 2025-02-28
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.0.6](https://github.com/conda/rattler/compare/rattler_digest-v1.0.5...rattler_digest-v1.0.6) - 2025-02-18
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.0.5](https://github.com/conda/rattler/compare/rattler_digest-v1.0.4...rattler_digest-v1.0.5) - 2025-01-08
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.0.4](https://github.com/conda/rattler/compare/rattler_digest-v1.0.3...rattler_digest-v1.0.4) - 2024-12-17
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.0.3](https://github.com/conda/rattler/compare/rattler_digest-v1.0.2...rattler_digest-v1.0.3) - 2024-11-04
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [1.0.2](https://github.com/conda/rattler/compare/rattler_digest-v1.0.1...rattler_digest-v1.0.2) - 2024-09-05
+
+### Fixed
+- typos ([#849](https://github.com/conda/rattler/pull/849))
+
+## [1.0.1](https://github.com/conda/rattler/compare/rattler_digest-v1.0.0...rattler_digest-v1.0.1) - 2024-08-15
+
+### Fixed
+- move more links to the conda org from conda-incubator ([#816](https://github.com/conda/rattler/pull/816))
+- use conda-incubator
+
+### Other
+- change links from conda-incubator to conda ([#813](https://github.com/conda/rattler/pull/813))
+- update banner ([#808](https://github.com/conda/rattler/pull/808))
+
+## [0.19.5](https://github.com/conda/rattler/compare/rattler_digest-v0.19.4...rattler_digest-v0.19.5) - 2024-07-15
+
+### Other
+- bump dependencies and remove unused ones ([#771](https://github.com/conda/rattler/pull/771))
+
+## [0.19.4](https://github.com/conda/rattler/compare/rattler_digest-v0.19.3...rattler_digest-v0.19.4) - 2024-05-13
+
+### Added
+- high level repodata access ([#560](https://github.com/conda/rattler/pull/560))
+
+### Other
+- update README.md
+
+## [0.19.3](https://github.com/conda/rattler/compare/rattler_digest-v0.19.2...rattler_digest-v0.19.3) - 2024-04-19
+
+### Other
+- update Cargo.toml dependencies
+
+## [0.19.2](https://github.com/conda/rattler/compare/rattler_digest-v0.19.1...rattler_digest-v0.19.2) - 2024-03-14
+
+### Other
+- add pixi badge ([#563](https://github.com/conda/rattler/pull/563))
+
+## [0.19.1](https://github.com/conda/rattler/compare/rattler_digest-v0.19.0...rattler_digest-v0.19.1) - 2024-03-06
+
+### Other
+- every crate should have its own version ([#557](https://github.com/conda/rattler/pull/557))
+
+## [0.19.0](https://github.com/baszalmstra/rattler/compare/rattler_digest-v0.18.0...rattler_digest-v0.19.0) - 2024-02-26

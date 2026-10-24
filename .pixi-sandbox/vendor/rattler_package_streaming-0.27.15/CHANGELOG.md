@@ -1,0 +1,873 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.27.15](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.14...rattler_package_streaming-v0.27.15) - 2026-10-16
+
+### Fixed
+
+- bump zip to 9 (all zip 8.x releases are yanked) ([#2957](https://github.com/conda/rattler/pull/2957))
+
+## [0.27.14](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.13...rattler_package_streaming-v0.27.14) - 2026-10-13
+
+### Fixed
+
+- *(rattler_package_streaming)* remove num_cpus crate ([#2911](https://github.com/conda/rattler/pull/2911))
+
+### Other
+
+- Add `BuildString` to rattler_conda_types ([#2430](https://github.com/conda/rattler/pull/2430))
+
+## [0.27.13](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.12...rattler_package_streaming-v0.27.13) - 2026-10-09
+
+### Other
+
+- updated the following local packages: rattler_networking
+
+## [0.27.12](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.11...rattler_package_streaming-v0.27.12) - 2026-10-07
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.27.11](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.10...rattler_package_streaming-v0.27.11) - 2026-10-06
+
+### Other
+
+- updated the following local packages: rattler_networking
+
+## [0.27.10](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.9...rattler_package_streaming-v0.27.10) - 2026-10-05
+
+### Added
+
+- add rattler_virtual_package_detectors ([#2863](https://github.com/conda/rattler/pull/2863))
+
+## [0.27.9](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.8...rattler_package_streaming-v0.27.9) - 2026-10-05
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.27.8](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.7...rattler_package_streaming-v0.27.8) - 2026-09-29
+
+### Fixed
+
+- *(rattler_package_streaming)* compare verbatim paths in extraction containment check ([#2857](https://github.com/conda/rattler/pull/2857))
+
+## [0.27.7](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.6...rattler_package_streaming-v0.27.7) - 2026-09-23
+
+### Added
+
+- add standalone Sigstore attestation verification ([#2794](https://github.com/conda/rattler/pull/2794))
+
+## [0.27.6](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.5...rattler_package_streaming-v0.27.6) - 2026-09-17
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.27.5](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.4...rattler_package_streaming-v0.27.5) - 2026-09-04
+
+### Added
+
+- *(rattler-bin)* extend inspect with about, run exports, sizes and --json ([#2760](https://github.com/conda/rattler/pull/2760))
+
+### Other
+
+- extract packages on a blocking worker ([#2748](https://github.com/conda/rattler/pull/2748))
+
+## [0.27.4](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.3...rattler_package_streaming-v0.27.4) - 2026-08-27
+
+### Added
+
+- Add RepoDataRecord.from_package_archive method to allow installing local packages without a channel ([#2698](https://github.com/conda/rattler/pull/2698))
+
+## [0.27.3](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.2...rattler_package_streaming-v0.27.3) - 2026-08-26
+
+### Other
+
+- rename CEP 146 to CEP 48 ([#2717](https://github.com/conda/rattler/pull/2717))
+
+## [0.27.2](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.1...rattler_package_streaming-v0.27.2) - 2026-08-21
+
+### Fixed
+
+- recover merged CEP 48 PRs (#2674, #2673, #2670)
+
+## [0.27.1](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.27.0...rattler_package_streaming-v0.27.1) - 2026-08-15
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.27.0](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.9...rattler_package_streaming-v0.27.0) - 2026-08-11
+
+### Added
+
+- add PackageArchive for sparse reads from conda packages ([#2632](https://github.com/conda/rattler/pull/2632))
+
+## [0.26.9](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.8...rattler_package_streaming-v0.26.9) - 2026-07-24
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.26.8](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.7...rattler_package_streaming-v0.26.8) - 2026-07-14
+
+### Other
+
+- update dependencies ([#2589](https://github.com/conda/rattler/pull/2589))
+
+## [0.26.7](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.6...rattler_package_streaming-v0.26.7) - 2026-07-09
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.26.6](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.5...rattler_package_streaming-v0.26.6) - 2026-06-26
+
+### Other
+
+- updated the following local packages: rattler_networking
+
+## [0.26.5](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.4...rattler_package_streaming-v0.26.5) - 2026-06-17
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.26.4](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.3...rattler_package_streaming-v0.26.4) - 2026-06-09
+
+### Fixed
+
+- *(package-streaming)* Handle pre-1980 timestamps in tar extraction for exFAT compatibility ([#2110](https://github.com/conda/rattler/pull/2110))
+
+### Other
+
+- enable serde_json preserve_order for deterministic tests ([#2489](https://github.com/conda/rattler/pull/2489))
+
+## [0.26.3](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.2...rattler_package_streaming-v0.26.3) - 2026-06-02
+
+### Fixed
+
+- make sdist PEP 625 conformant and trim test data ([#2470](https://github.com/conda/rattler/pull/2470))
+
+### Other
+
+- replace `chrono` with `jiff` ([#1905](https://github.com/conda/rattler/pull/1905))
+- update some crates (sigstore, md5, sha2, ...) ([#2444](https://github.com/conda/rattler/pull/2444))
+
+## [0.26.2](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.1...rattler_package_streaming-v0.26.2) - 2026-05-19
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.26.1](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.26.0...rattler_package_streaming-v0.26.1) - 2026-05-19
+
+### Added
+
+- channel index options (TOML) for `rattler-index` ([#2390](https://github.com/conda/rattler/pull/2390))
+
+## [0.26.0](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.25.1...rattler_package_streaming-v0.26.0) - 2026-05-13
+
+### Fixed
+
+- handle missing symlinks on Windows install path ([#2399](https://github.com/conda/rattler/pull/2399))
+
+### Other
+
+- bump Rust edition to 2024 ([#2429](https://github.com/conda/rattler/pull/2429))
+- remove reqwest 0.12 ([#2427](https://github.com/conda/rattler/pull/2427))
+
+## [0.25.1](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.25.0...rattler_package_streaming-v0.25.1) - 2026-05-07
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.25.0](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.10...rattler_package_streaming-v0.25.0) - 2026-05-01
+
+### Added
+
+- [**breaking**] lockfile v7 ([#2348](https://github.com/conda/rattler/pull/2348))
+
+## [0.24.10](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.9...rattler_package_streaming-v0.24.10) - 2026-04-30
+
+### Added
+
+- add repodata revisions as proposed in CEP ([#2379](https://github.com/conda/rattler/pull/2379))
+
+### Other
+
+- Added a getting started explainer to README ([#2334](https://github.com/conda/rattler/pull/2334))
+
+## [0.24.9](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.8...rattler_package_streaming-v0.24.9) - 2026-04-13
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.24.8](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.7...rattler_package_streaming-v0.24.8) - 2026-04-08
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.24.7](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.6...rattler_package_streaming-v0.24.7) - 2026-04-07
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.24.6](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.5...rattler_package_streaming-v0.24.6) - 2026-03-25
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.24.5](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.4...rattler_package_streaming-v0.24.5) - 2026-03-20
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.24.4](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.3...rattler_package_streaming-v0.24.4) - 2026-03-18
+
+### Fixed
+
+- allow external symlinks when extracting ([#2245](https://github.com/conda/rattler/pull/2245))
+
+### Other
+
+- bump dependency versions ([#2237](https://github.com/conda/rattler/pull/2237))
+
+## [0.24.3](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.2...rattler_package_streaming-v0.24.3) - 2026-03-16
+
+### Added
+
+- Add support for downloading info files via range requests ([#1935](https://github.com/conda/rattler/pull/1935))
+
+### Fixed
+
+- propagate stream_conda_info error instead of panic ([#2182](https://github.com/conda/rattler/pull/2182))
+- validate symlink targets to prevent prefix escape ([#2143](https://github.com/conda/rattler/pull/2143))
+
+### Other
+
+- Improve range request API, fix 416 issue ([#2199](https://github.com/conda/rattler/pull/2199))
+
+## [0.24.2](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.1...rattler_package_streaming-v0.24.2) - 2026-02-25
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.24.1](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.24.0...rattler_package_streaming-v0.24.1) - 2026-02-20
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.24.0](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.26...rattler_package_streaming-v0.24.0) - 2026-02-19
+
+### Fixed
+
+- retry at least three times during install ([#2068](https://github.com/conda/rattler/pull/2068))
+
+### Other
+
+- Typo and clippy fixes ([#2047](https://github.com/conda/rattler/pull/2047))
+- [**breaking**] remove support for JLAP ([#2038](https://github.com/conda/rattler/pull/2038))
+
+## [0.23.26](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.25...rattler_package_streaming-v0.23.26) - 2026-02-10
+
+### Other
+
+- replace async `conda` with `astral-async-zip`. ([#1855](https://github.com/conda/rattler/pull/1855))
+
+## [0.23.25](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.24...rattler_package_streaming-v0.23.25) - 2026-02-04
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.24](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.23...rattler_package_streaming-v0.23.24) - 2026-01-22
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.23](https://github.com/baszalmstra/rattler/compare/rattler_package_streaming-v0.23.22...rattler_package_streaming-v0.23.23) - 2026-01-22
+
+### Fixed
+
+- changelog
+
+## [0.23.22](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.21...rattler_package_streaming-v0.23.22) - 2026-01-22
+
+### Added
+
+- add support for `packages.whl` and wheel archives types ([#1988](https://github.com/conda/rattler/pull/1988))
+
+## [0.23.21](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.20...rattler_package_streaming-v0.23.21) - 2025-12-18
+
+### Other
+
+- update README.md with new banner image ([#1926](https://github.com/conda/rattler/pull/1926))
+
+## [0.23.20](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.19...rattler_package_streaming-v0.23.20) - 2025-12-08
+
+### Other
+
+- replace async `.tar.bz2` with `astral-tokio-tar`. ([#1808](https://github.com/conda/rattler/pull/1808))
+
+## [0.23.19](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.18...rattler_package_streaming-v0.23.19) - 2025-11-27
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.18](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.17...rattler_package_streaming-v0.23.18) - 2025-11-25
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.17](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.16...rattler_package_streaming-v0.23.17) - 2025-11-22
+
+### Added
+
+- enable wasm for `rattler_package_streaming` ([#1838](https://github.com/conda/rattler/pull/1838))
+
+## [0.23.16](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.15...rattler_package_streaming-v0.23.16) - 2025-11-20
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.15](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.14...rattler_package_streaming-v0.23.15) - 2025-11-19
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.14](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.13...rattler_package_streaming-v0.23.14) - 2025-11-13
+
+### Added
+
+- expose crate features on docs.rs ([#1835](https://github.com/conda/rattler/pull/1835))
+
+## [0.23.13](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.12...rattler_package_streaming-v0.23.13) - 2025-10-28
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.12](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.11...rattler_package_streaming-v0.23.12) - 2025-10-25
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.23.11](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.10...rattler_package_streaming-v0.23.11) - 2025-10-18
+
+### Added
+
+- make read_package_file_content public, add try_from_magic_bytes ([#1757](https://github.com/conda/rattler/pull/1757))
+
+## [0.23.10](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.9...rattler_package_streaming-v0.23.10) - 2025-10-17
+
+### Other
+
+- updated the following local packages: rattler_digest, rattler_conda_types, rattler_networking
+
+## [0.23.9](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.8...rattler_package_streaming-v0.23.9) - 2025-10-14
+
+### Other
+
+- updated the following local packages: rattler_digest, rattler_conda_types, rattler_networking
+
+## [0.23.8](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.7...rattler_package_streaming-v0.23.8) - 2025-10-13
+
+### Other
+
+- updated the following local packages: rattler_networking
+
+## [0.23.7](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.6...rattler_package_streaming-v0.23.7) - 2025-10-07
+
+### Other
+
+- updated the following local packages: rattler_networking
+
+## [0.23.6](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.5...rattler_package_streaming-v0.23.6) - 2025-10-03
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.5](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.4...rattler_package_streaming-v0.23.5) - 2025-09-30
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.4](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.3...rattler_package_streaming-v0.23.4) - 2025-09-05
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.3](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.2...rattler_package_streaming-v0.23.3) - 2025-09-04
+
+### Other
+
+- updated the following local packages: rattler_networking
+
+## [0.23.2](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.1...rattler_package_streaming-v0.23.2) - 2025-09-02
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.1](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.23.0...rattler_package_streaming-v0.23.1) - 2025-08-15
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.23.0](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.48...rattler_package_streaming-v0.23.0) - 2025-08-12
+
+### Added
+
+- Provide more details when hash mismatch occurs ([#1577](https://github.com/conda/rattler/pull/1577))
+
+## [0.22.48](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.47...rattler_package_streaming-v0.22.48) - 2025-07-28
+
+### Fixed
+
+- tar.bz2 archives not read to end resulting in wrong hash ([#1557](https://github.com/conda/rattler/pull/1557))
+
+## [0.22.47](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.46...rattler_package_streaming-v0.22.47) - 2025-07-23
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.22.46](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.45...rattler_package_streaming-v0.22.46) - 2025-07-21
+
+### Other
+
+- bump rust 1.88.0 ([#1536](https://github.com/conda/rattler/pull/1536))
+
+## [0.22.45](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.44...rattler_package_streaming-v0.22.45) - 2025-07-14
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.22.44](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.43...rattler_package_streaming-v0.22.44) - 2025-07-09
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.22.43](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.42...rattler_package_streaming-v0.22.43) - 2025-07-01
+
+### Fixed
+
+- *(ci)* run pre-commit-run for all files ([#1481](https://github.com/conda/rattler/pull/1481))
+
+## [0.22.42](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.41...rattler_package_streaming-v0.22.42) - 2025-06-26
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.22.41](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.40...rattler_package_streaming-v0.22.41) - 2025-06-25
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.22.40](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.39...rattler_package_streaming-v0.22.40) - 2025-06-23
+
+### Added
+
+- add `rattler_config` crate (derived from `pixi_config`) ([#1389](https://github.com/conda/rattler/pull/1389))
+
+### Other
+
+- update npm name ([#1368](https://github.com/conda/rattler/pull/1368))
+- update readme ([#1364](https://github.com/conda/rattler/pull/1364))
+
+## [0.22.39](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.38...rattler_package_streaming-v0.22.39) - 2025-05-23
+
+### Fixed
+
+- consistent usage of rustls-tls / native-tls feature ([#1324](https://github.com/conda/rattler/pull/1324))
+
+## [0.22.38](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.37...rattler_package_streaming-v0.22.38) - 2025-05-16
+
+### Other
+
+- make sure that md5 also works as `CacheKey` ([#1293](https://github.com/conda/rattler/pull/1293))
+
+## [0.22.37](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.36...rattler_package_streaming-v0.22.37) - 2025-05-03
+
+### Other
+
+- lock workspace member dependencies ([#1279](https://github.com/conda/rattler/pull/1279))
+
+## [0.22.36](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.35...rattler_package_streaming-v0.22.36) - 2025-04-10
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.22.35](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.34...rattler_package_streaming-v0.22.35) - 2025-04-04
+
+### Fixed
+
+- upgrade simd-json and downgrade zip ([#1228](https://github.com/conda/rattler/pull/1228))
+
+## [0.22.34](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.33...rattler_package_streaming-v0.22.34) - 2025-03-14
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.22.33](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.32...rattler_package_streaming-v0.22.33) - 2025-03-10
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.22.32](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.31...rattler_package_streaming-v0.22.32) - 2025-03-04
+
+### Added
+
+- *(js)* compile `rattler_solve` and `rattler_repodata_gateway` ([#1108](https://github.com/conda/rattler/pull/1108))
+
+## [0.22.31](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.30...rattler_package_streaming-v0.22.31) - 2025-02-28
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.22.30](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.29...rattler_package_streaming-v0.22.30) - 2025-02-27
+
+### Added
+
+- Use `opendal` in `rattler-index` and add executable (#1076)
+
+## [0.22.29](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.28...rattler_package_streaming-v0.22.29) - 2025-02-25
+
+### Added
+
+- add run_exports cache (#1060)
+
+## [0.22.28](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.27...rattler_package_streaming-v0.22.28) - 2025-02-18
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.22.27](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.26...rattler_package_streaming-v0.22.27) - 2025-02-06
+
+### Other
+
+- bump rust 1.84.1 (#1053)
+
+## [0.22.26](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.25...rattler_package_streaming-v0.22.26) - 2025-02-06
+
+### Other
+
+- updated the following local packages: rattler_networking
+
+## [0.22.25](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.24...rattler_package_streaming-v0.22.25) - 2025-02-03
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.22.24](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.23...rattler_package_streaming-v0.22.24) - 2025-01-23
+
+### Other
+
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.22.23](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.22...rattler_package_streaming-v0.22.23) - 2025-01-09
+
+### Other
+
+- updated the following local packages: rattler_conda_types
+
+## [0.22.22](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.21...rattler_package_streaming-v0.22.22) - 2025-01-09
+
+### Other
+
+- updated the following local packages: rattler_conda_types
+
+## [0.22.21](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.20...rattler_package_streaming-v0.22.21) - 2025-01-08
+
+### Fixed
+
+- retry failed repodata streaming on io error (#1017)
+
+## [0.22.20](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.19...rattler_package_streaming-v0.22.20) - 2024-12-20
+
+### Other
+
+- updated the following local packages: rattler_conda_types
+
+## [0.22.19](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.18...rattler_package_streaming-v0.22.19) - 2024-12-17
+
+### Other
+
+- update Cargo.toml dependencies
+
+## [0.22.18](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.17...rattler_package_streaming-v0.22.18) - 2024-12-13
+
+### Other
+
+- updated the following local packages: rattler_conda_types
+
+## [0.22.17](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.16...rattler_package_streaming-v0.22.17) - 2024-12-12
+
+### Other
+- updated the following local packages: rattler_conda_types
+
+## [0.22.16](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.15...rattler_package_streaming-v0.22.16) - 2024-12-05
+
+### Other
+
+- updated the following local packages: rattler_networking
+
+## [0.22.15](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.14...rattler_package_streaming-v0.22.15) - 2024-11-30
+
+### Added
+
+- use `fs-err` also for tokio ([#958](https://github.com/conda/rattler/pull/958))
+
+## [0.22.14](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.13...rattler_package_streaming-v0.22.14) - 2024-11-18
+
+### Other
+
+- updated the following local packages: rattler_networking
+
+## [0.22.13](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.12...rattler_package_streaming-v0.22.13) - 2024-11-18
+
+### Other
+
+- updated the following local packages: rattler_conda_types
+
+## [0.22.12](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.11...rattler_package_streaming-v0.22.12) - 2024-11-14
+
+### Fixed
+
+- Release downloader lock before re-attempting fallback download  ([#938](https://github.com/conda/rattler/pull/938))
+
+## [0.22.11](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.10...rattler_package_streaming-v0.22.11) - 2024-11-04
+
+### Other
+
+- release ([#903](https://github.com/conda/rattler/pull/903))
+
+## [0.22.10](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.9...rattler_package_streaming-v0.22.10) - 2024-10-07
+
+### Added
+
+- make `ExtractError` more informative ([#889](https://github.com/conda/rattler/pull/889))
+
+## [0.22.9](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.8...rattler_package_streaming-v0.22.9) - 2024-10-03
+
+### Other
+
+- updated the following local packages: rattler_conda_types
+
+## [0.22.8](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.7...rattler_package_streaming-v0.22.8) - 2024-09-23
+
+### Other
+
+- updated the following local packages: rattler_conda_types
+
+## [0.22.7](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.6...rattler_package_streaming-v0.22.7) - 2024-09-09
+
+### Other
+
+- updated the following local packages: rattler_conda_types
+
+## [0.22.6](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.5...rattler_package_streaming-v0.22.6) - 2024-09-05
+
+### Fixed
+- typos ([#849](https://github.com/conda/rattler/pull/849))
+
+## [0.22.5](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.4...rattler_package_streaming-v0.22.5) - 2024-09-03
+
+### Other
+- make PackageCache multi-process safe ([#837](https://github.com/conda/rattler/pull/837))
+
+## [0.22.4](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.3...rattler_package_streaming-v0.22.4) - 2024-09-02
+
+### Added
+- Add support for `CONDA_OVERRIDE_CUDA` ([#818](https://github.com/conda/rattler/pull/818))
+
+### Fixed
+- zip large files compression ([#838](https://github.com/conda/rattler/pull/838))
+
+## [0.22.3](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.2...rattler_package_streaming-v0.22.3) - 2024-08-16
+
+### Other
+- updated the following local packages: rattler_networking
+
+## [0.22.2](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.22.1...rattler_package_streaming-v0.22.2) - 2024-08-15
+
+### Fixed
+- move more links to the conda org from conda-incubator ([#816](https://github.com/conda/rattler/pull/816))
+- use conda-incubator
+
+### Other
+- change links from conda-incubator to conda ([#813](https://github.com/conda/rattler/pull/813))
+- update banner ([#808](https://github.com/conda/rattler/pull/808))
+
+## [0.22.1](https://github.com/baszalmstra/rattler/compare/rattler_package_streaming-v0.22.0...rattler_package_streaming-v0.22.1) - 2024-08-06
+
+### Other
+- updated the following local packages: rattler_conda_types
+
+## [0.22.0](https://github.com/baszalmstra/rattler/compare/rattler_package_streaming-v0.21.7...rattler_package_streaming-v0.22.0) - 2024-08-02
+
+### Fixed
+- redact secrets in the `canonical_name` functions ([#801](https://github.com/baszalmstra/rattler/pull/801))
+- Fallback to fully reading the package stream when downloading before attempting decompression ([#797](https://github.com/baszalmstra/rattler/pull/797))
+
+### Other
+- mark some crates 1.0 ([#789](https://github.com/baszalmstra/rattler/pull/789))
+
+## [0.21.7](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.21.6...rattler_package_streaming-v0.21.7) - 2024-07-23
+
+### Other
+- updated the following local packages: rattler_conda_types
+
+## [0.21.6](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.21.5...rattler_package_streaming-v0.21.6) - 2024-07-23
+
+### Other
+- updated the following local packages: rattler_conda_types
+
+## [0.21.5](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.21.4...rattler_package_streaming-v0.21.5) - 2024-07-15
+
+### Other
+- bump zip to 2.1.3 ([#772](https://github.com/conda/rattler/pull/772))
+
+## [0.21.4](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.21.3...rattler_package_streaming-v0.21.4) - 2024-07-08
+
+### Fixed
+- run clippy on all targets ([#762](https://github.com/conda/rattler/pull/762))
+
+## [0.21.3](https://github.com/baszalmstra/rattler/compare/rattler_package_streaming-v0.21.2...rattler_package_streaming-v0.21.3) - 2024-06-04
+
+### Other
+- remove lfs ([#512](https://github.com/baszalmstra/rattler/pull/512))
+
+## [0.21.2](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.21.1...rattler_package_streaming-v0.21.2) - 2024-06-03
+
+### Fixed
+- call on_download_start also for file URLs ([#708](https://github.com/conda/rattler/pull/708))
+
+## [0.21.1](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.21.0...rattler_package_streaming-v0.21.1) - 2024-05-28
+
+### Other
+- updated the following local packages: rattler_conda_types
+
+## [0.21.0](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.10...rattler_package_streaming-v0.21.0) - 2024-05-27
+
+### Other
+- introducing the installer ([#664](https://github.com/conda/rattler/pull/664))
+
+## [0.20.10](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.9...rattler_package_streaming-v0.20.10) - 2024-05-14
+
+### Added
+- exclude repodata records based on timestamp ([#654](https://github.com/conda/rattler/pull/654))
+
+## [0.20.9](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.8...rattler_package_streaming-v0.20.9) - 2024-05-13
+
+### Added
+- high level repodata access ([#560](https://github.com/conda/rattler/pull/560))
+
+### Fixed
+- set last modified for zip archive ([#649](https://github.com/conda/rattler/pull/649))
+
+### Other
+- update README.md
+
+## [0.20.8](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.7...rattler_package_streaming-v0.20.8) - 2024-05-06
+
+### Other
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.20.7](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.6...rattler_package_streaming-v0.20.7) - 2024-04-30
+
+### Other
+- updated the following local packages: rattler_networking
+
+## [0.20.6](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.5...rattler_package_streaming-v0.20.6) - 2024-04-25
+
+### Other
+- updated the following local packages: rattler_networking
+
+## [0.20.5](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.4...rattler_package_streaming-v0.20.5) - 2024-04-25
+
+### Other
+- updated the following local packages: rattler_conda_types
+
+## [0.20.4](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.3...rattler_package_streaming-v0.20.4) - 2024-04-19
+
+### Other
+- update dependencies incl. reqwest ([#606](https://github.com/conda/rattler/pull/606))
+
+## [0.20.3](https://github.com/baszalmstra/rattler/compare/rattler_package_streaming-v0.20.2...rattler_package_streaming-v0.20.3) - 2024-04-05
+
+### Other
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.20.2](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.1...rattler_package_streaming-v0.20.2) - 2024-03-30
+
+### Other
+- updated the following local packages: rattler_conda_types
+
+## [0.20.1](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.20.0...rattler_package_streaming-v0.20.1) - 2024-03-21
+
+### Other
+- updated the following local packages: rattler_conda_types, rattler_networking
+
+## [0.20.0](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.19.2...rattler_package_streaming-v0.20.0) - 2024-03-14
+
+### Added
+- add mirror handling and OCI mirror type ([#553](https://github.com/conda/rattler/pull/553))
+
+### Other
+- add pixi badge ([#563](https://github.com/conda/rattler/pull/563))
+
+## [0.19.2](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.19.1...rattler_package_streaming-v0.19.2) - 2024-03-08
+
+### Other
+- update Cargo.toml dependencies
+
+## [0.19.1](https://github.com/conda/rattler/compare/rattler_package_streaming-v0.19.0...rattler_package_streaming-v0.19.1) - 2024-03-06
+
+### Fixed
+- dont use workspace dependencies for local crates ([#546](https://github.com/conda/rattler/pull/546))
+
+### Other
+- every crate should have its own version ([#557](https://github.com/conda/rattler/pull/557))
+
+## [0.19.0](https://github.com/baszalmstra/rattler/compare/rattler_package_streaming-v0.18.0...rattler_package_streaming-v0.19.0) - 2024-02-26
+
+### Fixed
+- flaky package extract error ([#535](https://github.com/baszalmstra/rattler/pull/535))

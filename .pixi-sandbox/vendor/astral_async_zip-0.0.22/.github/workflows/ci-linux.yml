@@ -1,0 +1,53 @@
+name: Test (Linux)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions: {}
+
+jobs:
+  build:
+    name: Test (${{ matrix.features || 'no features' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - ""
+          - tokio
+          - tokio-fs
+          - deflate
+          - deflate-read
+          - deflate-write
+          - bzip2
+          - bzip2-read
+          - bzip2-write
+          - lzma
+          - lzma-read
+          - lzma-write
+          - zstd
+          - zstd-read
+          - zstd-write
+          - xz
+          - xz-read
+          - xz-write
+          - deflate64
+          - deflate64-read
+          - deflate-read,bzip2-write,lzma-read,zstd-write,xz-read,deflate64-read,tokio-fs
+          - full
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Test
+        env:
+          FEATURES: ${{ matrix.features }}
+        run: cargo test --verbose --no-default-features --features "$FEATURES"

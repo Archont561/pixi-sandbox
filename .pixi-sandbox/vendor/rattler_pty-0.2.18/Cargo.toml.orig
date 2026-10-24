@@ -1,0 +1,19 @@
+[package]
+exclude = ["tests/**"]
+name = "rattler_pty"
+version = "0.2.18"
+description = "A crate to create pty"
+categories.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+readme.workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["io-util", "fs", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+nix = { version = "0.31", features = ["fs", "signal", "term", "poll"] }
+signal-hook = "0.4"

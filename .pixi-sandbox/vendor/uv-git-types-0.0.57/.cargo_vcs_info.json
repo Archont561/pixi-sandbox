@@ -1,0 +1,6 @@
+{
+  "git": {
+    "sha1": "5e04460c01ff61092ef19e09e321b7956c0e2d2c"
+  },
+  "path_in_vcs": "crates/uv-git-types"
+}

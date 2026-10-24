@@ -1,0 +1,67 @@
+/*!
+Example updating an executable to the latest version released via GitHub
+
+`cargo run --example github --features "archive-tar archive-zip compression-tar-gz compression-zip-deflate"`.
+
+Include `signatures` in the features list to enable zipsign verification
+*/
+
+use self_update::cargo_crate_version;
+
+fn run() -> Result<(), Box<dyn ::std::error::Error>> {
+    let mut rel_builder = self_update::backends::github::ReleaseList::configure();
+
+    #[cfg(feature = "signatures")]
+    rel_builder.repo_owner("Kijewski");
+    #[cfg(not(feature = "signatures"))]
+    rel_builder.repo_owner("jaemk");
+
+    let releases = rel_builder.repo_name("self_update").build()?.fetch()?;
+    println!("found releases:");
+    println!("{:#?}\n", releases);
+
+    let mut status_builder = self_update::backends::github::Update::configure();
+
+    #[cfg(feature = "signatures")]
+    status_builder
+        .repo_owner("Kijewski")
+        .verifying_keys([*include_bytes!("github-public.key")]);
+    #[cfg(not(feature = "signatures"))]
+    status_builder.repo_owner("jaemk");
+
+    let status = status_builder
+        .repo_name("self_update")
+        .bin_name("github")
+        .show_download_progress(true)
+        //.release_tag("v9.9.10")
+        //.show_output(false)
+        //.no_confirm(true)
+        //
+        // For a GitHub Enterprise install, point at your API endpoint:
+        //.api_base_url("https://github.mycorp.com/api/v3")
+        //
+        // For private repos, you will need to provide a GitHub auth token
+        // **Make sure not to bake the token into your app**; it is recommended
+        // you obtain it via another mechanism, such as environment variables
+        // or prompting the user for input
+        //.auth_token(&std::env::var("DOWNLOAD_AUTH_TOKEN")?)
+        //
+        // an optional `asset_identifier` can be specified to narrow down
+        // an asset match for a target or OS-arch combination.
+        // additionally, if target/OS-arch search fails, then
+        // the `asset_identifier` alone (if specified) will be used to
+        // find the asset
+        // .asset_identifier("github-bin")
+        .current_version(cargo_crate_version!())
+        .build()?
+        .update()?;
+    println!("Update status: `{}`!", status.version());
+    Ok(())
+}
+
+pub fn main() {
+    if let Err(e) = run() {
+        println!("[ERROR] {}", e);
+        ::std::process::exit(1);
+    }
+}

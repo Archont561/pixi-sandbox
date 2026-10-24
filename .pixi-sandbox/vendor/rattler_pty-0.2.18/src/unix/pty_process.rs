@@ -1,0 +1,375 @@
+pub use nix::sys::{signal, wait};
+use nix::{
+    self,
+    fcntl::{OFlag, open},
+    libc::STDERR_FILENO,
+    pty::{PtyMaster, Winsize, grantpt, posix_openpt, unlockpt},
+    sys::{
+        stat,
+        termios::{self, InputFlags, Termios},
+    },
+    unistd::{ForkResult, Pid, close, dup, dup2_stderr, dup2_stdin, dup2_stdout, fork, setsid},
+};
+use std::os::fd::{AsFd, FromRawFd, IntoRawFd};
+use std::{
+    self,
+    fs::File,
+    io,
+    os::unix::{io::AsRawFd, process::CommandExt},
+    process::Command,
+    thread, time,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    time::{Duration, Instant, sleep},
+};
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use nix::pty::ptsname_r;
+
+#[cfg(any(target_os = "netbsd", target_os = "illumos"))]
+/// NetBSD has `ptsname_r` in libc but apparently the `nix` crate does not expose it for NetBSD.
+/// Call `libc::ptsname_r` directly.
+/// The same is applicable for illumos
+fn ptsname_r(fd: &PtyMaster) -> nix::Result<String> {
+    use std::ffi::CStr;
+
+    let mut buf: [libc::c_char; 128] = [0; 128];
+
+    unsafe {
+        match libc::ptsname_r(fd.as_raw_fd(), buf.as_mut_ptr(), buf.len()) {
+            0 => Ok(CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()),
+            _ => Err(nix::Error::last()),
+        }
+    }
+}
+
+/// Start a process in a forked tty so you can interact with it the same as you would
+/// within a terminal
+///
+/// The process and pty session are killed upon dropping `PtyProcess`
+pub struct PtyProcess {
+    pub pty: PtyMaster,
+    pub child_pid: Pid,
+    kill_timeout: Option<time::Duration>,
+}
+
+#[cfg(target_os = "macos")]
+/// `ptsname_r` is a linux extension but ptsname isn't thread-safe
+/// instead of using a static mutex this calls `ioctl` with `TIOCPTYGNAME` directly
+/// <https://blog.tarq.io/ptsname-on-osx-with-rust>/
+fn ptsname_r(fd: &PtyMaster) -> nix::Result<String> {
+    use nix::libc::{TIOCPTYGNAME, ioctl};
+    use std::ffi::CStr;
+
+    // the buffer size on OSX is 128, defined by sys/ttycom.h
+    let mut buf: [i8; 128] = [0; 128];
+
+    unsafe {
+        match ioctl(fd.as_raw_fd(), u64::from(TIOCPTYGNAME), &mut buf) {
+            0 => {
+                let res = CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned();
+                Ok(res)
+            }
+            _ => Err(nix::Error::last()),
+        }
+    }
+}
+
+#[cfg(target_os = "openbsd")]
+/// OpenBSD has neither `nix::pty::ptsname_r` nor `libc::ptsname_r` — only the
+/// POSIX `ptsname(3)`, which returns a pointer into a static buffer and is
+/// not thread-safe. Safe here because `PtyProcess::new` calls this once,
+/// synchronously, before forking.
+fn ptsname_r(fd: &PtyMaster) -> nix::Result<String> {
+    use std::ffi::CStr;
+
+    unsafe {
+        let ptr = libc::ptsname(fd.as_raw_fd());
+        if ptr.is_null() {
+            Err(nix::Error::last())
+        } else {
+            Ok(CStr::from_ptr(ptr).to_string_lossy().into_owned())
+        }
+    }
+}
+
+#[cfg(target_os = "freebsd")]
+/// FreeBSD implementation using FIODGNAME ioctl to get the slave pty name
+fn ptsname_r(fd: &PtyMaster) -> nix::Result<String> {
+    use nix::libc::ioctl;
+    use std::ffi::CStr;
+
+    // FreeBSD uses FIODGNAME ioctl with a fiodgname_arg struct
+    #[repr(C)]
+    struct fiodgname_arg {
+        len: libc::c_int,
+        buf: *mut libc::c_char,
+    }
+
+    // FIODGNAME is defined as _IOW('f', 120, struct fiodgname_arg) in FreeBSD
+    // _IOW(g,n,t) = (0x80000000 | ((sizeof(t) & 0x1fff) << 16) | ((g) << 8) | (n))
+    // sizeof(fiodgname_arg) = 16 on 64-bit (4 bytes int + 4 padding + 8 bytes pointer)
+    const FIODGNAME: libc::c_ulong = 0x80106678;
+
+    let mut buf: [libc::c_char; 128] = [0; 128];
+    let mut arg = fiodgname_arg {
+        len: buf.len() as libc::c_int,
+        buf: buf.as_mut_ptr(),
+    };
+
+    unsafe {
+        match ioctl(fd.as_raw_fd(), FIODGNAME, &mut arg) {
+            0 => {
+                let res = CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned();
+                // FreeBSD returns just the device name (e.g., "pts/0"), prepend /dev/
+                Ok(format!("/dev/{}", res))
+            }
+            _ => Err(nix::Error::last()),
+        }
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct PtyProcessOptions {
+    pub echo: bool,
+    pub window_size: Option<Winsize>,
+}
+
+impl PtyProcess {
+    /// Start a process in a forked pty
+    pub fn new(mut command: Command, opts: PtyProcessOptions) -> nix::Result<Self> {
+        // Open a new PTY master
+        let master_fd = posix_openpt(OFlag::O_RDWR)?;
+
+        // Allow a slave to be generated for it
+        grantpt(&master_fd)?;
+        unlockpt(&master_fd)?;
+
+        let slave_name = ptsname_r(&master_fd)?;
+
+        // Get the current window size if it was not specified
+        let window_size = opts.window_size.unwrap_or_else(|| {
+            // find current window size with ioctl
+            let mut size: libc::winsize = unsafe { std::mem::zeroed() };
+            // Query the terminal dimensions
+            unsafe { libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, &mut size) };
+            size
+        });
+
+        match unsafe { fork()? } {
+            ForkResult::Child => {
+                // Avoid leaking master fd
+                close(master_fd.as_raw_fd())?;
+
+                setsid()?; // create new session with child as session leader
+                let slave_fd = open(
+                    std::path::Path::new(&slave_name),
+                    OFlag::O_RDWR,
+                    stat::Mode::empty(),
+                )?;
+
+                // assign stdin, stdout, stderr to the tty, just like a terminal does
+                dup2_stdin(&slave_fd)?;
+                dup2_stdout(&slave_fd)?;
+                dup2_stderr(&slave_fd)?;
+
+                // Avoid leaking slave fd
+                if slave_fd.as_raw_fd() > STDERR_FILENO {
+                    close(slave_fd)?;
+                }
+
+                // Set `echo` and `window_size` for the pty
+                set_echo(io::stdin(), opts.echo)?;
+                set_window_size(io::stdout().as_raw_fd(), window_size)?;
+
+                let _ = command.exec();
+                Err(nix::Error::last())
+            }
+            ForkResult::Parent { child: child_pid } => Ok(PtyProcess {
+                pty: master_fd,
+                child_pid,
+                kill_timeout: None,
+            }),
+        }
+    }
+
+    /// Get handle to pty fork for reading/writing
+    pub fn get_file_handle(&self) -> nix::Result<File> {
+        // needed because otherwise fd is closed both by dropping process and reader/writer
+        let fd = dup(&self.pty)?;
+        Ok(File::from(fd))
+    }
+
+    /// Get status of child process, non-blocking.
+    ///
+    /// This method runs waitpid on the process.
+    /// This means: If you ran `exit()` before or `status()` this method will
+    /// return `None`
+    pub fn status(&self) -> Option<wait::WaitStatus> {
+        wait::waitpid(self.child_pid, Some(wait::WaitPidFlag::WNOHANG)).ok()
+    }
+
+    /// Regularly exit the process, this method is blocking until the process is dead
+    pub fn exit(&mut self) -> nix::Result<wait::WaitStatus> {
+        self.kill(signal::SIGTERM)
+    }
+
+    /// Kill the process with a specific signal. This method blocks, until the process is dead
+    ///
+    /// repeatedly sends SIGTERM to the process until it died,
+    /// the pty session is closed upon dropping `PtyMaster`,
+    /// so we don't need to explicitly do that here.
+    ///
+    /// if `kill_timeout` is set and a repeated sending of signal does not result in the process
+    /// being killed, then `kill -9` is sent after the `kill_timeout` duration has elapsed.
+    pub fn kill(&mut self, sig: signal::Signal) -> nix::Result<wait::WaitStatus> {
+        let start = time::Instant::now();
+        loop {
+            match signal::kill(self.child_pid, sig) {
+                Ok(_) => {}
+                // process was already killed before -> ignore
+                Err(nix::errno::Errno::ESRCH) => {
+                    return Ok(wait::WaitStatus::Exited(Pid::from_raw(0), 0));
+                }
+                Err(e) => return Err(e),
+            }
+
+            match self.status() {
+                Some(status) if status != wait::WaitStatus::StillAlive => return Ok(status),
+                Some(_) | None => thread::sleep(time::Duration::from_millis(100)),
+            }
+            // kill -9 if timeout is reached
+            if let Some(timeout) = self.kill_timeout
+                && start.elapsed() > timeout
+            {
+                signal::kill(self.child_pid, signal::Signal::SIGKILL)?;
+            }
+        }
+    }
+
+    /// Set raw mode on stdin and return the original mode
+    pub fn set_raw(&self) -> nix::Result<Termios> {
+        let original_mode = termios::tcgetattr(io::stdin())?;
+        let mut raw_mode = original_mode.clone();
+        raw_mode.input_flags.remove(
+            InputFlags::BRKINT
+                | InputFlags::ICRNL
+                | InputFlags::INPCK
+                | InputFlags::ISTRIP
+                | InputFlags::IXON,
+        );
+        raw_mode.output_flags.remove(termios::OutputFlags::OPOST);
+        raw_mode
+            .control_flags
+            .remove(termios::ControlFlags::CSIZE | termios::ControlFlags::PARENB);
+        raw_mode.control_flags.insert(termios::ControlFlags::CS8);
+        raw_mode.local_flags.remove(
+            termios::LocalFlags::ECHO
+                | termios::LocalFlags::ICANON
+                | termios::LocalFlags::IEXTEN
+                | termios::LocalFlags::ISIG,
+        );
+
+        raw_mode.control_chars[termios::SpecialCharacterIndices::VMIN as usize] = 1;
+        raw_mode.control_chars[termios::SpecialCharacterIndices::VTIME as usize] = 0;
+
+        termios::tcsetattr(io::stdin(), termios::SetArg::TCSAFLUSH, &raw_mode)?;
+
+        Ok(original_mode)
+    }
+
+    pub fn set_mode(&self, original_mode: Termios) -> nix::Result<()> {
+        termios::tcsetattr(io::stdin(), termios::SetArg::TCSAFLUSH, &original_mode)?;
+        Ok(())
+    }
+
+    pub fn set_window_size(&self, window_size: Winsize) -> nix::Result<()> {
+        set_window_size(self.pty.as_raw_fd(), window_size)
+    }
+
+    pub fn kill_timeout(&self) -> Option<time::Duration> {
+        self.kill_timeout
+    }
+
+    /// When calling `kill()` or `async_kill()`, if the process doesn't respond to
+    /// the signal within this timeout, it will be forcefully killed with SIGKILL.
+    pub fn set_kill_timeout(&mut self, timeout: Option<time::Duration>) {
+        self.kill_timeout = timeout;
+    }
+
+    pub async fn async_read(&self, buf: &mut [u8]) -> io::Result<usize> {
+        let fd = dup(&self.pty).map_err(|e| io::Error::from_raw_os_error(e as i32))?;
+        let mut file = unsafe { tokio::fs::File::from_raw_fd(fd.into_raw_fd()) };
+        file.read(buf).await
+    }
+
+    pub async fn async_write(&self, buf: &[u8]) -> io::Result<usize> {
+        let fd = dup(&self.pty).map_err(|e| io::Error::from_raw_os_error(e as i32))?;
+        let mut file = unsafe { tokio::fs::File::from_raw_fd(fd.into_raw_fd()) };
+        file.write(buf).await
+    }
+
+    pub async fn async_wait(&mut self) -> nix::Result<wait::WaitStatus> {
+        loop {
+            match self.status() {
+                Some(status) if status != wait::WaitStatus::StillAlive => return Ok(status),
+                Some(_) | None => sleep(Duration::from_millis(100)).await,
+            }
+        }
+    }
+
+    pub async fn async_exit(&mut self) -> nix::Result<wait::WaitStatus> {
+        self.async_kill(signal::SIGTERM).await
+    }
+
+    pub async fn async_kill(&mut self, sig: signal::Signal) -> nix::Result<wait::WaitStatus> {
+        let start = Instant::now();
+        loop {
+            match signal::kill(self.child_pid, sig) {
+                Ok(_) => {}
+                // process was already killed before -> ignore
+                Err(nix::errno::Errno::ESRCH) => {
+                    return Ok(wait::WaitStatus::Exited(Pid::from_raw(0), 0));
+                }
+                Err(e) => return Err(e),
+            }
+
+            match self.status() {
+                Some(status) if status != wait::WaitStatus::StillAlive => return Ok(status),
+                Some(_) | None => sleep(Duration::from_millis(100)).await,
+            }
+
+            // kill -9 if timeout is reached
+            if let Some(timeout) = self.kill_timeout
+                && start.elapsed() > timeout
+            {
+                signal::kill(self.child_pid, signal::Signal::SIGKILL)?;
+            }
+        }
+    }
+}
+
+pub fn set_window_size(raw_fd: i32, window_size: Winsize) -> nix::Result<()> {
+    unsafe { libc::ioctl(raw_fd, nix::libc::TIOCSWINSZ, &window_size) };
+    Ok(())
+}
+
+pub fn set_echo<Fd: AsFd>(fd: Fd, echo: bool) -> nix::Result<()> {
+    let mut flags = termios::tcgetattr(&fd)?;
+    if echo {
+        flags.local_flags.insert(termios::LocalFlags::ECHO);
+    } else {
+        flags.local_flags.remove(termios::LocalFlags::ECHO);
+    }
+    termios::tcsetattr(&fd, termios::SetArg::TCSANOW, &flags)?;
+    Ok(())
+}
+
+impl Drop for PtyProcess {
+    fn drop(&mut self) {
+        if let Some(wait::WaitStatus::StillAlive) = self.status() {
+            self.exit().expect("cannot exit");
+        }
+    }
+}

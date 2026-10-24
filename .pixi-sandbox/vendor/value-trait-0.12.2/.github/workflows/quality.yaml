@@ -1,0 +1,48 @@
+name: Quality
+
+on: [push, pull_request]
+
+jobs:
+  clippy_check:
+    strategy:
+      matrix:
+        rustflags:
+          - flags: "-C target-cpu=native"
+            name: "avx2"
+          - flags: "-C target-cpu=native -C target-feature=-avx2"
+            name: "sse"
+        features:
+          - "128bit"
+          - "custom-types"
+          - "c-abi"
+          - "hashbrown"
+          - "halfbrown"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: "1.85.0"
+          override: true
+          components: clippy, rustfmt
+      - name: Validate cargo format
+        run: cargo fmt -- --check
+      - name: Check workflow permissions
+        id: check_permissions
+        uses: scherermichael-oss/action-has-permission@1.0.6
+        with:
+          required-permission: write
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run clippy action to produce annotations
+        uses: actions-rs/clippy-check@v1
+        if: steps.check_permissions.outputs.has-permission
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all --features ${{ matrix.features }}
+      - name: Run clippy manually without annotations
+        if: ${{ !steps.check_permissions.outputs.has-permission }}
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags.flags }}
+        run: cargo clippy --all --features ${{ matrix.features }}

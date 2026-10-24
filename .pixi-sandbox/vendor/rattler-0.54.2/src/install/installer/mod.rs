@@ -1,0 +1,2101 @@
+mod error;
+#[cfg(feature = "indicatif")]
+mod indicatif;
+mod reporter;
+pub(crate) mod result_record;
+
+use std::{
+    collections::{HashMap, HashSet},
+    future::ready,
+    io,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
+pub use error::InstallerError;
+use futures::{FutureExt, StreamExt, TryFutureExt, stream::FuturesUnordered};
+#[cfg(feature = "indicatif")]
+pub use indicatif::{
+    DefaultProgressFormatter, IndicatifReporter, IndicatifReporterBuilder, Placement,
+    ProgressFormatter,
+};
+use itertools::Itertools;
+use rattler_cache::package_cache::{CacheMetadata, CacheReporter};
+use rattler_conda_types::{
+    MatchSpec, PackageName, PackageNameMatcher, PackageRecord, PrefixRecord, RepoDataRecord,
+    Subdir, prefix_record::Link, utils::ensure_safe_path_component,
+};
+use rattler_networking::{LazyClient, retry_policies::default_retry_policy};
+use rayon::prelude::*;
+pub use reporter::Reporter;
+use simple_spawn_blocking::tokio::run_blocking_task;
+use tokio::{sync::Semaphore, task::JoinError};
+
+use super::{
+    AppleCodeSignBehavior, ExternalSymlinkPolicy, InstallDriver, InstallOptions, Prefix,
+    Transaction, unlink_package,
+};
+use crate::{
+    default_cache_dir,
+    install::{
+        clobber_registry::ClobberedPath,
+        installer::result_record::InstallationResultRecord,
+        link_script::{LinkScriptError, PrePostLinkResult},
+    },
+    package_cache::PackageCache,
+};
+
+/// Defines which operations can be used to link files to disk.
+#[derive(Default)]
+pub struct LinkOptions {
+    /// If true, symbolic links will be allowed to install files to the disk.
+    /// Defaults to `true` if `None`.
+    pub allow_symbolic_links: Option<bool>,
+
+    /// If true, hard links will be allowed to install files to the disk.
+    /// Defaults to `true` if `None`.
+    pub allow_hard_links: Option<bool>,
+
+    /// If true, ref links (or copy-on-write links) will be allowed to install
+    /// files to the disk. Defaults to `true` if `None`.
+    pub allow_ref_links: Option<bool>,
+}
+
+#[cfg(feature = "rattler_config")]
+impl From<&rattler_config::config::CommonConfig> for LinkOptions {
+    fn from(config: &rattler_config::config::CommonConfig) -> Self {
+        Self {
+            allow_symbolic_links: config.allow_symbolic_links,
+            allow_hard_links: config.allow_hard_links,
+            allow_ref_links: config.allow_ref_links,
+        }
+    }
+}
+
+/// An installer that can install packages into a prefix.
+#[derive(Default)]
+pub struct Installer {
+    installed: Option<Vec<PrefixRecord>>,
+    package_cache: Option<PackageCache>,
+    downloader: Option<LazyClient>,
+    execute_link_scripts: bool,
+    io_semaphore: Option<Arc<Semaphore>>,
+    concurrent_requests_semaphore: Option<Arc<Semaphore>>,
+    reporter: Option<Arc<dyn Reporter>>,
+    target_platform: Option<Subdir>,
+    apple_code_sign_behavior: AppleCodeSignBehavior,
+    alternative_target_prefix: Option<PathBuf>,
+    reinstall_packages: Option<HashSet<PackageName>>,
+    ignored_packages: Option<HashSet<PackageName>>,
+    requested_specs: Option<Vec<MatchSpec>>,
+    link_options: LinkOptions,
+    external_symlink_policy: ExternalSymlinkPolicy,
+    #[cfg(feature = "sigstore")]
+    attestation_policy: Arc<rattler_sigstore::VerificationPolicy>,
+}
+
+#[derive(Debug)]
+pub struct InstallationResult {
+    /// The transaction that was applied
+    pub transaction: Transaction<InstallationResultRecord, RepoDataRecord>,
+
+    /// The result of running pre link scripts. `None` if no
+    /// pre-processing was performed, possibly because link scripts were
+    /// disabled.
+    pub pre_link_script_result: Option<PrePostLinkResult>,
+
+    /// The result of running post link scripts. `None` if no
+    /// post-processing was performed, possibly because link scripts were
+    /// disabled.
+    pub post_link_script_result: Option<Result<PrePostLinkResult, LinkScriptError>>,
+
+    /// The paths that were clobbered during the installation process.
+    pub clobbered_paths: HashMap<PathBuf, ClobberedPath>,
+}
+
+impl Installer {
+    /// Constructs a new installer
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets an optional IO concurrency limit. This is used to make sure
+    /// that the system doesn't acquire more IO resources than the system has
+    /// available.
+    #[must_use]
+    pub fn with_io_concurrency_limit(self, limit: usize) -> Self {
+        Self {
+            io_semaphore: Some(Arc::new(Semaphore::new(limit))),
+            ..self
+        }
+    }
+
+    /// Sets an optional IO concurrency limit.
+    ///
+    /// This function is similar to [`Self::with_io_concurrency_limit`],
+    /// but modifies an existing instance.
+    pub fn set_io_concurrency_limit(&mut self, limit: usize) -> &mut Self {
+        self.io_semaphore = Some(Arc::new(Semaphore::new(limit)));
+        self
+    }
+
+    /// Sets an optional IO concurrency semaphore. This is used to make sure
+    /// that the system doesn't acquire more IO resources than the system has
+    /// available.
+    #[must_use]
+    pub fn with_io_concurrency_semaphore(self, io_concurrency_semaphore: Arc<Semaphore>) -> Self {
+        Self {
+            io_semaphore: Some(io_concurrency_semaphore),
+            ..self
+        }
+    }
+
+    /// Sets an optional IO concurrency semaphore.
+    ///
+    /// This function is similar to [`Self::with_io_concurrency_semaphore`], but
+    /// modifies an existing instance.
+    pub fn set_io_concurrency_semaphore(&mut self, limit: usize) -> &mut Self {
+        self.io_semaphore = Some(Arc::new(Semaphore::new(limit)));
+        self
+    }
+
+    /// Sets a limit on the number of concurrent package downloads and extractions.
+    /// Attestation verification shares this limit, including trusted-root retrieval.
+    /// This avoids overwhelming a server or saturating the network.
+    #[must_use]
+    pub fn with_max_concurrent_requests(self, limit: usize) -> Self {
+        Self {
+            concurrent_requests_semaphore: Some(Arc::new(Semaphore::new(limit))),
+            ..self
+        }
+    }
+
+    /// Sets a limit on the number of concurrent package downloads and extractions.
+    ///
+    /// This function is similar to [`Self::with_max_concurrent_requests`],
+    /// but modifies an existing instance.
+    pub fn set_max_concurrent_requests(&mut self, limit: usize) -> &mut Self {
+        self.concurrent_requests_semaphore = Some(Arc::new(Semaphore::new(limit)));
+        self
+    }
+
+    /// Sets a semaphore that limits concurrent package downloads and extractions.
+    /// Attestation verification shares this semaphore.
+    #[must_use]
+    pub fn with_concurrent_requests_semaphore(self, semaphore: Arc<Semaphore>) -> Self {
+        Self {
+            concurrent_requests_semaphore: Some(semaphore),
+            ..self
+        }
+    }
+
+    /// Sets a semaphore that limits concurrent package downloads and extractions.
+    ///
+    /// This function is similar to [`Self::with_concurrent_requests_semaphore`],
+    /// but modifies an existing instance.
+    pub fn set_concurrent_requests_semaphore(&mut self, semaphore: Arc<Semaphore>) -> &mut Self {
+        self.concurrent_requests_semaphore = Some(semaphore);
+        self
+    }
+
+    /// Apply the shared rattler configuration (see [`rattler_config`]) to
+    /// this installer: the link options are derived from the
+    /// `allow-*-links` keys, the maximum number of concurrent requests from
+    /// `concurrency.downloads`, and link-script execution from
+    /// `run-post-link-scripts`.
+    ///
+    /// Accepts a [`rattler_config::config::CommonConfig`]; a
+    /// `&ConfigBase<T>` of any extension coerces into it.
+    #[cfg(feature = "rattler_config")]
+    #[must_use]
+    pub fn with_config(mut self, config: &rattler_config::config::CommonConfig) -> Self {
+        self.set_config(config);
+        self
+    }
+
+    /// Apply the shared rattler configuration to this installer. See
+    /// [`Installer::with_config`].
+    #[cfg(feature = "rattler_config")]
+    pub fn set_config(&mut self, config: &rattler_config::config::CommonConfig) -> &mut Self {
+        self.set_link_options(LinkOptions::from(config));
+        self.set_max_concurrent_requests(config.concurrency.downloads);
+        if let Some(run_post_link_scripts) = &config.run_post_link_scripts {
+            self.set_execute_link_scripts(matches!(
+                run_post_link_scripts,
+                rattler_config::config::run_post_link_scripts::RunPostLinkScripts::Insecure
+            ));
+        }
+        self
+    }
+
+    /// Sets whether to execute link scripts or not.
+    ///
+    /// By default, link scripts are not executed. Link scripts can run
+    /// arbitrary code during the installation phase which makes them a security
+    /// risk.
+    #[must_use]
+    pub fn with_execute_link_scripts(self, execute: bool) -> Self {
+        Self {
+            execute_link_scripts: execute,
+            ..self
+        }
+    }
+
+    /// Sets whether to execute link scripts or not.
+    ///
+    /// By default, link scripts are not executed. Link scripts can run
+    /// arbitrary code during the installation phase which makes them a security
+    /// risk.
+    pub fn set_execute_link_scripts(&mut self, execute: bool) -> &mut Self {
+        self.execute_link_scripts = execute;
+        self
+    }
+
+    /// Sets the package cache to use.
+    #[must_use]
+    pub fn with_package_cache(self, package_cache: PackageCache) -> Self {
+        Self {
+            package_cache: Some(package_cache),
+            ..self
+        }
+    }
+
+    /// Sets the package cache to use.
+    ///
+    /// This function is similar to [`Self::with_package_cache`],but modifies an
+    /// existing instance.
+    pub fn set_package_cache(&mut self, package_cache: PackageCache) -> &mut Self {
+        self.package_cache = Some(package_cache);
+        self
+    }
+
+    /// Sets the download client to use
+    #[must_use]
+    pub fn with_download_client(self, downloader: impl Into<LazyClient>) -> Self {
+        Self {
+            downloader: Some(downloader.into()),
+            ..self
+        }
+    }
+
+    /// Sets the download client to use
+    ///
+    /// This function is similar to [`Self::with_download_client`], but modifies
+    /// an existing instance.
+    pub fn set_download_client(&mut self, downloader: impl Into<LazyClient>) -> &mut Self {
+        self.downloader = Some(downloader.into());
+        self
+    }
+
+    /// Sets a reporter that will receive events during the installation
+    /// process.
+    #[must_use]
+    pub fn with_reporter<R: Reporter + 'static>(self, reporter: R) -> Self {
+        Self {
+            reporter: Some(Arc::new(reporter)),
+            ..self
+        }
+    }
+
+    /// Sets a reporter that will receive events during the installation
+    /// process.
+    ///
+    /// This function is similar to [`Self::with_reporter`],but modifies an
+    /// existing instance.
+    pub fn set_reporter<R: Reporter + 'static>(&mut self, reporter: R) -> &mut Self {
+        self.reporter = Some(Arc::new(reporter));
+        self
+    }
+
+    /// Sets the packages that are currently installed in the prefix. If this
+    /// is not set, the installation process will first figure this out.
+    #[must_use]
+    pub fn with_installed_packages(self, installed: Vec<PrefixRecord>) -> Self {
+        Self {
+            installed: Some(installed),
+            ..self
+        }
+    }
+
+    /// Set the packages that we want explicitly to be reinstalled.
+    #[must_use]
+    pub fn with_reinstall_packages(self, reinstall: HashSet<PackageName>) -> Self {
+        Self {
+            reinstall_packages: Some(reinstall),
+            ..self
+        }
+    }
+
+    /// Set the packages that we want explicitly to be reinstalled.
+    /// This function is similar to [`Self::with_reinstall_packages`],but
+    /// modifies an existing instance.
+    pub fn set_reinstall_packages(&mut self, reinstall: HashSet<PackageName>) -> &mut Self {
+        self.reinstall_packages = Some(reinstall);
+        self
+    }
+
+    /// Set the packages that should be ignored (left untouched) during
+    /// installation. Ignored packages will not be removed, installed, or
+    /// updated.
+    #[must_use]
+    pub fn with_ignored_packages(self, ignored: HashSet<PackageName>) -> Self {
+        Self {
+            ignored_packages: Some(ignored),
+            ..self
+        }
+    }
+
+    /// Set the packages that should be ignored (left untouched) during
+    /// installation. Ignored packages will not be removed, installed, or
+    /// updated. This function is similar to
+    /// [`Self::with_ignored_packages`], but modifies an existing instance.
+    pub fn set_ignored_packages(&mut self, ignored: HashSet<PackageName>) -> &mut Self {
+        self.ignored_packages = Some(ignored);
+        self
+    }
+
+    /// Sets the packages that are currently installed in the prefix. If this
+    /// is not set, the installation process will first figure this out.
+    ///
+    /// This function is similar to [`Self::with_installed_packages`],but
+    /// modifies an existing instance.
+    pub fn set_installed_packages(&mut self, installed: Vec<PrefixRecord>) -> &mut Self {
+        self.installed = Some(installed);
+        self
+    }
+
+    /// Sets the target platform of the installation. If not specifically set
+    /// this will default to the current platform.
+    #[must_use]
+    pub fn with_target_platform(self, target_platform: Subdir) -> Self {
+        Self {
+            target_platform: Some(target_platform),
+            ..self
+        }
+    }
+
+    /// Sets the target platform of the installation. If not specifically set
+    /// this will default to the current platform.
+    ///
+    /// This function is similar to [`Self::with_target_platform`], but modifies
+    /// an existing instance.
+    pub fn set_target_platform(&mut self, target_platform: Subdir) -> &mut Self {
+        self.target_platform = Some(target_platform);
+        self
+    }
+
+    /// Determines how to handle Apple code signing behavior.
+    #[must_use]
+    pub fn with_apple_code_signing_behavior(self, behavior: AppleCodeSignBehavior) -> Self {
+        Self {
+            apple_code_sign_behavior: behavior,
+            ..self
+        }
+    }
+
+    /// Determines how to handle Apple code signing behavior.
+    ///
+    /// This function is similar to
+    /// [`Self::with_apple_code_signing_behavior`],but modifies an existing
+    /// instance.
+    pub fn set_apple_code_signing_behavior(
+        &mut self,
+        behavior: AppleCodeSignBehavior,
+    ) -> &mut Self {
+        self.apple_code_sign_behavior = behavior;
+        self
+    }
+
+    /// Sets an alternative prefix to use when patching hardcoded paths in
+    /// installed files.
+    ///
+    /// When files are linked into the target directory, hardcoded paths in
+    /// those files are "patched" by replacing the placeholder prefix with the
+    /// full path of the target directory. In exceptional cases you might want
+    /// to patch in a different prefix than the directory that is actually being
+    /// installed to. When set, this prefix is used instead of the target
+    /// directory.
+    #[must_use]
+    pub fn with_alternative_target_prefix(self, prefix: impl Into<PathBuf>) -> Self {
+        Self {
+            alternative_target_prefix: Some(prefix.into()),
+            ..self
+        }
+    }
+
+    /// Sets an alternative prefix to use when patching hardcoded paths in
+    /// installed files.
+    ///
+    /// This function is similar to [`Self::with_alternative_target_prefix`],
+    /// but modifies an existing instance.
+    pub fn set_alternative_target_prefix(&mut self, prefix: impl Into<PathBuf>) -> &mut Self {
+        self.alternative_target_prefix = Some(prefix.into());
+        self
+    }
+
+    /// Sets the link options for the installer.
+    pub fn with_link_options(self, options: LinkOptions) -> Self {
+        Self {
+            link_options: options,
+            ..self
+        }
+    }
+
+    /// Sets the link options for the installer.
+    pub fn set_link_options(&mut self, options: LinkOptions) -> &mut Self {
+        self.link_options = options;
+        self
+    }
+
+    /// Sets the policy for handling symlinks that point outside the target
+    /// prefix.
+    ///
+    /// Some packages (e.g. driver packages) legitimately ship symlinks to
+    /// paths outside the environment. The default policy is
+    /// [`ExternalSymlinkPolicy::Warn`].
+    #[must_use]
+    pub fn with_external_symlink_policy(self, policy: ExternalSymlinkPolicy) -> Self {
+        Self {
+            external_symlink_policy: policy,
+            ..self
+        }
+    }
+
+    /// Sets the policy for handling symlinks that point outside the target
+    /// prefix.
+    ///
+    /// This function is similar to [`Self::with_external_symlink_policy`],
+    /// but modifies an existing instance.
+    pub fn set_external_symlink_policy(&mut self, policy: ExternalSymlinkPolicy) -> &mut Self {
+        self.external_symlink_policy = policy;
+        self
+    }
+
+    /// Sets the policy for verifying the Sigstore attestations of packages
+    /// installed or relinked by the transaction.
+    ///
+    /// Attestations are discovered through the `attestations_sha256` field of
+    /// the package records, fetched from the channel and verified against the
+    /// package `sha256`. All affected records are verified before the
+    /// transaction updates package metadata, runs pre-unlink actions, removes
+    /// packages, or links packages. With
+    /// [`rattler_sigstore::VerificationPolicy::Require`], a package whose
+    /// attestations do not verify fails the installation with
+    /// [`InstallerError::AttestationRejected`] before those changes begin.
+    /// With [`rattler_sigstore::VerificationPolicy::Warn`], problems are
+    /// logged and the transaction continues.
+    ///
+    /// Unchanged packages and packages that are only removed are not verified.
+    /// This preflight guarantee is specific to attestation verification; other
+    /// installation failures can still occur after the transaction starts
+    /// modifying the prefix.
+    ///
+    /// Defaults to [`rattler_sigstore::VerificationPolicy::Disabled`].
+    #[cfg(feature = "sigstore")]
+    #[must_use]
+    pub fn with_attestation_policy(self, policy: rattler_sigstore::VerificationPolicy) -> Self {
+        Self {
+            attestation_policy: Arc::new(policy),
+            ..self
+        }
+    }
+
+    /// Sets the policy for verifying the Sigstore attestations of the packages
+    /// that are installed.
+    ///
+    /// This function is similar to [`Self::with_attestation_policy`], but
+    /// modifies an existing instance.
+    #[cfg(feature = "sigstore")]
+    pub fn set_attestation_policy(
+        &mut self,
+        policy: rattler_sigstore::VerificationPolicy,
+    ) -> &mut Self {
+        self.attestation_policy = Arc::new(policy);
+        self
+    }
+
+    /// Sets the requested specs for the installer. These will be used to
+    /// populate the `requested_spec` field in generated `PrefixRecord`
+    /// instances.
+    #[must_use]
+    pub fn with_requested_specs(self, specs: Vec<MatchSpec>) -> Self {
+        Self {
+            requested_specs: Some(specs),
+            ..self
+        }
+    }
+
+    /// Sets the requested specs for the installer. These will be used to
+    /// populate the `requested_spec` field in generated `PrefixRecord`
+    /// instances.
+    pub fn set_requested_specs(&mut self, specs: Vec<MatchSpec>) -> &mut Self {
+        self.requested_specs = Some(specs);
+        self
+    }
+
+    /// Install the packages in the given prefix.
+    pub async fn install(
+        self,
+        prefix: impl AsRef<Path>,
+        records: impl IntoIterator<Item = RepoDataRecord>,
+    ) -> Result<InstallationResult, InstallerError> {
+        let prefix = Prefix::create(prefix.as_ref().to_path_buf()).map_err(|err| {
+            InstallerError::FailedToCreatePrefix(prefix.as_ref().to_path_buf(), err)
+        })?;
+
+        // Create a future to determine the currently installed packages. We
+        // can start this in parallel with the other operations and resolve it
+        // when we need it.
+        let installed_provided = self.installed.is_some();
+        let mut installed: Vec<InstallationResultRecord> = if let Some(installed) = self.installed {
+            installed
+                .into_iter()
+                .map(InstallationResultRecord::Max)
+                .collect()
+        } else {
+            let prefix = prefix.clone();
+            // Use sparse collection for much faster reading when checking if packages
+            // changed
+            run_blocking_task(move || {
+                use rattler_conda_types::MinimalPrefixCollection;
+                PrefixRecord::collect_minimal_from_prefix(&prefix)
+                    .map_err(InstallerError::FailedToDetectInstalledPackages)
+            })
+            .await?
+            .into_iter()
+            .map(InstallationResultRecord::Min)
+            .collect()
+        };
+
+        // Construct a transaction from the current and desired situation.
+        let target_platform = self
+            .target_platform
+            .or_else(Subdir::current)
+            .ok_or(InstallerError::UnknownHostPlatform)?;
+        let desired_records: Vec<_> = records.into_iter().collect();
+        let mut transaction = Transaction::from_current_and_desired(
+            installed.iter(),
+            desired_records.iter(),
+            self.reinstall_packages.as_ref(),
+            self.ignored_packages.as_ref(),
+            target_platform,
+        )?;
+        // If transaction is non-empty, we need full prefix records for file operations
+        // Reload them and reconstruct the transaction with full records
+        if !transaction.operations.is_empty() && !installed_provided {
+            let prefix = prefix.clone();
+            installed = run_blocking_task(move || {
+                PrefixRecord::collect_from_prefix(&prefix)
+                    .map_err(InstallerError::FailedToDetectInstalledPackages)
+            })
+            .await?
+            .into_iter()
+            .map(InstallationResultRecord::Max)
+            .collect();
+
+            // Reconstruct transaction with full records to maintain consistency
+            transaction = Transaction::from_current_and_desired(
+                installed.iter(),
+                desired_records.iter(),
+                self.reinstall_packages.as_ref(),
+                self.ignored_packages.as_ref(),
+                target_platform,
+            )?;
+        }
+
+        let transaction = transaction.to_owned();
+
+        // Reject packages whose name/build could escape the prefix once written
+        // to disk, before attempting any installation (GHSA-h672-p7h7-97v9).
+        for record in transaction.installed_packages() {
+            ensure_record_path_safe(&record.package_record)?;
+        }
+
+        // Validate that if the target platform is NoArch, all packages to be installed
+        // must also be noarch (subdir == "noarch")
+        if target_platform == Subdir::NoArch {
+            let non_noarch_packages: Vec<String> = transaction
+                .installed_packages()
+                .filter(|record| record.package_record.subdir != "noarch")
+                .map(|record| {
+                    format!(
+                        "{}/{}-{}-{}",
+                        record.package_record.subdir,
+                        record.package_record.name.as_normalized(),
+                        record.package_record.version,
+                        record.package_record.build
+                    )
+                })
+                .collect();
+
+            if !non_noarch_packages.is_empty() {
+                return Err(InstallerError::PlatformSpecificPackagesWithNoarchPlatform(
+                    non_noarch_packages,
+                ));
+            }
+        }
+
+        let downloader = self.downloader.unwrap_or_default();
+        let io_semaphore = self
+            .io_semaphore
+            .unwrap_or_else(|| Arc::new(Semaphore::new(100)));
+
+        // Verify the complete set before any transaction operation can mutate
+        // installed package metadata or files. This prevents one rejected
+        // package from leaving a replacement or multi-package transaction
+        // partially applied.
+        #[cfg(feature = "sigstore")]
+        verify_transaction_attestations(
+            transaction.installed_packages(),
+            &self.attestation_policy,
+            &downloader,
+            &io_semaphore,
+            self.concurrent_requests_semaphore.as_deref(),
+        )
+        .await?;
+
+        // Create a mapping from package names to requested specs
+        let spec_mapping = self
+            .requested_specs
+            .as_ref()
+            .map(|specs| create_spec_mapping(specs))
+            .map(Arc::new);
+
+        // Update existing records that weren't modified but have matching requested
+        // specs This needs to happen even if the transaction is empty
+        if let Some(spec_mapping) = &spec_mapping {
+            // We have requested_specs (even if empty), so update/clear as needed
+            update_existing_records(transaction.unchanged_packages(), spec_mapping, &prefix)?;
+        }
+
+        // If the transaction is empty we can short-circuit the installation
+        if transaction.operations.is_empty() {
+            return Ok(InstallationResult {
+                transaction,
+                pre_link_script_result: None,
+                post_link_script_result: None,
+                clobbered_paths: HashMap::default(),
+            });
+        }
+
+        // At this point we can't have any minimal prefix records, so force them to be
+        // prefix records.
+        let transaction = transaction
+            .into_prefix_record(&prefix)
+            .map_err(InstallerError::FailedToDetectInstalledPackages)?;
+
+        let package_cache = self.package_cache.unwrap_or_else(|| {
+            PackageCache::new(
+                default_cache_dir()
+                    .expect("failed to determine default cache directory")
+                    .join(rattler_cache::PACKAGE_CACHE_DIR),
+            )
+        });
+
+        // Acquire a global lock on the package cache for the entire installation.
+        // This significantly reduces overhead by avoiding per-package locking.
+        let _global_cache_lock = package_cache
+            .acquire_global_lock()
+            .await
+            .map_err(InstallerError::FailedToAcquireCacheLock)?;
+
+        // Semaphore that limits concurrent package downloads and extractions. The permit
+        // is held for the duration of both. When None, concurrency is unlimited.
+        let concurrent_requests_semaphore = self.concurrent_requests_semaphore;
+
+        // Construct a driver.
+        let driver = InstallDriver::builder()
+            .execute_link_scripts(self.execute_link_scripts)
+            .with_io_concurrency_semaphore(io_semaphore)
+            .with_prefix_records(
+                transaction
+                    .unchanged_packages()
+                    .iter()
+                    .chain(transaction.removed_packages()),
+            )
+            .finish();
+
+        // Determine base installer options.
+        let base_install_options = InstallOptions {
+            target_prefix: self.alternative_target_prefix.clone(),
+            platform: Some(target_platform),
+            python_info: transaction.python_info.clone(),
+            apple_codesign_behavior: self.apple_code_sign_behavior,
+            allow_symbolic_links: self.link_options.allow_symbolic_links,
+            allow_hard_links: self.link_options.allow_hard_links,
+            allow_ref_links: self.link_options.allow_ref_links,
+            external_symlink_policy: self.external_symlink_policy,
+            ..InstallOptions::default()
+        };
+
+        // Preprocess the transaction
+        let pre_process_result = driver
+            .pre_process(&transaction, &prefix, self.reporter.as_deref())
+            .map_err(InstallerError::PreProcessingFailed)?;
+
+        if let Some(reporter) = &self.reporter {
+            reporter.on_transaction_start(&transaction);
+        }
+
+        let mut pending_unlink_futures = FuturesUnordered::new();
+        // Execute the operations (remove) in the transaction.
+        for (operation_idx, operation) in transaction.operations.iter().enumerate() {
+            let reporter = self.reporter.clone();
+            let driver = &driver;
+            let prefix = &prefix;
+
+            let op = async move {
+                // Uninstall the package if it was removed.
+                if let Some(record) = operation.record_to_remove() {
+                    if let Some(reporter) = &reporter {
+                        reporter.on_transaction_operation_start(operation_idx);
+                    }
+
+                    let reporter = reporter
+                        .as_deref()
+                        .map(move |r| (r, r.on_unlink_start(operation_idx, record)));
+                    driver.clobber_registry().unregister_paths(record);
+                    unlink_package(prefix, record).await.map_err(|e| {
+                        InstallerError::UnlinkError(
+                            record.repodata_record.identifier.to_string(),
+                            e,
+                        )
+                    })?;
+                    if let Some((reporter, index)) = reporter {
+                        reporter.on_unlink_complete(index);
+                        if operation.record_to_install().is_none() {
+                            reporter.on_transaction_operation_complete(operation_idx);
+                        }
+                    }
+                }
+                Ok::<(), InstallerError>(())
+            };
+            pending_unlink_futures.push(op);
+        }
+
+        let mut pending_link_futures = FuturesUnordered::new();
+        // Execute the operations (install) in the transaction.
+        for (operation_idx, operation) in transaction
+            .operations
+            .iter()
+            .enumerate()
+            .sorted_by_key(|(_, op)| {
+                op.record_to_install()
+                    .and_then(|r| r.package_record.size)
+                    .unwrap_or(0)
+            })
+            .rev()
+        {
+            let downloader = &downloader;
+            let package_cache = &package_cache;
+            let reporter = self.reporter.clone();
+            let base_install_options = &base_install_options;
+            let driver = &driver;
+            let prefix = &prefix;
+            let concurrent_requests_semaphore = &concurrent_requests_semaphore;
+            let spec_mapping_ref = spec_mapping.clone();
+            let operation_future = async move {
+                if let Some(reporter) = &reporter
+                    && operation.record_to_remove().is_none()
+                {
+                    reporter.on_transaction_operation_start(operation_idx);
+                }
+
+                // Start populating the cache with the package if it's not already there.
+                let package_to_install = if let Some(record) = operation.record_to_install() {
+                    let record = record.clone();
+                    let downloader = downloader.clone();
+                    let reporter = reporter.clone();
+                    let package_cache = package_cache.clone();
+                    let concurrent_requests_semaphore = concurrent_requests_semaphore.clone();
+                    tokio::spawn(async move {
+                        let populate_cache_report = reporter.clone().map(|r| {
+                            let cache_index = r.on_populate_cache_start(operation_idx, &record);
+                            (r, cache_index)
+                        });
+                        let populate_cache = populate_cache(
+                            &record,
+                            downloader.clone(),
+                            &package_cache,
+                            populate_cache_report.clone(),
+                            concurrent_requests_semaphore,
+                        );
+
+                        let cache_metadata = populate_cache.await?;
+                        if let Some((reporter, index)) = populate_cache_report {
+                            reporter.on_populate_cache_complete(index);
+                        }
+                        Ok((cache_metadata, record))
+                    })
+                    .map_err(JoinError::try_into_panic)
+                    .map(|res| match res {
+                        Ok(Ok(result)) => Ok(Some(result)),
+                        Ok(Err(e)) => Err(e),
+                        Err(Ok(payload)) => std::panic::resume_unwind(payload),
+                        Err(Err(_err)) => Err(InstallerError::Cancelled),
+                    })
+                    .left_future()
+                } else {
+                    ready(Ok(None)).right_future()
+                };
+
+                // Install the package if it was fetched.
+                if let Some((cache_metadata, record)) = package_to_install.await? {
+                    let reporter = reporter
+                        .as_deref()
+                        .map(|r| (r, r.on_link_start(operation_idx, &record)));
+                    let requested_spec = spec_mapping_ref
+                        .and_then(|mapping| mapping.get(&record.package_record.name).cloned())
+                        .unwrap_or_default();
+
+                    // Reuse index_json and paths_json from cache validation if available
+                    let mut install_options = base_install_options.clone();
+                    if let Some(index_json) = cache_metadata.index_json() {
+                        install_options.index_json = Some(index_json.clone());
+                    }
+                    if let Some(paths_json) = cache_metadata.paths_json() {
+                        install_options.paths_json = Some(paths_json.clone());
+                    }
+
+                    link_package(
+                        &record,
+                        prefix,
+                        cache_metadata.path(),
+                        install_options,
+                        driver,
+                        requested_spec,
+                    )
+                    .await?;
+                    if let Some((reporter, index)) = reporter {
+                        reporter.on_link_complete(index);
+                    }
+                }
+                if let Some(reporter) = &reporter
+                    && operation.record_to_install().is_some()
+                {
+                    reporter.on_transaction_operation_complete(operation_idx);
+                }
+
+                Ok::<_, InstallerError>(())
+            };
+
+            pending_link_futures.push(operation_future);
+        }
+
+        // Wait for all transaction operations to finish
+        while let Some(result) = pending_unlink_futures.next().await {
+            result?;
+        }
+        drop(pending_unlink_futures);
+
+        driver
+            .remove_empty_directories(
+                &transaction.operations,
+                transaction.unchanged_packages(),
+                &prefix,
+            )
+            .map_err(|e| InstallerError::UnlinkError("remove_empty_directories".to_string(), e))?;
+
+        // Wait for all transaction operations to finish
+        while let Some(result) = pending_link_futures.next().await {
+            result?;
+        }
+        drop(pending_link_futures);
+
+        // Post process the transaction
+        let post_process_result =
+            driver.post_process(&transaction, &prefix, self.reporter.as_deref())?;
+
+        if let Some(reporter) = &self.reporter {
+            reporter.on_transaction_complete();
+        }
+
+        let transaction = transaction.into_installation_result_record();
+
+        Ok(InstallationResult {
+            transaction,
+            pre_link_script_result: pre_process_result,
+            post_link_script_result: post_process_result.post_link_result,
+            clobbered_paths: post_process_result.clobbered_paths,
+        })
+    }
+}
+
+async fn link_package(
+    record: &RepoDataRecord,
+    target_prefix: &Prefix,
+    cached_package_dir: &Path,
+    install_options: InstallOptions,
+    driver: &InstallDriver,
+    requested_specs: Vec<String>,
+) -> Result<(), InstallerError> {
+    let record = record.clone();
+    let target_prefix = target_prefix.clone();
+    let cached_package_dir = cached_package_dir.to_path_buf();
+    let clobber_registry = driver.clobber_registry.clone();
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    // Since we use the `Prefix` type, the conda-meta folder is guaranteed to exist
+    let conda_meta_path = target_prefix.path().join("conda-meta");
+
+    rayon::spawn_fifo(move || {
+        let inner = move || {
+            // Link the contents of the package into the prefix.
+            let (paths, link_type) = crate::install::link_package_sync(
+                &cached_package_dir,
+                &target_prefix,
+                clobber_registry,
+                install_options,
+            )
+            .map_err(|e| InstallerError::LinkError(record.identifier.to_string(), e))?;
+
+            // Construct a PrefixRecord for the package
+            let prefix_record = PrefixRecord {
+                extracted_package_dir: Some(cached_package_dir.clone()),
+                link: Some(Link {
+                    source: cached_package_dir,
+                    link_type: Some(link_type),
+                }),
+                requested_specs,
+                ..PrefixRecord::from_repodata_record(record.clone(), paths)
+            };
+
+            let pkg_meta_path = prefix_record.file_name();
+            prefix_record
+                .write_to_path(conda_meta_path.join(&pkg_meta_path), true)
+                .map_err(|e| {
+                    InstallerError::IoError(format!("failed to write {pkg_meta_path}"), e)
+                })?;
+
+            Ok(())
+        };
+
+        let _ = tx.send(inner());
+    });
+
+    rx.await.unwrap_or(Err(InstallerError::Cancelled))
+}
+
+/// Given a repodata record, fetch the package into the cache if its not already
+/// there.
+async fn populate_cache(
+    record: &RepoDataRecord,
+    downloader: LazyClient,
+    cache: &PackageCache,
+    reporter: Option<(Arc<dyn Reporter>, usize)>,
+    concurrent_requests_semaphore: Option<Arc<Semaphore>>,
+) -> Result<CacheMetadata, InstallerError> {
+    struct CacheReporterBridge {
+        reporter: Arc<dyn Reporter>,
+        cache_index: usize,
+    }
+
+    impl CacheReporter for CacheReporterBridge {
+        fn on_validate_start(&self) -> usize {
+            self.reporter.on_validate_start(self.cache_index)
+        }
+
+        fn on_validate_complete(&self, index: usize) {
+            self.reporter.on_validate_complete(index);
+        }
+
+        fn on_download_start(&self) -> usize {
+            self.reporter.on_download_start(self.cache_index)
+        }
+
+        fn on_download_progress(&self, index: usize, progress: u64, total: Option<u64>) {
+            self.reporter.on_download_progress(index, progress, total);
+        }
+
+        fn on_download_completed(&self, index: usize) {
+            self.reporter.on_download_completed(index);
+        }
+    }
+
+    let reporter = reporter.map(|(reporter, cache_index)| {
+        Arc::new(CacheReporterBridge {
+            reporter,
+            cache_index,
+        }) as _
+    });
+
+    if record.url.scheme() == "file" {
+        let path = record.url.to_file_path().map_err(|()| {
+            InstallerError::IoError(
+                format!("invalid file URL for {}", record.identifier),
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("could not convert {} to a file path", record.url),
+                ),
+            )
+        })?;
+
+        cache
+            .get_or_fetch_from_path(&path, Some(&record.package_record), reporter)
+            .await
+            .map_err(|e| InstallerError::FailedToFetch(record.identifier.to_string(), e))
+    } else {
+        cache
+            .get_or_fetch_from_url_with_retry(
+                &record.package_record,
+                record.url.clone(),
+                downloader,
+                default_retry_policy(),
+                reporter,
+                concurrent_requests_semaphore,
+            )
+            .await
+            .map_err(|e| InstallerError::FailedToFetch(record.identifier.to_string(), e))
+    }
+}
+
+/// Verifies the attestations of `record` according to `policy`.
+///
+/// Returns an error if the policy requires verification and it fails. Warnings
+/// are logged.
+#[cfg(feature = "sigstore")]
+async fn verify_attestations(
+    record: &RepoDataRecord,
+    policy: &rattler_sigstore::VerificationPolicy,
+    downloader: &LazyClient,
+    io_semaphore: &Semaphore,
+    concurrent_requests_semaphore: Option<&Semaphore>,
+) -> Result<(), InstallerError> {
+    if !policy.is_enabled() {
+        return Ok(());
+    }
+    let _permits =
+        attestation_io_permits(record, io_semaphore, concurrent_requests_semaphore).await;
+    let outcome = rattler_sigstore::verify_record(policy, record, downloader.client())
+        .await
+        .map_err(|err| {
+            InstallerError::AttestationRejected(record.identifier.to_string(), Box::new(err))
+        })?;
+    for warning in &outcome.warnings {
+        tracing::warn!("{}: {warning}", record.identifier);
+    }
+    if let Some(attestation) = &outcome.attestation {
+        tracing::info!(
+            "verified attestation for {} (identity: {}, issuer: {})",
+            record.identifier,
+            attestation.identity.as_deref().unwrap_or("unknown"),
+            attestation.issuer.as_deref().unwrap_or("unknown"),
+        );
+    }
+    Ok(())
+}
+
+/// Shares the installer's permits with verification, including trusted-root
+/// retrieval. Local sidecars also acquire an IO permit. Permits remain held
+/// through body consumption and verification and are released on cancellation.
+#[cfg(feature = "sigstore")]
+async fn attestation_io_permits<'a>(
+    record: &RepoDataRecord,
+    io_semaphore: &'a Semaphore,
+    concurrent_requests_semaphore: Option<&'a Semaphore>,
+) -> (
+    Option<tokio::sync::SemaphorePermit<'a>>,
+    Option<tokio::sync::SemaphorePermit<'a>>,
+) {
+    // These records fail locally before any trusted-root or sidecar IO.
+    if record.package_record.attestations_sha256.is_none() || record.package_record.sha256.is_none()
+    {
+        return (None, None);
+    }
+    let request_permit = match concurrent_requests_semaphore {
+        Some(semaphore) => Some(
+            semaphore
+                .acquire()
+                .await
+                .expect("semaphore should not be closed"),
+        ),
+        None => None,
+    };
+    let io_permit = if record.url.scheme() == "file" {
+        Some(
+            io_semaphore
+                .acquire()
+                .await
+                .expect("semaphore should not be closed"),
+        )
+    } else {
+        None
+    };
+    (request_permit, io_permit)
+}
+
+/// Verifies every package that will be installed or relinked before the
+/// transaction starts mutating the prefix.
+#[cfg(feature = "sigstore")]
+async fn verify_transaction_attestations<'a>(
+    records: impl IntoIterator<Item = &'a RepoDataRecord>,
+    policy: &rattler_sigstore::VerificationPolicy,
+    downloader: &LazyClient,
+    io_semaphore: &Semaphore,
+    concurrent_requests_semaphore: Option<&Semaphore>,
+) -> Result<(), InstallerError> {
+    if !policy.is_enabled() {
+        return Ok(());
+    }
+
+    let mut pending = FuturesUnordered::new();
+    for record in records {
+        pending.push(verify_attestations(
+            record,
+            policy,
+            downloader,
+            io_semaphore,
+            concurrent_requests_semaphore,
+        ));
+    }
+    while let Some(result) = pending.next().await {
+        result?;
+    }
+    Ok(())
+}
+
+/// Updates only the `requested_specs` fields in a conda-meta JSON file.
+/// This performs a targeted update without overwriting other
+/// metadata.
+///
+/// This method is needed as we're initially loading
+/// `MinimalPrefixRecord`, which doesn't contain most of the fields.
+/// Therefore direct writing could overwrite data we want to preserve.
+///
+/// Currently we're loading full json, but we could do that in place without
+/// parsing whole file.
+fn update_requested_specs_in_json(
+    path: &Path,
+    requested_specs: &[String],
+    requested_spec: Option<&String>,
+) -> io::Result<()> {
+    use serde_json::Value;
+
+    // Read the existing JSON file
+    let content = fs_err::read_to_string(path)?;
+    let mut json: Value = serde_json::from_str(&content)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    // Update only the requested_specs fields
+    if let Some(obj) = json.as_object_mut() {
+        // Update requested_specs (plural)
+        obj.insert(
+            "requested_specs".to_string(),
+            Value::Array(
+                requested_specs
+                    .iter()
+                    .map(|s| Value::String(s.clone()))
+                    .collect(),
+            ),
+        );
+
+        // Update or remove requested_spec (singular, deprecated)
+        if let Some(spec) = requested_spec {
+            obj.insert("requested_spec".to_string(), Value::String(spec.clone()));
+        } else {
+            obj.remove("requested_spec");
+        }
+    }
+
+    // Write the updated JSON back to file
+    let updated_content = serde_json::to_string_pretty(&json)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    fs_err::write(path, updated_content)?;
+
+    Ok(())
+}
+
+/// Rejects a record whose `name`/`build` could escape the prefix when written
+/// to disk. Both fields come from lower-trust channel repodata and are
+/// interpolated into `conda-meta` paths (GHSA-h672-p7h7-97v9).
+fn ensure_record_path_safe(record: &PackageRecord) -> Result<(), InstallerError> {
+    ensure_safe_path_component(record.name.as_normalized())
+        .and_then(|()| ensure_safe_path_component(record.build.as_str()))
+        .map_err(InstallerError::UnsafePackageRecord)
+}
+
+/// Creates a mapping from package names to their requested spec strings.
+///
+/// This function takes a list of `MatchSpecs` and creates a mapping where:
+/// - The key is the `PackageName` from the `MatchSpec`
+/// - The value is a vector of string representations of all matching
+///   `MatchSpecs`
+///
+/// Only `MatchSpec`s that have a `PackageNameMatcher::Exact` are included.
+/// For multiple `MatchSpec`s with the same package name, all are collected.
+fn create_spec_mapping(specs: &[MatchSpec]) -> std::collections::HashMap<PackageName, Vec<String>> {
+    let mut mapping = std::collections::HashMap::new();
+
+    for spec in specs {
+        if let PackageNameMatcher::Exact(name) = &spec.name {
+            mapping
+                .entry(name.clone())
+                .or_insert_with(Vec::new)
+                .push(spec.to_string());
+        }
+    }
+
+    mapping
+}
+
+/// Updates existing `PrefixRecord` files with their requested specs.
+///
+/// This function takes existing records that weren't modified by the
+/// transaction and updates their `requested_specs` field based on the spec
+/// mapping or clears it if requested. The updated records are then written back
+/// to disk.
+#[allow(deprecated)]
+fn update_existing_records<'p>(
+    existing_records: impl IntoParallelIterator<Item = &'p InstallationResultRecord>,
+    spec_mapping: &HashMap<PackageName, Vec<String>>,
+    prefix: &Prefix,
+) -> Result<(), InstallerError> {
+    existing_records
+        .into_par_iter()
+        .map(|record| -> Result<(), InstallerError> {
+            let package_name = record.name();
+            let mut updated_record = None;
+
+            // First, check if we need to migrate from deprecated requested_spec to
+            // requested_specs
+            let current_specs = if !record.requested_specs().is_empty() {
+                // Use the new field if it has data
+                record.requested_specs().clone()
+            } else if let Some(spec) = record.requested_spec() {
+                // Migrate from deprecated field
+                vec![spec.clone()]
+            } else {
+                // No specs at all
+                Vec::new()
+            };
+
+            // Check if we need to migrate from the deprecated field
+            let needs_migration = record.requested_spec().is_some();
+
+            // Check if we have requested specs for this package
+            if let Some(requested_specs) = spec_mapping.get(package_name) {
+                // Check if the requested specs are different from what's currently stored
+                if needs_migration || &current_specs != requested_specs {
+                    // Create an updated record with the new requested specs
+                    let mut new_record = record.clone();
+                    *new_record.requested_specs_mut() = requested_specs.clone();
+                    *new_record.requested_spec_mut() = None; // Clear deprecated field
+                    updated_record = Some(new_record);
+                }
+            } else if !current_specs.is_empty() {
+                // Clear the requested_specs if it's not in the mapping
+                let mut new_record = record.clone();
+                *new_record.requested_specs_mut() = Vec::new();
+                *new_record.requested_spec_mut() = None; // Clear deprecated field
+                updated_record = Some(new_record);
+            } else if needs_migration {
+                // Even if current_specs is empty, we still need to clear the deprecated field
+                let mut new_record = record.clone();
+                *new_record.requested_spec_mut() = None;
+                updated_record = Some(new_record);
+            }
+
+            // Write the updated record back to disk if needed
+            if let Some(new_record) = updated_record {
+                let conda_meta_path = prefix.path().join("conda-meta");
+                let pkg_meta_path = format!(
+                    "{}-{}-{}.json",
+                    new_record.name().as_normalized(),
+                    new_record.version(),
+                    new_record.build()
+                );
+                let full_path = conda_meta_path.join(&pkg_meta_path);
+
+                // We need to do a targeted update of just the requested_specs fields
+                // to avoid overwriting other metadata when using minimal records
+                update_requested_specs_in_json(
+                    &full_path,
+                    new_record.requested_specs(),
+                    new_record.requested_spec(),
+                )
+                .map_err(|e| {
+                    InstallerError::IoError(
+                        format!("failed to update requested_specs for {pkg_meta_path}"),
+                        e,
+                    )
+                })?;
+            }
+
+            Ok(())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+    use rattler_conda_types::{
+        MatchSpec, PackageName,
+        ParseStrictness::Strict,
+        package::{BuildString, IndexJson},
+        prefix::Prefix,
+    };
+    use rattler_package_streaming::seek::read_package_file;
+    use tempfile::TempDir;
+    use url::Url;
+
+    #[test]
+    fn test_ensure_record_path_safe() {
+        use rattler_conda_types::VersionWithSource;
+
+        let record = |name: &str, build: &str| {
+            PackageRecord::new(
+                PackageName::new_unchecked(name),
+                "1.0".parse::<VersionWithSource>().unwrap(),
+                BuildString::new_unchecked(build),
+            )
+        };
+
+        assert!(ensure_record_path_safe(&record("demo", "py39_0")).is_ok());
+        // An empty build string is legitimate and cannot traverse.
+        assert!(ensure_record_path_safe(&record("demo", "")).is_ok());
+        // Path traversal in either field must be rejected.
+        assert!(ensure_record_path_safe(&record("demo", r"x\..\..\..\.git\hooks")).is_err());
+        assert!(ensure_record_path_safe(&record("demo", "a/b")).is_err());
+        assert!(ensure_record_path_safe(&record("../evil", "0")).is_err());
+    }
+
+    /// Creates a test environment with a temporary directory and prefix
+    fn create_test_environment() -> (TempDir, Prefix) {
+        let temp_dir = TempDir::new().unwrap();
+        let target_prefix = Prefix::create(temp_dir.path()).unwrap();
+        (temp_dir, target_prefix)
+    }
+
+    /// Creates a `RepoDataRecord` from the dummy package for testing
+    fn create_dummy_repo_record() -> rattler_conda_types::RepoDataRecord {
+        let package_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../test-data/packages/empty-0.1.0-h4616a5c_0.conda")
+            .canonicalize()
+            .unwrap();
+
+        let index_json: IndexJson =
+            read_package_file(&package_path).expect("Failed to read package");
+        RepoDataRecord {
+            package_record: rattler_conda_types::PackageRecord::from_index_json(
+                index_json, None, // size unknown
+                None, // sha256 unknown
+                None, // md5 unknown
+            )
+            .unwrap(),
+            identifier: "empty-0.1.0-h4616a5c_0.conda".parse().unwrap(),
+            url: Url::from_file_path(package_path).unwrap(),
+            channel: Some("local".to_string()),
+        }
+    }
+
+    /// Returns a record for a different version/build of the same package.
+    #[cfg(feature = "sigstore")]
+    fn replacement_record(record: &RepoDataRecord, version: &str, build: &str) -> RepoDataRecord {
+        let mut replacement = record.clone();
+        replacement.package_record.version = version.parse().unwrap();
+        replacement.package_record.build = build.parse().unwrap();
+        replacement.identifier = format!(
+            "{}-{version}-{build}.conda",
+            replacement.package_record.name.as_normalized()
+        )
+        .parse()
+        .unwrap();
+        replacement
+    }
+
+    #[cfg(feature = "sigstore")]
+    fn require_attestations() -> rattler_sigstore::VerificationPolicy {
+        rattler_sigstore::VerificationPolicy::Require(rattler_sigstore::VerificationConfig::new(
+            rattler_sigstore::Publisher::new(),
+        ))
+    }
+
+    /// Gets the conda-meta file path for a given `RepoDataRecord`
+    fn get_meta_file_path(
+        prefix: &Prefix,
+        repo_record: &rattler_conda_types::RepoDataRecord,
+    ) -> std::path::PathBuf {
+        let conda_meta_path = prefix.path().join("conda-meta");
+        let expected_filename = format!(
+            "{}-{}-{}.json",
+            repo_record.package_record.name.as_normalized(),
+            repo_record.package_record.version,
+            repo_record.package_record.build
+        );
+        conda_meta_path.join(&expected_filename)
+    }
+
+    /// Reads a `PrefixRecord` from its conda-meta file
+    fn read_prefix_record(meta_file_path: &std::path::Path) -> rattler_conda_types::PrefixRecord {
+        rattler_conda_types::PrefixRecord::from_path(meta_file_path)
+            .expect("Should be able to read the prefix record")
+    }
+
+    /// Installs a package using the given installer and verifies success
+    async fn install_and_verify_success(
+        installer: Installer,
+        prefix: &Prefix,
+        repo_record: rattler_conda_types::RepoDataRecord,
+    ) {
+        let result = installer.install(prefix, vec![repo_record]).await;
+        assert!(
+            result.is_ok(),
+            "Installation should succeed, but got error: {result:#?}"
+        );
+    }
+
+    #[test]
+    fn test_spec_mapping_helper() {
+        // Test the spec mapping functionality
+        let specs = vec![
+            MatchSpec::from_str("python ~=3.11.0", Strict).unwrap(),
+            MatchSpec::from_str("numpy >=1.20", Strict).unwrap(),
+        ];
+
+        let mapping = create_spec_mapping(&specs);
+
+        // Should map package names to their match specs
+        assert_eq!(mapping.len(), 2);
+        let python_name: PackageName = "python".parse().unwrap();
+        let numpy_name: PackageName = "numpy".parse().unwrap();
+        assert!(mapping.contains_key(&python_name));
+        assert!(mapping.contains_key(&numpy_name));
+
+        // Should convert match specs to string format
+        assert_eq!(mapping[&python_name], vec!["python ~=3.11.0"]);
+        assert_eq!(mapping[&numpy_name], vec!["numpy >=1.20"]);
+    }
+
+    #[test]
+    fn test_spec_mapping_with_nameless_specs() {
+        // Test handling of nameless specs (should be skipped)
+        let specs = vec![
+            MatchSpec::from_str("python ~=3.11.0", Strict).unwrap(),
+            // Create a nameless spec by removing the name
+            MatchSpec::from_nameless(
+                rattler_conda_types::NamelessMatchSpec::default(),
+                "*".parse::<rattler_conda_types::PackageNameMatcher>()
+                    .unwrap(),
+            ),
+        ];
+
+        let mapping = create_spec_mapping(&specs);
+
+        // Should only include the named spec
+        assert_eq!(mapping.len(), 1);
+        let python_name: PackageName = "python".parse().unwrap();
+        assert!(mapping.contains_key(&python_name));
+    }
+
+    #[test]
+    fn test_update_existing_records_logic() {
+        // Test the logic for determining if records should be updated
+        use std::collections::HashMap;
+
+        // Mock spec mapping
+        let mut spec_mapping: HashMap<PackageName, Vec<String>> = HashMap::new();
+        spec_mapping.insert(
+            "python".parse().unwrap(),
+            vec!["python ~=3.11.0".to_string()],
+        );
+
+        // Test that the mapping is created correctly
+        assert_eq!(spec_mapping.len(), 1);
+        assert_eq!(
+            spec_mapping[&"python".parse::<PackageName>().unwrap()],
+            vec!["python ~=3.11.0"]
+        );
+
+        // Test that we can check if a package needs updating
+        let package_name: PackageName = "python".parse().unwrap();
+        let requested_spec_from_mapping = spec_mapping.get(&package_name);
+        assert!(requested_spec_from_mapping.is_some());
+        assert_eq!(
+            requested_spec_from_mapping.unwrap(),
+            &vec!["python ~=3.11.0"]
+        );
+
+        // Test missing package
+        let missing_package: PackageName = "missing".parse().unwrap();
+        assert!(!spec_mapping.contains_key(&missing_package));
+    }
+
+    #[test]
+    fn test_spec_mapping_with_multiple_specs_same_package() {
+        // Test handling of multiple specs for the same package
+        let specs = vec![
+            MatchSpec::from_str("python >=3.8", Strict).unwrap(),
+            MatchSpec::from_str("python <3.12", Strict).unwrap(),
+            MatchSpec::from_str("numpy >=1.20", Strict).unwrap(),
+        ];
+
+        let mapping = create_spec_mapping(&specs);
+
+        // Should map package names to their match specs
+        assert_eq!(mapping.len(), 2);
+        let python_name: PackageName = "python".parse().unwrap();
+        let numpy_name: PackageName = "numpy".parse().unwrap();
+        assert!(mapping.contains_key(&python_name));
+        assert!(mapping.contains_key(&numpy_name));
+
+        // Should collect all specs for python, but single spec for numpy
+        assert_eq!(mapping[&python_name], vec!["python >=3.8", "python <3.12"]);
+        assert_eq!(mapping[&numpy_name], vec!["numpy >=1.20"]);
+    }
+
+    #[tokio::test]
+    async fn test_install_with_requested_specs_e2e() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let repo_record = create_dummy_repo_record();
+
+        // Create a requested spec for the empty package
+        let requested_spec = MatchSpec::from_str("empty >=0.1.0", Strict).unwrap();
+        let requested_specs = vec![requested_spec];
+
+        // Install using the installer with requested specs
+        let installer = Installer::new().with_requested_specs(requested_specs);
+        install_and_verify_success(installer, &target_prefix, repo_record.clone()).await;
+
+        // Verify that the conda-meta file was created with the correct requested_spec
+        let meta_file_path = get_meta_file_path(&target_prefix, &repo_record);
+        assert!(meta_file_path.exists(), "conda-meta file should exist");
+
+        // Read and verify the PrefixRecord
+        let updated_record = read_prefix_record(&meta_file_path);
+
+        // Verify that requested_specs is properly set
+        assert!(
+            !updated_record.requested_specs.is_empty(),
+            "requested_specs should be populated"
+        );
+        assert_eq!(
+            updated_record.requested_specs.first().unwrap(),
+            "empty >=0.1.0",
+            "requested_specs should match the original spec"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_install_without_requested_specs_e2e() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let repo_record = create_dummy_repo_record();
+
+        // Install using the installer WITHOUT requested specs
+        let installer = Installer::new();
+        install_and_verify_success(installer, &target_prefix, repo_record.clone()).await;
+
+        // Verify that the conda-meta file was created without requested_spec
+        let meta_file_path = get_meta_file_path(&target_prefix, &repo_record);
+        assert!(meta_file_path.exists(), "conda-meta file should exist");
+
+        // Read and verify the PrefixRecord
+        let updated_record = read_prefix_record(&meta_file_path);
+
+        // Verify that requested_specs is empty (original behavior)
+        assert!(
+            updated_record.requested_specs.is_empty(),
+            "requested_specs should be empty when not provided"
+        );
+    }
+
+    #[cfg(feature = "sigstore")]
+    #[tokio::test]
+    async fn attestation_verification_shares_concurrency_limits() {
+        for local in [false, true] {
+            let mut record = create_dummy_repo_record();
+            record.package_record.sha256 =
+                Some(rattler_digest::compute_bytes_digest::<rattler_digest::Sha256>(b"package"));
+            record.url = Url::parse(if local {
+                "file:///channel/test.conda"
+            } else {
+                "https://example.org/channel/test.conda"
+            })
+            .unwrap();
+            record.package_record.attestations_sha256 = record.package_record.sha256;
+            assert!(record.package_record.attestations_sha256.is_some());
+
+            // An unrelated operation already holds one of the three permits.
+            // HTTP must not need an IO permit, even when none are available.
+            let requests = Semaphore::new(if local { 10 } else { 3 });
+            let io = Semaphore::new(if local { 3 } else { 0 });
+            let shared = if local { &io } else { &requests };
+            let external_permit = shared.acquire().await.unwrap();
+            let mut pending = FuturesUnordered::new();
+            for _ in 0..4 {
+                pending.push(attestation_io_permits(&record, &io, Some(&requests)));
+            }
+
+            let first = pending.next().await.unwrap();
+            let second = pending.next().await.unwrap();
+            assert!(futures::poll!(pending.next()).is_pending());
+            assert_eq!(shared.available_permits(), 0);
+
+            // Releasing an external permit admits exactly one more operation.
+            drop(external_permit);
+            let third = pending.next().await.unwrap();
+            assert!(futures::poll!(pending.next()).is_pending());
+            drop(first);
+            let fourth = pending.next().await.unwrap();
+            drop((second, third, fourth, pending));
+            assert_eq!(requests.available_permits(), if local { 10 } else { 3 });
+            assert_eq!(io.available_permits(), if local { 3 } else { 0 });
+        }
+    }
+
+    #[cfg(feature = "sigstore")]
+    #[tokio::test]
+    async fn attestation_verification_releases_permits_on_cancellation() {
+        let mut record = create_dummy_repo_record();
+        record.package_record.sha256 =
+            Some(rattler_digest::compute_bytes_digest::<rattler_digest::Sha256>(b"package"));
+        record.url = Url::parse("file:///channel/test.conda").unwrap();
+        record.package_record.attestations_sha256 = record.package_record.sha256;
+        let requests = Semaphore::new(1);
+        let io = Semaphore::new(0);
+        let mut pending = Box::pin(attestation_io_permits(&record, &io, Some(&requests)));
+        assert!(futures::poll!(&mut pending).is_pending());
+        assert_eq!(requests.available_permits(), 0);
+        drop(pending);
+        assert_eq!(requests.available_permits(), 1);
+    }
+
+    #[cfg(feature = "sigstore")]
+    #[tokio::test]
+    async fn attestation_metadata_errors_do_not_wait_for_permits() {
+        let mut record = create_dummy_repo_record();
+        record.package_record.sha256 =
+            Some(rattler_digest::compute_bytes_digest::<rattler_digest::Sha256>(b"package"));
+        let requests = Semaphore::new(0);
+        let io = Semaphore::new(0);
+        for missing_sha256 in [false, true] {
+            if missing_sha256 {
+                record.package_record.attestations_sha256 = record.package_record.sha256;
+                record.package_record.sha256 = None;
+            }
+            let downloader = LazyClient::default();
+            let policy = require_attestations();
+            let verification =
+                verify_attestations(&record, &policy, &downloader, &io, Some(&requests));
+            futures::pin_mut!(verification);
+            assert!(matches!(
+                futures::poll!(verification),
+                std::task::Poll::Ready(Err(InstallerError::AttestationRejected(..)))
+            ));
+        }
+    }
+
+    #[cfg(feature = "sigstore")]
+    #[tokio::test]
+    async fn required_attestation_rejection_preserves_replaced_package() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let installed = create_dummy_repo_record();
+        install_and_verify_success(Installer::new(), &target_prefix, installed.clone()).await;
+
+        let replacement = replacement_record(&installed, "0.2.0", "h4616a5c_1");
+        let result = Installer::new()
+            .with_attestation_policy(require_attestations())
+            .install(&target_prefix, vec![replacement.clone()])
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(InstallerError::AttestationRejected(_, _))
+        ));
+        assert!(get_meta_file_path(&target_prefix, &installed).exists());
+        assert!(!get_meta_file_path(&target_prefix, &replacement).exists());
+    }
+
+    #[cfg(feature = "sigstore")]
+    #[tokio::test]
+    async fn required_attestation_rejection_preserves_multi_package_transaction() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let first_installed = create_dummy_repo_record();
+        install_and_verify_success(Installer::new(), &target_prefix, first_installed.clone()).await;
+
+        // Add a second installed record. Its empty path list is sufficient for
+        // checking that its package metadata is not removed by the rejected
+        // transaction.
+        let mut second_installed = first_installed.clone();
+        second_installed.package_record.name = PackageName::new_unchecked("other");
+        second_installed.identifier = "other-0.1.0-h4616a5c_0.conda".parse().unwrap();
+        PrefixRecord::from_repodata_record(second_installed.clone(), Vec::new())
+            .write_to_path(get_meta_file_path(&target_prefix, &second_installed), true)
+            .unwrap();
+
+        let first_replacement = replacement_record(&first_installed, "0.2.0", "h4616a5c_1");
+        let second_replacement = replacement_record(&second_installed, "0.2.0", "h4616a5c_1");
+        let result = Installer::new()
+            .with_attestation_policy(require_attestations())
+            .install(
+                &target_prefix,
+                vec![first_replacement.clone(), second_replacement.clone()],
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(InstallerError::AttestationRejected(_, _))
+        ));
+        assert!(get_meta_file_path(&target_prefix, &first_installed).exists());
+        assert!(get_meta_file_path(&target_prefix, &second_installed).exists());
+        assert!(!get_meta_file_path(&target_prefix, &first_replacement).exists());
+        assert!(!get_meta_file_path(&target_prefix, &second_replacement).exists());
+    }
+
+    #[cfg(feature = "sigstore")]
+    #[tokio::test]
+    async fn required_attestations_skip_unchanged_packages() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let installed = create_dummy_repo_record();
+        install_and_verify_success(Installer::new(), &target_prefix, installed.clone()).await;
+
+        // The record has no advertised attestation, but it is already present
+        // and the transaction does not install or relink it.
+        let result = Installer::new()
+            .with_attestation_policy(require_attestations())
+            .install(&target_prefix, vec![installed.clone()])
+            .await
+            .unwrap();
+
+        assert!(result.transaction.operations.is_empty());
+        assert!(get_meta_file_path(&target_prefix, &installed).exists());
+    }
+
+    #[tokio::test]
+    async fn test_update_existing_package_requested_spec() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let repo_record = create_dummy_repo_record();
+
+        // Step 1: Install the package WITHOUT requested specs (simulating existing
+        // installation)
+        let installer = Installer::new();
+        install_and_verify_success(installer, &target_prefix, repo_record.clone()).await;
+
+        // Verify that initially there's no requested_specs
+        let meta_file_path = get_meta_file_path(&target_prefix, &repo_record);
+        let initial_record = read_prefix_record(&meta_file_path);
+        assert!(
+            initial_record.requested_specs.is_empty(),
+            "Initial installation should have no requested_specs"
+        );
+
+        // Step 2: "Install" the same package again, but this time WITH requested specs
+        // This simulates a user running install with specs on an existing environment
+        let requested_spec = MatchSpec::from_str("empty >=0.1.0", Strict).unwrap();
+        let requested_specs = vec![requested_spec];
+
+        let installer_with_specs = Installer::new().with_requested_specs(requested_specs);
+        install_and_verify_success(installer_with_specs, &target_prefix, repo_record.clone()).await;
+
+        // Step 3: Verify that the existing package now has the requested_specs updated
+        let updated_record = read_prefix_record(&meta_file_path);
+
+        // The package should now have the requested_specs populated
+        assert!(
+            !updated_record.requested_specs.is_empty(),
+            "Updated installation should have requested_specs"
+        );
+        assert_eq!(
+            updated_record.requested_specs.first().unwrap(),
+            "empty >=0.1.0",
+            "requested_specs should match the newly provided spec"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_clear_requested_spec_when_empty() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let repo_record = create_dummy_repo_record();
+
+        // Step 1: Install the package WITH requested specs
+        let requested_spec = MatchSpec::from_str("empty >=0.1.0", Strict).unwrap();
+        let requested_specs = vec![requested_spec];
+
+        let installer_with_specs = Installer::new().with_requested_specs(requested_specs);
+        install_and_verify_success(installer_with_specs, &target_prefix, repo_record.clone()).await;
+
+        // Verify that the package has requested_specs populated
+        let meta_file_path = get_meta_file_path(&target_prefix, &repo_record);
+        let initial_record = read_prefix_record(&meta_file_path);
+        assert!(
+            !initial_record.requested_specs.is_empty(),
+            "Initial installation should have requested_specs"
+        );
+        assert_eq!(
+            initial_record.requested_specs.first().unwrap(),
+            "empty >=0.1.0"
+        );
+
+        // Step 2: "Install" the same package again, but this time with EMPTY requested
+        // specs This simulates a user running install with empty specs to clear
+        // existing ones
+        let installer_without_specs = Installer::new().with_requested_specs(vec![]); // Explicitly empty requested_specs
+        install_and_verify_success(installer_without_specs, &target_prefix, repo_record.clone())
+            .await;
+
+        // Step 3: Verify that the existing package now has the requested_specs cleared
+        let updated_record = read_prefix_record(&meta_file_path);
+
+        // The package should now have the requested_specs cleared (set to empty)
+        assert!(
+            updated_record.requested_specs.is_empty(),
+            "Updated installation without specs should clear requested_specs, got nonempty record requested_specs: {:#?}",
+            updated_record.requested_specs
+        );
+    }
+
+    #[tokio::test]
+    async fn test_install_with_ignored_packages() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let repo_record = create_dummy_repo_record();
+
+        // Step 1: Install the package first
+        let installer = Installer::new();
+        install_and_verify_success(installer, &target_prefix, repo_record.clone()).await;
+
+        // Verify the package was installed
+        let meta_file_path = get_meta_file_path(&target_prefix, &repo_record);
+        assert!(meta_file_path.exists(), "Package should be installed");
+
+        // Step 2: Try to "remove" the package by installing an empty environment, but
+        // ignore the package
+        let package_name = repo_record.package_record.name.clone();
+        let ignored_packages = HashSet::from_iter(vec![package_name]);
+        let installer_with_ignored = Installer::new().with_ignored_packages(ignored_packages);
+
+        // Install empty environment (should remove all packages, except ignored ones)
+        let result = installer_with_ignored
+            .install(&target_prefix, Vec::<RepoDataRecord>::new())
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "Installation with ignored packages should succeed"
+        );
+
+        // Verify the ignored package is still there
+        assert!(
+            meta_file_path.exists(),
+            "Ignored package should still be installed"
+        );
+
+        // Verify transaction was empty (no operations performed)
+        let installation_result = result.unwrap();
+        assert!(
+            installation_result.transaction.operations.is_empty(),
+            "No operations should be performed on ignored packages"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_migrate_deprecated_requested_spec() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let repo_record = create_dummy_repo_record();
+
+        // Step 1: Manually create a PrefixRecord with the deprecated requested_spec
+        // field to simulate an old installation
+        let meta_file_path = get_meta_file_path(&target_prefix, &repo_record);
+        let conda_meta_path = target_prefix.path().join("conda-meta");
+        std::fs::create_dir_all(&conda_meta_path).unwrap();
+
+        // Create a record with the deprecated field set
+        #[allow(deprecated)]
+        let old_record = PrefixRecord {
+            repodata_record: repo_record.clone(),
+            requested_spec: Some("empty >=0.1.0".to_string()),
+            requested_specs: Vec::new(), // Empty new field
+            ..PrefixRecord::from_repodata_record(repo_record.clone(), Vec::new())
+        };
+
+        old_record.write_to_path(&meta_file_path, true).unwrap();
+
+        // Verify the old record has deprecated field set
+        let initial_record = read_prefix_record(&meta_file_path);
+        #[allow(deprecated)]
+        {
+            assert!(
+                initial_record.requested_spec.is_some(),
+                "Initial record should have deprecated requested_spec"
+            );
+            assert!(
+                initial_record.requested_specs.is_empty(),
+                "Initial record should have empty requested_specs"
+            );
+        }
+
+        // Step 2: Run installer with the same specs to trigger migration
+        let requested_spec = MatchSpec::from_str("empty >=0.1.0", Strict).unwrap();
+        let requested_specs = vec![requested_spec];
+
+        let installer_with_specs = Installer::new().with_requested_specs(requested_specs);
+        install_and_verify_success(installer_with_specs, &target_prefix, repo_record.clone()).await;
+
+        // Step 3: Verify that the migration happened
+        let migrated_record = read_prefix_record(&meta_file_path);
+
+        #[allow(deprecated)]
+        {
+            assert!(
+                migrated_record.requested_spec.is_none(),
+                "Migrated record should have cleared deprecated requested_spec"
+            );
+        }
+
+        assert!(
+            !migrated_record.requested_specs.is_empty(),
+            "Migrated record should have populated requested_specs"
+        );
+        assert_eq!(
+            migrated_record.requested_specs.first().unwrap(),
+            "empty >=0.1.0",
+            "Migrated specs should match the original spec"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_noarch_platform_rejects_platform_specific_packages() {
+        use rattler_conda_types::Subdir;
+
+        let (_temp_dir, target_prefix) = create_test_environment();
+
+        // Create a platform-specific package (with subdir != "noarch")
+        let mut platform_specific_package = create_dummy_repo_record();
+        platform_specific_package.package_record.subdir = "osx-arm64".to_string();
+
+        // Try to install this platform-specific package with Subdir::NoArch
+        let installer = Installer::new().with_target_platform(Subdir::NoArch);
+        let result = installer
+            .install(&target_prefix, vec![platform_specific_package.clone()])
+            .await;
+
+        // Should fail with PlatformSpecificPackagesWithNoarchPlatform error
+        assert!(
+            result.is_err(),
+            "Installation should fail when installing platform-specific packages with noarch platform"
+        );
+
+        match result {
+            Err(InstallerError::PlatformSpecificPackagesWithNoarchPlatform(packages)) => {
+                assert!(
+                    !packages.is_empty(),
+                    "Error should list the problematic packages"
+                );
+                assert!(
+                    packages[0].contains("osx-arm64"),
+                    "Error message should include the subdir of the platform-specific package"
+                );
+            }
+            _ => {
+                panic!("Expected PlatformSpecificPackagesWithNoarchPlatform error, got: {result:?}")
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_noarch_platform_accepts_noarch_packages() {
+        use rattler_conda_types::{NoArchType, Subdir};
+
+        let (_temp_dir, target_prefix) = create_test_environment();
+
+        // Create a noarch package (with subdir == "noarch")
+        let mut noarch_package = create_dummy_repo_record();
+        noarch_package.package_record.subdir = "noarch".to_string();
+        noarch_package.package_record.noarch = NoArchType::generic();
+
+        // Try to install this noarch package with Subdir::NoArch
+        let installer = Installer::new().with_target_platform(Subdir::NoArch);
+        let result = installer
+            .install(&target_prefix, vec![noarch_package.clone()])
+            .await;
+
+        // Should succeed
+        assert!(
+            result.is_ok(),
+            "Installation should succeed when installing noarch packages with noarch platform: {:?}",
+            result.err()
+        );
+    }
+
+    /// Test that the recorded `link_type` in the conda-meta `PrefixRecord`
+    /// matches the filesystem capabilities
+    #[tokio::test]
+    async fn test_link_type_recorded_correctly() {
+        use rattler_conda_types::prefix_record::LinkType;
+
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let repo_record = create_dummy_repo_record();
+
+        // Install with hard links explicitly disabled
+        let installer = Installer::new().with_link_options(LinkOptions {
+            allow_hard_links: Some(false),
+            ..LinkOptions::default()
+        });
+        install_and_verify_success(installer, &target_prefix, repo_record.clone()).await;
+
+        let meta_path = get_meta_file_path(&target_prefix, &repo_record);
+        let prefix_record = read_prefix_record(&meta_path);
+        assert_eq!(
+            prefix_record.link.as_ref().and_then(|l| l.link_type),
+            Some(LinkType::Copy),
+            "link_type should be Copy when hard links are disabled"
+        );
+    }
+
+    #[test]
+    fn test_alternative_target_prefix_setters() {
+        let prefix = Path::new("/some/other/prefix");
+
+        // The builder-style setter should store the prefix.
+        let installer = Installer::new().with_alternative_target_prefix(prefix);
+        assert_eq!(installer.alternative_target_prefix.as_deref(), Some(prefix));
+
+        // The mutable setter should store the prefix as well.
+        let mut installer = Installer::new();
+        installer.set_alternative_target_prefix(prefix);
+        assert_eq!(installer.alternative_target_prefix.as_deref(), Some(prefix));
+    }
+
+    #[tokio::test]
+    async fn test_install_with_alternative_target_prefix() {
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let repo_record = create_dummy_repo_record();
+
+        // Installing with an alternative target prefix set should still succeed.
+        let installer = Installer::new().with_alternative_target_prefix("/some/other/prefix");
+        install_and_verify_success(installer, &target_prefix, repo_record.clone()).await;
+
+        let meta_file_path = get_meta_file_path(&target_prefix, &repo_record);
+        assert!(meta_file_path.exists(), "conda-meta file should exist");
+    }
+
+    /// Test that when hard links are explicitly forced on
+    #[tokio::test]
+    async fn test_link_type_hardlink_when_forced() {
+        use rattler_conda_types::prefix_record::LinkType;
+
+        let (_temp_dir, target_prefix) = create_test_environment();
+        let repo_record = create_dummy_repo_record();
+
+        // Force hard links on prefix and cache are on the same device in
+        // this test so hard linking should actually succeed.
+        let installer = Installer::new().with_link_options(LinkOptions {
+            allow_hard_links: Some(true),
+            ..LinkOptions::default()
+        });
+        install_and_verify_success(installer, &target_prefix, repo_record.clone()).await;
+
+        let meta_path = get_meta_file_path(&target_prefix, &repo_record);
+        let prefix_record = read_prefix_record(&meta_path);
+        assert_eq!(
+            prefix_record.link.as_ref().and_then(|l| l.link_type),
+            Some(LinkType::HardLink),
+            "link_type should be HardLink when hard links are explicitly enabled"
+        );
+    }
+}

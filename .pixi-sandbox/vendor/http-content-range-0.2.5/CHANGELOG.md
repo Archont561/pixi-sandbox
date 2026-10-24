@@ -1,0 +1,49 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.2.5](https://github.com/nyurik/http-content-range/compare/v0.2.4...v0.2.5) - 2026-06-22
+
+### Other
+
+- update .gitignore
+- format justfile
+- *(deps)* bump actions/checkout from 6 to 7 in the all-actions-version-updates group ([#33](https://github.com/nyurik/http-content-range/pull/33))
+- update codecov, justfile, clippy, msrv ([#32](https://github.com/nyurik/http-content-range/pull/32))
+- *(deps)* bump the all-actions-version-updates group across 1 directory with 2 updates ([#31](https://github.com/nyurik/http-content-range/pull/31))
+- *(deps)* bump codecov/codecov-action from 5 to 6 in the all-actions-version-updates group ([#29](https://github.com/nyurik/http-content-range/pull/29))
+- [pre-commit.ci] pre-commit autoupdate ([#28](https://github.com/nyurik/http-content-range/pull/28))
+- add .editorconfig
+- minor justfile adjustments
+- *(deps)* bump actions/checkout from 5 to 6 in the all-actions-version-updates group ([#27](https://github.com/nyurik/http-content-range/pull/27))
+- minor justfile adjustments
+- build and license cleanup
+
+## [0.2.4](https://github.com/nyurik/http-content-range/compare/v0.2.3...v0.2.4) - 2025-10-01
+
+### Other
+
+- use automatic crates.io token
+- add more linting
+- *(just)* minor justfile cleanup
+- *(ci)* improve cargo-install recipe
+- *(ci)* disable telemetry in workflow
+- fix binstall in justfile
+- improve get-create-field in justfile
+- update ci and justfile ([#25](https://github.com/nyurik/http-content-range/pull/25))
+- [pre-commit.ci] pre-commit autoupdate ([#22](https://github.com/nyurik/http-content-range/pull/22))
+
+## [0.2.3](https://github.com/nyurik/http-content-range/compare/v0.2.2...v0.2.3) - 2025-06-08
+
+### Other
+
+- consolidate release CI, dedup release and PR ([#21](https://github.com/nyurik/http-content-range/pull/21))
+
+## [0.2.2](https://github.com/nyurik/http-content-range/compare/v0.2.1...v0.2.2) - 2025-06-06
+
+- refactored CI, enabled release automation
