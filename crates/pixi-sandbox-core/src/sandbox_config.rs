@@ -338,6 +338,18 @@ pub struct WorkspacePlan {
     /// Sum of the locked artifacts' recorded sizes, in bytes. `0` when the lock records none —
     /// an estimate that says "unknown" rather than inventing a number.
     pub size_bytes: u64,
+    /// Channel URLs the nested lock records for the selected environments, de-duplicated and
+    /// sorted. TASK-129 AC#3's transparency control: channel divergence between workspaces is
+    /// allowed by design, so it is surfaced here for review rather than refused. Empty when the
+    /// lock records none (the hand-built test locks declare `channels = []`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub channels: Vec<String>,
+    /// The resolved package identities (`name==version=build` for Conda, `name==version` for
+    /// `PyPI`), de-duplicated and sorted. This is the named "resolved package set" AC#3 asks for:
+    /// two workspaces pinning different versions of a package both appear here, visibly, instead
+    /// of being silently flattened into one prefix.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identities: Vec<String>,
 }
 
 /// One native job: it creates exactly one orphan branch.

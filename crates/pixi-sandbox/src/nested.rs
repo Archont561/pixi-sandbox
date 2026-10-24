@@ -45,16 +45,18 @@ pub fn plan_workspaces(config: &SandboxConfig, repo_root: &Path) -> Result<Vec<W
             let manifest = read_manifest(&project.join("pixi.toml"))?;
             check_platforms(bundle, declaration, &manifest)?;
             let environments = declaration.selected_environments();
-            let (packages, size_bytes) =
-                count_environment(&project, &environments, &bundle.platforms, declaration)?;
+            let facts =
+                collect_lock_facts(&project, &environments, &bundle.platforms, declaration)?;
             plans.push(WorkspacePlan {
                 bundle: bundle.name.clone(),
                 manifest: declaration.manifest.clone(),
                 directory: directory.to_string(),
                 slug: declaration.slug()?,
                 environments,
-                packages,
-                size_bytes,
+                packages: facts.packages,
+                size_bytes: facts.size_bytes,
+                channels: facts.channels,
+                identities: facts.identities,
             });
         }
     }
@@ -140,18 +142,28 @@ fn check_platforms(
     Ok(())
 }
 
-/// How many packages the nested lock resolves for `environments` across `platforms`, and the sum
-/// of the sizes it records for them.
+/// What `plan` reports about one nested workspace's lock: the package count and recorded sizes
+/// the cost review needs, plus the channels and resolved identities AC#3's transparency control
+/// surfaces. Every collection is de-duplicated and sorted, so two environments sharing a package
+/// report it once while the count still sums per-environment selections.
+struct LockFacts {
+    packages: usize,
+    size_bytes: u64,
+    channels: Vec<String>,
+    identities: Vec<String>,
+}
+
+/// Collect what the nested lock resolves for `environments` across `platforms`.
 ///
 /// Counted, never estimated: the number is what a reviewer compares against the bundle's cost.
 /// A lock that records no `size` field contributes nothing to the byte count, so the total is
 /// reported as `0` (unknown) rather than as a plausible-looking guess.
-fn count_environment(
+fn collect_lock_facts(
     project: &Path,
     environments: &[String],
     platforms: &[String],
     declaration: &pixi_sandbox_core::sandbox_config::WorkspaceDecl,
-) -> Result<(usize, u64)> {
+) -> Result<LockFacts> {
     let lock_path = project.join("pixi.lock");
     let lock: serde_yaml::Value = serde_yaml::from_slice(
         &fs::read(&lock_path).with_context(|| format!("reading {}", lock_path.display()))?,
@@ -160,7 +172,16 @@ fn count_environment(
     let records = lock["packages"].as_sequence();
     let mut packages = 0usize;
     let mut size_bytes = 0u64;
+    let mut channels: BTreeSet<String> = BTreeSet::new();
+    let mut identities: BTreeSet<String> = BTreeSet::new();
     for environment in environments {
+        if let Some(urls) = lock["environments"][environment]["channels"].as_sequence() {
+            for channel in urls {
+                if let Some(url) = channel["url"].as_str() {
+                    channels.insert(url.to_string());
+                }
+            }
+        }
         for platform in platforms {
             let Some(selected) =
                 lock["environments"][environment]["packages"][platform].as_sequence()
@@ -190,8 +211,61 @@ fn count_environment(
                 if let Some(size) = record["size"].as_u64() {
                     size_bytes += size;
                 }
+                if let Some(identity) = package_identity(record, location) {
+                    identities.insert(identity);
+                }
             }
         }
     }
-    Ok((packages, size_bytes))
+    Ok(LockFacts {
+        packages,
+        size_bytes,
+        channels: channels.into_iter().collect(),
+        identities: identities.into_iter().collect(),
+    })
+}
+
+/// Resolve one locked record to a reviewable identity: `name==version=build` for a Conda
+/// package, `name==version` for a `PyPI` wheel.
+///
+/// A pixi-written v7 lock stores no name/version/build on the record — rattler takes them from
+/// the archive — so the fallback parses the location's filename. Conda archives follow
+/// `<name>-<version>-<build>.(conda|tar.bz2)` and wheels the PEP 427
+/// stale-ref-allowed: PEP 427 filename tag naming the interpreter, not the deleted 0.2.0 tool.
+/// `<name>-<version>-<python>-<abi>-<platform>.whl` layout; a name or version may itself carry
+/// dashes/underscores, so the split is anchored on the right side.
+fn package_identity(record: &serde_yaml::Value, location: &str) -> Option<String> {
+    let filename = location.rsplit('/').next().unwrap_or(location);
+    if record["pypi"].is_string() {
+        if let (Some(name), Some(version)) = (record["name"].as_str(), record["version"].as_str()) {
+            return Some(format!("{name}=={version}"));
+        }
+        let stem = filename.strip_suffix(".whl")?;
+        let mut parts = stem.split('-');
+        let name = parts.next()?;
+        let version = parts.next()?;
+        Some(format!("{name}=={version}"))
+    } else {
+        // The caller matched this record on its `conda` location, so the else branch is Conda.
+        if let (Some(name), Some(version), Some(build)) = (
+            record["name"].as_str(),
+            record["version"].as_str(),
+            record["build"].as_str(),
+        ) {
+            return Some(format!("{name}=={version}={build}"));
+        }
+        let stem = filename
+            .strip_suffix(".tar.bz2")
+            .or_else(|| filename.strip_suffix(".conda"))?;
+        let mut parts = stem.rsplit('-');
+        let build = parts.next()?;
+        let version = parts.next()?;
+        let name = parts
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("-");
+        (!name.is_empty()).then(|| format!("{name}=={version}={build}"))
+    }
 }

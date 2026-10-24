@@ -62,14 +62,28 @@ pub fn run(args: &PlanArgs) -> Result<()> {
     }
 
     for workspace in &plan.workspaces {
+        // AC#3: channel and package-identity divergence between workspaces is allowed by
+        // design, so the plan names it for review instead of refusing it.
+        let channels = if workspace.channels.is_empty() {
+            "-".to_string()
+        } else {
+            workspace.channels.join(",")
+        };
+        let identities = if workspace.identities.is_empty() {
+            "-".to_string()
+        } else {
+            workspace.identities.join(",")
+        };
         println!(
-            "  workspace {}: {} · {} · {} package(s) · {} MiB · bundle {}",
+            "  workspace {}: {} · {} · {} package(s) · {} MiB · bundle {} · channels: {} · set: {}",
             workspace.slug,
             workspace.manifest,
             workspace.environments.join(","),
             workspace.packages,
             support::mib(workspace.size_bytes),
             workspace.bundle,
+            channels,
+            identities,
         );
     }
     println!("schema {} · {} target(s)", plan.schema, plan.include.len());

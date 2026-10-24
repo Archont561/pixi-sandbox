@@ -93,6 +93,9 @@ package = []
 test = { depends-on = ["bun-install"], cmd = "bun run test" }
 # Connected real build, then the consumer portion runs inside a Linux network namespace with no egress.
 test-payload-roundtrip = "cargo test -p pixi-sandbox --test payload_roundtrip -- --ignored --nocapture"
+# TASK-129 AC#7: pixi-generated nested locks, pack/restore, then frozen/offline pixi operations
+# inside a Linux network namespace with no egress (ignored test; the namespace is a CI asset).
+test-nested-offline = "cargo test -p pixi-sandbox --test nested_offline -- --ignored --nocapture"
 test-doc = "cargo test --doc --workspace"
 # task-47 AC#2: replacing the binary that is currently executing, on a real Windows host — the
 # one behaviour no amount of Linux testing can confirm, because Linux will happily unlink a

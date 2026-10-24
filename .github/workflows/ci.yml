@@ -122,11 +122,13 @@ jobs:
       - if: steps.changes.outputs.code != 'false'
         run: pixi run lint
       # Coverage below executes the full ordinary workspace suite once. Doctests and
-      # the ignored connected/offline payload proof remain separate mandatory gates.
+      # the ignored connected/offline proofs remain separate mandatory gates.
       - if: steps.changes.outputs.code != 'false'
         run: pixi run test-doc
       - if: steps.changes.outputs.code != 'false'
         run: pixi run test-payload-roundtrip
+      - if: steps.changes.outputs.code != 'false'
+        run: pixi run test-nested-offline
       - if: steps.changes.outputs.code != 'false'
         run: pixi run coverage
       - if: steps.changes.outputs.code != 'false'

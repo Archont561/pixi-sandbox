@@ -129,16 +129,23 @@ Nothing is discovered. The list is reviewed configuration, because subprojects c
 conflicting versions, channels or platforms on purpose — a scan would carry whatever it found and
 call it a decision.
 
-`plan` names every declared workspace, its environments, how many packages its lock resolves and
-the size those artifacts add:
+`plan` names every declared workspace, its environments, how many packages its lock resolves, the
+size those artifacts add, the channels its lock records and the resolved package identities:
 
 ```bash
 pixi-sandbox plan --config pixi-sandbox.toml
-#   workspace subproject: subproject/pixi.toml · default · 42 package(s) · 380 MiB · bundle developer
+#   workspace subproject: subproject/pixi.toml · default · 42 package(s) · 380 MiB · bundle developer · channels: conda-forge,file:///mirror · set: numpy==2.1.1=py312h...,requests==2.32.3=pyhd8ed1ab_0
 ```
 
-and `plan --json` carries the same data under `workspaces`. The workflow matrix still comes from
-`include` alone.
+and `plan --json` carries the same data under `workspaces` (`channels` and `identities`, both
+de-duplicated and sorted; either key is omitted when empty, and the text line then prints `-`).
+The workflow matrix still comes from `include` alone.
+
+A nested workspace is **not** required to agree with the root about channels or package versions:
+each workspace keeps its own lock and its own prefix, so pinning different versions is the point
+of declaring it separately rather than merging manifests. That divergence is surfaced in the
+plan above for review, not refused. What is refused is anything that would make a restore
+ambiguous — the structural cases in the table below.
 
 **What is refused, and why:**
 
