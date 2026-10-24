@@ -205,6 +205,13 @@ jobs:
       # opt-out, never opt-in, so absent input means blocked; only an explicit `false` from a
       # dispatch or a caller turns it off.
       BLOCK_NETWORK: ${{ inputs.block-network == null && 'true' || (inputs.block-network && 'true' || 'false') }}
+      # The cargo gate has two halves with a 100x cost difference. Asserting that the restored
+      # tree *wires* the vendor into cargo is a file read; compiling the workspace against it is
+      # ~120 s of a fresh tree with no `target/` (Tier A: 140 s with that compile, 22 s without,
+      # run 40122900912). A pull request pays for the wiring and skips the compile; the weekly
+      # `schedule` and any dispatch run both, so the vendored build is proven on a cadence
+      # instead of on every push — and the release gate (doc-18 §5.3) reads that proof.
+      AIRLOCK_SKIP_CARGO_BUILD: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -341,7 +348,7 @@ jobs:
         id: tier-a
         if: ${{ env.BLOCK_NETWORK == 'true' }}
         working-directory: project
-        run: pixi run -e package xtask deny-egress -- pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"
+        run: pixi run -e package xtask deny-egress -- pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}" "${{ env.AIRLOCK_SKIP_CARGO_BUILD }}"
 
       # Replayed only when it has something to add: a red Tier A (the sandbox hides the panic's
       # environment, so the readable run is worth 92 s exactly then), or a dispatch that turned
@@ -354,4 +361,4 @@ jobs:
       - name: Tier B — same gate with the network reachable (diagnostic)
         if: ${{ (failure() && steps.tier-a.outcome == 'failure') || env.BLOCK_NETWORK != 'true' }}
         working-directory: project
-        run: pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"
+        run: pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}" "${{ env.AIRLOCK_SKIP_CARGO_BUILD }}"

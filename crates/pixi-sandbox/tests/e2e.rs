@@ -477,6 +477,7 @@ struct GateInputs {
     transport: PathBuf,
     envs: Vec<String>,
     skip_cargo: bool,
+    skip_cargo_build: bool,
 }
 
 #[cfg(feature = "ci")]
@@ -485,15 +486,24 @@ impl GateInputs {
         let project = required_gate_path("PIXI_SANDBOX_GATE_PROJECT");
         let transport = required_gate_path("PIXI_SANDBOX_GATE_TRANSPORT");
         let envs = required_gate_envs();
-        let skip_cargo = std::env::var("PIXI_SANDBOX_GATE_SKIP_CARGO")
-            .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "yes"));
+        let skip_cargo = gate_flag("PIXI_SANDBOX_GATE_SKIP_CARGO");
+        // A second, narrower switch: the restored tree is vendored, assert the wiring, but do
+        // not pay for the compile. PR proofs take this one; the weekly and dispatch proofs take
+        // neither, so the compile is proven on a cadence instead of on every push.
+        let skip_cargo_build = gate_flag("PIXI_SANDBOX_GATE_SKIP_CARGO_BUILD");
         Self {
             project,
             transport,
             envs,
             skip_cargo,
+            skip_cargo_build,
         }
     }
+}
+
+#[cfg(feature = "ci")]
+fn gate_flag(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "yes"))
 }
 
 #[cfg(feature = "ci")]
@@ -845,7 +855,7 @@ fn assert_gate_pixi_install_is_noop(project: &Path, envs: &[String]) {
 }
 
 #[cfg(feature = "ci")]
-fn assert_gate_cargo_check_uses_pixi(project: &Path, skip_cargo: bool) {
+fn assert_gate_cargo_check_uses_pixi(project: &Path, skip_cargo: bool, skip_cargo_build: bool) {
     if skip_cargo || !project.join("Cargo.toml").is_file() {
         return;
     }
@@ -887,6 +897,14 @@ fn assert_gate_cargo_check_uses_pixi(project: &Path, skip_cargo: bool) {
         cargo_config.display()
     );
 
+    if skip_cargo_build {
+        eprintln!(
+            "::notice::the restored vendor tree is wired into cargo; the offline compile is \
+             proven by the scheduled airlock proof, not by this run"
+        );
+        return;
+    }
+
     let pixi = gate_tool(&gate_tools_bin(project), "pixi");
     run_gate_command(
         StdCommand::new(&pixi).current_dir(project).args([
@@ -908,8 +926,11 @@ fn assert_gate_cargo_check_uses_pixi(project: &Path, skip_cargo: bool) {
 // * PIXI_SANDBOX_GATE_PROJECT: restored project path.
 // * PIXI_SANDBOX_GATE_TRANSPORT: extracted sandbox branch/transport path.
 // * PIXI_SANDBOX_GATE_ENVS: comma-separated environments to prove.
-// * PIXI_SANDBOX_GATE_SKIP_CARGO: optional true/1/yes to skip the cargo check when the
-//   transport intentionally did not vendor crates.
+// * PIXI_SANDBOX_GATE_SKIP_CARGO: optional true/1/yes to skip the cargo gate when the
+//   transport intentionally did not vendor crates (nothing is wired in to assert).
+// * PIXI_SANDBOX_GATE_SKIP_CARGO_BUILD: optional true/1/yes to keep the vendor-wiring
+//   assertions but skip the `cargo check --offline` they guard. The wiring is a file read; the
+//   compile is the expensive half, and it is what the scheduled proof pays for.
 //
 // The default feature set must not compile this module; CI builds a nextest archive with
 // `--features ci` while egress is still available, then replays the archive in both tiers.
@@ -960,7 +981,11 @@ mod ci_gate {
     #[test]
     fn airlock_gate_cargo_check_uses_the_pixi_entrypoint() {
         let inputs = GateInputs::from_env();
-        assert_gate_cargo_check_uses_pixi(&inputs.project, inputs.skip_cargo);
+        assert_gate_cargo_check_uses_pixi(
+            &inputs.project,
+            inputs.skip_cargo,
+            inputs.skip_cargo_build,
+        );
     }
 
     #[test]
