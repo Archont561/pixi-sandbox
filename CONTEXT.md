@@ -3948,13 +3948,18 @@ production. *Splitting pack/verify/push* and *caching the released binary* are s
 per-step budget reporting into `$GITHUB_STEP_SUMMARY`; the last one is what would make the next
 measurement cheap, and it is not written.
 
-**What the runners said.** Run 40118086577 has the first step-level table with the new graph:
-Tier B is `skipped` (step 18), so the weaker tier is confirmed gone, but the job took 443 s
-against 407 s in 40112616326 because two steps moved further: the e2e archive build 8 s → 80 s
-(cache miss) and the released-binary download 21 s → 68 s (network). The download is a constant
-for a given (tag, platform), so it now sits behind `actions/cache` keyed on exactly that pair;
-the archive build is the next cache question and is not answered here. `ci` on the code PR moved
-220 s → 136 s with all four jobs starting within 9 s of each other (run 40116802710).
+**What the runners said.** Two runs carry the new graph. Tier B is `skipped` in both
+(40118086577 and 40119288736), so the weaker tier is confirmed gone — but neither run is faster
+end to end: 443 s and 444 s against 407 s in 40112616326, because everything else on this job is
+noisy. Tier A alone measured 94 s, 113 s and 142 s across three runs, the e2e archive build 8 s,
+80 s, 9 s (cache hit, miss, hit), and the released-binary download 21 s, 68 s, 17 s. The download
+is a constant for a given (tag, platform) and now sits behind `actions/cache` keyed on that pair;
+that cache has not yet produced a hit — the run that introduced it was cancelled by a force-push,
+so 40119288736 missed and saved instead. **The honest reading of the airlock change is that the
+92 s of duplicated tier is gone and the job's own variance is larger than the saving**; a claim
+that the workflow is faster needs a run where Tier A and the caches behave. `ci` is the
+unambiguous one: 220 s → 136 s on a code PR with all four jobs starting within 9 s of each other
+(run 40116802710), and the archive-build question is still open.
 
 **Evidence.** `actionlint`, `check-repository`, `check-ci-builds`, `plan --json` green with the
 new config. `check_ci_test_route` still pins the coverage/doctest/payload steps to
