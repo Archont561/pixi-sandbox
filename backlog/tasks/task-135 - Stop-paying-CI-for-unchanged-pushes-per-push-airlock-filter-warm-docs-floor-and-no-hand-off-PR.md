@@ -213,4 +213,16 @@ Vertical slices, biggest measured waste first; agree the filter expression befor
   the next code push; AC#3's unchanged schedule/dispatch/call behaviour; AC#4's measured
   check-ci-builds step time on a warm docs-only PR; AC#6's merge; AC#7's closure. No dispatch,
   release, tag or transport publish was performed.
+
+2026-10-24 real-runner evidence (PR #207):
+
+- **First-push fault caught and fixed on the runner.** The opening push ran the `changes`
+  job with `predicate-quantifier: every` (copied from ci.yml's "all files are code" filter):
+  run `40134136518` — changes success, plan/proof **skipped**, because a mixed code+docs push
+  does not have every file under a watched path. Fixed in `d3bafe54` with `some` semantics
+  ("at least one watched path touched"), pinned in the gate and a refusal test.
+- **Positive path proven.** Run `40134414615` on the fix push (which touches
+  `.github/workflows/airlock.yml` and `crates/xtask/**`): changes → plan → linux-64 proof all
+  ran and succeeded; the changes job's real work is checkout 1 s + paths-filter 1 s against
+  ~390–490 s of proof it gates. ci run `40134414604` green on the same push.
 <!-- SECTION:NOTES:END -->
