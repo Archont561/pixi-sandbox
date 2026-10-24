@@ -4021,9 +4021,18 @@ letter, `https`, scp-like `git@host:owner/repo`): the two `-c` pairs must appear
 remote is local. Previewed rather than executed, so a case list containing a real URL never reaches
 for the network to observe its own argv.
 
+**The airlock cannot measure this, and that is by design.** Run 40127613325 on this branch's own
+commit printed 77 s for "Publish to the throwaway remote" — the same number as before the change.
+The publish step runs `pixi run -e package airlock-publish`, whose task is `pixi-sandbox publish`,
+and that binary is the **released** one: `airlock-install-released` is
+`pixi global install --channel https://prefix.dev/archont561/archont561 pixi-sandbox`. A real
+airlock starts from a released asset, so every product-side improvement shows up there one release
+later — which also explains why the 74 s baseline read the same across three unrelated branches.
+The benchmark and the argv test are the evidence for this change; the airlock number becomes a
+measurement after the next release ships it.
+
 **Evidence.** Git crate 59 tests green (was 54: five new cases); product crate 593 green in the
 turbo run; `fmt --check`, `clippy -D warnings` on the crate, `check-repository` and `check-ci-builds`
 green. The full local suite could not be linked here — the workspace's test binaries need ~16 GiB
 and this sandbox has 21 GiB of disk, so `ld` died with a bus error (ENOSPC) on the xtask test
-binaries; that is a sandbox limit, not a result. The step-level saving is unmeasured until an
-airlock run of this branch prints its own publish time.
+binaries; that is a sandbox limit, not a result.
