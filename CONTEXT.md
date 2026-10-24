@@ -3911,3 +3911,62 @@ different claim.
 Evidence: suite 1,218 passed / 2 skipped (593 product, 315 core, 54 git, 256 xtask) against
 1,190 / 2 before; `fmt`, clippy, deny, actionlint, taplo, generated workflows, `plan`,
 `check-repository` and `lint-docs` all green. TASK-129 stays In Progress.
+
+### 2026-10-24 (fourth session) — the CI graph stops queueing behind itself
+
+**Four removals, measured against the 2026-10-24 run inventory.** `msrv` and
+`replace-running-image` took `needs: ci` purely to read `needs.ci.outputs.run-rust`; a `changes`
+job now answers it in ~10 s, so both start alongside lint instead of after it and a code PR's
+wall clock loses their serial tail (their own steps are 63 s and 40 s). The airlock proof ran the
+network-reachable tier *before* the egress-denied one: the weaker tier is now a diagnostic that
+runs after a red Tier A (or on a `block-network: false` dispatch), which takes 92 s off every
+green proof. The publisher's `push_paths` named `crates/**`, so an xtask-only merge rebuilt a
+binary-linked payload from a crate that is not in the binary — one 249 s publish run for a merge
+that changes nothing the transport carries. And the PR code filter did not exclude markdown, so
+the markdown-only sprint PR #202 paid 220 s for clippy, coverage and doctests; `!**/*.md` and
+`!.agents/**` replace the two named files it used to carry.
+
+**Two additions.** A draft pull request no longer runs the airlock: five draft pushes in one
+afternoon is roughly 40 runner-minutes of proof nobody asked for, and `ready_for_review` is now
+an explicit trigger so the proof arrives when review starts.
+
+**A cache change that was measured and reverted.** Giving the proof job the plan job's
+`support-host-plan` identity looked free — one workspace, one lockfile — and run 40116802649
+showed it was not: the proof job's own identity had been warm (8 s to build the archive in
+40112616326), the new primary key guaranteed a miss, and the plan job saves before the proof job
+restores, so the only thing that transferred was a cold build. The proof job took 578 s against
+407 s. Reverted in the same session; the comment in `airlock.yml` now records why the two
+identities stay separate.
+
+**Not implemented, and why.** *A single rust-cache key across all three workflows*: the three
+check out to different roots (`project/` vs `.`) with different profiles, so one key would only
+add cross-restore churn; the honest part of the claim is the within-workflow sharing above. *An
+uncompressed `git push`*: `ShellGit::push` targets `https://github.com/…` in the publisher, so
+`pack.compression=0` would trade CPU for a multi-hundred-megabyte upload — the 74 s push is
+network, not zlib. It would need a conditional on a local remote, and there is no local remote in
+production. *Splitting pack/verify/push* and *caching the released binary* are still open, as is
+per-step budget reporting into `$GITHUB_STEP_SUMMARY`; the last one is what would make the next
+measurement cheap, and it is not written.
+
+**What the runners said.** Three runs carry the new graph and Tier B is `skipped` in all of
+them (40118086577, 40119288736, 40120014109). The first two were *not* faster — 443 s and 444 s
+against 407 s in 40112616326 — because everything else on the job is noisy: Tier A alone measured
+94 s, 113 s, 142 s and 140 s across four runs, and the e2e archive build 8 s, 80 s, 9 s, 9 s
+(cache hit, miss, hit). Run 40120014109 is the settled shape: the released-binary download is
+`skipped` behind the new `actions/cache` entry, and the two jobs measure **113 s → 82 s (plan)**
+and **407 s → 346 s (proof)** — the 92 s of duplicated tier plus 21 s of repeated download,
+partly given back to a slow Tier A. So the saving is real but smaller than the plan's arithmetic,
+and Tier A's spread (~50 s) is now the largest single source of noise in the proof.
+
+**A path-filter correction worth keeping.** `paths:` on a `pull_request` trigger is evaluated
+against the whole PR diff, not the pushed commit: once this PR contained a `crates/**` change,
+every later push ran the airlock again even when it only touched `CONTEXT.md` (run 40120014109).
+Draft-skipping is therefore the lever that matters for PR cost, not path hygiene.
+
+**`ci` is the unambiguous one:** 220 s → 136 s on a code PR with all four jobs starting within 9 s
+of each other (run 40116802710).
+
+**Evidence.** `actionlint`, `check-repository`, `check-ci-builds`, `plan --json` green with the
+new config. `check_ci_test_route` still pins the coverage/doctest/payload steps to
+`steps.changes.outputs.code`, which is why `ci` keeps its own copy of the filter instead of
+reading the new job's output.
