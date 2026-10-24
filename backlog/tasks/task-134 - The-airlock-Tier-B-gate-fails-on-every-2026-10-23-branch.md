@@ -1,7 +1,7 @@
 ---
 id: TASK-134
 title: The airlock Tier B gate fails on every 2026-10-23 branch
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-23 21:20'
 labels:
@@ -19,26 +19,46 @@ ordinal: 134000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-`airlock linux-64` fails at **Tier B — gate with the network reachable** (`Process completed with exit code 100`) on both branches pushed on 2026-10-23:
+`airlock linux-64` fails at **Tier B — gate with the network reachable** (`Process completed with exit code 100`) on every branch after the v0.8.0 release — not only the two branches pushed on 2026-10-23:
 
-| Branch | Head | Airlock |
+| Run / job | Branch | Tier B |
 | --- | --- | --- |
-| `arena/5a48024f-pixi-sandbox` | TASK-132, merged as PR #196 | failure, Tier B, exit 100 |
-| `arena/542c12a9-pixi-sandbox` | TASK-129 slices 1–5, PR #199 | failure, Tier B, exit 100 |
+| `39833817145` / `120017862784` | 2026-10-22 `b4a9cf6a` | success (90 s) |
+| `40008533829` / `120603532347` | `arena/5a48024f` (TASK-132, PR #196) | failure (0 s, exit 100) |
+| `40024797158` / `120658973177` | `arena/542c12a9` (TASK-129, PR #199) | failure (0 s, exit 100) |
 
-The last successful airlock runs are the 2026-10-22 branches (`b4a9cf6a`, `fc55de06`, `112eea8f`, `6aceae22`, `aeb1dc12`, `1106ac98`). So the failure is **not** introduced by TASK-129: it is present on the earlier branch, whose head predates every TASK-129 commit. It is either pre-existing on `main` since 2026-10-22 evening or introduced by TASK-132.
+The job log is unreadable from this machine (`gh run view --log-failed` returns an EOF from job-log blob storage). Only the check-run annotation is retrievable, and it says exactly `Process completed with exit code 100.` — nextest's "the test binary ran and a test failed", so the launch path is fine and one test panics in milliseconds.
 
-The job log could not be read from this machine (`gh run view --log-failed` returns an EOF from the job-log blob storage; only annotations are retrievable, and they say nothing beyond the exit code). Nothing here names the cause — only the boundary.
+### Root cause
 
-Tier B runs `pixi run --frozen airlock-gate-run` over a transport packed from the repository's own `.pixi-sandbox.toml`, so a likely area is the pack→restore round trip TASK-132 touched (`artifact_location`), but that is a hypothesis, not a finding.
+`crates/pixi-sandbox/tests/e2e.rs`'s `ci_gate` module required **three** manifest-owned tools — `pixi`, `pixi-sandbox` and `pixi-unpack` — in `assert_gate_tools_are_first_on_path_and_execute`. `pixi-unpack` stopped existing the moment v0.8.0 shipped the native migration (TASK-125, `rattler` 0.48 replacing `pixi-pack`/`pixi-unpack`): a format-1 transport is installed by rattler inside the process, so the packer embeds no unpacker. The published transport proves it — `.pixi-sandbox/manifest.json` at schema 4 declares `tools` = `pixi` + `pixi-sandbox` only.
 
-The task is to reproduce Tier B locally (or read the log from a machine that can reach job-log storage), name the actual failure, and fix it. Until then, "airlock is green" cannot be claimed for any branch.
+So the gate demanded a binary that the transport's own restore path never uses. `gate_tool` panics before any restored prefix is examined, which is why the step dies in six milliseconds instead of the green run's ninety seconds.
+
+### Why the boundary is v0.8.0, not TASK-129 or TASK-132
+
+`resolve-release-tag` proves the version declared in `Cargo.toml`, and v0.8.0's assets were already downloadable as a draft at `2026-10-22T19:06:31Z` (published `19:27:27Z`). The first red run started `19:04:44Z`, whose plan job resolved the tag after that draft appeared; the plan job emitted no "declared but not published yet" notice, so it proved `v0.8.0`. The last green run (`39833817145`, started `18:43Z`) still proved `v0.7.0`, the last release with no native format. Nothing in TASK-129 or TASK-132 touches this: the gate is stale, and it went red on `main` with them.
+
+### Fix
+
+`gate_transport_installs_natively` mirrors the product's `support::uses_native_pack` rule (schema ≥ 3 ⇒ native). `pixi` and `pixi-sandbox` stay mandatory; `pixi-unpack` is required only for a legacy transport, where it is still part of the tool contract and still executed. The native branch prints a notice naming the contract it checked, so a future format change cannot silently weaken the gate without saying so.
+
+### Reproduction (Tier B command, verbatim)
+
+Against the real published transport `sandbox/developer-linux-64` (`289d017c`, schema 4, 29,955 blobs):
+
+```
+pixi run --frozen airlock-gate-run /tmp/airlock-gate.tar.zst /tmp/restored /tmp/airlock-checkout default false
+```
+
+Before: exit 100, `panicked at crates/pixi-sandbox/tests/e2e.rs:573:5: bundled pixi-unpack is missing or not executable under /tmp/restored/.pixi/tools/linux-64`.
+After: exit 0, `Summary [45.539s] 7 tests run: 7 passed, 6 skipped`.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The Tier B failure is reproduced locally with the same command the workflow runs, and the failing assertion is named.
-- [ ] #2 The cause is either fixed, or shown to be pre-existing and filed separately with the evidence that predates it.
+- [x] #1 The Tier B failure is reproduced locally with the same command the workflow runs, and the failing assertion is named.
+- [x] #2 The cause is either fixed, or shown to be pre-existing and filed separately with the evidence that predates it.
 - [ ] #3 `airlock linux-64` is green on a branch that carries the fix.
 <!-- AC:END -->
 
