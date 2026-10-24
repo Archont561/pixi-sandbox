@@ -237,3 +237,169 @@ fn a_manual_build_from_an_untrusted_branch_cannot_deploy() {
         "manual fallback must also be main-only"
     );
 }
+
+// --- doc-18 §5.2: the `milestone-v*` auto-release trigger and the v*.*.* release split.
+
+const AUTO_RELEASE_TRIGGERS: &str = r"
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        default: auto
+      version:
+        default: ''
+  workflow_call:
+    inputs:
+      bump:
+        default: auto
+      version:
+        default: ''
+  push:
+    tags:
+      - milestone-v*
+jobs:
+  cut:
+    steps:
+      - id: milestone
+        if: github.event_name == 'push'
+        run: pixi run xtask resolve-milestone-tag -- ${{ github.ref_name }}
+      - id: prep
+        run: pixi run xtask prepare-release ${{ github.event_name == 'push' && steps.milestone.outputs.version || (inputs.version != '' && inputs.version || inputs.bump) }}
+";
+
+const RELEASE_TRIGGERS: &str = r"
+on:
+  push:
+    tags:
+      - v*.*.*
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+";
+
+fn invoke_triggers(auto_release: &str, release: &str) -> std::process::Output {
+    let root = tempfile::tempdir().unwrap();
+    let workflows = root.path().join(".github/workflows");
+    fs::create_dir_all(&workflows).unwrap();
+    fs::write(workflows.join("auto-release.yml"), auto_release).unwrap();
+    fs::write(workflows.join("release.yml"), release).unwrap();
+    Command::new(env!("CARGO_BIN_EXE_xtask"))
+        .arg("--root")
+        .arg(root.path())
+        .arg("check-release-triggers")
+        .env("HOME", root.path())
+        .env("USERPROFILE", root.path())
+        .env("SHELL", "/bin/sh")
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn the_milestone_and_semver_tag_globs_split_the_two_workflows() {
+    let output = invoke_triggers(AUTO_RELEASE_TRIGGERS, RELEASE_TRIGGERS);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn auto_release_must_keep_all_three_trigger_lanes() {
+    let missing_tag =
+        AUTO_RELEASE_TRIGGERS.replace("  push:\n    tags:\n      - milestone-v*\n", "");
+    let output = invoke_triggers(&missing_tag, RELEASE_TRIGGERS);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("milestone-v*"),
+        "the failure names the required glob"
+    );
+
+    let missing_dispatch = AUTO_RELEASE_TRIGGERS.replace(
+        "  workflow_dispatch:\n    inputs:\n      bump:\n        default: auto\n      version:\n        default: ''\n",
+        "",
+    );
+    let output = invoke_triggers(&missing_dispatch, RELEASE_TRIGGERS);
+    assert!(
+        !output.status.success(),
+        "manual dispatch must remain a lane"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("workflow_dispatch"));
+
+    let missing_call = AUTO_RELEASE_TRIGGERS.replace(
+        "  workflow_call:\n    inputs:\n      bump:\n        default: auto\n      version:\n        default: ''\n",
+        "",
+    );
+    let output = invoke_triggers(&missing_call, RELEASE_TRIGGERS);
+    assert!(
+        !output.status.success(),
+        "reusable calls must remain a lane"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("workflow_call"));
+}
+
+#[test]
+fn the_milestone_glob_must_not_be_widened_or_duplicated() {
+    let widened = AUTO_RELEASE_TRIGGERS.replace("- milestone-v*", "- milestone-*");
+    let output = invoke_triggers(&widened, RELEASE_TRIGGERS);
+    assert!(!output.status.success(), "a broader prefix glob must fail");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("milestone-v*"));
+
+    let doubled = AUTO_RELEASE_TRIGGERS.replace(
+        "      - milestone-v*\n",
+        "      - milestone-v*\n      - v*.*.*\n",
+    );
+    let output = invoke_triggers(&doubled, RELEASE_TRIGGERS);
+    assert!(
+        !output.status.success(),
+        "the release glob must not be claimed twice"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("exactly"));
+}
+
+#[test]
+fn the_milestone_resolution_step_must_be_conditional_and_feed_prepare() {
+    let no_guard = AUTO_RELEASE_TRIGGERS.replace("        if: github.event_name == 'push'\n", "");
+    let output = invoke_triggers(&no_guard, RELEASE_TRIGGERS);
+    assert!(
+        !output.status.success(),
+        "resolving on dispatch events would fail on empty refs"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("github.event_name == 'push'"));
+
+    let no_step = AUTO_RELEASE_TRIGGERS.replace(
+        "      - id: milestone\n        if: github.event_name == 'push'\n        run: pixi run xtask resolve-milestone-tag -- ${{ github.ref_name }}\n",
+        "",
+    );
+    let output = invoke_triggers(&no_step, RELEASE_TRIGGERS);
+    assert!(!output.status.success(), "the resolver step is required");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("resolve-milestone-tag"));
+
+    let no_selector =
+        AUTO_RELEASE_TRIGGERS.replace("steps.milestone.outputs.version", "inputs.version");
+    let output = invoke_triggers(&no_selector, RELEASE_TRIGGERS);
+    assert!(
+        !output.status.success(),
+        "prepare must consume the resolved selector on tag pushes"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("steps.milestone.outputs.version"));
+}
+
+#[test]
+fn release_yml_must_keep_the_strict_semver_glob() {
+    let widened = RELEASE_TRIGGERS.replace("- v*.*.*", "- v*");
+    let output = invoke_triggers(AUTO_RELEASE_TRIGGERS, &widened);
+    assert!(
+        !output.status.success(),
+        "a widened release glob could double-trigger milestone tags"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("v*.*.*"));
+
+    let missing = RELEASE_TRIGGERS.replace("    tags:\n      - v*.*.*\n", "");
+    let output = invoke_triggers(AUTO_RELEASE_TRIGGERS, &missing);
+    assert!(
+        !output.status.success(),
+        "release.yml without its tag filter must fail"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("v*.*.*"));
+}

@@ -44,6 +44,8 @@ enum Command {
     CheckRepository,
     /// Validate early Linux consumer proof and fail-closed final release scheduling.
     CheckReleaseScheduling,
+    /// Validate the milestone-v* auto-release trigger and the v*.*.* release glob split.
+    CheckReleaseTriggers,
     /// Validate Pages artifact identity, trust and quality gates.
     CheckDocsArtifacts,
     /// Validate the single-suite CI route, lint serialization and toolchain cache.
@@ -76,6 +78,12 @@ enum Command {
     PrepareRelease {
         /// auto | major | minor | patch | vX.Y.Z | X.Y.Z (default: $`PIXI_SANDBOX_RELEASE` or auto).
         selector: Option<String>,
+    },
+    /// Resolve a pushed milestone tag (`milestone-vX.Y.Z`) into its `vX.Y.Z` release selector.
+    ResolveMilestoneTag {
+        /// The pushed tag name (`github.ref_name` in the workflow). Positional, like the
+        /// release tag in commit-release, so the workflow's one-liner carries no flag pair.
+        tag: String,
     },
     /// Copy the built release binary to its `pixi-sandbox-<target>[.exe]` asset name.
     StageReleaseBinary {
@@ -433,6 +441,7 @@ fn run_args(args: Args) -> Result<()> {
         Command::Version => version::print_version(&root),
         Command::CheckRepository => repo_checks::run(&root),
         Command::CheckReleaseScheduling => xtask::workflow_gates::check_release_scheduling(&root),
+        Command::CheckReleaseTriggers => xtask::workflow_gates::check_release_triggers(&root),
         Command::CheckCiBuilds => xtask::workflow_gates::check_ci_builds(&root),
         Command::CheckAirlockFilter => xtask::workflow_gates::check_airlock_filter(&root),
         Command::CheckDocsArtifacts => xtask::workflow_gates::check_docs_artifacts(&root),
@@ -555,6 +564,17 @@ fn run_args(args: Args) -> Result<()> {
                 util::github_summary(&format!("## Prepared `{tag}`\n\n```\n{stat}\n```"));
             }
             println!("{tag}");
+            Ok(())
+        }
+        Command::ResolveMilestoneTag { tag } => {
+            // Same reporting contract as prepare-release: GITHUB_OUTPUT `version`, summary
+            // line, selector on stdout. The selector is prepare-release's explicit-version arm.
+            let resolved = version::milestone_tag_version(&tag)?;
+            util::github_output("version", &resolved);
+            util::github_summary(&format!(
+                "milestone tag `{tag}` resolves to release `{resolved}`"
+            ));
+            println!("{resolved}");
             Ok(())
         }
         Command::ConsumerProofFixture {

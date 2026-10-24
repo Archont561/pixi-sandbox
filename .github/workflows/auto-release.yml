@@ -25,6 +25,14 @@ name: auto-release
 # `push: tags: v*.*.*` and `publish-sandbox.yml` on `push: branches: [main]`, so the release
 # commit and its tag start both without a hand-off.
 #
+# Milestone lane (doc-18 §5.2): pushing a `milestone-vX.Y.Z` tag also starts this workflow.
+# The resolver step below turns that tag into the explicit `vX.Y.Z` prepare-release cuts, so
+# the milestone tag never names the release tag itself — the release tag is still created here
+# and still starts `release.yml`. The `milestone-v*` glob cannot match release.yml's
+# leading-`v` `v*.*.*` glob, so one push cannot build the artifacts twice. The tag must be
+# pushed with RELEASE_PUSH_TOKEN: like the release commit, a GITHUB_TOKEN event is suppressed
+# and would start nothing.
+#
 # This workflow used to dispatch them explicitly, because GitHub suppresses workflow triggering
 # for events made with GITHUB_TOKEN. That suppression is a property of GITHUB_TOKEN alone, and
 # this job cannot run on GITHUB_TOKEN at all: the release commit restamps the committed relock
@@ -89,6 +97,12 @@ on:
           publish-sandbox.yml, which this workflow relies on instead of dispatching them.
           Falls back to GITHUB_TOKEN, which is enough for dry-run only.
         required: false
+  # Sprint-train entry point (doc-18 §5.2): a human-pushed milestone tag starts the same lane
+  # as a dispatch. Only this one glob — widening it, or adding any tag glob release.yml also
+  # matches, is refused by `xtask check-release-triggers` in ci.yml.
+  push:
+    tags:
+      - milestone-v*
 
 # Push the release commit and its tag. That is the whole job now, so `contents` is the whole
 # block: the two `gh workflow run` steps that needed `actions: write` are gone, because both
@@ -148,12 +162,23 @@ jobs:
           shared-key: support-pixi-automation
           key: ${{ hashFiles('pixi.lock') }}
 
+      # Milestone lane only: turn the pushed `milestone-vX.Y.Z` tag into the explicit
+      # vX.Y.Z selector prepare-release already accepts. Guarded to push events — a dispatch
+      # or call has no milestone ref_name, and an unguarded resolve would fail the run. A tag
+      # matching milestone-v* without a strict X.Y.Z fails closed here instead of auto-bumping.
+      - name: Resolve milestone tag
+        id: milestone
+        if: github.event_name == 'push'
+        run: pixi run xtask resolve-milestone-tag -- ${{ github.ref_name }}
+
       # prepare-release prints the resolved vX.Y.Z as its last stdout line and, when GitHub
       # sets GITHUB_OUTPUT, writes it as the `version` output with the diff stat as the step
-      # summary — the same command reports the same things locally.
+      # summary — the same command reports the same things locally. On a tag push the
+      # resolver's output is the selector; on dispatch/call the step is skipped and the
+      # existing inputs.version/inputs.bump fallback applies unchanged.
       - name: Prepare release (bump + changelog + lock)
         id: prep
-        run: pixi run xtask prepare-release ${{ inputs.version != '' && inputs.version || inputs.bump }}
+        run: pixi run xtask prepare-release ${{ github.event_name == 'push' && steps.milestone.outputs.version || (inputs.version != '' && inputs.version || inputs.bump) }}
 
       # Compile against the prepared version and run every consistency oracle *before* anything
       # is committed. ci.yml does run on the release commit now (the push carries a PAT or App

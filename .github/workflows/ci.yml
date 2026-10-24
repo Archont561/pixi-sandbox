@@ -141,6 +141,7 @@ jobs:
       - run: pixi run xtask check-ci-builds
       - run: pixi run xtask check-airlock-filter
       - run: pixi run xtask check-release-scheduling
+      - run: pixi run xtask check-release-triggers
       - run: pixi run xtask check-docs-artifacts
       - run: pixi run docs build
       - run: pixi run docs-frontmatter-check

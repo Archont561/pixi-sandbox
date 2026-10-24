@@ -153,6 +153,20 @@ bitten by:
 - `xtask check-repository`'s "no workflow pins a literal release tag" check must still pass — a
   glob is not a literal, but the new step must not hardcode `v0.9.0`.
 
+**Delivered (2026-10-25):** `auto-release.yml` now triggers on the single `push: tags:
+milestone-v*` glob, and the new `xtask resolve-milestone-tag` step (id `milestone`, guarded to
+`github.event_name == 'push'`) resolves `milestone-vX.Y.Z` → the `vX.Y.Z` selector that
+`prepare-release`'s explicit-version arm already accepts; dispatch/call keep their
+`inputs.version`/`inputs.bump` fallback untouched. One deliberate tightening versus the sketch
+above: the resolver is fail-closed — because the glob itself already promises a `v`-version, a
+tag matching `milestone-v*` that does not carry strict `X.Y.Z` (e.g. `milestone-vent`) stops the
+run instead of falling back to `bump=auto`, so an operator typo can never cut an unexpected
+release. The `auto` fallback for version-less tags remains an unimplemented option, not a live
+path. A new `xtask check-release-triggers` gate (wired into `ci.yml` beside
+`check-release-scheduling`, with tempdir fixture tests) pins the exact glob split, both manual
+trigger lanes, the guarded resolver step and the prepare step's selector wiring, so the three
+bites listed above cannot silently regress.
+
 ### 5.3 A release-gate task per milestone
 
 **Gap:** this board has no task whose acceptance criteria are "the version is published". qgis-sdk
