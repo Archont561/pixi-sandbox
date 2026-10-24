@@ -95,6 +95,10 @@ on:
     # the cheapest cadence that still catches a platform regression between releases.
     - cron: "17 5 * * 1"
   pull_request:
+    # `ready_for_review` is not one of GitHub's default activity types, and this workflow
+    # skips drafts (see the `if:` on both jobs). Without it, marking a draft ready would run
+    # nothing until the next push — the one moment the proof is actually being asked for.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "crates/**"
       - "pixi.toml"
@@ -114,8 +118,12 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  # A draft pull request iterates: five pushes in one afternoon cost 44 runner-minutes of
+  # proof that was not being asked for (TASK-134's session, 2026-10-24). The proof is required
+  # when review begins, so both jobs skip drafts and `ready_for_review` triggers them.
   plan:
     name: validate airlock plan
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -179,6 +187,7 @@ jobs:
   proof:
     name: airlock ${{ matrix.platform }}
     needs: plan
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
@@ -214,6 +223,12 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: project
+          # The same identity as the plan job: one workspace, one lockfile, one target dir.
+          # Two identities meant two separate caches for one workspace: the planner build cost
+          # 82 s in the plan job of run 40112616326 while the proof job's archive build, with
+          # the target dir it had warmed itself, took 8 s.
+          shared-key: support-host-plan
+          key: ${{ hashFiles('project/pixi.lock') }}
 
       # The connected side compiles the CI-only gate once and stores a nextest archive. Both
       # proof tiers replay this exact archive after restore, so the egress-denied tier does not
@@ -303,14 +318,26 @@ jobs:
       # The restored-project gate is a nextest archive of the e2e suite built with
       # `--features ci`. The restored project, branch checkout, environment list and cargo-vendor
       # policy are explicit inputs; missing inputs fail before a false-positive pass is possible.
-      - name: Tier B — gate with the network reachable
-        working-directory: project
-        run: pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"
-
-      # deny-egress re-execs the same archived tests under `sudo unshare -n` on Linux and
-      # `sudo sandbox-exec` with outbound denied on macOS, and fails loudly on any other OS — a
-      # proof that ran with the network reachable would be a green build that proves nothing.
+      #
+      # Tier A runs first, because it is the tier that proves something: deny-egress re-execs the
+      # same archived tests under `sudo unshare -n` on Linux and `sudo sandbox-exec` with
+      # outbound denied on macOS, and fails loudly on any other OS. A test that passes without
+      # egress passes with it, so the network-reachable tier is a strictly weaker one.
       - name: Tier A — gate with egress denied
+        id: tier-a
         if: ${{ env.BLOCK_NETWORK == 'true' }}
         working-directory: project
         run: pixi run -e package xtask deny-egress -- pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"
+
+      # Replayed only when it has something to add: a red Tier A (the sandbox hides the panic's
+      # environment, so the readable run is worth 92 s exactly then), or a dispatch that turned
+      # the authoritative tier off (`block-network: false`), where this becomes the gate.
+      # Running it first on every green run was the same seven tests twice — 186 s of the 407 s
+      # proof job (run 40112616326).
+      #
+      # `failure() &&` is load-bearing: without a status function GitHub implies `success()` and
+      # skips this step, so the diagnostic would only ever appear when nothing had failed.
+      - name: Tier B — same gate with the network reachable (diagnostic)
+        if: ${{ (failure() && steps.tier-a.outcome == 'failure') || env.BLOCK_NETWORK != 'true' }}
+        working-directory: project
+        run: pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"

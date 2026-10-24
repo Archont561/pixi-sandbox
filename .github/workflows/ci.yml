@@ -31,14 +31,44 @@ permissions:
   contents: read
 
 jobs:
+  # One cheap job answers "did any code change?" so the Rust jobs can start together. That
+  # answer used to be `needs.ci.outputs.run-rust`, so `msrv` and `replace-running-image` could
+  # not start until the whole lint+coverage job had finished and added their runtimes to its
+  # own. Their steps cost 63 s (msrv) and 40 s (windows), and neither reads anything `ci`
+  # produces: they need the answer, not the job. Wall clock on a code PR drops by the shorter
+  # of the two.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run-rust: ${{ steps.filter.outputs.code != 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Same predicate as the filter inside `ci` below, and the same escape hatch. Only the
+      # gate that reads it moved: `ci` keeps its own copy because `xtask check-ci-builds`
+      # holds the coverage/doctest/payload gates to that exact condition.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request' && vars.PIXI_SANDBOX_FULL_CI != 'true'
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!backlog/**'
+              - '!**/*.md'
+              - '!.agents/**'
+
   ci:
     name: ci (lint · test · coverage)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
-    outputs:
-      run-rust: ${{ steps.changes.outputs.code != 'false' }}
     steps:
       # Depth 2: the pushed tip and its parents, which is the evidence the main-integration
       # guard at the end of this job reads.
@@ -49,6 +79,12 @@ jobs:
       # workflow trigger: paths-ignored workflows leave required checks Pending. Pushes
       # always run everything, including ADR-29's main-integration judgment below.
       # Set repository variable PIXI_SANDBOX_FULL_CI=true to disable this optimization.
+      #
+      # `!**/*.md` and `!.agents/**` were missing until 2026-10-24, and they are what made a
+      # documentation PR pay for Rust: the sprint/skill PR (#202, markdown only) still built
+      # clippy, coverage and the doctests — 220 s of runner time for no code change. The two
+      # named files the old list carried (CONTEXT.md, CHANGELOG.md) are markdown, so the glob
+      # subsumes them. Keep this list byte-identical to `changes` above.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: changes
         if: github.event_name == 'pull_request' && vars.PIXI_SANDBOX_FULL_CI != 'true'
@@ -59,8 +95,8 @@ jobs:
               - '**'
               - '!docs/**'
               - '!backlog/**'
-              - '!CONTEXT.md'
-              - '!CHANGELOG.md'
+              - '!**/*.md'
+              - '!.agents/**'
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           environments: default
@@ -125,8 +161,8 @@ jobs:
   # TASK-125: UV's wheel installer raises the source-build floor to Rust 1.94.
   # Compile every workspace target with that compiler, not merely the newer dev pin.
   msrv:
-    needs: ci
-    if: needs.ci.outputs.run-rust == 'true'
+    needs: changes
+    if: needs.changes.outputs.run-rust == 'true'
     name: Rust 1.94 minimum
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -149,8 +185,8 @@ jobs:
   # platform: `pixi.lock` still carries no win-64 entries, the README's Windows gap (no
   # conda-forge `bun`, ADR-11) stands, and `.pixi-sandbox.toml` still publishes linux-64 only.
   replace-running-image:
-    needs: ci
-    if: needs.ci.outputs.run-rust == 'true'
+    needs: changes
+    if: needs.changes.outputs.run-rust == 'true'
     name: replace a running image (windows)
     runs-on: windows-latest
     timeout-minutes: 20

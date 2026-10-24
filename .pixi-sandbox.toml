@@ -30,16 +30,23 @@ max_restore_required_mib = 8192
 # Explicit, not derived. The derivation (`derive_push_paths`) would yield the seven manifest and
 # lock files below and nothing else; this repository's publisher additionally builds the
 # pixi-sandbox binary it packs as the transport bootstrap *from the checked-out source*, so a
-# `crates/**` change really does change the transport and must repack. A release commit still
-# fires the publisher: `prepare-release` rewrites Cargo.toml, pixi.toml and Cargo.lock (verified
-# against its own `.release-touched` report), which is what the deleted auto-release dispatch
-# used to guarantee by hand after the v0.4.2 stale-transport incident.
+# change to a crate that links into that binary really does change the transport and must
+# repack. Those crates are listed individually: `crates/xtask/**` is repository automation and is
+# not a dependency of `pixi-sandbox` (`crates/pixi-sandbox/Cargo.toml` names only `-core` and
+# `-git`), so an xtask-only merge used to rebuild and repack a 1.2 GB transport for a binary
+# byte-identical to the one already published — the whole 249 s of run 40113894031 for a merge
+# that changed nothing the transport carries, against 38 s of planning. A release commit still
+# fires the publisher: `prepare-release` rewrites Cargo.toml, pixi.toml and
+# Cargo.lock (verified against its own `.release-touched` report), which is what the deleted
+# auto-release dispatch used to guarantee by hand after the v0.4.2 stale-transport incident.
 push_paths = [
   ".pixi-sandbox.toml",
   "Cargo.lock",
   "Cargo.toml",
   "bun.lock",
-  "crates/**",
+  "crates/pixi-sandbox-core/**",
+  "crates/pixi-sandbox-git/**",
+  "crates/pixi-sandbox/**",
   "package.json",
   "pixi.lock",
   "pixi.toml",

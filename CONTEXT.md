@@ -3911,3 +3911,39 @@ different claim.
 Evidence: suite 1,218 passed / 2 skipped (593 product, 315 core, 54 git, 256 xtask) against
 1,190 / 2 before; `fmt`, clippy, deny, actionlint, taplo, generated workflows, `plan`,
 `check-repository` and `lint-docs` all green. TASK-129 stays In Progress.
+
+### 2026-10-24 (fourth session) — the CI graph stops queueing behind itself
+
+**Four removals, measured against the 2026-10-24 run inventory.** `msrv` and
+`replace-running-image` took `needs: ci` purely to read `needs.ci.outputs.run-rust`; a `changes`
+job now answers it in ~10 s, so both start alongside lint instead of after it and a code PR's
+wall clock loses their serial tail (their own steps are 63 s and 40 s). The airlock proof ran the
+network-reachable tier *before* the egress-denied one: the weaker tier is now a diagnostic that
+runs after a red Tier A (or on a `block-network: false` dispatch), which takes 92 s off every
+green proof. The publisher's `push_paths` named `crates/**`, so an xtask-only merge rebuilt a
+binary-linked payload from a crate that is not in the binary — one 249 s publish run for a merge
+that changes nothing the transport carries. And the PR code filter did not exclude markdown, so
+the markdown-only sprint PR #202 paid 220 s for clippy, coverage and doctests; `!**/*.md` and
+`!.agents/**` replace the two named files it used to carry.
+
+**Two additions.** A draft pull request no longer runs the airlock: five draft pushes in one
+afternoon is roughly 40 runner-minutes of proof nobody asked for, and `ready_for_review` is now
+an explicit trigger so the proof arrives when review starts. The airlock's plan and proof jobs
+now share one rust-cache identity, because two identities meant two cold builds of one workspace
+(82 s and 8 s in run 40112616326).
+
+**Not implemented, and why.** *A single rust-cache key across all three workflows*: the three
+check out to different roots (`project/` vs `.`) with different profiles, so one key would only
+add cross-restore churn; the honest part of the claim is the within-workflow sharing above. *An
+uncompressed `git push`*: `ShellGit::push` targets `https://github.com/…` in the publisher, so
+`pack.compression=0` would trade CPU for a multi-hundred-megabyte upload — the 74 s push is
+network, not zlib. It would need a conditional on a local remote, and there is no local remote in
+production. *Splitting pack/verify/push* and *caching the released binary* are still open, as is
+per-step budget reporting into `$GITHUB_STEP_SUMMARY`; the last one is what would make the next
+measurement cheap, and it is not written.
+
+**Evidence.** `actionlint`, `check-repository`, `check-ci-builds`, `plan --json` green with the
+new config; nothing here has run on a runner yet, so every number above is a baseline, not a
+result. `check_ci_test_route` still pins the coverage/doctest/payload steps to
+`steps.changes.outputs.code`, which is why `ci` keeps its own copy of the filter instead of
+reading the new job's output.
