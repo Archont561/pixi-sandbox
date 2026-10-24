@@ -254,6 +254,33 @@ impl Default for ShellGit {
     }
 }
 
+/// Does `remote` name something on this machine?
+///
+/// A transport payload is a pile of already-compressed archives, and git's packer spends most of
+/// a push trying to delta them against each other and finding nothing. Measured on 1.2 GiB of
+/// incompressible blobs pushed into a fresh bare repo (2026-10-24, 2 cores): 117.5 s by default,
+/// 92 s with `pack.compression=0`, 31 s with `core.bigFileThreshold=1`, and 9.6 s with both —
+/// the same 1201 MiB on the wire in every case, because the delta search was pure waste.
+///
+/// So a local remote — where the "transfer" is a copy into a directory on the same disk — gets an
+/// uncompressed, delta-free pack. A network remote does not: there the same flags can inflate an
+/// upload that does contain real deltas, and the publisher's push to `https://github.com` is
+/// exactly that case. Scoping by remote keeps the cheap pack where it cannot cost anything.
+fn is_local_remote(remote: &str) -> bool {
+    if remote.starts_with("file://") {
+        return true;
+    }
+    if remote.contains("://") {
+        return false;
+    }
+    match remote.split_once(':') {
+        // `git@host:owner/repo` is git's scp syntax; a Windows drive letter is a single
+        // character, and anything with a directory separator before the colon is not a host.
+        Some((before, _)) => before.len() <= 1 || before.contains('/') || before.contains('\\'),
+        None => true,
+    }
+}
+
 impl ShellGit {
     #[must_use]
     pub fn new() -> Self {
@@ -462,8 +489,15 @@ impl ShellGit {
 
     fn push(&self, remote: &str, branch: &str, git_dir: &Path) -> Result<()> {
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+        let mut args: Vec<&str> = Vec::new();
+        if is_local_remote(remote) {
+            // `-c` pairs must precede the subcommand, which is why they are pushed here rather
+            // than onto the returned command.
+            args.extend(["-c", "pack.compression=0", "-c", "core.bigFileThreshold=1"]);
+        }
+        args.extend(["push", "--force"]);
         let command = self
-            .git(["push", "--force"])
+            .git(args)
             .arg(remote)
             .arg(&refspec)
             .env("GIT_DIR", path(git_dir));

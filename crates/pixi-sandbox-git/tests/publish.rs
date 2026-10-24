@@ -557,6 +557,44 @@ fn the_recording_runner_makes_the_orphan_and_the_force_visible(
     );
 }
 
+/// The transport's payload is already-compressed archives, so the packer's delta search finds
+/// nothing and costs everything: 117.5 s to push 1.2 GiB into a fresh bare repo by default,
+/// 31 s with delta search off, 9.6 s with zlib off as well — 1201 MiB on the wire in all three
+/// cases (2026-10-24). A local remote therefore gets the cheap pack; a network one must not,
+/// because there the same flags can inflate an upload that does contain real deltas.
+///
+/// Previewed rather than run: the point is the argv, and a case list that includes a real URL
+/// must not reach for the network to observe it.
+#[rstest]
+#[case::local_path("/tmp/does-not-matter.git", true)]
+#[case::file_url("file:///tmp/does-not-matter.git", true)]
+#[case::windows_drive("C:/repo.git", true)]
+#[case::https("https://github.com/owner/repo.git", false)]
+#[case::scp_like("git@github.com:owner/repo.git", false)]
+fn only_a_local_remote_pushes_an_uncompressed_pack(#[case] remote: &str, #[case] local: bool) {
+    let transport = snapshot(&[("payload.txt", b"payload")]);
+    let git = ShellGit::preview();
+    let published = git
+        .publish(&request_to(transport.path(), "snapshot", remote))
+        .unwrap();
+
+    let push = published
+        .commands
+        .iter()
+        .find(|c| c.contains("push --force"))
+        .unwrap_or_else(|| panic!("no push in {:#?}", published.commands));
+    assert_eq!(
+        push.contains("pack.compression=0"),
+        local,
+        "an uncompressed pack is a local-remote decision: {push}"
+    );
+    assert_eq!(
+        push.contains("core.bigFileThreshold=1"),
+        local,
+        "the delta search is the cost being removed: {push}"
+    );
+}
+
 #[test]
 fn a_preview_run_reports_the_commands_and_touches_nothing() {
     let transport = snapshot(&[("payload.txt", b"payload")]);
