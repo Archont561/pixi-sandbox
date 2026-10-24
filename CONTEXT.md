@@ -3948,18 +3948,23 @@ production. *Splitting pack/verify/push* and *caching the released binary* are s
 per-step budget reporting into `$GITHUB_STEP_SUMMARY`; the last one is what would make the next
 measurement cheap, and it is not written.
 
-**What the runners said.** Two runs carry the new graph. Tier B is `skipped` in both
-(40118086577 and 40119288736), so the weaker tier is confirmed gone — but neither run is faster
-end to end: 443 s and 444 s against 407 s in 40112616326, because everything else on this job is
-noisy. Tier A alone measured 94 s, 113 s and 142 s across three runs, the e2e archive build 8 s,
-80 s, 9 s (cache hit, miss, hit), and the released-binary download 21 s, 68 s, 17 s. The download
-is a constant for a given (tag, platform) and now sits behind `actions/cache` keyed on that pair;
-that cache has not yet produced a hit — the run that introduced it was cancelled by a force-push,
-so 40119288736 missed and saved instead. **The honest reading of the airlock change is that the
-92 s of duplicated tier is gone and the job's own variance is larger than the saving**; a claim
-that the workflow is faster needs a run where Tier A and the caches behave. `ci` is the
-unambiguous one: 220 s → 136 s on a code PR with all four jobs starting within 9 s of each other
-(run 40116802710), and the archive-build question is still open.
+**What the runners said.** Three runs carry the new graph and Tier B is `skipped` in all of
+them (40118086577, 40119288736, 40120014109). The first two were *not* faster — 443 s and 444 s
+against 407 s in 40112616326 — because everything else on the job is noisy: Tier A alone measured
+94 s, 113 s, 142 s and 140 s across four runs, and the e2e archive build 8 s, 80 s, 9 s, 9 s
+(cache hit, miss, hit). Run 40120014109 is the settled shape: the released-binary download is
+`skipped` behind the new `actions/cache` entry, and the two jobs measure **113 s → 82 s (plan)**
+and **407 s → 346 s (proof)** — the 92 s of duplicated tier plus 21 s of repeated download,
+partly given back to a slow Tier A. So the saving is real but smaller than the plan's arithmetic,
+and Tier A's spread (~50 s) is now the largest single source of noise in the proof.
+
+**A path-filter correction worth keeping.** `paths:` on a `pull_request` trigger is evaluated
+against the whole PR diff, not the pushed commit: once this PR contained a `crates/**` change,
+every later push ran the airlock again even when it only touched `CONTEXT.md` (run 40120014109).
+Draft-skipping is therefore the lever that matters for PR cost, not path hygiene.
+
+**`ci` is the unambiguous one:** 220 s → 136 s on a code PR with all four jobs starting within 9 s
+of each other (run 40116802710).
 
 **Evidence.** `actionlint`, `check-repository`, `check-ci-builds`, `plan --json` green with the
 new config. `check_ci_test_route` still pins the coverage/doctest/payload steps to
