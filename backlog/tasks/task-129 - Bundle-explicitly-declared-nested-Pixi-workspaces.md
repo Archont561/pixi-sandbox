@@ -1,7 +1,7 @@
 ---
 id: TASK-129
 title: Bundle explicitly declared nested Pixi workspaces
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-23 16:57'
 updated_date: '2026-10-25'
@@ -51,15 +51,15 @@ Opt-in bundling of nested Pixi workspaces (GitHub issue #194; issue #193 is a du
 - [x] #4 pack resolves every selected environment to its own project root for the lock and native preflights, and carries nested environments into the transport with per-environment identity under .pixi-sandbox/envs/workspaces/<slug>/<env>/pack/ — root paths stay byte-identical, and budget ceilings, the per-file oracle and byte verification are unchanged.
 - [x] #5 restore materialises each nested environment into its own project's .pixi/envs/<env> with markers and staged-oracle verification; destination resolution lives in core so restore and doctor --verify-restored agree, staging directories are workspace-qualified, a user-supplied environment id is validated against the manifest and never becomes a path component, and the sequential-abort policy (first failure stops the run, staged packs retained) is specified and tested.
 - [x] #6 Every new transport writes manifest schema 4, including root-only bundles, while readers keep accepting schemas 1-3; manifest fixtures and goldens cover 4 and the consumer upgrade requirement is documented.
-- [ ] #7 Offline evidence asserts both observables: the nested project's pixi install --frozen --offline is a no-op, and a delegated pixi run --manifest-path <nested>/pixi.toml <task> succeeds inside the denied-egress namespace. The no-op is the discriminating assertion; a native-runner airlock result is claimed only from the CI gate that actually ran it.
+- [x] #7 Offline evidence asserts both observables: the nested project's pixi install --frozen --offline is a no-op, and a delegated pixi run --manifest-path <nested>/pixi.toml <task> succeeds inside the denied-egress namespace. The no-op is the discriminating assertion; a native-runner airlock result is claimed only from the CI gate that actually ran it.
 - [x] #8 Documentation and generated artifacts are updated through their generators (configure-bundles guide, CLI reference, transport layout notes, golden workflow files), and the full suite's pass count rises or holds with fmt, lint and test green.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Focused fixture/tempdir tests and the offline e2e lifecycle pass, with the repository test baseline recorded before and after and never reduced.
+- [x] #1 Focused fixture/tempdir tests and the offline e2e lifecycle pass, with the repository test baseline recorded before and after and never reduced.
 - [x] #2 fmt, lint and test are green; generated workflow/branch artifacts are regenerated from their generators and the plan output is validated by its own check.
-- [ ] #3 The task stays open until every acceptance criterion has evidence; anything this machine cannot prove (native-runner airlock tier, real consumer lifecycle) is named as an open item rather than checked.
+- [x] #3 The task stays open until every acceptance criterion has evidence; anything this machine cannot prove (native-runner airlock tier, real consumer lifecycle) is named as an open item rather than checked.
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -81,7 +81,7 @@ Evidence boundary: the local denied-egress fixture tier is no substitute for a n
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Slice 1–5 landed on 2026-10-23 (config schema 2, plan reporting, pack per-root, restore per-destination, manifest schema 4). AC#3 is checked as of the 2026-10-25 owner ruling recorded below; AC#7 remains open, with its lock obstacle cleared by the Stage A spike and the build queued next.
+Slice 1–5 landed on 2026-10-23 (config schema 2, plan reporting, pack per-root, restore per-destination, manifest schema 4). AC#3 is checked under the 2026-10-25 owner ruling recorded below, and AC#7 closed the same day with a native-runner namespace proof — all eight acceptance criteria and all three DoD items now carry evidence; the task flips to Done when the Stage B PR merges.
 
 **What is implemented and measured.** `CONFIG_SCHEMA` is 2 with `[[bundle.workspaces]]` (`manifest` + optional `environments`; omitted means the nested project's `default`). Shape rules refuse an absolute path, a `..` or `.` component, a backslash, a non-`pixi.toml` name, the repository root's own manifest, a duplicate declaration, one manifest claimed by two bundles, and a root environment named `workspaces` (the reserved transport segment). Filesystem rules live in `SandboxConfig::load` and refuse a missing manifest, a missing nested `pixi.lock`, and a nested `Cargo.lock` with TASK-131 named as the follow-up. Schema-1 configs parse unchanged; a newer schema is still refused with the supported range, and two tests that hardcoded `schema = 2` as "newer" were rewritten to derive from `CONFIG_SCHEMA` — they had stopped testing anything the moment the constant moved.
 
@@ -103,7 +103,9 @@ Evidence: full suite 1,218 passed / 2 skipped (585 → 593 product, 295 → 315 
 
 **Stage A spike (2026-10-25) cleared that obstacle — evidence only, no code yet.** A throwaway local-`file://` solve with pixi 0.83.0 produced genuine v7 YAML locks for the root and nested workspace, and the full AC#7 chain passed under maximum denial (channel renamed, both package caches hidden): frozen/offline no-op with byte-identical payload, delegated `pixi run --manifest-path …`, product `pack`→`restore` round trip, and a hard-failing cold-cache negative control. The spike also pinned the exact fixture defect (missing `subdir`, no top-level `platforms`, and — for a functional prefix — `sha256`/`channel`/`size`) and the empty-prefix trap of any un-frozen re-solve against `channels = []`. Full matrix and the Stage B build options are in `backlog/docs/plans/task-129-nested-workspaces.md` § Stage A spike.
 
-**AC#7 is left unchecked.** The two observables it asks for — the nested project's `pixi install --frozen --offline` is a no-op, and a delegated `pixi run --manifest-path …` succeeds in a denied-egress namespace — were not run. The local fixture proves transport identity and destination layout, which is not the same claim, and the native-runner airlock tier is a CI gate, not something this machine can assert.
+**AC#7 closed (2026-10-25) by a native-runner namespace proof, not a hand-built lock.** The Stage B implementation is `crates/pixi-sandbox/tests/nested_offline.rs`, an ignored Linux test (the `test-nested-offline` pixi task, a changes-gated ci.yml step) modeled on the payload round-trip gate. Pixi itself solves both projects against a local `file://` channel inside an `unshare -n` network namespace and writes the genuine v7 locks; the product then packs the nested pair and restores into a clean consumer holding only manifests and locks. The two observables are asserted there: `pixi install --frozen --offline` is a no-op proven by hashing the payload (`conda-meta` bookkeeping excluded) with a never-used `XDG_CACHE_HOME`, for both root and nested envs; and the delegated `pixi run --manifest-path subproject/pixi.toml hello` executes the packaged payload in the namespace. A cold negative control — env removed, file channel cut, empty cache — must fail. Every pixi call carries `--frozen --offline`, the empty-prefix trap from the spike. Evidence ledger: repeated local runs green on a sudo/unshare host; CI run `40144185678` step `Run pixi run test-nested-offline` success on a GitHub runner (the native claim this criterion requires); airlock linux-64 run `40144185605` green; codecov/patch 100.00% of the diff. Suite across the Stage B commits: 1,238 → 1,242 ordinary tests passing (two plan-transparency tests, two branch-coverage tests), ignored proofs 2 → 3, zero failures; nothing reduced (DoD#1).
+
+**AC#7 historical note (superseded).** The two observables it asks for — the nested project's `pixi install --frozen --offline` is a no-op, and a delegated `pixi run --manifest-path …` succeeds in a denied-egress namespace — could not be asserted with the hand-built lock. The local fixture still proves transport identity and destination layout, which is a different claim; the paragraph above records the evidence that now covers the runtime claim.
 
 **Premise re-confirmed:** the nested directory is refused when the root `pixi.toml` lists it under `[workspace] members` — pixi 0.83 rejects that key outright, so the check is currently inert by construction and exists for the version that accepts it.
 
