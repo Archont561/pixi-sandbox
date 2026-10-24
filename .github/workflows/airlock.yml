@@ -118,12 +118,59 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  # One cheap job answers "did this push touch a path the airlock proves?" so the proof can
+  # skip a markdown-only synchronize push. The trigger-level `on.pull_request.paths` cannot do
+  # it: GitHub evaluates that block against the whole PR diff, so a PR that once touched
+  # `crates/**` re-ran the full proof on every later push (PR #202 paid 435 s and 415 s for two
+  # markdown pushes; TASK-135). This filter diffs the push range (before..after) on synchronize
+  # and the full base..head diff on every other activity. Same architecture as ci.yml's
+  # `changes` job: a skipped job still posts a conclusion, so a required check never stays
+  # Pending the way a paths-ignored workflow trigger would.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run-airlock: ${{ github.event_name != 'pull_request' || steps.filter.outputs.airlock != 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          # Empty token is load-bearing: with any token, dorny/paths-filter ignores base/ref
+          # on pull_request events and reads the whole-PR file list from the API, which is
+          # exactly the whole-diff behaviour this job exists to replace (verified against the
+          # pinned action's src/main.ts). Empty token routes it to local git diff, where the
+          # explicit base/ref below select the push range on synchronize.
+          token: ''
+          # `some`, not `every`: the proof runs when the push touched AT LEAST ONE watched
+          # path. `every` would skip it on any mixed push (code plus an unrelated markdown
+          # edit) — observed on PR #207's opening run, which skipped the proof entirely.
+          predicate-quantifier: some
+          # synchronize judges only what this push changed; opened/reopened/ready_for_review
+          # fall back to base..head, so the first proof still sees the whole PR diff.
+          base: ${{ github.event.action == 'synchronize' && github.event.before || github.event.pull_request.base.sha }}
+          ref: ${{ github.event.action == 'synchronize' && github.event.after || github.event.pull_request.head.sha }}
+          # Keep this list path-for-path identical to on.pull_request.paths above; the
+          # `xtask check-airlock-filter` gate fails on any drift.
+          filters: |
+            airlock:
+              - 'crates/**'
+              - 'pixi.toml'
+              - 'scripts/restore.sh'
+              - '.pixi-sandbox.toml'
+              - '.github/workflows/airlock.yml'
+
   # A draft pull request iterates: five pushes in one afternoon cost 44 runner-minutes of
   # proof that was not being asked for (TASK-134's session, 2026-10-24). The proof is required
   # when review begins, so both jobs skip drafts and `ready_for_review` triggers them.
   plan:
     name: validate airlock plan
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    needs: changes
+    if: ${{ needs.changes.outputs.run-airlock != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -186,8 +233,8 @@ jobs:
 
   proof:
     name: airlock ${{ matrix.platform }}
-    needs: plan
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    needs: [changes, plan]
+    if: ${{ needs.changes.outputs.run-airlock != 'false' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:

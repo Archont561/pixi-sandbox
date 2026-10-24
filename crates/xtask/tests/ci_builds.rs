@@ -134,3 +134,32 @@ fn generated_reports_must_not_invalidate_source_lint_caches() {
         "coverage output must not invalidate lint caches"
     );
 }
+
+#[test]
+fn the_rust_cache_restores_always_and_saves_only_for_code() {
+    // TASK-135: a docs-only run must still restore target/ so the xtask gates do not compile
+    // cold (measured 61 s vs 0 s warm); only the save may be gated to code changes.
+    for (original, weakened, why) in [
+        (
+            "      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2\n        with:\n          cmd-format: pixi run --frozen -- {0}",
+            "      - if: steps.changes.outputs.code != 'false'\n        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2\n        with:\n          cmd-format: pixi run --frozen -- {0}",
+            "gating the step denies docs-only runs a warm cache",
+        ),
+        (
+            "save-if: ${{ steps.changes.outputs.code != 'false' }}",
+            "save-if: ${{ true }}",
+            "every run saving rebuilds and overwrites the shared cache",
+        ),
+        (
+            "save-if: ${{ steps.changes.outputs.code != 'false' }}",
+            "",
+            "an unconditional save has the same cost as no save-if at all",
+        ),
+    ] {
+        let output = invoke(Some((".github/workflows/ci.yml", original, weakened)));
+        assert!(
+            !output.status.success(),
+            "accepted a weak cache gate: {why}"
+        );
+    }
+}

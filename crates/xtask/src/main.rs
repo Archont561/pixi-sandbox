@@ -48,6 +48,8 @@ enum Command {
     CheckDocsArtifacts,
     /// Validate the single-suite CI route, lint serialization and toolchain cache.
     CheckCiBuilds,
+    /// Validate the airlock's per-push path filter against its trigger paths and job gates.
+    CheckAirlockFilter,
     /// Rewrite this repository's committed render of the generated relock workflow.
     RenderRelock,
     /// Report every documented release reference that disagrees with the declared version.
@@ -432,6 +434,7 @@ fn run_args(args: Args) -> Result<()> {
         Command::CheckRepository => repo_checks::run(&root),
         Command::CheckReleaseScheduling => xtask::workflow_gates::check_release_scheduling(&root),
         Command::CheckCiBuilds => xtask::workflow_gates::check_ci_builds(&root),
+        Command::CheckAirlockFilter => xtask::workflow_gates::check_airlock_filter(&root),
         Command::CheckDocsArtifacts => xtask::workflow_gates::check_docs_artifacts(&root),
         Command::CheckReleaseRefs => {
             let findings = release_refs::scan(&root)?;
