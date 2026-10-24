@@ -599,8 +599,20 @@ fn gate_path_with_tools_first(tools_bin: &Path) -> std::ffi::OsString {
     std::env::join_paths(paths).expect("PATH entries are valid")
 }
 
+/// Whether the transport's own restore path installs natively. This is the rule
+/// `support::uses_native_pack` applies in the product: a schema-3-and-later manifest carries
+/// format-1 packs, and format-1 packs are installed by rattler instead of by a `pixi-unpack`
+/// subprocess — so a native transport deliberately embeds no unpacker and needs none.
 #[cfg(feature = "ci")]
-fn assert_gate_tools_are_first_on_path_and_execute(project: &Path) {
+fn gate_transport_installs_natively(transport: &Path) -> bool {
+    let manifest_path = pixi_sandbox_core::manifest::Manifest::path_in(transport);
+    let manifest = pixi_sandbox_core::manifest::Manifest::load(&manifest_path)
+        .unwrap_or_else(|err| panic!("loading {} failed: {err}", manifest_path.display()));
+    manifest.schema >= 3
+}
+
+#[cfg(feature = "ci")]
+fn assert_gate_tools_are_first_on_path_and_execute(project: &Path, transport: &Path) {
     let tools_bin = gate_tools_bin(project);
     let path = gate_path_with_tools_first(&tools_bin);
     let first_path_entry = std::env::split_paths(&path)
@@ -613,8 +625,22 @@ fn assert_gate_tools_are_first_on_path_and_execute(project: &Path) {
 
     let pixi = gate_tool(&tools_bin, "pixi");
     let sandbox = gate_tool(&tools_bin, "pixi-sandbox");
-    let unpack = gate_tool(&tools_bin, "pixi-unpack");
-    assert!(unpack.is_file(), "pixi-unpack must be bundled for restore");
+    // TASK-134: the unpacker belongs to the *legacy* tool contract only. Demanding it
+    // unconditionally turned every transport packed by the released v0.8.0 binary — native
+    // format 1, schema 4, `tools` = pixi + pixi-sandbox — into a red Tier B in six
+    // milliseconds, because `gate_tool` panics before any restored prefix is even examined.
+    if gate_transport_installs_natively(transport) {
+        eprintln!(
+            "::notice::the transport installs its format-1 packs natively; no pixi-unpack is \
+             bundled, and none is needed"
+        );
+    } else {
+        let unpack = gate_tool(&tools_bin, "pixi-unpack");
+        assert!(
+            unpack.is_file(),
+            "pixi-unpack must be bundled for a legacy restore"
+        );
+    }
 
     let pixi_version = run_gate_command(
         StdCommand::new(&pixi).env("PATH", &path).arg("--version"),
@@ -902,7 +928,7 @@ mod ci_gate {
     #[test]
     fn airlock_gate_manifest_owned_tools_are_first_on_path_and_execute() {
         let inputs = GateInputs::from_env();
-        assert_gate_tools_are_first_on_path_and_execute(&inputs.project);
+        assert_gate_tools_are_first_on_path_and_execute(&inputs.project, &inputs.transport);
     }
 
     #[test]
