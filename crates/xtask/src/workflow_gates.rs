@@ -418,6 +418,11 @@ pub fn check_airlock_filter(root: &Path) -> Result<()> {
     );
     let with = &filter_step["with"];
     ensure!(
+        with["token"].as_str() == Some(""),
+        "per-push filter must pass an empty token: with any token the action ignores base/ref \
+         on pull_request events and diffs the whole PR via the API"
+    );
+    ensure!(
         with["predicate-quantifier"].as_str() == Some("some"),
         "per-push filter must use `some` semantics: one watched path touched must run the \
          proof, while `every` skips it on any mixed code-and-docs push"

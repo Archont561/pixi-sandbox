@@ -44,6 +44,7 @@ jobs:
         id: filter
         if: github.event_name == 'pull_request'
         with:
+          token: ''
           predicate-quantifier: some
           base: ${{ github.event.action == 'synchronize' && github.event.before || github.event.pull_request.base.sha }}
           ref: ${{ github.event.action == 'synchronize' && github.event.after || github.event.pull_request.head.sha }}
@@ -102,13 +103,18 @@ fn the_reference_shape_passes() {
 
 #[test]
 fn every_weakening_is_refused() {
-    let cases: [(&str, &str, &str); 10] = [
+    let cases: [(&str, &str, &str); 11] = [
         // The quantifier is the whole mechanism: `every` skips the proof on a mixed push
         // because not every changed file matches a watched glob (PR #207's opening run).
         (
             "          predicate-quantifier: some",
             "          predicate-quantifier: every",
             "every-semantics skips the proof when code and docs change together",
+        ),
+        (
+            "          token: ''",
+            "          token: ${{ github.token }}",
+            "a token makes the action ignore base/ref and diff the whole PR via the API",
         ),
         // The per-push globs must not drift from the trigger paths the ADR-29 guard reads.
         (

@@ -140,6 +140,12 @@ jobs:
         id: filter
         if: github.event_name == 'pull_request'
         with:
+          # Empty token is load-bearing: with any token, dorny/paths-filter ignores base/ref
+          # on pull_request events and reads the whole-PR file list from the API, which is
+          # exactly the whole-diff behaviour this job exists to replace (verified against the
+          # pinned action's src/main.ts). Empty token routes it to local git diff, where the
+          # explicit base/ref below select the push range on synchronize.
+          token: ''
           # `some`, not `every`: the proof runs when the push touched AT LEAST ONE watched
           # path. `every` would skip it on any mixed push (code plus an unrelated markdown
           # edit) — observed on PR #207's opening run, which skipped the proof entirely.
