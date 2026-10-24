@@ -231,3 +231,63 @@ cost.
 against a local or mirrored channel fails with `locked artifact must have an absolute URL` until
 the lock is hand-patched to `file://…` plus an explicit `subdir`. Consumers behind a mirror hit
 this, and it makes an offline pack fixture impossible to write without editing a lockfile by hand.
+
+## Stage A spike — a pixi-generated lock for the nested fixture (2026-10-25, executed)
+
+Evidence-only spike for the AC#7 obstacle (the fixture's hand-built v7 lock fails pixi with
+`missing field/fields 'subdir'`). Everything ran in a throwaway `/home/user/spike-a` (not in
+Git) against **pixi 0.83.0**, the version this repository pins, with a local `file://` channel
+serving the fixture's own `native-fixture-1.0-0.tar.bz2`; prefix.dev and index.crates.io are
+unreachable from that machine, so every solve was local by construction.
+
+### Lock-format facts established
+
+1. **pixi 0.83 serialises v7 locks as YAML**, not JSON. JSON is accepted on input (YAML is a
+   superset), but an un-frozen re-solve rewrites the file to YAML — so the committed fixture
+   locks, hand-built with `serde_json`, are only ever one `pixi run` away from being replaced.
+2. **The exact blocker.** A lock shaped by the test helper (`write_locked_project` in
+   `tests/nested_workspaces.rs`), whose package record carries only a `conda` URL, reproduces
+   the verbatim failure: `failed to load the lock file … missing field/fields 'subdir'`. Adding
+   `subdir` surfaces the next missing piece, a top-level `platforms:` section declaring
+   `linux-64`; with both present pixi loads the lock but installs an **empty prefix** unless the
+   record also carries `sha256`, `channel` and `size`. A real pixi-written conda record is five
+   fields: `conda` (a bare filesystem path for file channels, not `file://`), `subdir`,
+   `sha256`, `channel`, `size` — no name/version/build; rattler takes those from the archive.
+3. **The empty-prefix trap.** The fixture manifest spells `channels = []`. A plain
+   `pixi run`/`pixi install` without `--frozen` can re-solve that to an empty package set,
+   rewrite the lock to `packages: []`, and exit 0 with an empty environment. Stage B's AC#7
+   test must invoke pixi with both `--frozen` **and** `--offline` on every call.
+4. The product already reads locks through `serde_yaml` (`native_pack/writer.rs`), so it
+   accepts pixi's YAML locks unchanged; and the TASK-132 bare-path fix is confirmed here:
+   `pack` against a genuine pixi lock whose `conda` entry is a bare path succeeds (5 blobs,
+   archive + repodata carried).
+
+### Evidence matrix (all exit 0 unless marked)
+
+| # | Scenario | Command (abbreviated) | Result |
+| --- | --- | --- | --- |
+| 1 | Local solve, nested subproject | `pixi install` in `subproject/` against `file://…/channel` | v7 YAML lock written, env installed |
+| 2 | Frozen/offline no-op | `pixi install --frozen --offline` | exit 0; payload (excluding `conda-meta` bookkeeping) byte-identical across repeated runs |
+| 3 | Denied egress, cache-independent | channel renamed away, `~/.cache/rattler` hidden, empty `XDG_CACHE_HOME`; same no-op and `pixi run --frozen --offline hello` | no-op exit 0; task prints `native fixture` |
+| 4 | Delegated entry point | `pixi run --frozen --offline --manifest-path subproject/pixi.toml hello` from the root, same denial | prints `native fixture` |
+| 5 | Product round trip | `pixi-sandbox pack --repo-root subproject` → `restore` into a clean consumer; then rows 2–3 on the consumer | restore complete; no-op byte-identical; run prints `native fixture` |
+| 6 | Negative control | remove `.pixi/envs`, channel denied, both caches hidden, `--frozen --offline` | **exit 1**, `an io error occurred: No such file or directory` — the restored env, not a cache, is what AC#7's no-op reads |
+| 7 | Hand-built JSON lock, minimal fields | record = `{conda, subdir}` + top-level `platforms` | lock loads, but empty prefix: accepted, not functional |
+| 8 | Hand-built JSON lock, full fields | record = `{conda, subdir, sha256, channel, size}` | working env; rows 2–4 repeat successfully in JSON syntax |
+
+Two cache mechanics worth knowing: pixi honors `XDG_CACHE_HOME` (it created
+`$XDG_CACHE_HOME/rattler`), not `RATTLER_CACHE_DIR`; and when the default cache is warm it can
+seed an empty XDG cache, so a rigorous cold-airlock control hides both. `pixi install` always
+rewrites `conda-meta/history` and `conda-meta/pixi` mtimes, so the no-op assertion hashes the
+payload excluding `conda-meta/`, not the whole prefix.
+
+### What Stage B should build
+
+Preferred route: generate the nested fixture's locks by running `pixi install` against the
+local `file://` channel at fixture-build time (or ship a checked-in pixi-written YAML lock),
+which makes AC#7's two observables assert exactly rows 2–4 with no hand-built-lock maintenance.
+Fallback that keeps the current runtime fixture builder: extend `write_locked_project` to emit
+`subdir`, a top-level `platforms` section, and `sha256`/`channel`/`size` (all derivable from the
+repodata the helper already reads) — row 8 proves that shape is pixi-loadable in JSON. Either
+way, every pixi invocation in the AC#7 test carries `--frozen --offline`, and the negative
+control is row 6, not an unforced error.
