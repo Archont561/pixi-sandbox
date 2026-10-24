@@ -3928,9 +3928,15 @@ the markdown-only sprint PR #202 paid 220 s for clippy, coverage and doctests; `
 
 **Two additions.** A draft pull request no longer runs the airlock: five draft pushes in one
 afternoon is roughly 40 runner-minutes of proof nobody asked for, and `ready_for_review` is now
-an explicit trigger so the proof arrives when review starts. The airlock's plan and proof jobs
-now share one rust-cache identity, because two identities meant two cold builds of one workspace
-(82 s and 8 s in run 40112616326).
+an explicit trigger so the proof arrives when review starts.
+
+**A cache change that was measured and reverted.** Giving the proof job the plan job's
+`support-host-plan` identity looked free — one workspace, one lockfile — and run 40116802649
+showed it was not: the proof job's own identity had been warm (8 s to build the archive in
+40112616326), the new primary key guaranteed a miss, and the plan job saves before the proof job
+restores, so the only thing that transferred was a cold build. The proof job took 578 s against
+407 s. Reverted in the same session; the comment in `airlock.yml` now records why the two
+identities stay separate.
 
 **Not implemented, and why.** *A single rust-cache key across all three workflows*: the three
 check out to different roots (`project/` vs `.`) with different profiles, so one key would only

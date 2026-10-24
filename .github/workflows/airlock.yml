@@ -223,12 +223,12 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: project
-          # The same identity as the plan job: one workspace, one lockfile, one target dir.
-          # Two identities meant two separate caches for one workspace: the planner build cost
-          # 82 s in the plan job of run 40112616326 while the proof job's archive build, with
-          # the target dir it had warmed itself, took 8 s.
-          shared-key: support-host-plan
-          key: ${{ hashFiles('project/pixi.lock') }}
+          # Deliberately *not* the plan job's `support-host-plan` identity. Sharing it was tried
+          # on 2026-10-24 and cost the proof job the cache it had warmed for itself: a new primary
+          # key is a guaranteed miss, the plan job saves before this one restores, and the two
+          # build different feature sets (`--features ci` archive vs. planner binary), so the
+          # artifacts do not transfer. Run 40116802649's proof job took 578 s against 407 s for
+          # the older identity.
 
       # The connected side compiles the CI-only gate once and stores a nextest archive. Both
       # proof tiers replay this exact archive after restore, so the egress-denied tier does not
