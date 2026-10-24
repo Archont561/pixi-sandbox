@@ -12,6 +12,13 @@
 # requires, so dropping it here does not touch the badge or the workspace platform list).
 schema = 1
 branch_prefix = "sandbox"
+# Vendored crates are a *distribution* property: `sandbox/developer-<platform>` ships the
+# registry sources so a consumer can `cargo build` with no network, and the publisher on `main`
+# is the only workflow that packs such a transport. The airlock proof deliberately does not
+# (`AIRLOCK_CARGO_VENDOR: false` in .github/workflows/airlock.yml): it replays a prebuilt
+# nextest archive in the restored tree and never compiles there, so the vendor cost pack,
+# publish and restore time without ever being read. Keeping the value `true` here is what the
+# publish workflow consumes from `plan --json`.
 cargo_vendor = true
 
 # Hard publish budgets enforced by `doctor --budget-config` in the publisher before a branch is

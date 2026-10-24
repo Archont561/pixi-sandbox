@@ -205,6 +205,14 @@ jobs:
       # opt-out, never opt-in, so absent input means blocked; only an explicit `false` from a
       # dispatch or a caller turns it off.
       BLOCK_NETWORK: ${{ inputs.block-network == null && 'true' || (inputs.block-network && 'true' || 'false') }}
+      # Vendored crates are a distribution artifact, not a proof input. `sandbox/developer-*`
+      # ships them so a consumer can `cargo build` with no network, and only the publisher on
+      # `main` ships that shape. This proof replays a prebuilt nextest archive, so the restored
+      # tree is never compiled and the vendor was paid for by pack, publish and restore without
+      # ever being read — the transport is ~1.2 GB of which the vendor is the elastic part.
+      # One value, two consumers: `airlock-pack` takes it directly, and the gate's `skip_cargo`
+      # argument is its inverse, so the pair cannot drift.
+      AIRLOCK_CARGO_VENDOR: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -283,7 +291,7 @@ jobs:
       # is data from the matrix, which is why this is an xtask and not a plain task.
       - name: Pack the transport with the released binary
         working-directory: project
-        run: pixi run -e package xtask airlock-pack -- --envs "${{ matrix.environments }}" --out "${{ runner.temp }}/airlock-transport" --cargo-vendor "${{ matrix.cargo_vendor }}" --self-bin "${{ runner.temp }}/pixi-sandbox-self-bin"
+        run: pixi run -e package xtask airlock-pack -- --envs "${{ matrix.environments }}" --out "${{ runner.temp }}/airlock-transport" --cargo-vendor "${{ env.AIRLOCK_CARGO_VENDOR }}" --self-bin "${{ runner.temp }}/pixi-sandbox-self-bin"
 
       - name: Verify the transport
         working-directory: project
@@ -332,6 +340,9 @@ jobs:
       # The restored-project gate is a nextest archive of the e2e suite built with
       # `--features ci`. The restored project, branch checkout, environment list and cargo-vendor
       # policy are explicit inputs; missing inputs fail before a false-positive pass is possible.
+      # This proof packs without the vendor, so the gate is told to skip its `cargo check
+      # --offline` (that is what the trailing argument is); the vendored shape is still proven on
+      # `main`, where the publisher packs it and `consumer-proof` installs from the result.
       #
       # Tier A runs first, because it is the tier that proves something: deny-egress re-execs the
       # same archived tests under `sudo unshare -n` on Linux and `sudo sandbox-exec` with
@@ -341,7 +352,7 @@ jobs:
         id: tier-a
         if: ${{ env.BLOCK_NETWORK == 'true' }}
         working-directory: project
-        run: pixi run -e package xtask deny-egress -- pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"
+        run: pixi run -e package xtask deny-egress -- pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ env.AIRLOCK_CARGO_VENDOR == 'true' && 'false' || 'true' }}"
 
       # Replayed only when it has something to add: a red Tier A (the sandbox hides the panic's
       # environment, so the readable run is worth 92 s exactly then), or a dispatch that turned
@@ -354,4 +365,4 @@ jobs:
       - name: Tier B — same gate with the network reachable (diagnostic)
         if: ${{ (failure() && steps.tier-a.outcome == 'failure') || env.BLOCK_NETWORK != 'true' }}
         working-directory: project
-        run: pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ matrix.cargo_vendor && 'false' || 'true' }}"
+        run: pixi run --frozen airlock-gate-run "${{ runner.temp }}/airlock-gate.tar.zst" "${{ runner.temp }}/restored" "${{ runner.temp }}/airlock-checkout" "${{ matrix.environments }}" "${{ env.AIRLOCK_CARGO_VENDOR == 'true' && 'false' || 'true' }}"

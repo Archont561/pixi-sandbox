@@ -3970,3 +3970,29 @@ of each other (run 40116802710).
 new config. `check_ci_test_route` still pins the coverage/doctest/payload steps to
 `steps.changes.outputs.code`, which is why `ci` keeps its own copy of the filter instead of
 reading the new job's output.
+
+### 2026-10-24 (fifth session) — vendored crates belong to the publisher, not the proof
+
+**The decision.** `sandbox/developer-<platform>` ships vendored registry sources so a consumer can
+`cargo build` with no network. That is a property of the *distribution*, and the publisher on
+`main` is the only workflow that distributes. The airlock proof replays a prebuilt nextest archive
+in the restored tree and never compiles there, so it paid for the vendor in pack, publish, fetch
+and restore and never read a byte of it.
+
+**How it is expressed.** One job-level `AIRLOCK_CARGO_VENDOR: "false"` in `airlock.yml` feeds both
+consumers: `airlock-pack --cargo-vendor "${{ env.AIRLOCK_CARGO_VENDOR }}"` and the gate's trailing
+`skip_cargo` argument, which is that value inverted. `PIXI_SANDBOX_GATE_SKIP_CARGO` already existed
+for exactly this case (the gate's comment said "when the transport intentionally did not vendor
+crates"), so no product code changed: `xtask airlock-pack` parses the string (`"" | "true"` →
+vendor, `"false"` → no vendor, anything else is an error), and `pack_argv` omits the flag entirely
+rather than passing a falsehood.
+
+**What the PR proof no longer covers, honestly.** A PR no longer restores a *vendored* transport,
+so restore's cargo-vendor wiring is proven only where the vendored shape exists: the publish run
+on `main` plus `consumer-proof` installing from that branch. `.pixi-sandbox.toml` still says
+`cargo_vendor = true` because that is what `plan --json` hands the publisher; the file now says so
+next to the value instead of leaving it to be guessed.
+
+Evidence so far: `actionlint`, `check-repository`, `check-ci-builds` and `plan --json` green
+locally. The step-level saving is unmeasured until the next airlock run; the steps that should
+move are pack (39 s), publish (74 s), fetch (12 s) and restore (34 s).
