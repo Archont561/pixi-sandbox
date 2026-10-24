@@ -3948,8 +3948,15 @@ production. *Splitting pack/verify/push* and *caching the released binary* are s
 per-step budget reporting into `$GITHUB_STEP_SUMMARY`; the last one is what would make the next
 measurement cheap, and it is not written.
 
+**What the runners said.** Run 40118086577 has the first step-level table with the new graph:
+Tier B is `skipped` (step 18), so the weaker tier is confirmed gone, but the job took 443 s
+against 407 s in 40112616326 because two steps moved further: the e2e archive build 8 s → 80 s
+(cache miss) and the released-binary download 21 s → 68 s (network). The download is a constant
+for a given (tag, platform), so it now sits behind `actions/cache` keyed on exactly that pair;
+the archive build is the next cache question and is not answered here. `ci` on the code PR moved
+220 s → 136 s with all four jobs starting within 9 s of each other (run 40116802710).
+
 **Evidence.** `actionlint`, `check-repository`, `check-ci-builds`, `plan --json` green with the
-new config; nothing here has run on a runner yet, so every number above is a baseline, not a
-result. `check_ci_test_route` still pins the coverage/doctest/payload steps to
+new config. `check_ci_test_route` still pins the coverage/doctest/payload steps to
 `steps.changes.outputs.code`, which is why `ci` keeps its own copy of the filter instead of
 reading the new job's output.

@@ -251,7 +251,21 @@ jobs:
       # The conda package exposes pixi-sandbox through a Pixi trampoline. It proves the package
       # installs, but the transport must embed the static release asset, not the trampoline and
       # its runner-local configuration.
+      # The asset is immutable for a given (tag, platform) — it is the release's own file — so
+      # fetching it again on every proof is caching a constant. It cost 68 s in run 40118086577
+      # and 21 s in 40112616326: the download is the step with the widest variance in this job and
+      # it produces the same bytes every time. The pack/verify steps below still exercise the
+      # binary, so a cache hit does not weaken the proof of the *transport*; it only stops
+      # re-fetching the bootstrap that built it.
+      - name: Restore the released binary for this tag
+        id: self-bin-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/pixi-sandbox-self-bin
+          key: airlock-self-bin-${{ needs.plan.outputs.tag }}-${{ matrix.platform }}
+
       - name: Download the static released binary to embed
+        if: steps.self-bin-cache.outputs.cache-hit != 'true'
         working-directory: project
         env:
           GH_TOKEN: ${{ github.token }}
