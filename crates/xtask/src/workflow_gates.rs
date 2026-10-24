@@ -350,6 +350,136 @@ fn check_ci_test_route(root: &Path) -> Result<()> {
             && rust_cache["with"]["key"] == "${{ hashFiles('pixi.lock') }}",
         "Rust cache must fingerprint the effective Pixi compiler and lock"
     );
+    // TASK-135: a docs-only PR still runs the xtask gates, which compile `xtask` cold without
+    // a restored `target/` — measured at 61 s versus 0 s warm (run 40130578805). The cache
+    // therefore restores on every run; only the save is gated to code changes, so a docs run
+    // is a download when warm and a no-op when cold instead of a fresh compile.
+    ensure!(
+        rust_cache.get("if").is_none(),
+        "Rust cache must restore unconditionally: gate its save with save-if, never the step"
+    );
+    ensure!(
+        rust_cache["with"]["save-if"].as_str()
+            == Some("${{ steps.changes.outputs.code != 'false' }}"),
+        "Rust cache saves must stay gated to code changes so docs-only runs never rebuild it"
+    );
 
+    Ok(())
+}
+
+/// The output the airlock's `changes` job publishes: run everywhere except on a pull request
+/// whose push range touches none of the watched paths.
+const AIRLOCK_RUN_OUTPUT: &str =
+    "${{ github.event_name != 'pull_request' || steps.filter.outputs.airlock != 'false' }}";
+
+/// Guard the per-push airlock skip (TASK-135).
+///
+/// GitHub evaluates trigger-level `on.pull_request.paths` against the **whole PR diff**, so a
+/// markdown-only `synchronize` push on a PR that previously touched `crates/**` still paid for
+/// the full two-tier proof (measured ~13 wasted runner-minutes on PR #202). The trigger paths
+/// stay — the ADR-29 main-push guard reads them — but a `changes` job now answers the per-push
+/// question with a push-range [`dorny/paths-filter`] step, and both proof jobs gate on its
+/// answer. This check fails closed on any drift between the two glob lists or a missing gate.
+///
+/// # Errors
+/// Refuses a missing/weakened `changes` job, a filter whose globs diverge from the trigger
+/// paths, a non-range `base`/`ref`, or proof jobs that stopped declaring the skip condition.
+pub fn check_airlock_filter(root: &Path) -> Result<()> {
+    let workflow = load(root, "airlock.yml")?;
+    let jobs = workflow["jobs"]
+        .as_object()
+        .context("airlock.yml must declare jobs")?;
+
+    // The trigger paths are the same policy the main-push guard text-parses.
+    let trigger = names(&workflow["on"]["pull_request"]["paths"]);
+    ensure!(
+        !trigger.is_empty(),
+        "airlock trigger must keep its pull_request.paths list; the ADR-29 guard reads it"
+    );
+
+    let changes = jobs
+        .get("changes")
+        .context("airlock.yml needs a `changes` job for the per-push filter (TASK-135)")?;
+    ensure!(
+        changes["outputs"]["run-airlock"].as_str() == Some(AIRLOCK_RUN_OUTPUT),
+        "changes job must publish run-airlock defaulting to run outside pull requests"
+    );
+    let filter_step = steps(changes)
+        .find(|s| {
+            s["uses"]
+                .as_str()
+                .is_some_and(|uses| uses.starts_with("dorny/paths-filter@"))
+        })
+        .context("changes job must use a pinned dorny/paths-filter step")?;
+    ensure!(
+        filter_step["id"].as_str() == Some("filter")
+            && filter_step["if"].as_str() == Some("github.event_name == 'pull_request'"),
+        "per-push filter runs only on pull_request events and keeps id `filter`"
+    );
+    let with = &filter_step["with"];
+    let base = with["base"]
+        .as_str()
+        .context("per-push filter must name an explicit base")?;
+    let reference = with["ref"]
+        .as_str()
+        .context("per-push filter must name an explicit ref")?;
+    // On synchronize the range must be exactly this push (before..after); every other PR
+    // activity falls back to base..head so the first proof still sees the whole diff.
+    for (expression, range_end, fallback) in [
+        (
+            base,
+            "github.event.before",
+            "github.event.pull_request.base.sha",
+        ),
+        (
+            reference,
+            "github.event.after",
+            "github.event.pull_request.head.sha",
+        ),
+    ] {
+        ensure!(
+            expression.contains("github.event.action == 'synchronize'")
+                && expression.contains(range_end)
+                && expression.contains(fallback),
+            "per-push filter {expression:?} must use {range_end} on synchronize and {fallback} otherwise"
+        );
+    }
+    // The block scalar is itself YAML mapping filter-name → glob list.
+    let filters: Value = serde_yaml::from_str(
+        with["filters"]
+            .as_str()
+            .context("per-push filter must declare its filters as a YAML block")?,
+    )
+    .context("parsing the per-push filters block")?;
+    ensure!(
+        names(&filters["airlock"]) == trigger,
+        "per-push filter globs must match on.pull_request.paths exactly, path for path"
+    );
+
+    for job_name in ["plan", "proof"] {
+        let job = jobs
+            .get(job_name)
+            .with_context(|| format!("airlock.yml must keep the {job_name} job"))?;
+        ensure!(
+            names(&job["needs"]).contains("changes"),
+            "the {job_name} job must need `changes` so the skip decision gates it"
+        );
+        let condition = job["if"]
+            .as_str()
+            .with_context(|| format!("the {job_name} job must keep an explicit if"))?;
+        ensure!(
+            condition.contains("needs.changes.outputs.run-airlock != 'false'"),
+            "the {job_name} job must skip when the push range touches no watched path"
+        );
+        ensure!(
+            condition.contains("github.event.pull_request.draft == false"),
+            "the {job_name} job must keep skipping draft pull requests"
+        );
+    }
+
+    println!(
+        "airlock per-push filter: {n} watched globs gate both proof jobs on the push range",
+        n = trigger.len()
+    );
     Ok(())
 }

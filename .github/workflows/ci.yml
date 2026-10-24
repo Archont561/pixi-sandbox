@@ -101,12 +101,14 @@ jobs:
         with:
           environments: default
           cache: true
-      - if: steps.changes.outputs.code != 'false'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # TASK-135: restore unconditionally so docs-only PRs reuse target/ instead of compiling
+      # the xtask gates cold (61 s measured on PR #206 vs 0 s warm); save only for code pushes.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cmd-format: pixi run --frozen -- {0}
           shared-key: ci-pixi-dev
           key: ${{ hashFiles('pixi.lock') }}
+          save-if: ${{ steps.changes.outputs.code != 'false' }}
       - if: steps.changes.outputs.code != 'false'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -137,6 +139,7 @@ jobs:
       - if: steps.changes.outputs.code == 'false'
         run: pixi run lint-docs
       - run: pixi run xtask check-ci-builds
+      - run: pixi run xtask check-airlock-filter
       - run: pixi run xtask check-release-scheduling
       - run: pixi run xtask check-docs-artifacts
       - run: pixi run docs build
