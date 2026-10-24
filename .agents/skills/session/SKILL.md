@@ -272,8 +272,8 @@ Do these in order, and do not skip to the report:
    from this sandbox; `gh run view <id>` alone still gives job verdicts and annotations, which
    is usually enough to tell a real failure from a flake; a running run's job logs are also
    fetchable with `gh api repos/<owner>/<repo>/actions/jobs/<id>/logs`.
-2. **Close the task files** in house format — in the pull request itself when the evidence is
-   already in hand, in a follow-up commit when the proof only arrives after the merge: every AC `[x]`, status `Done`, `updated_date`
+2. **Close the task files** in house format — in the pull request itself while it is still open,
+   since a follow-up PR after the merge is not part of the hand-off (step 5): every AC `[x]`, status `Done`, `updated_date`
    bumped, `SECTION:NOTES` and `SECTION:SUMMARY` appended, no PLAN edits. **An AC you could not
    prove is not a checked AC.** When the remaining proof needs a native runner, a cut release
    or a maintainer's click, leave the task `In Progress`, name the AC and the missing proof in
@@ -282,16 +282,27 @@ Do these in order, and do not skip to the report:
 3. **Re-baseline on the merged tree.** `git fetch origin && git log --oneline origin/main -1`
    to confirm what merged, then `pixi run --frozen test`. The number goes in the report and
    into the next opening prompt; it must rise with new work, never fall.
-4. **Record what you did not implement** in `CONTEXT.md` § Session scratchpad, under a dated
-   heading, newest last (invariant 10) — proposals, alternatives weighed, measurements worth
-   keeping — and end that entry with the next session's opening prompt, so the file in the tree
-   and the message in the chat say the same thing. That entry is its own commit
-   (`docs(context): …`), so the repository carries its own session summary.
-5. **Print both artifacts in the final message**: the **Session report** (template §4) and,
-   inside it, the **Session opening prompt** (template §1). Printing them *is* the hand-off.
-   The test is literal:
-   the user should be able to paste that prompt back as the first message of the next session
-   and have an agent reach the same understanding you have now, without reading the diff.
+4. **Record what you did not implement on the branch that is merging, before it merges.** Write
+   the `CONTEXT.md` § Session scratchpad entry — dated heading, newest last (invariant 10):
+   proposals, alternatives weighed, measurements worth keeping, open items — and end it with the
+   next session's opening prompt filled in with everything knowable pre-merge, so the file in the
+   tree and the message in the chat say the same thing. The entry rides the work PR (or the
+   release PR) as a `docs(context): …` commit **inside that PR** — never as a pull request of its
+   own after the merge. A scratchpad entry is not, by itself, a reason to open a PR.
+5. **Hand over in chat; the hand-off is a printed message, not a follow-up PR.** Once the
+   post-merge runs are watched and the tree is re-baselined (steps 1 and 3), print both artifacts
+   in the final message: the **Session report** (template §4) and, inside it, the **Session
+   opening prompt** (template §1), now completed with the post-merge facts — merged SHA, run
+   verdicts, the fresh baseline. The test is literal: the user should be able to paste that
+   prompt back as the first message of the next session and have an agent reach the same
+   understanding you have now, without reading the diff. Do not push a follow-up branch or open a
+   `docs(context)` PR once the merge has landed — that retired pattern (a standalone hand-off PR:
+   one markdown file costing a whole extra CI cycle) is exactly what this rule forbids. If the
+   post-merge facts must also be stamped into the tree, the only legal vehicle is invariant 12's
+   single hand-made direct-push commit — markdown-only, nothing under `airlock.yml`'s
+   `pull_request.paths`, judged first with `pixi run --frozen xtask check-main-push`. That is an
+   exception, never the default; normally the printed prompt carries the post-merge facts and the
+   tree keeps the pre-merge entry from step 4.
 
 A session that merged nothing still reports — "Merged: nothing", the ideas in the scratchpad,
 and an opening prompt that says what to decide first. So does a sprint that shipped its code but

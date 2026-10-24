@@ -12,6 +12,11 @@ task-long session still uses §3 and §4, and says in its §2 that it is deliber
 The loop closes on itself: the report's last block **is** the next session's opening prompt. A
 session that ends without writing one has handed the next session a reconstruction job.
 
+The hand-off happens **in chat**: both artifacts are printed in the final message after the
+merge. No follow-up `docs(context)` PR is opened for them — the scratchpad entry that feeds the
+report rides the work PR before it merges, and the post-merge facts live in the printed prompt
+(SKILL.md §5b, steps 4–5).
+
 ## 1. Session opening prompt (written at close, pasted back at the next start)
 
 ```

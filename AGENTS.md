@@ -8,7 +8,8 @@ branch — different audience, different file.
 the environment bootstrap on an airlocked machine, the backlog survey, the **sprint** proposal
 (a session is a sprint by default: one milestone, one version, one release), the staged work,
 and, after the release runs, the sprint report that closes the task files and the milestone and
-writes the next session's opening prompt. Its four templates are in
+prints the next session's opening prompt in the final chat message — the hand-off is printed,
+never a follow-up hand-off PR. Its four templates are in
 `.agents/skills/session/standup-template.md`, and the current sprint train plus what the release
 lane still needs is `backlog/docs/plans/doc-18 - Sprint-Train-and-the-Milestone-Release-Gate.md`.
 
