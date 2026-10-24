@@ -172,7 +172,95 @@ fn plan_names_the_workspace_in_its_text_output(nested_project: NestedProject) {
             "workspace subproject: subproject/pixi.toml · default · ",
         ))
         .stdout(predicate::str::contains("package(s)"))
-        .stdout(predicate::str::contains("bundle developer"));
+        .stdout(predicate::str::contains("bundle developer"))
+        // AC#3 transparency: the resolved set and the channel surface are on the same line.
+        // Sorted identities for the helper's three locked packages (the wheel pulls in the
+        // interpreter package).
+        .stdout(predicate::str::contains(
+            // stale-ref-allowed: the conda interpreter package's own name, not the retired tool.
+            "set: native-demo==1.0,native-fixture==1.0=0,python==3.13.1=fixture_0",
+        ))
+        .stdout(predicate::str::contains("channels: -"));
+}
+
+#[rstest]
+fn plan_json_names_resolved_identities_even_when_the_lock_strips_them(
+    nested_project: NestedProject,
+) {
+    let project = nested_project;
+    let output = plan_json(&project.root.join(".pixi-sandbox.toml"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let plan: Value = serde_json::from_slice(&output).unwrap();
+    let workspace = &plan["workspaces"][0];
+    // The hand-built lock strips name/version/build off its Conda records, so their identities
+    // must come from the archive filenames; the wheel keeps its name and version on the record.
+    // The wheel's interpreter dependency makes three packages, de-duplicated and sorted.
+    assert_eq!(
+        workspace["identities"],
+        serde_json::json!([
+            "native-demo==1.0",
+            "native-fixture==1.0=0",
+            // stale-ref-allowed: the conda interpreter package's own name, not the retired tool.
+            "python==3.13.1=fixture_0"
+        ]),
+        "{workspace}"
+    );
+    // A lock declaring no channels reports none rather than inventing one, and skips the key.
+    assert!(
+        workspace["channels"].is_null() || workspace["channels"] == serde_json::json!([]),
+        "the fixture lock declares channels = []: {workspace}"
+    );
+}
+
+#[rstest]
+fn plan_json_surfaces_record_channels_and_field_based_identities(nested_project: NestedProject) {
+    let project = nested_project;
+    let lock_path = project.root.join("subproject/pixi.lock");
+    let mut lock: Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
+    let platform = host_platform();
+    let conda_location = lock["environments"]["default"]["packages"][platform][0]["conda"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // A lock the way a real channel solve writes it: environment channels plus identity fields
+    // on the record, which must win over the filename fallback.
+    lock["environments"]["default"]["channels"] = serde_json::json!([
+        { "url": "https://prefix.dev/example" },
+        { "url": "file:///local/mirror" }
+    ]);
+    for record in lock["packages"].as_array_mut().unwrap() {
+        if record["conda"].as_str() == Some(conda_location.as_str()) {
+            record["name"] = "native-fixture".into();
+            record["version"] = "1.0".into();
+            record["build"] = "0".into();
+        }
+    }
+    fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+
+    let output = plan_json(&project.root.join(".pixi-sandbox.toml"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let plan: Value = serde_json::from_slice(&output).unwrap();
+    let workspace = &plan["workspaces"][0];
+    assert_eq!(
+        workspace["channels"],
+        serde_json::json!(["file:///local/mirror", "https://prefix.dev/example"]),
+        "channels are de-duplicated and sorted: {workspace}"
+    );
+    assert!(
+        workspace["identities"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("native-fixture==1.0=0")),
+        "record fields supply the same identity shape: {workspace}"
+    );
 }
 
 #[rstest]
