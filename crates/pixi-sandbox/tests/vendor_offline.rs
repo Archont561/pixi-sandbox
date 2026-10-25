@@ -197,17 +197,14 @@ fn two_lockfiles_pack_restore_and_build_offline_against_their_own_trees() {
     assert_eq!(manifest.workspace_vendors.len(), 1, "one nested tree");
     assert_eq!(manifest.workspace_vendors[0].slug, "subproject");
     assert!(
-        transport
-            .join(".pixi-sandbox/vendor/itoa-")
-            .read_dir()
-            .is_ok_and(|mut entries| entries.next().is_some()),
+        glob_dir_exists(&transport.join(".pixi-sandbox/vendor"), "itoa-"),
         "the root tree carries the real itoa crate"
     );
     assert!(
-        transport
-            .join(".pixi-sandbox/vendor/workspaces/subproject/memchr-")
-            .read_dir()
-            .is_ok_and(|mut entries| entries.next().is_some()),
+        glob_dir_exists(
+            &transport.join(".pixi-sandbox/vendor/workspaces/subproject"),
+            "memchr-"
+        ),
         "the nested tree carries the real memchr crate"
     );
 
@@ -237,8 +234,7 @@ fn two_lockfiles_pack_restore_and_build_offline_against_their_own_trees() {
         .args(["restore", "--branch-location"])
         .arg(&transport)
         .args(["--output-path"])
-        .arg(&consumer)
-        .args(["--user-tools", "skip"]);
+        .arg(&consumer);
     let restore_output = restore.output().expect("run restore");
     assert_success(&restore_output, "two-tree restore");
     assert!(
