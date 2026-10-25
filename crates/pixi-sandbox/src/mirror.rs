@@ -15,6 +15,7 @@
 
 use anyhow::{Context, Result, bail};
 use flate2::read::GzDecoder;
+use pixi_sandbox_core::shard::sha256_bytes;
 use serde_json::{Value as Json, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -284,7 +285,9 @@ fn copy_and_verify(source: &Path, destination: &Path, expected_checksum: &str) -
             .with_context(|| format!("write mirror crate {}", destination.display()))?;
         total += read as u64;
     }
-    let actual = format!("{:x}", hasher.finalize());
+    // sha2 0.11's digest array no longer implements LowerHex, which is why the workspace
+    // hashes through core's lowercase-hex helper rather than `format!("{:x}", ...)`.
+    let actual = sha256_bytes(&hasher.finalize());
     if actual != expected_checksum {
         let _ = fs::remove_file(destination);
         bail!(
@@ -449,7 +452,6 @@ mod tests {
     use super::*;
     use flate2::Compression;
     use flate2::write::GzEncoder;
-    use sha2::{Digest, Sha256};
     use tempfile::tempdir;
 
     #[test]
@@ -606,8 +608,6 @@ mod tests {
     }
 
     fn checksum_of(path: &Path) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(fs::read(path).expect("read crate"));
-        format!("{:x}", hasher.finalize())
+        sha256_bytes(&fs::read(path).expect("read crate"))
     }
 }
