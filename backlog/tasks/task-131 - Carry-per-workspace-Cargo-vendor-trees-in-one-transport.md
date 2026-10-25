@@ -1,7 +1,7 @@
 ---
 id: TASK-131
 title: Carry per-workspace Cargo vendor trees in one transport
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-23 18:44'
 labels:
@@ -24,6 +24,9 @@ documentation:
   - >-
     backlog/docs/adr/ADR-32 - A transport branch is one bundle for one platform
     and its payload stays self-contained.md
+  - >-
+    backlog/docs/adr/ADR-33 - One cargo vendor tree per workspace, carried in
+    one transport.md
 priority: medium
 type: feature
 ordinal: 131000
@@ -43,17 +46,17 @@ TASK-129 deliberately refuses such a declaration with a named diagnostic instead
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Seams agreed before implementation: the manifest shape for several vendor trees, the restored-tree layout per workspace, and the public test boundaries (fixture projects and tempdirs, never this repository — ADR-10).
-- [ ] #2 A transport can carry one vendor tree per declared workspace, each with its own lock hash, mode, size and verified blob list; a root-only transport serialises exactly as today.
-- [ ] #3 Restore materialises each tree into the workspace that owns it, verifies every file before writing (invariant 1), and keeps --no-vendor, --cargo-config and the existing Cargo wiring semantics working.
-- [ ] #4 Budget and provenance stay honest across trees: the transport ceiling accounts for all vendor bytes, the plan reports each tree's size, and a shared crate between two lockfiles is counted and justified rather than silently duplicated.
-- [ ] #5 ADR-6 is amended, superseded or explicitly extended — the outcome is recorded as a decision rather than left implied by the code.
-- [ ] #6 A fixture with two lockfiles packs, restores and builds both workspaces offline; the full suite's pass count rises or holds with fmt, lint and test green.
+- [x] #1 Seams agreed before implementation: the manifest shape for several vendor trees, the restored-tree layout per workspace, and the public test boundaries (fixture projects and tempdirs, never this repository — ADR-10). Recorded in the slice plan `backlog/docs/plans/task-131-per-workspace-vendor.md`; `workspace_vendors[]` mirrors `workspaces[]`, trees restore to each owning workspace.
+- [x] #2 A transport can carry one vendor tree per declared workspace, each with its own lock hash, mode, size and verified blob list; a root-only transport serialises exactly as today. Schema 5 (`workspace_vendors[]`), additive; schemas 1–4 still read; root-only bytes unchanged apart from the schema number.
+- [x] #3 Restore materialises each tree into the workspace that owns it, verifies every file before writing (invariant 1), and keeps --no-vendor, --cargo-config and the existing Cargo wiring semantics working. Per-tree staging, verification and `cargo-home`/activation-hook wiring; fixture tests cover all four `--cargo-config` modes and `--no-vendor`.
+- [x] #4 Budget and provenance stay honest across trees: the transport ceiling accounts for all vendor bytes, the plan reports each tree's size, and a shared crate between two lockfiles is counted and justified rather than silently duplicated. `WorkspacePlan.vendor_crates`, `vendor_overlap` analysis, pack/README overlap naming; no dedup, restore budget doubles every tree.
+- [x] #5 ADR-6 is amended, superseded or explicitly extended — the outcome is recorded as a decision rather than left implied by the code. ADR-33 extends ADR-6, which remains accepted; recorded in the ADR README subsequent-records list.
+- [x] #6 A fixture with two lockfiles packs, restores and builds both workspaces offline; the full suite's pass count rises or holds with fmt, lint and test green. Ignored `tests/vendor_offline.rs` gate (`test-vendor-offline` in CI): real `itoa`/`memchr` crates, both projects build `cargo build --offline` inside `unshare -n`, cold negative control fails; suite holds above the 1,277 baseline.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Focused fixture tests, the offline build proof and the repository baseline (recorded before and after) are green; unproven tiers are named rather than implied.
+- [x] #1 Focused fixture tests, the offline build proof and the repository baseline (recorded before and after) are green; unproven tiers are named rather than implied. Hermetic fixture tests run in the ordinary suite; the `unshare -n`/crates.io proof is an ignored CI-only gate (its restore-side mechanics were additionally proven locally with real crates); the three network-gated ignores remain the only unproven tier.
 <!-- DOD:END -->
 
 ## Implementation Plan

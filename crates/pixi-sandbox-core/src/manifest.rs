@@ -1,4 +1,4 @@
-//! `manifest.json` — the wire format of a sandbox branch (schema 2).
+//! `manifest.json` — the wire format of a sandbox branch (schema 5).
 //!
 //! This file is the *only* source of truth about a transport: what environments it holds,
 //! which files make them up, what each file's sha256 is, which tools are embedded, and where
@@ -12,7 +12,8 @@
 use crate::error::{Error, Result};
 use crate::host_requirements::HostRequirementSet;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// Bumped only for incompatible changes; readers refuse anything newer.
@@ -27,7 +28,14 @@ use std::path::{Path, PathBuf};
 /// bundles included, so there is one writer path rather than two spellings of the same bytes;
 /// the accepted cost is that a schema-3-era consumer must upgrade before it can read a transport
 /// packed after this change. Readers still accept 1–3 (ADR-24/31).
-pub const SCHEMA_VERSION: u32 = 4;
+///
+/// Schema 5 adds per-workspace Cargo vendor trees (TASK-131): `workspace_vendors[]` carries one
+/// [`Vendor`] tree per nested project that has its own `Cargo.lock`, under
+/// `vendor/workspaces/<slug>/` beside the root tree at `vendor/`. The bump is required even
+/// though the key is additive: an older binary ignoring it would verify successfully while
+/// never checking the nested tree's blobs — a silent partial verification. Producers again
+/// write 5 for every transport; readers keep accepting 1–4.
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// Directory that holds the payload inside a transport / on a branch.
 pub const MANIFEST_DIR: &str = ".pixi-sandbox";
@@ -60,6 +68,11 @@ pub struct Manifest {
     /// Present only when the transport carries `cargo vendor` output (decision ADR-6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vendor: Option<Vendor>,
+    /// One vendored crate tree per nested workspace with its own `Cargo.lock` (schema 5,
+    /// TASK-131, ADR-33). Empty for root-only and non-vendored transports, so the key is
+    /// omitted and their manifests stay byte-identical apart from `schema`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspace_vendors: Vec<WorkspaceVendor>,
     /// What this transport's workloads need from the *host*, resolved for [`Manifest::platform`]
     /// (issue #109, TASK-75): a libc floor, host packages, services, capabilities and headless
     /// display providers. Additive within schema 2 and written only when the project declared a
@@ -205,6 +218,57 @@ pub struct Vendor {
     pub blobs: Vec<Blob>,
 }
 
+/// One nested workspace's vendored crate tree (schema 5, TASK-131).
+///
+/// The identity fields mirror [`WorkspaceEntry`] so a tree can never be restored into the wrong
+/// project, and the payload reuses [`Vendor`] unchanged: the same mode, lock hash, size and
+/// per-file blob rules apply, only the transport directory is workspace-qualified.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceVendor {
+    /// Transport identity, identical to the workspace's [`WorkspaceEntry::slug`].
+    pub slug: String,
+    /// The nested `pixi.toml`, relative to the project root: `subproject/pixi.toml`.
+    pub manifest: String,
+    /// The nested project's directory, relative to the project root: `subproject`.
+    pub directory: String,
+    /// The vendored tree, whose `directory` is `.pixi-sandbox/vendor/workspaces/<slug>`.
+    pub vendor: Vendor,
+}
+
+impl WorkspaceVendor {
+    /// Identity paths must stay inside the project root, and every blob must live under this
+    /// tree's qualified directory, so one workspace's crates can never be verified or restored
+    /// as another project's tree. The one-segment directory rule mirrors the check on an
+    /// environment's embedded [`WorkspaceRef`]: every declared workspace carries environments,
+    /// so transports already enforce this shape by the time a vendor tree can reference one.
+    fn validate(&self) -> Result<()> {
+        if self.slug.is_empty() {
+            return Err(Error::Invalid(
+                "workspace vendor with an empty slug".to_string(),
+            ));
+        }
+        check_rel_path(&self.manifest, "workspace vendor manifest")?;
+        check_rel_path(&self.directory, "workspace vendor directory")?;
+        if self.directory.contains('/') {
+            return Err(Error::Invalid(format!(
+                "workspace vendor {}: directory must be one path segment: {}",
+                self.slug, self.directory
+            )));
+        }
+        let prefix = format!("vendor/workspaces/{}/", self.slug);
+        for blob in &self.vendor.blobs {
+            check_blob(&format!("vendor/workspaces/{}", self.slug), blob)?;
+            if !blob.path.starts_with(&prefix) {
+                return Err(Error::Invalid(format!(
+                    "workspace vendor {}: blob {} must stay under {prefix}",
+                    self.slug, blob.path
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Manifest {
     /// Path of the manifest inside a transport directory / extracted branch.
     #[must_use]
@@ -309,6 +373,7 @@ impl Manifest {
                 check_blob("vendor", blob)?;
             }
         }
+        self.validate_workspace_vendors()?;
         for (name, tool) in &self.tools {
             if let Some(path) = &tool.path {
                 check_rel_path(path, "tool path")?;
@@ -320,11 +385,42 @@ impl Manifest {
         Ok(())
     }
 
-    /// Every blob of every (selected) environment, plus the vendored tree when present.
+    /// Per-tree shape checks plus the transport-wide identity rules: the restore destination
+    /// is slug-derived, so one slug may own exactly one tree, and a tree without a declared
+    /// workspace has no legitimate destination. Identity must match the TASK-129 descriptor
+    /// exactly — the packer builds both records from the same config entry.
+    fn validate_workspace_vendors(&self) -> Result<()> {
+        let mut slugs = BTreeSet::new();
+        for tree in &self.workspace_vendors {
+            tree.validate()?;
+            if !slugs.insert(tree.slug.clone()) {
+                return Err(Error::Invalid(format!(
+                    "workspace vendor {}: duplicate vendor tree for one workspace",
+                    tree.slug
+                )));
+            }
+            let known = self.workspaces.iter().any(|workspace| {
+                workspace.slug == tree.slug
+                    && workspace.manifest == tree.manifest
+                    && workspace.directory == tree.directory
+            });
+            if !known {
+                return Err(Error::Invalid(format!(
+                    "workspace vendor {}: no declared workspace matches its slug, manifest and \
+                     directory",
+                    tree.slug
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Every blob of every (selected) environment, plus the vendored trees when present.
     /// The vendor blobs are not filtered by `only`: a partial `--envs` restore still
-    /// needs the crates, so they are verified and materialised either way.
+    /// needs the crates, so they are verified and materialised either way. The context is
+    /// borrowed for the static cases and owned only for a workspace-qualified vendor path.
     #[must_use]
-    pub fn blobs(&self, only: Option<&[String]>) -> Vec<(&str, &Blob)> {
+    pub fn blobs(&self, only: Option<&[String]>) -> Vec<(Cow<'_, str>, &Blob)> {
         let mut out = Vec::new();
         for (name, env) in &self.envs {
             if let Some(sel) = only
@@ -333,12 +429,17 @@ impl Manifest {
                 continue;
             }
             for blob in &env.blobs {
-                out.push((name.as_str(), blob));
+                out.push((Cow::Borrowed(name.as_str()), blob));
             }
         }
         if let Some(vendor) = &self.vendor {
             for blob in &vendor.blobs {
-                out.push(("vendor", blob));
+                out.push((Cow::Borrowed("vendor"), blob));
+            }
+        }
+        for tree in &self.workspace_vendors {
+            for blob in &tree.vendor.blobs {
+                out.push((Cow::Owned(format!("vendor/workspaces/{}", tree.slug)), blob));
             }
         }
         out
@@ -419,18 +520,30 @@ impl Manifest {
     pub fn payload_bytes(&self) -> u64 {
         let envs: u64 = self.envs.values().map(|e| e.packed_size_bytes).sum();
         let tools: u64 = self.tools.values().map(|t| t.size_bytes).sum();
-        let vendor = self.vendor.as_ref().map_or(0, |v| v.size_bytes);
+        let vendor = self.root_and_workspace_vendor_bytes();
         envs + tools + vendor
     }
 
-    /// (envs, tools, vendor) split of [`Manifest::payload_bytes`], in bytes.
+    /// (envs, tools, vendor) split of [`Manifest::payload_bytes`], in bytes. The vendor total
+    /// is the root tree plus every per-workspace tree (TASK-131): branch bytes are counted
+    /// once per tree even when two lockfiles share a crate — git storage dedups, verification
+    /// and checkout do not.
     #[must_use]
     pub fn payload_split(&self) -> (u64, u64, u64) {
         (
             self.envs.values().map(|e| e.packed_size_bytes).sum(),
             self.tools.values().map(|t| t.size_bytes).sum(),
-            self.vendor.as_ref().map_or(0, |v| v.size_bytes),
+            self.root_and_workspace_vendor_bytes(),
         )
+    }
+
+    /// Recorded size of the root vendor tree and every per-workspace tree.
+    #[must_use]
+    fn root_and_workspace_vendor_bytes(&self) -> u64 {
+        let root = self.vendor.as_ref().map_or(0, |v| v.size_bytes);
+        self.workspace_vendors
+            .iter()
+            .fold(root, |sum, tree| sum + tree.vendor.size_bytes)
     }
 
     /// Where a blob lives inside the transport directory.

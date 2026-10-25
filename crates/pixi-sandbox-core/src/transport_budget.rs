@@ -224,10 +224,21 @@ fn restore_required_bytes(manifest: &Manifest) -> u64 {
             .saturating_add(env.packed_size_bytes)
             .saturating_add(env.unpacked_size_bytes)
     });
-    let vendor = manifest
+    // Every tree is staged before it is renamed into place, so each costs twice its recorded
+    // size — the root tree and one per nested workspace (TASK-131).
+    let vendor_sizes = manifest
         .vendor
-        .as_ref()
-        .map_or(0, |vendor| vendor.size_bytes.saturating_mul(2));
+        .iter()
+        .map(|vendor| vendor.size_bytes)
+        .chain(
+            manifest
+                .workspace_vendors
+                .iter()
+                .map(|tree| tree.vendor.size_bytes),
+        );
+    let vendor = vendor_sizes.fold(0u64, |total, size| {
+        total.saturating_add(size.saturating_mul(2))
+    });
     envs.saturating_add(vendor)
 }
 

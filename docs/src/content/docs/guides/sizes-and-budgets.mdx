@@ -67,7 +67,7 @@ transport fails without replacing the last healthy orphan branch:
 | `max_blob_mib` | `95` | Largest stored Git object: an unsplit blob, split part, embedded tool, or per-file oracle blob |
 | `max_transport_mib` | `2048` | Declared bytes verified by `doctor`: env pack blobs, per-file-oracle blobs, tools, vendored crates |
 | `max_repository_push_mib` | `2048` | File bytes staged into the orphan snapshot before Git compression |
-| `max_restore_required_mib` | `8192` | Restore preflight estimate: packed + unpacked env bytes plus two vendor copies |
+| `max_restore_required_mib` | `8192` | Restore preflight estimate: packed + unpacked env bytes plus two copies of every vendor tree |
 
 ```toml
 [budgets]
@@ -81,6 +81,18 @@ Budgets never change the transport format. When a bundle grows past a ceiling, t
 the same shape: **publish fewer environments per `[[bundle]]`**. Do not split one environment, and
 do not move payload outside the self-contained branch — a branch that is not self-contained cannot
 be restored offline.
+
+### Per-workspace vendor trees and overlap
+
+A nested workspace with its own `Cargo.lock` adds its own complete vendor tree, so the transport
+ceiling counts every tree's blobs separately and the restore preflight reserves twice the recorded
+size of **every** tree. There is no cross-tree dedup on purpose: the airlock checks out and
+verifies each project's tree independently. When two lockfiles pin the same crate and version,
+`plan` and the pack output report a **vendor overlap** — the shared crate identities and the bytes
+a single copy would occupy — so the duplicated cost is visible at review time. Git still stores
+one underlying object for identical contents, which is why the orphan branch's pushed size is
+smaller than the summed working-tree bytes; the overlap number is the accounting explanation for
+that gap, not a claim about restore disk usage.
 
 ## Rotation is not a shrink
 

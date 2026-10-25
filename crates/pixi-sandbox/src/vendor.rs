@@ -144,6 +144,10 @@ impl Default for Toolchain {
 
 /// Vendor a validated project using cargo and rustc from the caller's environment.
 ///
+/// `vendor_rel` is the tree's directory relative to the payload: `vendor` for the root
+/// project, or `vendor/workspaces/<slug>` for a nested workspace (TASK-131). Each project's
+/// tree therefore lands in its own qualified directory and the recorded [`Vendor`] names it.
+///
 /// # Errors
 ///
 /// Returns an error if cargo or rustc cannot be run, or the vendored tree cannot be
@@ -152,9 +156,10 @@ pub fn vendor_tree(
     root: &Path,
     out: &Path,
     payload: &Path,
+    vendor_rel: &Path,
     mode: VendorMode,
 ) -> Result<(Option<Vendor>, Option<VendorInfo>)> {
-    vendor_tree_with_toolchain(root, out, payload, mode, &Toolchain::default())
+    vendor_tree_with_toolchain(root, out, payload, vendor_rel, mode, &Toolchain::default())
 }
 
 /// The same vendoring operation with explicit external-program paths.
@@ -167,6 +172,7 @@ pub fn vendor_tree_with_toolchain(
     root: &Path,
     out: &Path,
     payload: &Path,
+    vendor_rel: &Path,
     mode: VendorMode,
     toolchain: &Toolchain,
 ) -> Result<(Option<Vendor>, Option<VendorInfo>)> {
@@ -175,10 +181,20 @@ pub fn vendor_tree_with_toolchain(
     // function stays correct if it is ever called on its own.
     validate_vendorable_lockfile(root)?;
 
-    let vendor_dir = payload.join("vendor");
+    let vendor_dir = payload.join(vendor_rel);
+    // The root keeps its historical scratch name; a workspace tree gets a slug-qualified one
+    // so sequential trees never share a scratch directory and each cleans up its own bytes.
+    let scratch = if vendor_rel == Path::new("vendor") {
+        ".cargo-vendor-tmp".to_string()
+    } else {
+        format!(
+            ".cargo-vendor-tmp-{}",
+            vendor_rel.display().to_string().replace('/', "-")
+        )
+    };
     let source_dir = match mode {
         VendorMode::Loose => vendor_dir.clone(),
-        VendorMode::Tarballs => out.join(".cargo-vendor-tmp"),
+        VendorMode::Tarballs => out.join(scratch),
     };
     support::remove_path(&source_dir)?;
     let mut command = Command::new(&toolchain.cargo);
@@ -233,7 +249,7 @@ pub fn vendor_tree_with_toolchain(
             crates: crates.len() as u64,
             size_bytes: size,
             cargo_lock_sha256: Some(shard::sha256_file(&cargo_lock)?),
-            directory: Some(format!("{MANIFEST_DIR}/vendor")),
+            directory: Some(format!("{MANIFEST_DIR}/{}", vendor_rel.display())),
             blobs: Vec::new(),
         }),
         Some(VendorInfo {

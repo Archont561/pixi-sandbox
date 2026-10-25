@@ -3,7 +3,7 @@
 mod support;
 
 use pixi_sandbox::branch_docs::render;
-use pixi_sandbox_core::manifest::Manifest;
+use pixi_sandbox_core::manifest::{Manifest, WorkspaceVendor};
 use rstest::rstest;
 use std::path::PathBuf;
 use support::{isolated_home, pack_reference};
@@ -59,6 +59,87 @@ fn absent_provenance_keeps_the_honest_unknown_labels(pack_reference: PathBuf) {
     assert!(docs.readme.contains("`pixi.lock` sha256 `unknown`"));
     assert!(docs.readme.contains("`Cargo.lock` sha256 `unknown…`"));
     assert!(docs.readme.contains("Built with unknown cargo/rustc."));
+}
+
+#[rstest]
+fn workspace_vendor_trees_get_their_own_guide_lines(pack_reference: PathBuf) {
+    let mut manifest =
+        Manifest::load(&pack_reference.join("linux-loose/.pixi-sandbox/manifest.json")).unwrap();
+    let mut nested = manifest.vendor.clone().unwrap();
+    nested.directory = Some(".pixi-sandbox/vendor/workspaces/subproject".to_string());
+    manifest.workspace_vendors = vec![WorkspaceVendor {
+        slug: "subproject".to_string(),
+        manifest: "subproject/pixi.toml".to_string(),
+        directory: "subproject".to_string(),
+        vendor: nested,
+    }];
+
+    let docs = render(&manifest, None);
+    assert!(
+        docs.readme
+            .contains("Workspace `subproject` cargo dependencies"),
+        "{}",
+        docs.readme
+    );
+    assert!(
+        docs.readme
+            .contains("restore materialises them to `subproject/.pixi-sandbox/vendor/`"),
+        "{}",
+        docs.readme
+    );
+    // The root paragraph keeps its wording, so root-only goldens stay byte-identical.
+    assert!(docs.readme.contains("Cargo dependencies: **"));
+    assert!(
+        docs.readme.contains(".pixi-sandbox/vendor/`"),
+        "the root destination is still named: {}",
+        docs.readme
+    );
+}
+
+#[rstest]
+fn a_shared_crate_gets_an_overlap_paragraph_with_the_pay_twice_note(pack_reference: PathBuf) {
+    let mut manifest =
+        Manifest::load(&pack_reference.join("linux-loose/.pixi-sandbox/manifest.json")).unwrap();
+    // The nested tree carries the exact same crate blob the root tree has.
+    let nested = manifest.vendor.clone().unwrap();
+    let qualified_blobs = nested
+        .blobs
+        .iter()
+        .map(|blob| {
+            let mut blob = blob.clone();
+            blob.path = format!(
+                "vendor/workspaces/subproject/{}",
+                &blob.path["vendor/".len()..]
+            );
+            blob
+        })
+        .collect();
+    manifest.workspaces = vec![pixi_sandbox_core::manifest::WorkspaceEntry {
+        slug: "subproject".to_string(),
+        manifest: "subproject/pixi.toml".to_string(),
+        directory: "subproject".to_string(),
+        environments: vec!["default".to_string()],
+    }];
+    let mut nested = nested;
+    nested.directory = Some(".pixi-sandbox/vendor/workspaces/subproject".to_string());
+    nested.blobs = qualified_blobs;
+    manifest.workspace_vendors = vec![WorkspaceVendor {
+        slug: "subproject".to_string(),
+        manifest: "subproject/pixi.toml".to_string(),
+        directory: "subproject".to_string(),
+        vendor: nested,
+    }];
+    manifest.validate().unwrap();
+
+    let docs = render(&manifest, None);
+    assert!(docs.readme.contains("Vendor overlap"), "{}", docs.readme);
+    assert!(
+        docs.readme.contains("checkout and verification pay twice"),
+        "{}",
+        docs.readme
+    );
+    // AGENTS.md stays machine instructions without the cost-review paragraph.
+    assert!(!docs.agents.contains("vendor overlap"));
 }
 
 #[rstest]

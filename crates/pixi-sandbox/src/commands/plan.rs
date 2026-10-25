@@ -74,8 +74,13 @@ pub fn run(args: &PlanArgs) -> Result<()> {
         } else {
             workspace.identities.join(",")
         };
+        // A lockfile means a pack with --cargo-vendor builds a tree for this workspace; name
+        // the crate count up front so the cost review does not have to wait for the runner.
+        let vendor = workspace
+            .vendor_crates
+            .map_or_else(String::new, |count| format!(" · vendor: {count} crate(s)"));
         println!(
-            "  workspace {}: {} · {} · {} package(s) · {} MiB · bundle {} · channels: {} · set: {}",
+            "  workspace {}: {} · {} · {} package(s) · {} MiB · bundle {} · channels: {} · set: {}{vendor}",
             workspace.slug,
             workspace.manifest,
             workspace.environments.join(","),

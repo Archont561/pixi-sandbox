@@ -57,10 +57,41 @@ pub fn plan_workspaces(config: &SandboxConfig, repo_root: &Path) -> Result<Vec<W
                 size_bytes: facts.size_bytes,
                 channels: facts.channels,
                 identities: facts.identities,
+                vendor_crates: vendorable_crate_count(&project)?,
             });
         }
     }
     Ok(plans)
+}
+
+/// How many crates a `cargo vendor` run in `project` would carry: the `[[package]]` entries of
+/// its `Cargo.lock` that name a `source`. A source-less entry is a path/workspace member, which
+/// cargo never vendors — the same rule `vendor::reject_duplicate_crate_sources` relies on.
+///
+/// `None` means no `Cargo.lock` exists, so the workspace gets no vendor tree; a malformed
+/// lockfile is an error the reviewer should fix rather than a silent zero.
+fn vendorable_crate_count(project: &Path) -> Result<Option<usize>> {
+    let lock_path = project.join("Cargo.lock");
+    if !lock_path.is_file() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&lock_path)
+        .with_context(|| format!("reading {}", lock_path.display()))?;
+    // `toml::from_str`, not `str::parse`: toml 1.1's `FromStr<Value>` rejects a document that
+    // opens with a comment, and every cargo-written Cargo.lock opens with the generated-by
+    // notice.
+    let lock: toml::Value =
+        toml::from_str(&text).with_context(|| format!("parsing {}", lock_path.display()))?;
+    let count = lock
+        .get("package")
+        .and_then(toml::Value::as_array)
+        .map_or(0, |packages| {
+            packages
+                .iter()
+                .filter(|package| package.get("source").is_some())
+                .count()
+        });
+    Ok(Some(count))
 }
 
 /// The directories the root `pixi.toml` claims as workspace members.

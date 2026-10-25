@@ -94,32 +94,77 @@ fn env_table_rows(manifest: &Manifest) -> String {
         .join("\n")
 }
 
-/// The vendor paragraph, when the manifest carries a vendored cargo tree.
+/// The vendor paragraphs: the root tree keeps its historical wording, and each per-workspace
+/// tree (TASK-131) adds its own line naming the workspace and its restore destination.
 fn vendor_section(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> String {
-    manifest
-        .vendor
-        .as_ref()
-        .map(|vendor| {
-            let toolchain = vendor_info.map_or_else(
-                || "unknown cargo/rustc".to_string(),
-                |info| format!("{}; {}", info.cargo, info.rustc),
-            );
-            format!(
-                "\nCargo dependencies: **{} crates**, {} MiB ({}) from `Cargo.lock` sha256 `{}…`; \
-             restore materialises them to `.pixi-sandbox/vendor/`. Built with {toolchain}.\n",
-                vendor.crates,
-                support::mib(vendor.size_bytes),
-                vendor.mode,
-                vendor
-                    .cargo_lock_sha256
-                    .as_deref()
-                    .unwrap_or("unknown")
-                    .chars()
-                    .take(12)
-                    .collect::<String>(),
-            )
-        })
-        .unwrap_or_default()
+    use std::fmt::Write as _;
+
+    let toolchain = || {
+        vendor_info.map_or_else(
+            || "unknown cargo/rustc".to_string(),
+            |info| format!("{}; {}", info.cargo, info.rustc),
+        )
+    };
+    let lock_hash = |vendor: &pixi_sandbox_core::manifest::Vendor| {
+        vendor
+            .cargo_lock_sha256
+            .as_deref()
+            .unwrap_or("unknown")
+            .chars()
+            .take(12)
+            .collect::<String>()
+    };
+
+    let mut section = String::new();
+    if let Some(vendor) = &manifest.vendor {
+        write!(
+            section,
+            "\nCargo dependencies: **{} crates**, {} MiB ({}) from `Cargo.lock` sha256 `{}…`; \
+             restore materialises them to `.pixi-sandbox/vendor/`. Built with {}.\n",
+            vendor.crates,
+            support::mib(vendor.size_bytes),
+            vendor.mode,
+            lock_hash(vendor),
+            toolchain(),
+        )
+        .expect("writing to a String cannot fail");
+    }
+    for tree in &manifest.workspace_vendors {
+        let vendor = &tree.vendor;
+        write!(
+            section,
+            "\nWorkspace `{}` cargo dependencies: **{} crates**, {} MiB ({}) from `Cargo.lock` \
+             sha256 `{}…`; restore materialises them to `{}/.pixi-sandbox/vendor/`.\n",
+            tree.slug,
+            vendor.crates,
+            support::mib(vendor.size_bytes),
+            vendor.mode,
+            lock_hash(vendor),
+            tree.directory,
+        )
+        .expect("writing to a String cannot fail");
+    }
+    // A nested-only transport (no root Cargo.lock) still records the toolchain that built
+    // every tree; the same cargo/rustc runs each vendor step.
+    if manifest.vendor.is_none() && !manifest.workspace_vendors.is_empty() {
+        write!(section, "\nBuilt with {}.\n", toolchain())
+            .expect("writing to a String cannot fail");
+    }
+    // AC#4: name the bytes two trees carry identically. The payload and every verification
+    // count both copies, so the sum is honest; this note explains why Git storage is smaller.
+    if let Some(overlap) = pixi_sandbox_core::vendor_overlap::vendor_overlap(manifest) {
+        write!(
+            section,
+            "\nVendor overlap: {} crate(s), {} MiB identical across {} trees. Each tree keeps \
+             its own complete copy, so the payload sums both; Git's content-addressed storage \
+             keeps one object, while checkout and verification pay twice.\n",
+            overlap.shared_crates,
+            support::mib(overlap.shared_bytes),
+            overlap.trees,
+        )
+        .expect("writing to a String cannot fail");
+    }
+    section
 }
 
 /// The bootstrap paragraph plus the restore snippet: which shell, and the exact commands,

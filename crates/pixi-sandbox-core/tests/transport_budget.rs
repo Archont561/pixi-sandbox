@@ -1,5 +1,5 @@
 use pixi_sandbox_core::manifest::{
-    Blob, Env, EnvFiles, Manifest, Source, ToolEntry, ToolInfo, Vendor,
+    Blob, Env, EnvFiles, Manifest, Source, ToolEntry, ToolInfo, Vendor, WorkspaceVendor,
 };
 use pixi_sandbox_core::transport_budget::{
     TransportBudgets, bytes_to_mib, check, measure, mib_to_bytes,
@@ -89,6 +89,7 @@ fn manifest() -> Manifest {
                 blob("vendor/demo/src/lib.rs", 7),
             ],
         }),
+        workspace_vendors: Vec::new(),
         host_requirements: None,
     }
 }
@@ -140,6 +141,73 @@ fn budget_violations_name_the_threshold_and_the_partition_remedy() {
         "{}",
         report.violations[1].remedy
     );
+}
+
+/// The base manifest plus one nested vendor tree of 30 bytes, so the ceiling math can be
+/// judged against a transport carrying more than one vendor tree (TASK-131).
+fn manifest_with_workspace_vendor() -> Manifest {
+    let mut manifest = manifest();
+    manifest
+        .workspaces
+        .push(pixi_sandbox_core::manifest::WorkspaceEntry {
+            slug: "subproject".to_string(),
+            manifest: "subproject/pixi.toml".to_string(),
+            directory: "subproject".to_string(),
+            environments: vec!["default".to_string()],
+        });
+    manifest.workspace_vendors.push(WorkspaceVendor {
+        slug: "subproject".to_string(),
+        manifest: "subproject/pixi.toml".to_string(),
+        directory: "subproject".to_string(),
+        vendor: Vendor {
+            mode: "loose".to_string(),
+            crates: 1,
+            size_bytes: 30,
+            cargo_lock_sha256: None,
+            directory: Some(".pixi-sandbox/vendor/workspaces/subproject".to_string()),
+            blobs: vec![
+                blob("vendor/workspaces/subproject/demo/Cargo.toml", 10),
+                blob("vendor/workspaces/subproject/demo/src/lib.rs", 20),
+            ],
+        },
+    });
+    manifest.validate().expect("fixture must validate");
+    manifest
+}
+
+#[test]
+fn workspace_vendor_bytes_count_in_every_ceiling() {
+    let base = measure(&manifest(), None);
+    let measurements = measure(&manifest_with_workspace_vendor(), None);
+
+    // transport_bytes walks every blob, including the nested tree's 30 bytes.
+    assert_eq!(measurements.transport_bytes, base.transport_bytes + 30);
+    assert!(measurements.largest_blob_bytes >= 20);
+    // Restore stages each tree before renaming it, so the nested tree costs twice its size —
+    // exactly the rule the root tree already follows.
+    assert_eq!(
+        measurements.restore_required_bytes,
+        base.restore_required_bytes + 60
+    );
+}
+
+#[test]
+fn an_over_large_workspace_tree_trips_the_restore_budget_with_a_partition_remedy() {
+    let budgets = TransportBudgets {
+        max_blob_bytes: u64::MAX,
+        max_transport_bytes: u64::MAX,
+        max_repository_push_bytes: u64::MAX,
+        // The base restore estimate (164) fits; the extra 60 do not.
+        max_restore_required_bytes: 200,
+    };
+    let report = check(&manifest_with_workspace_vendor(), None, budgets);
+    assert!(!report.ok());
+    let violation = report
+        .violations
+        .iter()
+        .find(|violation| violation.field == "budgets.max_restore_required_mib")
+        .expect("the nested tree's staged bytes must be judged");
+    assert!(violation.remedy.contains("[[bundle]]"));
 }
 
 #[test]

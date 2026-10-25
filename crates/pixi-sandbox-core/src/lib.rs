@@ -31,6 +31,7 @@ pub mod platform;
 pub mod sandbox_config;
 pub mod shard;
 pub mod transport_budget;
+pub mod vendor_overlap;
 pub mod verify;
 
 pub use error::{Error, Result};
