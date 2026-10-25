@@ -350,6 +350,13 @@ pub struct WorkspacePlan {
     /// of being silently flattened into one prefix.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub identities: Vec<String>,
+    /// Number of crates the workspace's `cargo vendor` step will carry: the `[[package]]`
+    /// entries in its `Cargo.lock` that name a `source` (path/workspace members have none and
+    /// are not vendored). `None` when the workspace has no `Cargo.lock`, so a plan never
+    /// promises a tree the pack step will not build. Vendor byte sizes are only measurable
+    /// after `cargo vendor`; the pack summary and branch guide report those per tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vendor_crates: Option<usize>,
 }
 
 /// One native job: it creates exactly one orphan branch.

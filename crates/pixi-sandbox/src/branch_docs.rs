@@ -150,6 +150,20 @@ fn vendor_section(manifest: &Manifest, vendor_info: Option<&VendorInfo>) -> Stri
         write!(section, "\nBuilt with {}.\n", toolchain())
             .expect("writing to a String cannot fail");
     }
+    // AC#4: name the bytes two trees carry identically. The payload and every verification
+    // count both copies, so the sum is honest; this note explains why Git storage is smaller.
+    if let Some(overlap) = pixi_sandbox_core::vendor_overlap::vendor_overlap(manifest) {
+        write!(
+            section,
+            "\nVendor overlap: {} crate(s), {} MiB identical across {} trees. Each tree keeps \
+             its own complete copy, so the payload sums both; Git's content-addressed storage \
+             keeps one object, while checkout and verification pay twice.\n",
+            overlap.shared_crates,
+            support::mib(overlap.shared_bytes),
+            overlap.trees,
+        )
+        .expect("writing to a String cannot fail");
+    }
     section
 }
 

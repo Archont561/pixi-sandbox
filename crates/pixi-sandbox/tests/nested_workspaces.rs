@@ -655,7 +655,7 @@ fn pack_vendors_root_and_nested_lockfiles_into_qualified_trees(nested_project: N
     let tools = fake_vendor_toolchain(project.home.path());
     let transport = project.home.path().join("transport");
 
-    support::bin()
+    let output = support::bin()
         .env("PATH", support::path_with_fake_tools(&tools))
         .env("CARGO_NET_OFFLINE", "true")
         .args(["pack", "--repo-root", project.root.to_str().unwrap()])
@@ -670,8 +670,14 @@ fn pack_vendors_root_and_nested_lockfiles_into_qualified_trees(nested_project: N
         ])
         .arg("--config")
         .arg(project.root.join(".pixi-sandbox.toml"))
-        .assert()
-        .success();
+        .output()
+        .expect("pack runs");
+    assert!(
+        output.status.success(),
+        "pack failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
 
     let manifest = pixi_sandbox_core::manifest::Manifest::load(
         &pixi_sandbox_core::manifest::Manifest::path_in(&transport),
@@ -724,6 +730,43 @@ fn pack_vendors_root_and_nested_lockfiles_into_qualified_trees(nested_project: N
         readme.contains("subproject/.pixi-sandbox/vendor/"),
         "{readme}"
     );
+
+    // AC#4: the recorded blob total counts every tree rather than swallowing the nested
+    // blobs into the root vendor line.
+    let recorded = manifest
+        .envs
+        .values()
+        .map(|env| env.blobs.len())
+        .sum::<usize>()
+        + manifest.tools.len()
+        + root_vendor.blobs.len()
+        + manifest
+            .workspace_vendors
+            .iter()
+            .map(|tree| tree.vendor.blobs.len())
+            .sum::<usize>();
+    let summary = stdout
+        .lines()
+        .find(|line| line.starts_with("packed transport:"))
+        .expect("the pack summary is printed to stdout");
+    assert!(
+        summary.contains(&format!("{recorded} blobs")),
+        "summary must count nested vendor blobs: {summary}"
+    );
+
+    // Both trees carry the same canned crate: the overlap is named, with the honest note
+    // that checkout and verification still pay for both copies.
+    let overlap_line = stdout
+        .lines()
+        .find(|line| line.contains("vendor overlap"))
+        .expect("shared crates are reported, not silently deduped");
+    assert!(overlap_line.contains("1 crate"), "{overlap_line}");
+    assert!(overlap_line.contains("twice"), "{overlap_line}");
+    assert!(
+        readme.contains("Vendor overlap"),
+        "the branch guide carries the same overlap note: {readme}"
+    );
+    assert!(readme.contains("1 crate"), "{readme}");
 }
 
 #[rstest]
@@ -793,6 +836,88 @@ fn pack_with_cargo_vendor_without_any_lockfile_names_what_it_needs(nested_projec
         !transport.exists(),
         "a refused pack leaves no transport behind"
     );
+}
+
+// ---------------------------------------------------------------------------
+// TASK-131 slice 4: the reviewed plan names every per-workspace vendor tree's
+// cost before a runner packs it.
+// ---------------------------------------------------------------------------
+
+#[rstest]
+fn plan_reports_the_vendor_crate_count_for_a_workspace_with_a_lockfile(
+    nested_project: NestedProject,
+) {
+    let project = nested_project;
+    let source = support::demo_project();
+    fs::copy(
+        source.join("Cargo.lock"),
+        project.root.join("subproject/Cargo.lock"),
+    )
+    .unwrap();
+
+    let output = plan_json(&project.root.join(".pixi-sandbox.toml"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let plan: Value = serde_json::from_slice(&output).unwrap();
+    let workspace = &plan["workspaces"][0];
+
+    // Counted the same way the producer will treat it: only source-bearing packages are
+    // vendored; path members (the lock's own project) are not.
+    let lock: toml::Value =
+        toml::from_str(&fs::read_to_string(source.join("Cargo.lock")).unwrap()).unwrap();
+    let expected = lock["package"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|package| package.get("source").is_some())
+        .count();
+    assert_eq!(
+        workspace["vendor_crates"].as_u64().unwrap(),
+        expected as u64,
+        "{workspace}"
+    );
+
+    // The text plan names the cost too, so a reviewer never has to read JSON for it.
+    support::bin()
+        .args([
+            "plan",
+            "--config",
+            project.root.join(".pixi-sandbox.toml").to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "vendor: {expected} crate(s)"
+        )));
+}
+
+#[rstest]
+fn plan_omits_vendor_fields_when_the_workspace_has_no_lockfile(nested_project: NestedProject) {
+    let project = nested_project;
+    let output = plan_json(&project.root.join(".pixi-sandbox.toml"))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let plan: Value = serde_json::from_slice(&output).unwrap();
+    let workspace = &plan["workspaces"][0];
+    assert!(
+        workspace.get("vendor_crates").is_none() || workspace["vendor_crates"].is_null(),
+        "no Cargo.lock means no promised tree and no invented cost: {workspace}"
+    );
+    support::bin()
+        .args([
+            "plan",
+            "--config",
+            project.root.join(".pixi-sandbox.toml").to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("vendor:").not());
 }
 
 // ---------------------------------------------------------------------------

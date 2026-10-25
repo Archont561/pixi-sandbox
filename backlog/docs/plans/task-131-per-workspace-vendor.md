@@ -215,3 +215,19 @@ wiring and never sees the root's vendor directory.
   `NotVendored` variant was deleted). A bug the red tests exposed: hooks were first written
   under `.pixi/envs/subproject/default/` inside the nested project because the full id was
   reused as a directory name.
+- **Slice 4 — plan and budgets.** New core module `vendor_overlap` analyses a manifest's trees
+  purely from blob paths/digests (no filesystem, no `Vendor.directory` dependency): a crate is
+  shared only when its directory name *and* every `(relative path, sha256)` pair match, so a
+  same-named directory with different contents never counts; tarball archives work through the
+  same path rule. `None` below two trees or zero shared crates, so root-only guides render
+  byte-identically. The result surfaces in pack stdout and the README (AGENTS.md stays
+  machine-only), with the explicit note that the payload sums both copies while Git stores one
+  object and checkout/verification pay twice. `transport_budget`'s restore estimate now counts
+  2× every tree (the `transport_bytes` ceiling already included nested blobs via `blobs()`), and
+  the pack summary's recorded-blob total includes the per-workspace blob lists.
+  Deviation from this doc's first draft: `WorkspacePlan` gains `vendor_crates: Option<usize>`
+  (source-bearing `[[package]]` entries, absent without a `Cargo.lock`) but **not**
+  `vendor_size_bytes` — no honest pre-pack byte measurement exists, and a 0/unknown field would
+  mislead; measured per-tree sizes already appear in pack's per-tree line and the branch guide.
+  Gotcha: toml 1.1's `FromStr<Value>` rejects a document opening with a comment, while
+  `toml::from_str` accepts it — the lock parser must use the latter.

@@ -551,7 +551,12 @@ impl PackPlan {
             + manifest
                 .vendor
                 .as_ref()
-                .map_or(0, |vendor| vendor.blobs.len());
+                .map_or(0, |vendor| vendor.blobs.len())
+            + manifest
+                .workspace_vendors
+                .iter()
+                .map(|tree| tree.vendor.blobs.len())
+                .sum::<usize>();
         let files = shard::files_under(&self.payload)?;
         let (env_bytes, tool_bytes, vendor_bytes) = manifest.payload_split();
         println!(
@@ -562,6 +567,18 @@ impl PackPlan {
             support::mib(tool_bytes),
             support::mib(vendor_bytes)
         );
+        if let Some(overlap) = pixi_sandbox_core::vendor_overlap::vendor_overlap(&manifest) {
+            // AC#4: shared crates ride twice on the payload, so the sum counts both copies;
+            // say how much Git's content-addressed storage keeps once and why verification
+            // and checkout still pay twice, rather than deduping the number silently.
+            println!(
+                "vendor overlap: {} crate(s), {} MiB identical across {} trees — payload \
+                 counts both copies; Git stores one object, checkout and verification pay twice",
+                overlap.shared_crates,
+                support::mib(overlap.shared_bytes),
+                overlap.trees
+            );
+        }
         println!("  manifest: {}", manifest_path.display());
         println!(
             "  next: pixi-sandbox publish --input-dir {} --branch-name <name>",

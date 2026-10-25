@@ -784,3 +784,169 @@ mod workspace_vendors {
         );
     }
 }
+
+/// TASK-131 AC#4: a crate shared by two lockfiles is reported explicitly with its single-copy
+/// byte cost, never silently deduplicated away (checkout and verification still pay twice).
+mod vendor_overlap {
+    use super::*;
+    use pixi_sandbox_core::vendor_overlap::vendor_overlap;
+
+    const H1: &str = "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069";
+    const H2: &str = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+    const H3: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    /// A loose-mode blob under one tree's qualified prefix.
+    fn blob(path: &str, size: u64, sha: &str) -> serde_json::Value {
+        serde_json::json!({ "path": path, "size": size, "sha256": sha })
+    }
+
+    /// Build a manifest whose root vendor carries `root_blobs` and whose one nested workspace
+    /// carries `nested_blobs`, both containing a crate called `demo-dep-1.0.0`.
+    fn manifest_with(
+        root_blobs: &[serde_json::Value],
+        nested_blobs: &[serde_json::Value],
+    ) -> Manifest {
+        let mut value: serde_json::Value = serde_json::from_str(&valid_manifest()).unwrap();
+        value["workspaces"] = serde_json::json!([
+            {
+                "slug": "subproject",
+                "manifest": "subproject/pixi.toml",
+                "directory": "subproject",
+                "environments": ["default"]
+            }
+        ]);
+        value["vendor"]["blobs"] = serde_json::Value::Array(root_blobs.to_vec());
+        value["workspace_vendors"] = serde_json::json!([
+            {
+                "slug": "subproject",
+                "manifest": "subproject/pixi.toml",
+                "directory": "subproject",
+                "vendor": {
+                    "mode": "loose",
+                    "crates": 1,
+                    "size_bytes": 30,
+                    "cargo_lock_sha256": "cc",
+                    "directory": ".pixi-sandbox/vendor/workspaces/subproject",
+                    "blobs": nested_blobs
+                }
+            }
+        ]);
+        let manifest: Manifest = serde_json::from_value(value).unwrap();
+        manifest.validate().expect("fixture must validate");
+        manifest
+    }
+
+    #[test]
+    fn a_single_tree_has_no_overlap() {
+        let manifest = parse(&valid_manifest());
+        assert!(vendor_overlap(&manifest).is_none());
+    }
+
+    #[test]
+    fn no_vendor_at_all_has_no_overlap() {
+        let mut value: serde_json::Value = serde_json::from_str(&valid_manifest()).unwrap();
+        value.as_object_mut().unwrap().remove("vendor");
+        let manifest: Manifest = serde_json::from_value(value).unwrap();
+        assert!(vendor_overlap(&manifest).is_none());
+    }
+
+    #[test]
+    fn an_identical_crate_in_two_trees_is_counted_once_at_single_copy_bytes() {
+        let manifest = manifest_with(
+            &[
+                blob("vendor/demo-dep-1.0.0/Cargo.toml", 10, H1),
+                blob("vendor/demo-dep-1.0.0/src/lib.rs", 20, H2),
+            ],
+            &[
+                blob(
+                    "vendor/workspaces/subproject/demo-dep-1.0.0/Cargo.toml",
+                    10,
+                    H1,
+                ),
+                blob(
+                    "vendor/workspaces/subproject/demo-dep-1.0.0/src/lib.rs",
+                    20,
+                    H2,
+                ),
+            ],
+        );
+        let overlap = vendor_overlap(&manifest).expect("two trees sharing a crate");
+        assert_eq!(overlap.trees, 2);
+        assert_eq!(overlap.shared_crates, 1);
+        assert_eq!(overlap.shared_bytes, 30, "one copy, not the summed 60");
+    }
+
+    #[test]
+    fn the_same_crate_name_with_different_bytes_is_not_shared() {
+        let manifest = manifest_with(
+            &[blob("vendor/demo-dep-1.0.0/Cargo.toml", 10, H1)],
+            &[blob(
+                "vendor/workspaces/subproject/demo-dep-1.0.0/Cargo.toml",
+                10,
+                H3,
+            )],
+        );
+        assert!(
+            vendor_overlap(&manifest).is_none(),
+            "a digest mismatch means the trees do not actually share bytes"
+        );
+    }
+
+    #[test]
+    fn a_crate_shared_by_three_trees_is_still_counted_once() {
+        let mut manifest = manifest_with(
+            &[blob("vendor/demo-dep-1.0.0/Cargo.toml", 10, H1)],
+            &[blob(
+                "vendor/workspaces/subproject/demo-dep-1.0.0/Cargo.toml",
+                10,
+                H1,
+            )],
+        );
+        manifest
+            .workspaces
+            .push(pixi_sandbox_core::manifest::WorkspaceEntry {
+                slug: "other".to_string(),
+                manifest: "other/pixi.toml".to_string(),
+                directory: "other".to_string(),
+                environments: vec!["default".to_string()],
+            });
+        manifest.workspace_vendors.push(
+            serde_json::from_value(serde_json::json!({
+                "slug": "other",
+                "manifest": "other/pixi.toml",
+                "directory": "other",
+                "vendor": {
+                    "mode": "loose",
+                    "crates": 1,
+                    "size_bytes": 10,
+                    "cargo_lock_sha256": "dd",
+                    "directory": ".pixi-sandbox/vendor/workspaces/other",
+                    "blobs": [
+                        blob("vendor/workspaces/other/demo-dep-1.0.0/Cargo.toml", 10, H1)
+                    ]
+                }
+            }))
+            .unwrap(),
+        );
+        manifest.validate().expect("three-tree fixture validates");
+        let overlap = vendor_overlap(&manifest).expect("shared across all three");
+        assert_eq!(overlap.trees, 3);
+        assert_eq!(overlap.shared_crates, 1);
+        assert_eq!(overlap.shared_bytes, 10);
+    }
+
+    #[test]
+    fn tarball_blobs_are_compared_by_archive_name_and_digest() {
+        let manifest = manifest_with(
+            &[blob("vendor/demo-dep-1.0.0.tar", 40, H1)],
+            &[blob(
+                "vendor/workspaces/subproject/demo-dep-1.0.0.tar",
+                40,
+                H1,
+            )],
+        );
+        let overlap = vendor_overlap(&manifest).expect("the archive is shared too");
+        assert_eq!(overlap.shared_crates, 1);
+        assert_eq!(overlap.shared_bytes, 40);
+    }
+}
