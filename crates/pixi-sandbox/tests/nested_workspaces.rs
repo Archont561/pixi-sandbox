@@ -601,6 +601,53 @@ fn fake_vendor_toolchain(home: &Path) -> PathBuf {
     tools
 }
 
+/// Pack the two-lockfile project with `--cargo-vendor` through the fake toolchain, returning
+/// the transport directory. The restore tests below all start from this one packed branch.
+fn pack_both_vendor_trees(project: &NestedProject, tools: &Path) -> PathBuf {
+    let transport = project.home.path().join("transport-vendor");
+    support::bin()
+        .env("PATH", support::path_with_fake_tools(tools))
+        .env("CARGO_NET_OFFLINE", "true")
+        .args(["pack", "--repo-root", project.root.to_str().unwrap()])
+        .arg("--output-dir")
+        .arg(&transport)
+        .args([
+            "--envs",
+            "default,subproject/default",
+            "--platform",
+            host_platform(),
+            "--cargo-vendor",
+        ])
+        .arg("--config")
+        .arg(project.root.join(".pixi-sandbox.toml"))
+        .assert()
+        .success();
+    transport
+}
+
+/// Restore `transport` into a fresh `restored/` under the test home, skipping tool
+/// registration so nothing leaves the tempdir.
+fn restore_transport(
+    project: &NestedProject,
+    transport: &Path,
+    extra: &[&str],
+) -> assert_cmd::assert::Assert {
+    let restored = project.home.path().join("restored");
+    fs::create_dir_all(&restored).unwrap();
+    support::bin()
+        .args([
+            "restore",
+            "--branch-location",
+            transport.to_str().unwrap(),
+            "--output-path",
+            restored.to_str().unwrap(),
+            "--user-tools",
+            "skip",
+        ])
+        .args(extra)
+        .assert()
+}
+
 #[rstest]
 fn pack_vendors_root_and_nested_lockfiles_into_qualified_trees(nested_project: NestedProject) {
     let project = nested_project;
@@ -746,4 +793,316 @@ fn pack_with_cargo_vendor_without_any_lockfile_names_what_it_needs(nested_projec
         !transport.exists(),
         "a refused pack leaves no transport behind"
     );
+}
+
+// ---------------------------------------------------------------------------
+// TASK-131 slice 3: restore materialises one vendor tree per owning project and
+// wires Cargo inside that project's own .pixi-sandbox and env prefixes.
+// ---------------------------------------------------------------------------
+
+/// Pack both vendor trees, then restore, and assert every tree and every piece of wiring
+/// lands in the project that owns the lockfile.
+#[rstest]
+fn restore_materialises_each_vendor_tree_into_its_own_project_with_auto_wiring(
+    nested_project: NestedProject,
+) {
+    let project = nested_project;
+    install_cargo_locks(&project);
+    let tools = fake_vendor_toolchain(project.home.path());
+    let transport = pack_both_vendor_trees(&project, &tools);
+
+    restore_transport(&project, &transport, &[]).success();
+    let restored = project.home.path().join("restored");
+
+    // The two materialised trees, each inside its owning project's .pixi-sandbox.
+    assert!(
+        restored
+            .join(".pixi-sandbox/vendor/demo-dep-1.0.0/Cargo.toml")
+            .is_file()
+    );
+    assert!(
+        restored
+            .join("subproject/.pixi-sandbox/vendor/demo-dep-1.0.0/Cargo.toml")
+            .is_file()
+    );
+    // The nested tree never lands under the root project's vendor directory.
+    assert!(!restored.join(".pixi-sandbox/vendor/workspaces").exists());
+
+    // One sandbox cargo-home per project, each naming its own vendor directory.
+    let root_home =
+        fs::read_to_string(restored.join(".pixi-sandbox/cargo-home/config.toml")).unwrap();
+    assert!(
+        root_home.contains(&format!(
+            "directory = \"{}\"",
+            restored.join(".pixi-sandbox/vendor").display()
+        )),
+        "{root_home}"
+    );
+    let nested_home =
+        fs::read_to_string(restored.join("subproject/.pixi-sandbox/cargo-home/config.toml"))
+            .unwrap();
+    assert!(
+        nested_home.contains(&format!(
+            "directory = \"{}\"",
+            restored.join("subproject/.pixi-sandbox/vendor").display()
+        )),
+        "{nested_home}"
+    );
+    assert!(!nested_home.contains("subproject/.pixi-sandbox/cargo-home"));
+
+    // Activation hooks are written into each workspace's own env, pointing at its own home.
+    let root_hook = fs::read_to_string(
+        restored.join(".pixi/envs/default/etc/conda/activate.d/pixi-sandbox-cargo-home.sh"),
+    )
+    .unwrap();
+    let nested_hook = fs::read_to_string(
+        restored
+            .join("subproject/.pixi/envs/default/etc/conda/activate.d/pixi-sandbox-cargo-home.sh"),
+    )
+    .unwrap();
+    assert!(
+        root_hook.contains(
+            restored
+                .join(".pixi-sandbox/cargo-home")
+                .to_string_lossy()
+                .as_ref(),
+        ),
+        "{root_hook}"
+    );
+    assert!(
+        nested_hook.contains(
+            restored
+                .join("subproject/.pixi-sandbox/cargo-home")
+                .to_string_lossy()
+                .as_ref(),
+        ),
+        "{nested_hook}"
+    );
+    assert!(
+        !root_hook.contains("subproject"),
+        "the root hook must not cross projects: {root_hook}"
+    );
+    // The three shell flavours travel together, per workspace.
+    assert!(
+        restored
+            .join("subproject/.pixi/envs/default/etc/conda/activate.d/pixi-sandbox-cargo-home.ps1")
+            .is_file()
+    );
+    assert!(
+        restored
+            .join("subproject/.pixi/envs/default/etc/conda/activate.d/pixi-sandbox-cargo-home.bat")
+            .is_file()
+    );
+
+    // The second opinion still passes once both trees are on disk.
+    support::bin()
+        .arg("doctor")
+        .arg("--verify-restored")
+        .arg(&restored)
+        .arg("--branch-location")
+        .arg(&transport)
+        .assert()
+        .success();
+}
+
+#[rstest]
+fn restore_no_vendor_skips_every_tree_but_keeps_the_environments(nested_project: NestedProject) {
+    let project = nested_project;
+    install_cargo_locks(&project);
+    let tools = fake_vendor_toolchain(project.home.path());
+    let transport = pack_both_vendor_trees(&project, &tools);
+
+    restore_transport(&project, &transport, &["--no-vendor"]).success();
+    let restored = project.home.path().join("restored");
+
+    // Environments still land, in both projects.
+    assert!(restored.join(".pixi/envs/default").is_dir());
+    assert!(restored.join("subproject/.pixi/envs/default").is_dir());
+    // No vendor tree, cargo-home or activation hook anywhere.
+    assert!(!restored.join(".pixi-sandbox/vendor").exists());
+    assert!(!restored.join("subproject/.pixi-sandbox/vendor").exists());
+    assert!(!restored.join(".pixi-sandbox/cargo-home").exists());
+    assert!(
+        !restored
+            .join("subproject/.pixi-sandbox/cargo-home")
+            .exists()
+    );
+    assert!(
+        !restored
+            .join(".pixi/envs/default/etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+            .exists()
+    );
+    assert!(
+        !restored
+            .join("subproject/.pixi/envs/default/etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+            .exists()
+    );
+}
+
+#[rstest]
+fn restore_cargo_config_write_writes_one_project_config_per_tree(nested_project: NestedProject) {
+    let project = nested_project;
+    install_cargo_locks(&project);
+    let tools = fake_vendor_toolchain(project.home.path());
+    let transport = pack_both_vendor_trees(&project, &tools);
+
+    let output = restore_transport(&project, &transport, &["--cargo-config", "write"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output).unwrap();
+    let restored = project.home.path().join("restored");
+
+    let root_config = fs::read_to_string(restored.join(".cargo/config.toml")).unwrap();
+    let nested_config = fs::read_to_string(restored.join("subproject/.cargo/config.toml")).unwrap();
+    assert!(
+        root_config.contains(
+            restored
+                .join(".pixi-sandbox/vendor")
+                .to_string_lossy()
+                .as_ref(),
+        ),
+        "{root_config}"
+    );
+    assert!(
+        nested_config.contains(
+            restored
+                .join("subproject/.pixi-sandbox/vendor")
+                .to_string_lossy()
+                .as_ref(),
+        ),
+        "{nested_config}"
+    );
+    assert!(!root_config.contains("subproject"));
+    // Write mode never creates the sandbox cargo-home.
+    assert!(!restored.join(".pixi-sandbox/cargo-home").exists());
+    assert!(
+        !restored
+            .join("subproject/.pixi-sandbox/cargo-home")
+            .exists()
+    );
+    // One wired summary per tree.
+    assert_eq!(
+        output.matches("cargo vendor: wired via").count(),
+        2,
+        "{output}"
+    );
+}
+
+#[rstest]
+fn restore_refuses_an_existing_nested_vendor_tree_without_force_and_replaces_with_it(
+    nested_project: NestedProject,
+) {
+    let project = nested_project;
+    install_cargo_locks(&project);
+    let tools = fake_vendor_toolchain(project.home.path());
+    let transport = pack_both_vendor_trees(&project, &tools);
+
+    let restored = project.home.path().join("restored");
+    fs::create_dir_all(restored.join("subproject/.pixi-sandbox/vendor")).unwrap();
+    fs::write(
+        restored.join("subproject/.pixi-sandbox/vendor/previous-owner.txt"),
+        b"old",
+    )
+    .unwrap();
+
+    restore_transport(&project, &transport, &[])
+        .failure()
+        .stderr(predicate::str::contains("already exists"))
+        .stderr(predicate::str::contains("--force"))
+        .stderr(predicate::str::contains("subproject"));
+    // A refused restore leaves the previous tree exactly as it found it.
+    assert!(
+        restored
+            .join("subproject/.pixi-sandbox/vendor/previous-owner.txt")
+            .is_file()
+    );
+    assert!(
+        !restored
+            .join("subproject/.pixi-sandbox/vendor/demo-dep-1.0.0")
+            .exists()
+    );
+
+    restore_transport(&project, &transport, &["--force"]).success();
+    assert!(
+        !restored
+            .join("subproject/.pixi-sandbox/vendor/previous-owner.txt")
+            .exists()
+    );
+    assert!(
+        restored
+            .join("subproject/.pixi-sandbox/vendor/demo-dep-1.0.0/Cargo.toml")
+            .is_file()
+    );
+}
+
+#[rstest]
+#[case::print("print")]
+#[case::none("none")]
+fn restore_print_and_none_modes_leave_every_project_unwired(
+    nested_project: NestedProject,
+    #[case] mode: &str,
+) {
+    let project = nested_project;
+    install_cargo_locks(&project);
+    let tools = fake_vendor_toolchain(project.home.path());
+    let transport = pack_both_vendor_trees(&project, &tools);
+
+    let output = restore_transport(&project, &transport, &["--cargo-config", mode])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output).unwrap();
+    let restored = project.home.path().join("restored");
+
+    // The trees themselves are still materialised; only the wiring is withheld.
+    assert!(
+        restored
+            .join(".pixi-sandbox/vendor/demo-dep-1.0.0/Cargo.toml")
+            .is_file()
+    );
+    assert!(
+        restored
+            .join("subproject/.pixi-sandbox/vendor/demo-dep-1.0.0/Cargo.toml")
+            .is_file()
+    );
+    assert!(!restored.join(".cargo/config.toml").exists());
+    assert!(!restored.join("subproject/.cargo/config.toml").exists());
+    assert!(!restored.join(".pixi-sandbox/cargo-home").exists());
+    assert!(
+        !restored
+            .join("subproject/.pixi-sandbox/cargo-home")
+            .exists()
+    );
+    assert!(
+        !restored
+            .join(".pixi/envs/default/etc/conda/activate.d/pixi-sandbox-cargo-home.sh")
+            .exists()
+    );
+
+    // One NOT-wired line per tree, and print names both absolute vendor directories.
+    assert_eq!(
+        output
+            .matches(&format!("cargo vendor: NOT wired (--cargo-config {mode})"))
+            .count(),
+        2,
+        "{output}"
+    );
+    if mode == "print" {
+        assert_eq!(
+            output.matches("# Cargo source replacement").count(),
+            2,
+            "{output}"
+        );
+        assert!(
+            output.contains(
+                restored
+                    .join("subproject/.pixi-sandbox/vendor")
+                    .to_string_lossy()
+                    .as_ref(),
+            )
+        );
+    }
 }

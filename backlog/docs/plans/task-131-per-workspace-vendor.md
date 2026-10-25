@@ -202,3 +202,16 @@ wiring and never sees the root's vendor directory.
   and nested trees never double-record the same files. The nested-`Cargo.lock` config refusal
   is gone; branch guides gain one paragraph per workspace tree while root-only goldens stay
   byte-identical.
+- **Slice 3 — restore side.** `install_vendor` is parameterised by destination root, stage
+  name and transport blob prefix; the root keeps `vendor-stage` / `vendor/` while each nested
+  tree stages under `vendor-stage-<slug>` and strips `vendor/workspaces/<slug>/` before
+  landing in `<project>/<directory>/.pixi-sandbox/vendor/`. `envs_for_tree` maps each tree to
+  the selected envs its project owns — using the embedded `WorkspaceRef` identity, not id text
+  — and strips the `<slug>/` prefix so hooks land in the nested project's bare-named env
+  directory. All four `--cargo-config` modes run per tree; `--no-vendor` skips every tree;
+  `--force` and the pre-write "already exists" refusal apply per destination, all checked
+  before any byte is written. The all-or-nothing destination guard, the 2× space estimate and
+  work-dir cleanup now iterate every tree (`CargoWiring` became a vector; the unused
+  `NotVendored` variant was deleted). A bug the red tests exposed: hooks were first written
+  under `.pixi/envs/subproject/default/` inside the nested project because the full id was
+  reused as a directory name.

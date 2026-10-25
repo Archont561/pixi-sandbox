@@ -8,7 +8,9 @@ use crate::cli::{CargoConfigArg, RestoreArgs, UserToolsPolicy};
 use crate::commands::support;
 use anyhow::{Context, Result, bail};
 use pixi_sandbox::user_tools::{self, LauncherChange, LauncherKind, PathChange, UserTools};
-use pixi_sandbox_core::manifest::{Blob, Env, MANIFEST_DIR, Manifest, ToolEntry, Vendor};
+use pixi_sandbox_core::manifest::{
+    Blob, Env, MANIFEST_DIR, Manifest, ToolEntry, Vendor, WorkspaceVendor,
+};
 use pixi_sandbox_core::platform::executable_filename;
 use pixi_sandbox_core::shard;
 use pixi_sandbox_core::verify::{self, Linkage};
@@ -42,7 +44,6 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
         &manifest,
         &project,
         &environments,
-        manifest.vendor.as_ref(),
         args.no_vendor,
         args.force,
     )?;
@@ -73,7 +74,7 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
         )?;
     }
 
-    let (vendored, cargo_wiring) =
+    let (vendor_stages, cargo_wiring) =
         restore_vendor(args, &manifest, &branch, &project, &work, &environments)?;
 
     remove_legacy_sandbox_env(&project)?;
@@ -103,7 +104,7 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
         .iter()
         .map(|id| manifest.staging_component(id))
         .collect();
-    clean_work_dir(&work, &staging, vendored)?;
+    clean_work_dir(&work, &staging, &vendor_stages)?;
 
     // The last step, and only after both verifications passed: make the manifest-verified
     // `pixi` and `pixi-sandbox` copies persistently discoverable. A refusal here (an
@@ -120,7 +121,9 @@ pub fn run(args: &RestoreArgs) -> Result<()> {
 
     println!("restore complete");
     println!("  pixi install --frozen --offline      # must be a no-op");
-    print_cargo_wiring(&cargo_wiring);
+    for wiring in &cargo_wiring {
+        print_cargo_wiring(wiring);
+    }
     println!(
         "  no .pixi/sandbox-env.sh is generated; use pixi as the only entrypoint (`pixi run ...`)"
     );
@@ -156,18 +159,94 @@ fn restore_vendor(
     project: &Path,
     work: &Path,
     environments: &[String],
-) -> Result<(bool, CargoWiring)> {
-    let mut vendored = false;
-    let mut cargo_wiring = CargoWiring::NotVendored;
-    if let Some(vendor) = &manifest.vendor
-        && !args.no_vendor
-    {
-        println!("restore vendored cargo dependencies");
-        install_vendor(branch, vendor, project, work, args.force)?;
-        cargo_wiring = configure_cargo_vendor(project, environments, args.cargo_config)?;
-        vendored = true;
+) -> Result<(Vec<String>, Vec<CargoWiring>)> {
+    let mut stages = Vec::new();
+    let mut cargo_wiring = Vec::new();
+    if args.no_vendor {
+        return Ok((stages, cargo_wiring));
     }
-    Ok((vendored, cargo_wiring))
+
+    // The root tree keeps its historical stage name, blob prefix and destination; every
+    // nested tree (TASK-131) is the same operation pointed at the owning workspace's
+    // directory and its own qualified transport path.
+    if let Some(vendor) = &manifest.vendor {
+        println!("restore vendored cargo dependencies");
+        install_vendor(
+            branch,
+            vendor,
+            project,
+            work,
+            "vendor-stage",
+            "vendor/",
+            args.force,
+        )?;
+        stages.push("vendor-stage".to_string());
+        let own_envs = envs_for_tree(manifest, environments, None);
+        cargo_wiring.push(configure_cargo_vendor(
+            project,
+            &own_envs,
+            args.cargo_config,
+        )?);
+    }
+    for tree in &manifest.workspace_vendors {
+        let destination_root = project.join(&tree.directory);
+        println!(
+            "restore vendored cargo dependencies: workspace {}",
+            tree.slug
+        );
+        let stage = format!("vendor-stage-{}", tree.slug);
+        let prefix = format!("vendor/workspaces/{}/", tree.slug);
+        install_vendor(
+            branch,
+            &tree.vendor,
+            &destination_root,
+            work,
+            &stage,
+            &prefix,
+            args.force,
+        )?;
+        stages.push(stage);
+        let own_envs = envs_for_tree(manifest, environments, Some(tree));
+        cargo_wiring.push(configure_cargo_vendor(
+            &destination_root,
+            &own_envs,
+            args.cargo_config,
+        )?);
+    }
+    Ok((stages, cargo_wiring))
+}
+
+/// Names of the selected environments that belong to one vendor tree's project, as they are
+/// named *inside that project*: the root tree owns ids without a workspace descriptor, a
+/// nested tree owns the ids whose embedded descriptor names the same manifest and directory,
+/// and the `<slug>/` prefix is stripped because a nested project's own `.pixi/envs` directory
+/// holds the bare env name (see [`Manifest::env_destination`]). Hooks can only be written into
+/// envs this restore actually installed, so the result is intersected with the selected set.
+fn envs_for_tree(
+    manifest: &Manifest,
+    selected: &[String],
+    tree: Option<&WorkspaceVendor>,
+) -> Vec<String> {
+    selected
+        .iter()
+        .filter(|id| {
+            let Some(env) = manifest.envs.get(*id) else {
+                return false;
+            };
+            match (tree, &env.workspace) {
+                (None, None) => true,
+                (Some(tree), Some(workspace)) => {
+                    workspace.manifest == tree.manifest && workspace.directory == tree.directory
+                }
+                _ => false,
+            }
+        })
+        .map(|id| {
+            manifest
+                .env_name(id)
+                .map_or_else(|_| id.clone(), str::to_owned)
+        })
+        .collect()
 }
 
 /// The cargo-vendor wiring, in the restore's voice.
@@ -190,7 +269,6 @@ fn print_cargo_wiring(cargo_wiring: &CargoWiring) {
         CargoWiring::None => println!(
             "  cargo vendor: NOT wired (--cargo-config none); configure Cargo before building offline"
         ),
-        CargoWiring::NotVendored => {}
     }
 }
 
@@ -390,14 +468,16 @@ fn print_registration(
 /// Remove this restore's scratch: the unpacker's TMPDIR, one materialised pack and one stage per
 /// environment, and the vendor stage. The directory itself goes only when we emptied it, so an
 /// explicit `--work-dir` that was holding something else survives the restore that borrowed it.
-fn clean_work_dir(work: &Path, staging: &[String], vendored: bool) -> Result<()> {
+fn clean_work_dir(work: &Path, staging: &[String], vendor_stages: &[String]) -> Result<()> {
     support::remove_path(&work.join("tmp"))?;
     for component in staging {
         support::remove_path(&work.join(format!("pack-{component}")))?;
         support::remove_path(&work.join(format!("stage-{component}")))?;
     }
-    if vendored {
-        support::remove_path(&work.join("vendor-stage"))?;
+    // One scratch tree per restored vendor tree: `vendor-stage` for the root and
+    // `vendor-stage-<slug>` for each workspace, each removed only after its rename succeeded.
+    for stage in vendor_stages {
+        support::remove_path(&work.join(stage))?;
     }
     if work
         .read_dir()
@@ -420,12 +500,22 @@ fn required_space(manifest: &Manifest, environments: &[String]) -> Result<u64> {
             .and_then(|total| total.checked_add(env.unpacked_size_bytes))
             .ok_or_else(|| anyhow::anyhow!("restore space estimate overflow"))?;
     }
-    if let Some(vendor) = &manifest.vendor {
+    // Each tree is staged before it is renamed into place, so every vendored tree — root and
+    // per-workspace — counts twice.
+    let vendor_sizes = manifest
+        .vendor
+        .iter()
+        .map(|vendor| vendor.size_bytes)
+        .chain(
+            manifest
+                .workspace_vendors
+                .iter()
+                .map(|tree| tree.vendor.size_bytes),
+        );
+    for size in vendor_sizes {
         required = required
             .checked_add(
-                vendor
-                    .size_bytes
-                    .checked_mul(2)
+                size.checked_mul(2)
                     .ok_or_else(|| anyhow::anyhow!("vendor size estimate overflow"))?,
             )
             .ok_or_else(|| anyhow::anyhow!("restore space estimate overflow"))?;
@@ -437,7 +527,6 @@ fn ensure_destinations_available(
     manifest: &Manifest,
     project: &Path,
     environments: &[String],
-    vendor: Option<&Vendor>,
     no_vendor: bool,
     force: bool,
 ) -> Result<()> {
@@ -456,8 +545,26 @@ fn ensure_destinations_available(
             );
         }
     }
-    if vendor.is_some() && !no_vendor {
+    if no_vendor {
+        return Ok(());
+    }
+    // Every vendor destination, root and per-workspace, before any of them is touched: a
+    // nested tree landing in `<directory>/.pixi-sandbox/vendor` gets the same all-or-nothing
+    // guarantee as an environment prefix.
+    if manifest.vendor.is_some() {
         let target = project.join(MANIFEST_DIR).join("vendor");
+        if target.exists() {
+            bail!(
+                "{} already exists — pass --force to replace it",
+                target.display()
+            );
+        }
+    }
+    for tree in &manifest.workspace_vendors {
+        let target = project
+            .join(&tree.directory)
+            .join(MANIFEST_DIR)
+            .join("vendor");
         if target.exists() {
             bail!(
                 "{} already exists — pass --force to replace it",
@@ -716,14 +823,23 @@ fn write_markers(prefix: &Path, entry: &Env, final_prefix: &Path) -> Result<()> 
     Ok(())
 }
 
+/// Materialise one vendored tree into `destination_root/.pixi-sandbox/vendor`.
+///
+/// `stage_name` keeps this tree's scratch space distinct inside the work directory (the root
+/// uses `vendor-stage`, a workspace uses `vendor-stage-<slug>`), and `blob_prefix` is the
+/// transport prefix stripped from each blob path — `vendor/` for the root,
+/// `vendor/workspaces/<slug>/` for a nested tree. The staged, verified bytes are renamed into
+/// place only once the tree is complete.
 fn install_vendor(
     branch: &Path,
     vendor: &Vendor,
-    project: &Path,
+    destination_root: &Path,
     work: &Path,
+    stage_name: &str,
+    blob_prefix: &str,
     force: bool,
 ) -> Result<()> {
-    let target = project.join(MANIFEST_DIR).join("vendor");
+    let target = destination_root.join(MANIFEST_DIR).join("vendor");
     if target.exists() && !force {
         bail!(
             "{} already exists — pass --force to replace it",
@@ -731,7 +847,7 @@ fn install_vendor(
         );
     }
 
-    let stage = work.join("vendor-stage");
+    let stage = work.join(stage_name);
     support::remove_path(&stage)?;
     let staged_tree = stage.join("vendor");
     fs::create_dir_all(&staged_tree)
@@ -741,7 +857,7 @@ fn install_vendor(
     match vendor.mode.as_str() {
         "loose" => {
             for blob in &vendor.blobs {
-                let relative = support::relative_after(&blob.path, "vendor/")?;
+                let relative = support::relative_after(&blob.path, blob_prefix)?;
                 shard::materialise(&source_root, blob, &staged_tree.join(relative))?;
             }
         }
@@ -750,7 +866,7 @@ fn install_vendor(
             fs::create_dir_all(&archives)
                 .with_context(|| format!("creating {}", archives.display()))?;
             for blob in &vendor.blobs {
-                let relative = support::relative_after(&blob.path, "vendor/")?;
+                let relative = support::relative_after(&blob.path, blob_prefix)?;
                 let archive = archives.join(relative);
                 shard::materialise(&source_root, blob, &archive)?;
                 unpack_vendor_archive(&archive, &staged_tree)?;
@@ -827,7 +943,6 @@ fn unpack_vendor_archive(archive_path: &Path, destination: &Path) -> Result<()> 
 
 #[derive(Debug)]
 enum CargoWiring {
-    NotVendored,
     SandboxHome { cargo_home: PathBuf },
     ProjectConfig { config: PathBuf },
     Printed,
@@ -1147,7 +1262,7 @@ mod tests {
 
         // Without a vendor stage there is nothing to remove, and the borrowed directory is
         // otherwise empty, so it goes too.
-        clean_work_dir(&work, &["default".to_string(), "docs".to_string()], false).unwrap();
+        clean_work_dir(&work, &["default".to_string(), "docs".to_string()], &[]).unwrap();
         assert!(!work.join("tmp").exists());
         assert!(!work.join("pack-default").exists());
         assert!(!work.join("stage-default").exists());
@@ -1155,7 +1270,13 @@ mod tests {
         assert!(work.join("vendor-stage").exists());
         assert!(work.exists());
 
-        clean_work_dir(&work, &[], true).unwrap();
+        // The root stage and a per-workspace stage are both retired by name.
+        clean_work_dir(&work, &[], &["vendor-stage".to_string()]).unwrap();
+        assert!(!work.exists());
+
+        let work = temp.path().join("work-two");
+        fs::create_dir_all(work.join("vendor-stage-subproject")).unwrap();
+        clean_work_dir(&work, &[], &["vendor-stage-subproject".to_string()]).unwrap();
         assert!(!work.exists());
     }
 
@@ -1166,7 +1287,7 @@ mod tests {
         fs::create_dir_all(work.join("pack-default")).unwrap();
         fs::write(work.join("operator-notes.txt"), "keep me\n").unwrap();
 
-        clean_work_dir(&work, &["default".to_string()], false).unwrap();
+        clean_work_dir(&work, &["default".to_string()], &[]).unwrap();
         assert!(!work.join("pack-default").exists());
         assert!(work.join("operator-notes.txt").is_file());
     }
