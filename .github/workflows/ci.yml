@@ -137,6 +137,22 @@ jobs:
       # local-registry mirror, including its cold negative control and ADR-33 measurement.
       - if: steps.changes.outputs.code != 'false'
         run: pixi run test-mirror-offline
+      # TEMPORARY TASK-137 diagnostics: log host is unreachable from the dev sandbox, so
+      # capture the compiler output as an artifact. Remove before the PR is merged.
+      - name: Capture clippy diagnostics
+        if: failure()
+        continue-on-error: true
+        run: cargo clippy --workspace --all-targets -- -D warnings > /tmp/rust-diag.log 2>&1 || true
+      - name: Capture check diagnostics
+        if: failure()
+        continue-on-error: true
+        run: cargo check --workspace --all-targets --locked >> /tmp/rust-diag.log 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbbb0abf93d209396e2632492f364d # v7.0.2
+        if: failure()
+        with:
+          name: rust-diag
+          path: /tmp/rust-diag.log
+          retention-days: 1
       - if: steps.changes.outputs.code != 'false'
         run: pixi run coverage
       - if: steps.changes.outputs.code != 'false'
