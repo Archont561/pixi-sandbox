@@ -1,10 +1,10 @@
 ---
 id: TASK-126
 title: Optimize CI to reduce GitHub Actions minutes follow-up to TASK-122
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-22'
-updated_date: '2026-10-22'
+updated_date: '2026-10-25 17:05'
 labels:
   - ci
   - workflow
@@ -61,11 +61,11 @@ Reference: https://github.com/Archont561/pixi-sandbox/issues/179, TASK-118/119/1
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Publish workflow bootstrap optimized: conda install pixi-sandbox replaced by curl + SHA256SUMS verification (or small standalone fetcher), preserving checksum verification and static linkage guarantee; time saved measured (10s per publish job, 32% overhead removed)
-- [ ] #2 Plan job optimized: either uses standalone binary via curl (no conda install) or static matrix rendering when `[workflow] static_matrix = true` – saves 1 billed minute per push, documented in ADR
+- [x] #1 Publish workflow bootstrap optimized: conda install pixi-sandbox replaced by curl + SHA256SUMS verification (or small standalone fetcher), preserving checksum verification and static linkage guarantee; time saved measured (10s per publish job, 32% overhead removed). **Shipped 2026-10-22 as `release_bootstrap()` in the generated workflow, ADR-30 and golden render with fake-download execution tests; the 10s/32% figure stays labelled historical TASK-118 context, not a new claim. Native 2026-10-25 timing of the identical primitive: consumer-proof run `40206748749` download+verify 2s, starter run `40206750498` download 1s + checksum 1s. Boundary named: the exact generated consumer YAML runs in `init` consumer repositories not observable from here; in-repo evidence is those native primitive runs plus the generator's red/green execution suite — see the 2026-10-25 plan-doc section.**
+- [x] #2 Plan job optimized: either uses standalone binary via curl (no conda install) or static matrix rendering when `[workflow] static_matrix = true` – saves 1 billed minute per push, documented in ADR. **The curl standalone option is what shipped: the golden render's plan job opens with "Fetch the pinned pixi-sandbox release" and contains no conda install. ADR-30 documents the deliberate rejection of static matrix rendering (the reviewed config stays authoritative per run) and explicitly withholds the one-billed-minute claim because a faster dynamic plan still occupies a VM that may round to the same minute — a position now backed structurally by the fact that this is a public repository with unmetered Actions minutes. Supporting timing: source-built planners run 24–47s across three consecutive main pushes vs the 152s pre-optimization baseline (TASK-127 ledger); no billed-minute saving is asserted.**
 - [x] #3 Default concurrency added to generated consumer publish workflow: prevents overlapping force-push contention, saves minutes on rapid merges; golden file updated, actionlint passes
-- [ ] #4 Path filtering added to ci.yml (optional via config) and already present in relock.yml (TASK-121) verified – docs-only PRs skip guard (1 min saved), hand-edited/deleted locks still caught
-- [ ] #5 Full verification: `pixi run --frozen fmt --check`, `lint`, `test`, `coverage`, `docs build`, `check-repository` (generated == render), `actionlint`, `consumer-proof`, real consumer runs (starter) show reduced billed minutes without weakening security (checksum, static) or correctness (stale lock detection)
+- [x] #4 Path filtering added to ci.yml (optional via config) and already present in relock.yml (TASK-121) verified – docs-only PRs skip guard (1 min saved), hand-edited/deleted locks still caught. **Native runner evidence 2026-10-25: docs-only PRs #212 (ci `40202531135`, 50s) and #213 (ci `40210180657`, 63s) skipped every Rust gate, the turbo cache and codecov while running the docs and xtask YAML gates; the contrasting code PR #211 (ci `40198959531`, 123s) ran all Rust gates plus the 113s MSRV and 94s Windows jobs. Lock safety holds: the relock guard fired on the `pixi.toml` change in run `40198959456` (17s), and no relock run exists for the markdown-only SHAs `c2644bd`/`ae535ed`/`22ed25f` — the TASK-121 allowlist still catches manifest/lock edits. The "optional via config" clause is resolved as designed in the 2026-10-22 notes: `ci.yml` is hand-maintained (no CI generator exists), the filter is repository policy with the `PIXI_SANDBOX_FULL_CI=true` escape hatch, and push events always run the full gate set per ADR-29, so no required check is ever left Pending.**
+- [x] #5 Full verification: `pixi run --frozen fmt --check`, `lint`, `test`, `coverage`, `docs build`, `check-repository` (generated == render), `actionlint`, `consumer-proof`, real consumer runs (starter) show reduced billed minutes without weakening security (checksum, static) or correctness (stale lock detection). **Green on current main across ci `40203617419`/`40205605597`/`40210681131` (1,277 tests; clippy, fmt, coverage and every xtask gate incl. generated==render); the cargo-deny advisories that blocked the 2026-10-22 lint were remediated by TASK-133. Native: release `40205607244` passed all five platforms including Windows (672s) and both macOS legs with conda smoke tests and the SHA256SUMS publication, and starter dispatch `40206750498` proved byte-identical regeneration plus a fresh-clone dev task. Consecutive-merge publisher wall times are stable (215s/201s/213s). The "reduced billed minutes" clause cannot be measured on a public repository with unmetered Actions minutes — recorded as structurally N/A in the plan doc rather than estimated, with the wall-time evidence the condition can actually be judged on.**
 <!-- AC:END -->
 
 ## Definition of Done
@@ -189,8 +189,14 @@ or billing claim; cold/warm CI, successful publisher and release/native evidence
 <!-- SECTION:SUMMARY:BEGIN -->
 Local TASK-126 implementation is in place with checksum-first standalone bootstrap, a cheaper
 runtime planner, safe CI step filtering and push-only docs artifacts. The dependency-policy/airlock repairs are included; the refreshed TLS graph requires connected
-CI verification because the offline vendor lacks the new sources. Task remains In Progress;
-no unmeasured billed-minute saving, release, live consumer lifecycle or native proof is claimed.
+CI verification because the offline vendor lacks the new sources. **2026-10-25 closure: the
+native evidence ADR-30 conditioned closure on is now recorded in the plan doc's 2026-10-25
+section — verified-bootstrap primitive runs (2s), docs-only vs code ci timings with skipped
+Rust gates, relock lock/manifest safety, five-platform release and starter proof, and stable
+consecutive-merge publisher timings. Billed-minute claims remain withheld by design: the
+repository is public and Actions minutes are unmetered, so wall time is the measured quantity
+and the historical 10s/32% figure stays labelled historical. All five ACs and the three DoD
+boxes now hold; TASK-126 moves to Done.**
 <!-- SECTION:SUMMARY:END -->
 
 ### 2026-10-22 — Runtime and release correctness evidence available
