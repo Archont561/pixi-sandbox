@@ -270,7 +270,9 @@ fn copy_and_verify(source: &Path, destination: &Path, expected_checksum: &str) -
     let mut output = File::create(destination)
         .with_context(|| format!("create mirror crate {}", destination.display()))?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
+    // Heap-backed: a 64 KiB stack array trips clippy::large_stack_arrays, matching the
+    // large-copy convention in pixi-sandbox-core's shard writer.
+    let mut buffer = vec![0u8; 64 * 1024];
     let mut total = 0u64;
     loop {
         let read = input
