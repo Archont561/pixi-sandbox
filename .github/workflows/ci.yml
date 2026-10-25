@@ -137,22 +137,16 @@ jobs:
       # local-registry mirror, including its cold negative control and ADR-33 measurement.
       - if: steps.changes.outputs.code != 'false'
         run: pixi run test-mirror-offline
-      # TEMPORARY TASK-137 diagnostics: log host is unreachable from the dev sandbox, so
-      # capture the compiler output as an artifact. Remove before the PR is merged.
-      - name: Capture clippy diagnostics
+      # TEMPORARY TASK-137 diagnostics: the log host and artifact blob host are unreachable
+      # from the dev sandbox, so surface rustc/clippy output as workflow annotations. Remove
+      # before the PR is merged.
+      - name: Emit rust diagnostics as annotations
         if: failure()
         continue-on-error: true
-        run: cargo clippy --workspace --all-targets -- -D warnings > /tmp/rust-diag.log 2>&1 || true
-      - name: Capture check diagnostics
-        if: failure()
-        continue-on-error: true
-        run: cargo check --workspace --all-targets --locked >> /tmp/rust-diag.log 2>&1 || true
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: rust-diag
-          path: /tmp/rust-diag.log
-          retention-days: 1
+        run: | # multiline-run-allowed
+          cargo check --workspace --all-targets --locked --message-format=json > /tmp/check.json 2>/dev/null || true
+          cargo clippy --workspace --all-targets --message-format=json -- -D warnings > /tmp/clippy.json 2>/dev/null || true
+          python3 -c 'import json; [print("::error " + ("file=" + s["file_name"] + ",line=" + str(s["line_start"]) + "," if s else "") + "title=rustc::" + m["message"]["message"]) for path in ("/tmp/check.json", "/tmp/clippy.json") for line in open(path) for m in [json.loads(line)] if m.get("reason") == "compiler-message" and m["message"].get("level") == "error" for s in [next((x for x in m["message"].get("spans", []) if x.get("is_primary")), None)]]'
       - if: steps.changes.outputs.code != 'false'
         run: pixi run coverage
       - if: steps.changes.outputs.code != 'false'
