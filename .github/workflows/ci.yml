@@ -133,6 +133,10 @@ jobs:
       # inside a network namespace; ignored locally because it needs egress plus unshare.
       - if: steps.changes.outputs.code != 'false'
         run: pixi run test-vendor-offline
+      # TASK-137 / ADR-34 spike: the same two-lockfile scenario through one shared Cargo
+      # local-registry mirror, including its cold negative control and ADR-33 measurement.
+      - if: steps.changes.outputs.code != 'false'
+        run: pixi run test-mirror-offline
       - if: steps.changes.outputs.code != 'false'
         run: pixi run coverage
       - if: steps.changes.outputs.code != 'false'

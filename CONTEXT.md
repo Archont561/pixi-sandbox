@@ -4157,3 +4157,103 @@ double-build a milestone tag. The resolver is fail-closed on malformed tags.
   operator typo (e.g. `milestone-vent`) is the worse failure. If version-less milestone tags are
   ever wanted, the work is a second explicit glob (e.g. `milestone-latest`) plus a resolver arm
   that returns `auto`, and a gate test that the two globs stay disjoint from `v*.*.*`.
+
+### 2026-10-25 — open proposal: a registry mirror transport instead of per-lock vendor trees (owner idea, not agreed)
+
+**The idea.** pixi-sandbox becomes the single place every language package manager resolves
+from: Cargo/pip/npm/conda talk to a pixi-sandbox-served registry that answers from a bundle
+published on a branch, so resolution works with egress denied. A survey bot replaces the relock
+bot: it notices newly declared dependencies repo-wide, downloads their closure on the connected
+side, appends them to the bundle and republishes; the owner then refreshes locks against the
+mirror from inside the airlock. Nothing here is implemented or approved.
+
+**Design review outcome (discussion, no decision):** the instinct matches the standard
+airlock pattern (pull-through registry mirror), but "proxy" has two shapes with very different
+costs, and the invariants select one:
+
+- *Active MITM/forward proxy* (intercept HTTPS to crates.io/PyPI/…): needs a custom root CA on
+  every consumer, per-tool proxy semantics, and a live daemon at restore time — conflicts with
+  invariant 6 (restore needs only embedded static binaries, no network) and expands the TCB.
+- *Static generated mirror* (recommended framing, "mirror transport", not proxy): the bundle is
+  itself a registry in the ecosystem's native offline layout — Cargo `local-registry`/sparse
+  index (static files), PEP 503 simple index / find-links for pip, local conda channel with
+  generated `repodata.json` for pixi, npm registry JSON + tarballs for bun. No daemon, no TLS,
+  no CA; consumed via path/`file://` or a localhost static server the sandbox binary itself can
+  serve. Distribution stays the ADR-1 git orphan branch; verify-before-write extends naturally
+  to a per-artifact hash oracle (hashes already exist in Cargo.lock/uv.lock/bun.lock/repodata).
+
+**What genuinely changes for the better.** ADR-33's per-`Cargo.lock` vendor trees (shared
+crates checked out and verified twice, by explicit decision) collapse into one read-only store
+N lockfiles draw from; lock refresh becomes possible fully offline because index metadata ships
+in the mirror; nested workspaces (TASK-129) keep native per-project locks with no per-project
+vendor mechanics.
+
+**Costs and traps named honestly.** (1) The connected solve does not disappear — the survey bot
+must still resolve the full transitive closure with egress to know what to download; the work
+moves from PR-time (today's relock, immediate feedback) to mirror-publish-time (async
+declare→republish→fetch→retry loop, worse conflict errors offline). (2) An offline solver can
+only choose versions the mirror contains, so mirror revision must be pinned per consumer or
+locks stay the authoritative closure, and a growth/GC policy is needed (append-only union vs
+prune-to-lock-closure). (3) One mirror serving all projects is a bigger blast radius than
+per-bundle transports and amends ADR-32's branch topology (cargo crates are platform-independent;
+conda packages split into platform subdirs naturally). (4) Each ecosystem is its own layout
+generator — start with Cargo, where ADR-6/ADR-33 already prove the offline build and the
+deny-egress `test-vendor-offline` gate gives a ready harness; conda local-channel is the largest
+move because it shifts solving itself into the airlock.
+
+**Suggested first step if pursued:** ADR draft plus a Cargo-only spike — one `local-registry`
+mirror branch, two lockfiles consuming it, `cargo build --offline` green under
+`xtask deny-egress`, measured against ADR-33's checkout/verify cost — before any bot or second
+ecosystem. Relock stays in place until parity is proven. Open questions for the owner: primary
+driver (nested duplication vs offline lock refresh vs multi-language), scope (this repo vs
+`init` consumers too), mirror topology (global per-ecosystem vs per-bundle), retention policy.
+
+**Ecosystem expansion (owner follow-up: Maven/Java, NuGet/C#, C/C++, R, …).** The mirror model
+generalizes because nearly every language registry is publishable as a static file tree; the
+work is an adapter seam, not new infrastructure. Each adapter must implement four pieces:
+connected-side closure resolver, static layout writer, offline client-config writer, and a
+verification-oracle source. A second architectural line keeps the problem tractable: **mirrors
+carry libraries; the existing pixi/conda prefix transports carry toolchains** (JDK, .NET SDK,
+compilers, R interpreter) — no registry mirror redistributes a compiler toolset.
+
+- *Maven/Java*: repositories are static Maven-layout trees (`g/a/v/a-v.pom|.jar` +
+  `maven-metadata.xml`); mirror via `file://`/HTTP with `<mirrorOf>*</mirrorOf>` in
+  settings.xml, Gradle via a directory repository and `--offline`. Trap: snapshot coordinates are
+  mutable — refuse snapshots or pin timestamped ones. Lock/verification is weak in classic Maven
+  (no first-class lockfile; `.sha1` sidecars only), strong with Gradle
+  `dependency-verification-metadata.xml`; otherwise the transport manifest's hash oracle is the
+  integrity root. JARs are platform-independent — one mirror serves all OS/arch.
+- *NuGet/C#*: best-supported of the JVM/.NET pair. A v3 feed is static flat-container JSON plus
+  `.nupkg` files; local folder feeds are first-class (`nuget sources add`), `packages.lock.json`
+  + `--locked-mode` pins SHA-512 hashes. SDK/runtime stays a conda/toolchain concern, not a feed
+  concern.
+- *C/C++*: deliberately the hardest. Conan solves client-side but binaries key on a settings
+  matrix (compiler/version/arch/runtime/build type) so closures explode combinatorially; the
+  airgap-native mechanism is `conan cache save/restore` bundles, not a live remote. vcpkg is
+  already git-shaped (ports tree + version baseline + folder binary cache), so it aligns with
+  the ADR-1 git-transport philosophy via overlay registries. System-style native libs are better
+  routed through the conda-forge local channel than reinvented. CMake FetchContent/git submodule
+  deps have no registry and need an explicit generic-blob declaration. Compilers (notably MSVC,
+  redistribution-licensed) stay outside every mirror.
+- *R*: CRAN is a static tree (`src/contrib/PACKAGES` + tarballs, per-R-version binary subdirs);
+  `miniCRAN`/`drat` exist precisely to build partial mirrors and `install.packages(repos=…)`
+  consumes them offline; `renv.lock` pins versions/sources but not content hashes, so the
+  manifest oracle again carries integrity. Bioconductor is the same layout under a second tree.
+  Pure R packages mirror cleanly; packages with native system deps (sf, Rcpp-backed) are better
+  served by conda-forge `r-*` packages in the channel mirror.
+- *Cross-cutting*: weak-lock ecosystems (Maven classic, R, C/C++) are exactly where this
+  project's uniform verify-before-write oracle is a differentiator — integrity no longer depends
+  on each ecosystem having invented lockfile hashes. License/redistribution and private-feed
+  credentials for the connected-side survey bot need a policy before any adapter is built.
+  Suggested ordering by offline-layout maturity times lock strength: NuGet and Maven (release
+  coords only) before R, C/C++ last and mostly via conda; the Cargo spike still validates the
+  adapter seam that every later ecosystem plugs into.
+
+**2026-10-25 follow-up — the Cargo half is now a spike, not just a proposal.** TASK-137 /
+ADR-34 (`status: experimental`) prototype the mirror direction for Cargo: `src/mirror.rs`
+builds a local-registry layout from the union of several `Cargo.lock` files (each
+`(name, version)` copied once and checksum-verified against the lock), and the ignored
+`test-mirror-offline` gate builds two projects offline under `unshare -n` against one shared
+mirror with a cold negative control and an ADR-33 byte comparison. No CLI, schema, pack or
+restore wiring exists; ADR-6/ADR-33 stay in force unless a later accepted ADR promotes the
+spike. The multi-ecosystem adapter notes above remain design input for m-2/TASK-130.
