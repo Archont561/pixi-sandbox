@@ -84,3 +84,76 @@ Additional final validation:
 Successful post-change CI/publisher runs, controlled cold/warm/invalidation scenarios, real native
 proofs and billed-minute comparisons remain open. Do not claim measured savings from warm local
 checks versus cold GitHub runners or compare a failed publisher to a successful one.
+
+## 2026-10-25 — native evidence and closure (v0.9.0 era)
+
+ADR-30 names the close-out conditions: native consumer runs, the complete online consumer
+lifecycle, and before/after timing evidence for docs-only PRs, manifest PRs and consecutive merges.
+All three are now observable on native runners. The repository is public, so Actions minutes are
+not metered — billed-minute comparisons are structurally N/A, and the ADR-30 position ("no
+automatic one-minute saving is claimed") stands rather than being reversed.
+
+### 1. Verified standalone bootstrap on native runners (AC#1)
+
+The generator's `release_bootstrap()` (curl over HTTPS-only, OS/arch case from `Platform`,
+`SHA256SUMS` extraction with duplicate/malformed-entry refusal, `sha256sum`/`shasum` fallback,
+chmod and PATH registration) shipped with ADR-30, the golden fixture and fake-download execution
+tests. Native executions of the identical download-and-checksum primitive:
+
+| Run | Step | Wall time |
+| --- | --- | ---: |
+| [consumer-proof 40206748749](https://github.com/Archont561/pixi-sandbox/actions/runs/40206748749) | Download and verify standalone release asset | 2s (7s job) |
+| [starter 40206750498](https://github.com/Archont561/pixi-sandbox/actions/runs/40206750498) | Download the released binary + verify against SHA256SUMS | 1s + 1s |
+| [airlock 40208159519](https://github.com/Archont561/pixi-sandbox/actions/runs/40208159519) | Download the static released binary to embed | 96s |
+
+The airlock row is a different shape: a tag-keyed self-bin cache whose first fetch for a new tag
+misses (96s) and whose later runs restore from cache — not a bootstrap regression and not compared
+against the 2s rows. The historical "before" stays TASK-118's recorded ~10s conda-install
+overhead (32% of a 31s publish job): historical context, not a newly measured saving. Observable
+boundary, stated plainly: the exact generated consumer YAML executes in `init` consumer
+repositories that are not visible from here; in-repo coverage is the native primitive runs above
+plus the generator's ten-case fake-download execution suite.
+
+### 2. Plan job on the standalone binary, dynamic matrix retained (AC#2)
+
+The golden render (`fixtures/generated/publish-sandbox.yml`) shows all three jobs — plan, publish,
+upgrade — opening with "Fetch the pinned pixi-sandbox release"; the plan job contains no
+conda install. The dynamic-matrix decision and its billing caveat are documented in ADR-30
+("a faster dynamic plan still consumes a VM and may still round to the same billed minute"), and
+the static-matrix alternative is deliberately rejected there so the reviewed config stays
+authoritative. Supporting current-revision timing for planning work: this repository's
+source-built planner runs at 24s / 34s / 47s across three consecutive main pushes
+(`40144875662`, `40199680995`, `40205605553`) against the 152s pre-optimization baseline recorded
+in the TASK-127 ledger — a build-profile and rust-cache effect, not a consumer-billing claim.
+
+### 3. Docs-only, code and manifest PRs on real runners (AC#4)
+
+| PR / run | Diff class | ci span | Rust gates | Docs/xtask gates | Extra jobs |
+| --- | --- | ---: | --- | --- | --- |
+| [#212 / 40202531135](https://github.com/Archont561/pixi-sandbox/actions/runs/40202531135) | backlog markdown | 50s | all skipped | ran | MSRV/Windows skipped |
+| [#213 / 40210180657](https://github.com/Archont561/pixi-sandbox/actions/runs/40210180657) | backlog markdown | 63s | all skipped | ran | MSRV/Windows skipped |
+| [#211 / 40198959531](https://github.com/Archont561/pixi-sandbox/actions/runs/40198959531) | Rust code | 123s | all ran (1,277 tests) | docs-only steps skipped | MSRV 113s, Windows 94s ran |
+
+Lock/manifest safety: the relock guard fired on the `pixi.toml`-touching PR run
+[40198959456](https://github.com/Archont561/pixi-sandbox/actions/runs/40198959456) (17s guard,
+no relock needed), while no relock run exists for the markdown-only SHAs `c2644bd`, `ae535ed` or
+`22ed25f` — the TASK-121 allowlist still schedules on manifests and lockfiles and nothing else.
+The filter remains repository policy in the hand-maintained `ci.yml` (there is no CI-workflow
+generator to carry a config flag), with the `PIXI_SANDBOX_FULL_CI=true` escape hatch and full
+gates on every push event, so main integration is never filtered.
+
+### 4. Full verification and consecutive merges (AC#5)
+
+- fmt, workspace clippy, the 1,277-test suite, coverage and every xtask gate are green on current
+  main (ci `40203617419`, `40205605597`, `40210681131`); the cargo-deny advisories that blocked
+  the 2026-10-22 lint were remediated under TASK-133.
+- Native five-platform release `40205607244` is green end to end, including the Windows
+  `x86_64-pc-windows-msvc` leg (672s), both macOS legs (740s / 508s) and the per-platform conda
+  smoke tests; the starter dispatch `40206750498` proves byte-identical regeneration and a fresh
+  clone's dev task.
+- Consecutive merge stability, publish job wall time on `ded3bd62` → `823a4b84` → `603166a4`:
+  215s / 201s / 213s; planner spans in the same series: 24s / 34s / 47s. No billing comparison is
+  attached because, again, the public repository has no metered Actions minutes.
+
+No release, dispatch or protection change was performed to collect this evidence; every run cited
+belongs to sanctioned release-week work or ordinary pull-request activity.
