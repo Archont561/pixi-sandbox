@@ -208,14 +208,21 @@ fn two_lockfiles_share_one_local_registry_and_build_offline() {
 
     let root_build = run_egress_denied(
         &cargo,
-        ["build".to_string(), "--offline".to_string(), "--locked".to_string()],
+        [
+            "build".to_string(),
+            "--offline".to_string(),
+            "--locked".to_string(),
+        ],
         &repo,
         &home,
         &temporary_dir,
         &runtime_cache,
         Some(mirror_home.clone()),
     );
-    assert_success(&root_build, "root cargo build --offline against the shared mirror");
+    assert_success(
+        &root_build,
+        "root cargo build --offline against the shared mirror",
+    );
     let root_run = run_egress_denied(
         &repo.join("target/debug/mirror-root"),
         &[],
@@ -315,8 +322,7 @@ fn two_lockfiles_share_one_local_registry_and_build_offline() {
     );
 }
 
-const ROOT_MAIN: &str =
-    "fn main() {\n    let entries = walkdir::WalkDir::new(\".\").into_iter().count();\n    \
+const ROOT_MAIN: &str = "fn main() {\n    let entries = walkdir::WalkDir::new(\".\").into_iter().count();\n    \
      println!(\"root: walked {entries}\");\n}\n";
 const SUBPROJECT_MAIN: &str = "fn main() {\n    let at = memchr::memchr(b'x', b\"pixox\");\n    let \
                               manifest = same_file::is_file(\"Cargo.toml\");\n    println!(\"sub: \

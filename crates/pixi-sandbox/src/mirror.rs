@@ -94,9 +94,8 @@ pub fn build_local_registry(
             out_dir.display()
         );
     }
-    fs::create_dir_all(&index_root).with_context(|| {
-        format!("create mirror index directory {}", index_root.display())
-    })?;
+    fs::create_dir_all(&index_root)
+        .with_context(|| format!("create mirror index directory {}", index_root.display()))?;
 
     let mut per_lock: Vec<(String, usize)> = Vec::new();
     let mut all_packages: Vec<RegistryPackage> = Vec::new();
@@ -138,8 +137,11 @@ pub fn build_local_registry(
     let config_home = cargo_home_in(out_dir);
     fs::create_dir_all(&config_home)
         .with_context(|| format!("create mirror cargo home {}", config_home.display()))?;
-    fs::write(config_home.join("config.toml"), render_cargo_config(out_dir)?)
-        .context("write mirror source-replacement config")?;
+    fs::write(
+        config_home.join("config.toml"),
+        render_cargo_config(out_dir)?,
+    )
+    .context("write mirror source-replacement config")?;
 
     Ok(MirrorReport {
         projects: projects.len(),
@@ -262,8 +264,8 @@ fn find_cached_crate(cargo_home: &Path, name: &str, version: &str) -> Result<Pat
 
 /// Copy a `.crate` into the mirror while hashing it, refusing anything the lock does not attest.
 fn copy_and_verify(source: &Path, destination: &Path, expected_checksum: &str) -> Result<u64> {
-    let mut input = File::open(source)
-        .with_context(|| format!("open cached crate {}", source.display()))?;
+    let mut input =
+        File::open(source).with_context(|| format!("open cached crate {}", source.display()))?;
     let mut output = File::create(destination)
         .with_context(|| format!("create mirror crate {}", destination.display()))?;
     let mut hasher = Sha256::new();
@@ -304,12 +306,11 @@ fn crate_manifest(crate_path: &Path) -> Result<Value> {
         let path = entry.path()?;
         if path.file_name().is_some_and(|name| name == "Cargo.toml") {
             let mut text = String::new();
-            entry.read_to_string(&mut text).with_context(|| {
-                format!("read Cargo.toml inside {}", crate_path.display())
-            })?;
-            return toml::from_str(&text).with_context(|| {
-                format!("parse Cargo.toml inside {}", crate_path.display())
-            });
+            entry
+                .read_to_string(&mut text)
+                .with_context(|| format!("read Cargo.toml inside {}", crate_path.display()))?;
+            return toml::from_str(&text)
+                .with_context(|| format!("parse Cargo.toml inside {}", crate_path.display()));
         }
     }
     bail!("{} contains no Cargo.toml", crate_path.display())
@@ -396,10 +397,7 @@ fn dep_object(
                 .get("package")
                 .and_then(Value::as_str)
                 .unwrap_or(alias);
-            let requirement = table
-                .get("version")
-                .and_then(Value::as_str)
-                .unwrap_or("*");
+            let requirement = table.get("version").and_then(Value::as_str).unwrap_or("*");
             let features = table
                 .get("features")
                 .and_then(Value::as_array)
