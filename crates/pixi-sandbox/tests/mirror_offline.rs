@@ -104,14 +104,14 @@ fn two_lockfiles_share_one_local_registry_and_build_offline() {
     // copies are actually in the isolated CARGO_HOME cache.
     for project in [&repo, &repo.join("subproject")] {
         assert_success(
-            cargo_command(&cargo, project, &fetch_home, &home, &temporary_dir)
+            &cargo_command(&cargo, project, &fetch_home, &home, &temporary_dir)
                 .args(["generate-lockfile"])
                 .output()
                 .expect("run cargo generate-lockfile"),
             "connected cargo generate-lockfile",
         );
         assert_success(
-            cargo_command(&cargo, project, &fetch_home, &home, &temporary_dir)
+            &cargo_command(&cargo, project, &fetch_home, &home, &temporary_dir)
                 .args(["fetch"])
                 .output()
                 .expect("run cargo fetch"),
@@ -121,7 +121,7 @@ fn two_lockfiles_share_one_local_registry_and_build_offline() {
 
     // The ADR-33 baseline for the measurement block: one vendor tree per lockfile.
     assert_success(
-        cargo_command(&cargo, &repo, &fetch_home, &home, &temporary_dir)
+        &cargo_command(&cargo, &repo, &fetch_home, &home, &temporary_dir)
             .args(["vendor"])
             .arg(&vendor_root)
             .output()
@@ -129,7 +129,7 @@ fn two_lockfiles_share_one_local_registry_and_build_offline() {
         "root cargo vendor baseline",
     );
     assert_success(
-        cargo_command(
+        &cargo_command(
             &cargo,
             &repo.join("subproject"),
             &fetch_home,
@@ -208,7 +208,7 @@ fn two_lockfiles_share_one_local_registry_and_build_offline() {
 
     let root_build = run_egress_denied(
         &cargo,
-        [
+        &[
             "build".to_string(),
             "--offline".to_string(),
             "--locked".to_string(),
@@ -241,7 +241,7 @@ fn two_lockfiles_share_one_local_registry_and_build_offline() {
 
     let sub_build = run_egress_denied(
         &cargo,
-        [
+        &[
             "build".to_string(),
             "--offline".to_string(),
             "--locked".to_string(),
@@ -303,7 +303,7 @@ fn two_lockfiles_share_one_local_registry_and_build_offline() {
     .expect("carry only the source-replacement config into the cold home");
     let cold = run_egress_denied(
         &cargo,
-        [
+        &[
             "build".to_string(),
             "--offline".to_string(),
             "--locked".to_string(),
