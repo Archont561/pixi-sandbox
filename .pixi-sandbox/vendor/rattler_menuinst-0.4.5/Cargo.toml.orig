@@ -1,0 +1,52 @@
+[package]
+exclude = ["**/snapshots/**", "test-data/**"]
+name = "rattler_menuinst"
+version = "0.4.5"
+edition.workspace = true
+authors = ["Wolf Vollprecht <w.vollprecht@gmail.com>"]
+description = "Install menu entries for a Conda package"
+categories.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[dependencies]
+dirs = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+rattler_conda_types = { workspace = true, default-features = false }
+rattler_shell = { workspace = true, default-features = false }
+thiserror = { workspace = true }
+unicode-normalization = { workspace = true }
+regex = { workspace = true }
+tempfile = { workspace = true }
+fs-err = { workspace = true }
+which = { workspace = true }
+once_cell = { workspace = true }
+indexmap = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+plist = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+quick-xml = "0.41"
+configparser = { version = "3" }
+shlex = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+known-folders = "1"
+windows = { version = "0.62", features = [
+    "Win32_System_Com_StructuredStorage",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_Storage_EnhancedStorage",
+    "Win32_System_Variant",
+] }
+windows-registry = "0.6"
+
+[dev-dependencies]
+insta = { workspace = true, features = ["json"] }
+configparser = { version = "=3.2.0", features = ["indexmap"] }

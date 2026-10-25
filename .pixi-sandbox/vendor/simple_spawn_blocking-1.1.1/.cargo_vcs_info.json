@@ -1,0 +1,6 @@
+{
+  "git": {
+    "sha1": "4ce86256da9e385b4b53b18a799ee985ba041b8f"
+  },
+  "path_in_vcs": "crates/simple_spawn_blocking"
+}
