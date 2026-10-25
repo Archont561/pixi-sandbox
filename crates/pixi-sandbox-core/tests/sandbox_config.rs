@@ -823,12 +823,12 @@ manifest = "subproject/pixi.toml"
     }
 
     #[test]
-    fn a_nested_rust_workspace_is_refused_and_points_at_task_131() {
+    fn a_nested_rust_workspace_with_its_own_cargo_lock_is_accepted() {
+        // TASK-131: one transport now carries one vendor tree per workspace, so the lock that
+        // used to be a hard refusal is simply input for the nested vendor step.
         let dir = repo(&[("subproject/pixi.toml", true)]);
         fs::write(dir.path().join("subproject/Cargo.lock"), "").unwrap();
-        let message = SandboxConfig::load(&write_config(dir.path(), DECLARED))
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("TASK-131"), "{message}");
+        SandboxConfig::load(&write_config(dir.path(), DECLARED))
+            .expect("a nested Cargo.lock is vendorable, not a validation failure");
     }
 }

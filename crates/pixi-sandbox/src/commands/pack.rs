@@ -16,13 +16,13 @@ use pixi_sandbox::vendor::{VendorInfo, VendorMode, validate_vendorable_lockfile,
 use pixi_sandbox_core::host_requirements::HostRequirementSet;
 use pixi_sandbox_core::manifest::{
     Env, MANIFEST_DIR, MANIFEST_FILE, Manifest, SCHEMA_VERSION, Source, ToolEntry, ToolInfo,
-    Vendor, WorkspaceEntry, WorkspaceRef,
+    Vendor, WorkspaceEntry, WorkspaceRef, WorkspaceVendor,
 };
 use pixi_sandbox_core::sandbox_config::SandboxConfig;
 use pixi_sandbox_core::shard;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const TOOL_NAME: &str = env!("CARGO_PKG_NAME");
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -74,6 +74,7 @@ struct PackedArtifacts {
     envs: BTreeMap<String, Env>,
     tools: BTreeMap<String, ToolEntry>,
     vendor: Option<Vendor>,
+    workspace_vendors: Vec<WorkspaceVendor>,
     vendor_info: Option<VendorInfo>,
 }
 
@@ -91,16 +92,6 @@ impl PackPlan {
             args.shard_limit_mib,
         )?;
 
-        // Before anything is created: a lockfile cargo cannot vendor is a property of the
-        // project, not of this run, and it is the one `--cargo-vendor` failure an operator
-        // cannot act on without being told what to change (doc-2 §11). Detecting it here
-        // rather than inside the vendor step means a refused pack leaves no output directory
-        // behind — otherwise the next attempt fails on the stale-transport guard and the real
-        // error is one run in the dark.
-        if args.cargo_vendor {
-            validate_vendorable_lockfile(&root)?;
-        }
-
         // Loaded once, before any preflight that depends on it: the config resolves which
         // project root each `--envs` id belongs to, and (when it declares one) the host
         // requirements the manifest will carry.
@@ -114,6 +105,31 @@ impl PackPlan {
             })
             .transpose()?;
         let targets = resolve_targets(&root, &args.envs, config.as_ref())?;
+
+        if args.cargo_vendor {
+            // Before anything is created: a lockfile cargo cannot vendor is a property of the
+            // project, not of this run, and it is the one `--cargo-vendor` failure an operator
+            // cannot act on without being told what to change (doc-2 §11). The root and every
+            // selected workspace are checked independently — one transport now carries one tree
+            // per project with its own Cargo.lock (TASK-131) — and a project without a lock is
+            // simply not vendored. A run with no lock anywhere is the old refusal, named.
+            let roots = Self::vendorable_roots(&root, &targets);
+            let with_locks = roots
+                .iter()
+                .filter(|project_root| project_root.join("Cargo.lock").is_file())
+                .collect::<Vec<_>>();
+            if with_locks.is_empty() {
+                let searched = roots
+                    .iter()
+                    .map(|project_root| project_root.join("Cargo.lock").display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                bail!("--cargo-vendor needs a Cargo.lock, but none exists at: {searched}");
+            }
+            for project_root in with_locks {
+                validate_vendorable_lockfile(project_root)?;
+            }
+        }
 
         for target in &targets {
             // Issue #157: a non-wheel PyPI dependency cannot be carried by the native writer.
@@ -171,27 +187,83 @@ impl PackPlan {
 
         self.embed_self_bin(&mut entries)?;
 
-        let (vendor, vendor_info) = if self.args.cargo_vendor {
+        let (vendor, workspace_vendors, vendor_info) = if self.args.cargo_vendor {
             println!("vendor cargo dependencies");
-            vendor_tree(
-                &self.root,
-                &self.out,
-                &self.payload,
-                match self.args.cargo_vendor_mode {
-                    VendorModeArg::Loose => VendorMode::Loose,
-                    VendorModeArg::Tarballs => VendorMode::Tarballs,
-                },
-            )?
+            self.vendor_cargo_trees(match self.args.cargo_vendor_mode {
+                VendorModeArg::Loose => VendorMode::Loose,
+                VendorModeArg::Tarballs => VendorMode::Tarballs,
+            })?
         } else {
-            (None, None)
+            (None, Vec::new(), None)
         };
 
         Ok(PackedArtifacts {
             envs,
             tools: entries,
             vendor,
+            workspace_vendors,
             vendor_info,
         })
+    }
+
+    /// Distinct project roots a `--cargo-vendor` run may vendor: the repository root first,
+    /// then each nested workspace in first-seen order, de-duplicated so a workspace with
+    /// several selected environments is still preflighted once.
+    fn vendorable_roots(repo_root: &Path, targets: &[PackTarget]) -> Vec<PathBuf> {
+        let mut roots = vec![repo_root.to_path_buf()];
+        for target in targets {
+            if target.workspace.is_some() && !roots.iter().any(|root| root == &target.root) {
+                roots.push(target.root.clone());
+            }
+        }
+        roots
+    }
+
+    /// Vendor every project root that carries a `Cargo.lock`, each into its own qualified
+    /// payload directory. The root keeps `vendor/`; a workspace lands under
+    /// `vendor/workspaces/<slug>/`, matching the env convention `envs/workspaces/<slug>/`.
+    /// Toolchain provenance is recorded once: the same cargo/rustc builds every tree.
+    fn vendor_cargo_trees(
+        &self,
+        mode: VendorMode,
+    ) -> Result<(Option<Vendor>, Vec<WorkspaceVendor>, Option<VendorInfo>)> {
+        let mut vendor_info = None;
+        let root_vendor = if self.root.join("Cargo.lock").is_file() {
+            let (vendor, info) = vendor_tree(
+                &self.root,
+                &self.out,
+                &self.payload,
+                Path::new("vendor"),
+                mode,
+            )?;
+            vendor_info = info;
+            vendor
+        } else {
+            None
+        };
+
+        let mut workspace_vendors = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        for target in &self.targets {
+            let Some(workspace) = &target.workspace else {
+                continue;
+            };
+            if !seen.insert(workspace.slug.clone()) || !target.root.join("Cargo.lock").is_file() {
+                continue;
+            }
+            let vendor_rel = PathBuf::from("vendor/workspaces").join(&workspace.slug);
+            println!("vendor cargo dependencies: workspace {}", workspace.slug);
+            let (vendor, info) =
+                vendor_tree(&target.root, &self.out, &self.payload, &vendor_rel, mode)?;
+            vendor_info = vendor_info.or(info);
+            workspace_vendors.push(WorkspaceVendor {
+                slug: workspace.slug.clone(),
+                manifest: workspace.manifest.clone(),
+                directory: workspace.directory.clone(),
+                vendor: vendor.context("cargo vendor produced no tree")?,
+            });
+        }
+        Ok((root_vendor, workspace_vendors, vendor_info))
     }
 
     /// Pack locked artifacts with the native writer, then install a scratch copy to record
@@ -406,6 +478,7 @@ impl PackPlan {
             mut envs,
             tools,
             mut vendor,
+            mut workspace_vendors,
             vendor_info,
         } = artifacts;
 
@@ -420,11 +493,20 @@ impl PackPlan {
                 .with_context(|| format!("env {id}: pack path outside {MANIFEST_DIR}"))?
                 .trim_start_matches('/');
             let root = self.payload.join(relative);
-            environment.blobs = record_tree(&self.payload, &root, self.shard_limit)?;
+            environment.blobs = record_tree(&self.payload, &root, self.shard_limit, None)?;
         }
         if let Some(vendor) = &mut vendor {
             let root = self.payload.join("vendor");
-            vendor.blobs = record_tree(&self.payload, &root, self.shard_limit)?;
+            // Nested trees live under vendor/workspaces/ and carry their own blob lists, so
+            // the root walk must not claim their files for the root Vendor.
+            let nested = self.payload.join("vendor/workspaces");
+            vendor.blobs = record_tree(&self.payload, &root, self.shard_limit, Some(&nested))?;
+        }
+        for tree in &mut workspace_vendors {
+            // The same relative layout the producer wrote, so blob paths stay anchored at the
+            // payload root and pass the manifest's `vendor/workspaces/<slug>/` prefix rule.
+            let root = self.payload.join("vendor/workspaces").join(&tree.slug);
+            tree.vendor.blobs = record_tree(&self.payload, &root, self.shard_limit, None)?;
         }
 
         let manifest = Manifest {
@@ -444,8 +526,7 @@ impl PackPlan {
             envs,
             workspaces: self.workspace_entries(),
             vendor,
-            // TASK-131 slice 2 fans the vendor step out per workspace and fills this in.
-            workspace_vendors: Vec::new(),
+            workspace_vendors,
             host_requirements: self.host_requirements.clone(),
         };
         manifest.validate()?;

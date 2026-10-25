@@ -373,13 +373,22 @@ pub fn build_files_oracle(
 /// # Errors
 ///
 /// Returns an error if the payload tree cannot be walked or a file cannot be recorded.
+/// Record every file under `root` as a shard-aware blob, skipping `excluded` and everything
+/// beneath it when given. The root vendor tree passes its `workspaces/` subtree here so a
+/// per-workspace tree's files are never recorded twice under two owners (TASK-131).
 pub fn record_tree(
     payload: &Path,
     root: &Path,
     shard_limit: u64,
+    excluded: Option<&Path>,
 ) -> Result<Vec<pixi_sandbox_core::manifest::Blob>> {
     let mut blobs = Vec::new();
     for path in shard::files_under(root)? {
+        if let Some(excluded) = excluded
+            && path.starts_with(excluded)
+        {
+            continue;
+        }
         let relative = path
             .strip_prefix(payload)
             .with_context(|| format!("{} is outside {}", path.display(), payload.display()))?

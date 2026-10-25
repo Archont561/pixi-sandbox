@@ -83,6 +83,7 @@ fn a_loose_vendor_tree_preserves_the_reference_bytes(
         &fixture.project,
         &out,
         &payload,
+        std::path::Path::new("vendor"),
         pixi_sandbox::vendor::VendorMode::Loose,
         &vendor_fixture.toolchain,
     )
@@ -143,6 +144,117 @@ fn vendor_fixture() -> VendorFixture {
 
 #[cfg(unix)]
 #[rstest]
+fn a_workspace_vendor_tree_lands_in_the_qualified_directory(
+    vendor_fixture: VendorFixture,
+    pack_reference: std::path::PathBuf,
+) {
+    let fixture = vendor_fixture.pack;
+    let out = fixture.home.path().join("out");
+    let payload = out.join(".pixi-sandbox");
+    let (vendor, _) = pixi_sandbox::vendor::vendor_tree_with_toolchain(
+        &fixture.project,
+        &out,
+        &payload,
+        std::path::Path::new("vendor/workspaces/subproject"),
+        pixi_sandbox::vendor::VendorMode::Loose,
+        &vendor_fixture.toolchain,
+    )
+    .unwrap();
+    let vendor = vendor.unwrap();
+    let qualified = payload.join("vendor/workspaces/subproject");
+    let expected = pack_reference.join("linux-loose/.pixi-sandbox/vendor");
+    assert_eq!(
+        support::file_tree(&qualified),
+        support::file_tree(&expected),
+        "the canned tree lands byte-identical under the workspace-qualified directory"
+    );
+    assert_eq!(
+        vendor.directory.as_deref(),
+        Some(".pixi-sandbox/vendor/workspaces/subproject")
+    );
+    assert_eq!(vendor.mode, "loose");
+    assert_eq!(vendor.crates, 1);
+    assert!(
+        vendor.blobs.is_empty(),
+        "the pack coordinator records blobs afterwards, per tree"
+    );
+    assert!(
+        !payload.join("vendor/demo-dep-1.0.0").exists(),
+        "a workspace tree must not materialise at the root tree's crate path"
+    );
+}
+
+#[cfg(unix)]
+#[rstest]
+fn root_and_workspace_trees_coexist_in_one_payload(vendor_fixture: VendorFixture) {
+    // The shared-crate case from the plan: the same crate rides twice, once per lockfile, so
+    // each project restores a complete, independently verifiable tree.
+    let fixture = vendor_fixture.pack;
+    let out = fixture.home.path().join("out");
+    let payload = out.join(".pixi-sandbox");
+    let (root, _) = pixi_sandbox::vendor::vendor_tree_with_toolchain(
+        &fixture.project,
+        &out,
+        &payload,
+        std::path::Path::new("vendor"),
+        pixi_sandbox::vendor::VendorMode::Loose,
+        &vendor_fixture.toolchain,
+    )
+    .unwrap();
+    let (nested, _) = pixi_sandbox::vendor::vendor_tree_with_toolchain(
+        &fixture.project,
+        &out,
+        &payload,
+        std::path::Path::new("vendor/workspaces/subproject"),
+        pixi_sandbox::vendor::VendorMode::Loose,
+        &vendor_fixture.toolchain,
+    )
+    .unwrap();
+    assert!(root.is_some());
+    assert!(nested.is_some());
+    assert!(payload.join("vendor/demo-dep-1.0.0/Cargo.toml").is_file());
+    assert!(
+        payload
+            .join("vendor/workspaces/subproject/demo-dep-1.0.0/Cargo.toml")
+            .is_file()
+    );
+}
+
+#[cfg(unix)]
+#[rstest]
+fn a_workspace_tarball_tree_uses_its_own_scratch_dir_and_cleans_it(vendor_fixture: VendorFixture) {
+    let fixture = vendor_fixture.pack;
+    let out = fixture.home.path().join("out");
+    let payload = out.join(".pixi-sandbox");
+    let (vendor, _) = pixi_sandbox::vendor::vendor_tree_with_toolchain(
+        &fixture.project,
+        &out,
+        &payload,
+        std::path::Path::new("vendor/workspaces/subproject"),
+        pixi_sandbox::vendor::VendorMode::Tarballs,
+        &vendor_fixture.toolchain,
+    )
+    .unwrap();
+    let vendor = vendor.unwrap();
+    assert_eq!(vendor.mode, "tarballs");
+    assert!(
+        payload
+            .join("vendor/workspaces/subproject/demo-dep-1.0.0.tar")
+            .is_file()
+    );
+    assert!(
+        !out.join(".cargo-vendor-tmp-vendor-workspaces-subproject")
+            .exists(),
+        "the per-tree scratch directory is removed on success"
+    );
+    assert!(
+        !out.join(".cargo-vendor-tmp").exists(),
+        "the root scratch name is never touched by a workspace tree"
+    );
+}
+
+#[cfg(unix)]
+#[rstest]
 fn tarballs_keep_each_crates_reference_bytes_and_remove_scratch(
     vendor_fixture: VendorFixture,
     pack_reference: std::path::PathBuf,
@@ -155,6 +267,7 @@ fn tarballs_keep_each_crates_reference_bytes_and_remove_scratch(
         &fixture.project,
         &out,
         &payload,
+        std::path::Path::new("vendor"),
         pixi_sandbox::vendor::VendorMode::Tarballs,
         &vendor_fixture.toolchain,
     )
@@ -196,6 +309,7 @@ fn a_collision_is_refused_before_the_vendor_tree_is_created(vendor_fixture: Vend
         &fixture.project,
         &out,
         &out.join(".pixi-sandbox"),
+        std::path::Path::new("vendor"),
         pixi_sandbox::vendor::VendorMode::Loose,
         &vendor_fixture.toolchain,
     )
@@ -220,6 +334,7 @@ fn cargo_producing_no_crates_is_a_failure(vendor_fixture: VendorFixture) {
         &fixture.project,
         &out,
         &out.join(".pixi-sandbox"),
+        std::path::Path::new("vendor"),
         pixi_sandbox::vendor::VendorMode::Loose,
         &vendor_fixture.toolchain,
     )
@@ -253,6 +368,7 @@ fn unavailable_version_reporting_keeps_the_honest_unknown_label(
         &fixture.project,
         &out,
         &out.join(".pixi-sandbox"),
+        std::path::Path::new("vendor"),
         pixi_sandbox::vendor::VendorMode::Loose,
         &vendor_fixture.toolchain,
     )

@@ -732,8 +732,9 @@ impl SandboxConfig {
     /// later, on the connected runner, after the root environments had already been packed.
     ///
     /// # Errors
-    /// Returns an error when a declared manifest is missing, has no `pixi.lock`, or sits in a
-    /// nested Rust workspace that carries its own `Cargo.lock` (TASK-131 covers carrying those).
+    /// Returns an error when a declared manifest is missing or has no `pixi.lock` beside it.
+    /// A nested `Cargo.lock` is accepted: TASK-131 carries one vendored crate tree per
+    /// workspace, and `pack --cargo-vendor` decides which locks actually get a tree.
     pub fn validate_workspaces_on_disk(&self, repo_root: &Path) -> Result<()> {
         for bundle in &self.bundles {
             for declaration in &bundle.workspaces {
@@ -762,15 +763,6 @@ impl SandboxConfig {
                         bundle.name,
                         declaration.manifest,
                         directory.display()
-                    )));
-                }
-                if directory.join("Cargo.lock").is_file() {
-                    return Err(Error::Invalid(format!(
-                        "bundle {:?} declares nested workspace {:?}, which is a Rust workspace \
-                         with its own Cargo.lock; one transport carries one vendored crate tree, \
-                         so this needs TASK-131 (per-workspace Cargo vendor trees) — either drop \
-                         the declaration or move the crate tree into the root workspace",
-                        bundle.name, declaration.manifest
                     )));
                 }
             }

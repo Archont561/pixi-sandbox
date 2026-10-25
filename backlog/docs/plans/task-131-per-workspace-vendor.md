@@ -173,7 +173,8 @@ wiring and never sees the root's vendor directory.
 
 ## Slice order
 
-0. This document and ADR-33 (the decision record).
+0. This document (the AC#1 seams artifact). ADR-33 is deliberately written last, in slice 5,
+   so the decision record describes the implementation that actually shipped.
 1. Schema 5 + `WorkspaceVendor` in the manifest: serde, validation, byte accounting, root-only
    identity and old-reader refusal (tests first).
 2. Pack: parameterised vendor directory, per-workspace `vendor_tree`, blob recording, removal
@@ -182,3 +183,22 @@ wiring and never sees the root's vendor directory.
    `--cargo-config` modes plus `--no-vendor`/`--force`.
 4. Plan and budgets: per-tree size/crate fields, overlap reporting, transport ceiling.
 5. ADR-33 text, user docs, the ignored offline build proof, full gates and the task ledger.
+
+## Progress log
+
+- **Slice 1 — merged locally as `2c7c5a7d`.** Schema 5 ships with stricter identity rules than
+  the first draft: one tree per slug (duplicate refusal — the restore destination is
+  slug-derived) and exact slug/manifest/directory matching against a declared `workspaces[]`
+  entry, so an orphan tree cannot be packed. The one-segment-directory rule mirrors the
+  existing `WorkspaceRef` check rather than relaxing TASK-129's policy. `Manifest::blobs()`
+  returns `Cow<'_, str>` contexts so workspace-qualified owners cost an allocation only when
+  they exist.
+- **Slice 2 — pack side.** `vendor_tree(_with_toolchain)` takes a `vendor_rel` parameter; the
+  root keeps its historical `.cargo-vendor-tmp` scratch name while workspace trees get
+  `.cargo-vendor-tmp-<slug-qualified>` names. Preflight now runs per distinct project root and
+  refuses only when *no* root carries a `Cargo.lock`; a workspace without one is silently not
+  vendored. A subtlety the tests caught: root blob recording walks `payload/vendor`, which
+  contains the nested `workspaces/` subtree — `record_tree` gained an exclusion seam so root
+  and nested trees never double-record the same files. The nested-`Cargo.lock` config refusal
+  is gone; branch guides gain one paragraph per workspace tree while root-only goldens stay
+  byte-identical.

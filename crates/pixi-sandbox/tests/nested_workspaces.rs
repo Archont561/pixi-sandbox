@@ -568,3 +568,182 @@ fn pack_refuses_a_nested_id_without_a_config_to_resolve_it(nested_project: Neste
         .failure()
         .stderr(predicate::str::contains("only `--config` can"));
 }
+
+/// TASK-131: give both projects a `Cargo.lock` and a fake cargo that copies the canned vendor
+/// tree, then assert pack produces two independently recorded trees in one transport.
+fn install_cargo_locks(project: &NestedProject) {
+    let source = support::demo_project();
+    for destination in [&project.root, &project.root.join("subproject")] {
+        fs::copy(source.join("Cargo.lock"), destination.join("Cargo.lock")).unwrap();
+        fs::copy(source.join("Cargo.toml"), destination.join("Cargo.toml")).unwrap();
+    }
+}
+
+/// A fake cargo/rustc pair that emulates `cargo vendor` by copying the committed reference
+/// tree into the requested directory — no network, no real registry (ADR-10 hermetic seam).
+fn fake_vendor_toolchain(home: &Path) -> PathBuf {
+    let tools = home.join("vendor-tools");
+    fs::create_dir_all(&tools).unwrap();
+    let canned = support::fixture_transport()
+        .join(".pixi-sandbox/vendor")
+        .display()
+        .to_string();
+    support::write_executable(
+        &tools.join("cargo"),
+        &format!(
+            "#!/bin/sh\nset -eu\nif [ \"${{1:-}}\" = '--version' ]; then echo 'cargo 1.90.0 (fixture)'; exit 0; fi\ntest \"$1\" = vendor\ntest \"$2\" = --locked\ntest \"$3\" = --versioned-dirs\nmkdir -p \"$4\"\ncp -R \"{canned}\"/. \"$4\"/\nfind \"$4\" -exec touch -t 200001010000.00 {{}} \\;\n"
+        ),
+    );
+    support::write_executable(
+        &tools.join("rustc"),
+        "#!/bin/sh\necho 'rustc 1.90.0 (fixture)'\n",
+    );
+    tools
+}
+
+#[rstest]
+fn pack_vendors_root_and_nested_lockfiles_into_qualified_trees(nested_project: NestedProject) {
+    let project = nested_project;
+    install_cargo_locks(&project);
+    let tools = fake_vendor_toolchain(project.home.path());
+    let transport = project.home.path().join("transport");
+
+    support::bin()
+        .env("PATH", support::path_with_fake_tools(&tools))
+        .env("CARGO_NET_OFFLINE", "true")
+        .args(["pack", "--repo-root", project.root.to_str().unwrap()])
+        .arg("--output-dir")
+        .arg(&transport)
+        .args([
+            "--envs",
+            "default,subproject/default",
+            "--platform",
+            host_platform(),
+            "--cargo-vendor",
+        ])
+        .arg("--config")
+        .arg(project.root.join(".pixi-sandbox.toml"))
+        .assert()
+        .success();
+
+    let manifest = pixi_sandbox_core::manifest::Manifest::load(
+        &pixi_sandbox_core::manifest::Manifest::path_in(&transport),
+    )
+    .unwrap();
+    let root_vendor = manifest.vendor.expect("the root lock is vendored");
+    assert_eq!(
+        root_vendor.directory.as_deref(),
+        Some(".pixi-sandbox/vendor")
+    );
+    assert!(!root_vendor.blobs.is_empty(), "root blobs are recorded");
+
+    assert_eq!(
+        manifest.workspace_vendors.len(),
+        1,
+        "one tree per workspace"
+    );
+    let tree = &manifest.workspace_vendors[0];
+    assert_eq!(tree.slug, "subproject");
+    assert_eq!(tree.manifest, "subproject/pixi.toml");
+    assert_eq!(tree.directory, "subproject");
+    assert_eq!(
+        tree.vendor.directory.as_deref(),
+        Some(".pixi-sandbox/vendor/workspaces/subproject")
+    );
+    assert_eq!(tree.vendor.mode, "loose");
+    assert!(!tree.vendor.blobs.is_empty(), "nested blobs are recorded");
+    assert_eq!(
+        tree.vendor.blobs.len(),
+        root_vendor.blobs.len(),
+        "the same canned crate gives each tree its own verified blob list"
+    );
+
+    // Both trees are physically present at their qualified locations.
+    assert!(
+        transport
+            .join(".pixi-sandbox/vendor/demo-dep-1.0.0/Cargo.toml")
+            .is_file()
+    );
+    assert!(
+        transport
+            .join(".pixi-sandbox/vendor/workspaces/subproject/demo-dep-1.0.0/Cargo.toml")
+            .is_file()
+    );
+
+    // The branch guide names the nested tree, not just the root one.
+    let readme = fs::read_to_string(transport.join("README.md")).unwrap();
+    assert!(readme.contains("subproject"), "{readme}");
+    assert!(
+        readme.contains("subproject/.pixi-sandbox/vendor/"),
+        "{readme}"
+    );
+}
+
+#[rstest]
+fn pack_with_cargo_vendor_skips_a_workspace_that_has_no_lockfile(nested_project: NestedProject) {
+    let project = nested_project;
+    // Only the root carries a Cargo.lock: the nested project is simply not vendored.
+    let source = support::demo_project();
+    fs::copy(source.join("Cargo.lock"), project.root.join("Cargo.lock")).unwrap();
+    fs::copy(source.join("Cargo.toml"), project.root.join("Cargo.toml")).unwrap();
+    let tools = fake_vendor_toolchain(project.home.path());
+    let transport = project.home.path().join("transport");
+
+    support::bin()
+        .env("PATH", support::path_with_fake_tools(&tools))
+        .env("CARGO_NET_OFFLINE", "true")
+        .args(["pack", "--repo-root", project.root.to_str().unwrap()])
+        .arg("--output-dir")
+        .arg(&transport)
+        .args([
+            "--envs",
+            "default,subproject/default",
+            "--platform",
+            host_platform(),
+            "--cargo-vendor",
+        ])
+        .arg("--config")
+        .arg(project.root.join(".pixi-sandbox.toml"))
+        .assert()
+        .success();
+
+    let manifest = pixi_sandbox_core::manifest::Manifest::load(
+        &pixi_sandbox_core::manifest::Manifest::path_in(&transport),
+    )
+    .unwrap();
+    assert!(manifest.vendor.is_some(), "the root tree is still packed");
+    assert!(
+        manifest.workspace_vendors.is_empty(),
+        "no lock means no tree, not an empty placeholder"
+    );
+}
+
+#[rstest]
+fn pack_with_cargo_vendor_without_any_lockfile_names_what_it_needs(nested_project: NestedProject) {
+    let project = nested_project;
+    let tools = fake_vendor_toolchain(project.home.path());
+    let transport = project.home.path().join("transport");
+
+    support::bin()
+        .env("PATH", support::path_with_fake_tools(&tools))
+        .args(["pack", "--repo-root", project.root.to_str().unwrap()])
+        .arg("--output-dir")
+        .arg(&transport)
+        .args([
+            "--envs",
+            "default,subproject/default",
+            "--platform",
+            host_platform(),
+            "--cargo-vendor",
+        ])
+        .arg("--config")
+        .arg(project.root.join(".pixi-sandbox.toml"))
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Cargo.lock"))
+        .stderr(predicate::str::contains("--cargo-vendor"));
+    assert!(
+        !transport.exists(),
+        "a refused pack leaves no transport behind"
+    );
+}
