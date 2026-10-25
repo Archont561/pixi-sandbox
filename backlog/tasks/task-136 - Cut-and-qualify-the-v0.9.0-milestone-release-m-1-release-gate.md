@@ -1,10 +1,10 @@
 ---
 id: TASK-136
 title: 'Cut and qualify the v0.9.0 milestone release (m-1 release gate)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-25 14:30'
-updated_date: '2026-10-25 15:40'
+updated_date: '2026-10-25 16:10'
 labels:
   - release
   - versioning
@@ -54,14 +54,14 @@ inference. The sanction, when given, is recorded in this task's notes with the d
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 `pixi run --frozen xtask prepare-release -- minor` produces exactly its `.release-touched` report: workspace `Cargo.toml` 0.8.0 → 0.9.0, `pixi.toml`, `Cargo.lock` and the committed relock render restamped, and a generated `CHANGELOG.md` v0.9.0 section. Nothing else is modified, and `xtask check-release-refs` is green. **Ran on the runner, not locally (the dev sandbox had no cargo/pixi after recycling): auto-release run `40205465298`, steps 5–7 all green — `resolve-milestone-tag` → `prepare-release v0.9.0` → `check-repository` (which includes the release-refs oracle). Release commit `603166a` touches exactly eight files, the prepare-release contract set: workspace `Cargo.toml`, both crate `Cargo.toml`s, both `pixi.toml`s, `Cargo.lock`, `CHANGELOG.md`, `.github/workflows/relock.yml`; workspace version stamped 0.9.0 and the changelog's v0.9.0 section carries the TASK-131 entries.**
-- [ ] #2 A release PR carries the prepared diff in house style; its body states the minor-bump rationale (schema 5), the suite count, and the airlock verdict for the release branch. The release PR is the last place the version is questioned — no merge over an unresolved review comment. **Not met as written — recorded owner-selected lane deviation, 2026-10-25. After the sandbox lost its toolchain and the API token proved unable to dispatch workflows (403), the owner chose the human-pushed milestone tag lane after full written disclosure that it skips the release PR and lets the bot commit directly to main (admitted by `check-main-push` as a release commit). The pre-publication gate this AC exists for was served differently: `check-repository` ran inside auto-release before any push, and the tag push itself was separately sanctioned in chat ("Push milestone"). The box stays unchecked because no release PR exists; closing this task needs an owner decision on whether the deviation discharges the intent or the box remains permanently open-by-design for tag-lane releases.**
+- [x] #2 A release PR carries the prepared diff in house style; its body states the minor-bump rationale (schema 5), the suite count, and the airlock verdict for the release branch. The release PR is the last place the version is questioned — no merge over an unresolved review comment. **Met by owner-ruled deviation, 2026-10-25 (ruling: "accept deviation, close everything"). No release PR exists because the sanctioned milestone tag lane commits the bot release directly to main. The review intent the AC protects was discharged by three substitutes recorded here: (1) the owner received written disclosure of the lane's trade-offs — no PR review, direct-to-main bot commit, irreversible publication — and gave the explicit "Push milestone" sanction; (2) `check-repository`, the same release-consistency oracle a release PR's CI would run, executed inside auto-release run `40205465298` before any push; (3) the release commit `603166a` then went through the ordinary main gates — ci `40205605597` green, full two-tier airlock `40208159519` green, publish-sandbox `40205605553` green. Future tag-lane releases reference this ruling; a return to the release-PR flow simply follows the AC's literal text.**
 - [x] #3 m-1 exit criterion 3 is discharged on the release commit: the airlock proof is green with the nested-workspace transport claim satisfied — either a nested workspace present in the proof transport via a harness extension, or the owner's recorded ruling that the two real-runner `unshare -n` gates (`test-nested-offline`, `test-vendor-offline`) satisfy the milestone intent. The chosen resolution and its evidence are recorded here before the release merges. **Resolved 2026-10-25 by owner-selected ruling, recorded in the m-1 milestone file ("Ruling on criterion 3"): the harness-extension option is rejected and the two runner-executed namespace gates discharge the criterion's intent — `test-nested-offline` (runs `40144185678`, `40198959531`) and `test-vendor-offline` (run `40198959531`), real pixi/cargo, genuine locks, namespace offline builds and negative controls. Residual risk (no nested transport packed with the released binary through publish/fetch) is accepted in the ruling and reopens the harness-extension path if that plumbing changes.**
-- [ ] #4 A full two-tier airlock run (the scheduled shape, or a dispatch explicitly sanctioned for this task) is green against the release commit, including the offline cargo compile — `AIRLOCK_SKIP_CARGO_BUILD=false`, the half PR runs deliberately skip. The run id is recorded; a PR-tier proof alone cannot check this box. **Still open at ship time. The sandbox token cannot dispatch workflows (HTTP 403, no `actions: write`), so the self-serve path is the Monday cron: `airlock.yml` schedule `17 5 * * 1` (05:17 UTC, 2026-10-26) runs the full two-tier shape with the compile enabled against main HEAD, which is the release commit `603166a` if nothing merges meanwhile. Owner-side on-demand alternative: `gh workflow run airlock.yml` (default inputs; dispatch implies `AIRLOCK_SKIP_CARGO_BUILD=false`). Record the run id and check this box when either goes green against `603166a`. Related transport-health evidence already green on the release commit: `publish sandbox` run `40205605553` repacked it successfully.**
+- [x] #4 A full two-tier airlock run (the scheduled shape, or a dispatch explicitly sanctioned for this task) is green against the release commit, including the offline cargo compile — `AIRLOCK_SKIP_CARGO_BUILD=false`, the half PR runs deliberately skip. The run id is recorded; a PR-tier proof alone cannot check this box. **Met 2026-10-25 by owner-initiated `workflow_dispatch` run `40208159519` against head `603166a4` (the exact release commit), started 15:41 UTC after the owner was handed the exact command and its effect in the release hand-off. Shape: `changes` and `validate airlock plan` green; `airlock linux-64` green end to end — released v0.9.0 binary installed and proven, transport packed with that binary, doctor-verified, published to the throwaway orphan remote, developer-shaped fetch, byte verification, restore, then Tier A (authoritative, `deny-egress` namespace, `AIRLOCK_SKIP_CARGO_BUILD=false` per the workflow's dispatch expression, so the offline cargo compile executed) success. Tier B (network-reachable diagnostic) skipped by design — default `BLOCK_NETWORK=true` makes Tier A authoritative, identical to the scheduled cron's shape. Provenance note: the dispatch was created by the owner, not this session's token (which lacks `actions: write`); the run id and step verdicts are read from the API.**
 - [x] #5 `fmt --check`, workspace clippy, the full test suite and every xtask gate are green on the release branch, with the suite count recorded against the 1,277-passed / 4-ignored main baseline (it must not fall). **`ci` run `40205605597` green on release commit `603166a`; the release diff is version stamps, lockfile, changelog and the relock render only — no test-bearing code changed, so the 1,277-passed / 4-ignored baseline from `f5612374` carries unchanged, and `check-repository` additionally ran as auto-release step 7 before the push.**
 - [x] #6 After the release PR merges, the `milestone-v0.9.0` tag is pushed by a human on the explicit sanction recorded in this task; `auto-release.yml`'s `resolve-milestone-tag` step accepts the strict `X.Y.Z` spelling and starts the lane. No tag is manufactured from a workflow dispatch alone. **Tag `milestone-v0.9.0` created at `f5612374` and pushed 2026-10-25 15:07 UTC on the explicit chat sanction "Push milestone"; `resolve-milestone-tag` (first live use of the milestone lane) succeeded and emitted `v0.9.0`; auto-release run `40205465298` was event `push`, not a dispatch. The phrase "after the release PR merges" did not apply because the tag lane has no release PR — see the AC#2 deviation.**
 - [x] #7 `release.yml` goes green end to end: five static release binaries, the complete `SHA256SUMS`, and conda packages for all five declared platforms, each leg mandatory and success-gated (the shape `xtask check-release-scheduling` pins). Every red leg keeps this task open with its run id. **Run `40205607244` fully green: five binary legs (`x86_64`/`aarch64` linux-musl, `x86_64`/`aarch64` apple-darwin, `x86_64` windows-msvc), `package linux-64` plus the "Require one Conda package per platform" and "Require one standalone binary per platform" steps, "Generate SHA256SUMS", the consumer-proof leg, and "publish prefix.dev and GitHub Release" all success.**
 - [x] #8 `publish-sandbox.yml` repacks the transport green on the release commit, and the v0.9.0 GitHub Release exists with downloadable, checksum-verifiable assets confirmed through the releases API rather than the UI. **`publish sandbox` run `40205605553` success on `603166a`. Releases API confirms tag `v0.9.0`, published 2026-10-25 15:24 UTC, `draft=false`, `prerelease=false`, eleven assets: five standalone binaries, five `.conda` packages (one per platform) and `SHA256SUMS`. Environment limitation named honestly: downloading an asset from this sandbox fails because `release-assets.githubusercontent.com` is outside the network allowlist, so byte-level checksum verification happened inside the runner's mandatory `release-checksums`/SHA256SUMS steps, not from this machine.**
-- [ ] #9 The m-1 milestone file is closed with all four of its exit criteria checked against evidence, and the next sprint's plan document plus milestone file (m-2, beginning with the TASK-130 non-Cargo vendoring spike already named as out-of-scope for m-1) are written — a sprint must not end handing the next session a planning job. **Half done in this change: `backlog/milestones/m-2 - 0.10.0-polyglot-dependency-vendoring.md` and `backlog/docs/plans/m-2-polyglot-vendoring.md` are written, and the m-1 file carries a release-shipped record with per-criterion evidence. The box stays open until m-1 is formally closed, which waits on AC#4's airlock confirmation and an owner ruling on the AC#2 deviation — closing over either without that would repeat the "closes by assertion" anti-pattern the milestone file prohibits.**
+- [x] #9 The m-1 milestone file is closed with all four of its exit criteria checked against evidence, and the next sprint's plan document plus milestone file (m-2, beginning with the TASK-130 non-Cargo vendoring spike already named as out-of-scope for m-1) are written — a sprint must not end handing the next session a planning job. **Done 2026-10-25: the m-1 file carries its formal closure record with all four exit criteria evidenced (TASK-129, TASK-131, the criterion-3 ruling, v0.9.0 published plus airlock `40208159519`); `backlog/milestones/m-2 - 0.10.0-polyglot-dependency-vendoring.md` and `backlog/docs/plans/m-2-polyglot-vendoring.md` exist, TASK-130 spike-first.**
 <!-- AC:END -->
 
 ## Definition of Done
@@ -108,6 +108,7 @@ inference. The sanction, when given, is recorded in this task's notes with the d
 | Transport repack | `publish sandbox` run `40205605553` | success |
 | GitHub Release | tag `v0.9.0`, public, non-prerelease, 11 assets, published 15:24 UTC | API-verified |
 | Docs rebuild | run `40205778321` | success |
+| Full two-tier airlock on release commit | owner dispatch run `40208159519` at `603166a4`, Tier A egress-denied incl. offline compile | success (Tier B skipped by design) |
 
 ### Deviations from the original plan, each with a reason
 
@@ -116,19 +117,24 @@ inference. The sanction, when given, is recorded in this task's notes with the d
    `prepare-release`/release-PR flow could not run. The owner chose the milestone tag lane,
    whose runner performs the identical pinned xtasks; `check-repository` served as the
    pre-push oracle. The box is deliberately left unchecked rather than redefined.
-2. **Full two-tier airlock on the release commit not yet run (AC#4).** Dispatch needs
-   `actions: write`, which this token lacks. Verification path: Monday cron
-   (`17 5 * * 1`, 2026-10-26 05:17 UTC) against main at `603166a`, or an owner-run
-   `gh workflow run airlock.yml` (default inputs; the compile is enabled for dispatches).
+2. **Full two-tier airlock — resolved 2026-10-25.** The owner dispatched `airlock.yml`
+   (this session's token cannot: HTTP 403 without `actions: write`); run `40208159519`
+   is green at the release commit with the offline compile inside Tier A, satisfying
+   AC#4. The Monday cron remains the recurring scheduled-tier evidence.
 3. **Asset bytes not downloaded from the dev sandbox.** `release-assets.githubusercontent.com`
    is outside the allowlist; checksum integrity is attested by the runner's mandatory
    SHA256SUMS steps and the API asset record, not by a local download.
 
 ### What closes this task
 
-- AC#4 checked with a green run id against `603166a`; and
-- an owner ruling on AC#2 (deviation accepted as discharging the review intent, or kept as
-  a permanent tag-lane exception documented here); then
-- AC#9 completes by formally closing the m-1 milestone file (its release-shipped record and
-  the m-2 docs already exist). Until then the task stays In Progress — v0.9.0 is released,
-  but the gate's evidence standard is one scheduled proof short of its own wording.
+- ~~AC#4 checked with a green run id against `603166a`~~ — done: run `40208159519`;
+- ~~owner ruling on AC#2~~ — given 2026-10-25: the tag-lane deviation is accepted as
+  discharging the review intent (rationale recorded on AC#2);
+- ~~AC#9 formal m-1 closure~~ — done in the same change: the milestone file carries its
+  closure record and the m-2 milestone/sprint plan already exist.
+
+**Closed 2026-10-25.** All nine ACs and all three DoD boxes are checked with run-id
+evidence; v0.9.0 is public, the release-commit airlock is green, and the next sprint's
+planning is written. The two deviations this release took (tag lane instead of a release
+PR; runner-side rather than local checksum download) are recorded above with their
+sanction and their evidence, not hidden.
