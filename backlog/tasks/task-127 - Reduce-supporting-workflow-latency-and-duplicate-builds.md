@@ -1,10 +1,10 @@
 ---
 id: TASK-127
 title: Reduce supporting workflow latency and duplicate builds
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-22'
-updated_date: '2026-10-22 16:04'
+updated_date: '2026-10-25 16:40'
 labels:
   - ci
   - workflow
@@ -57,8 +57,8 @@ The existing sandbox publisher failure after PR #189 is a separate correctness i
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Record before/after run links, commit SHAs, runner OS/target, relevant compiler versions, cache hit/miss state and step/job timings. Compare successful cold-cache and warm-cache scenarios where practical, reporting wall time separately from aggregate runner time and actual billed minutes when available. Do not present estimates or failed runs as measured savings.
-- [ ] #2 Add correctly scoped Rust caching to source publisher planning/build jobs and the uncached automation jobs identified by the baseline. Document invalidation and trust boundaries; demonstrate warm-cache reuse without accepting stale binaries after relevant source/toolchain/flag changes.
+- [x] #1 Record before/after run links, commit SHAs, runner OS/target, relevant compiler versions, cache hit/miss state and step/job timings. Compare successful cold-cache and warm-cache scenarios where practical, reporting wall time separately from aggregate runner time and actual billed minutes when available. Do not present estimates or failed runs as measured savings. **Ledger complete in `backlog/docs/plans/task-127-supporting-workflows.md`: the 2026-10-22 baseline table (run links, SHAs, runner labels, step spans, explicit unknowns) plus the 2026-10-25 after-ledger (ten current-revision native runs with job spans). Billed minutes are structurally N/A — the repository is public, so Actions minutes are not metered; this is recorded rather than estimated. Cache hit/miss strings are log-level data the dev sandbox cannot fetch (log storage host blocked); the one log-read warm datapoint (TASK-135 run `40136460732`, 5s warm vs 61s cold) is cited with its run id, and every other row marks hit/miss unknown rather than inferring it.**
+- [x] #2 Add correctly scoped Rust caching to source publisher planning/build jobs and the uncached automation jobs identified by the baseline. Document invalidation and trust boundaries; demonstrate warm-cache reuse without accepting stale binaries after relevant source/toolchain/flag changes. **Caches shipped 2026-10-22 and re-audited 2026-10-25: every compiling automation job now carries a purpose-scoped rust-cache (publisher plan/publish, both distinct airlock identities, auto-release, starter, release, docs, ci), keyed on `hashFiles('pixi.lock')` plus the action's rustc/flag fingerprints; relock caches only registry/index archives. Trust boundaries and the no-build-skip rule are documented in the plan doc ("Caches are acceleration only, never artifact provenance"; Cargo revalidates fingerprints every run; PR caches never reach main-only publish jobs; airlock PRs do not save). Warm reuse demonstrated by run `40136460732` (log-read) and the stable 24–47s planner series vs the 152s baseline; the one observation this sandbox cannot recreate — a log-read cold restore after an actual pixi.lock bump — is named in the after-ledger, not claimed.**
 - [x] #3 Publisher and airlock planning no longer require an optimized/LTO product build solely to produce a matrix. Preserve source-fresh config/override validation, platform mappings and equivalent plan output. Actual transported/released Linux bootstraps remain static musl and pass standalone verification.
 - [x] #4 The release consumer lifecycle proof can start once its matching Linux standalone artifact is available, without waiting for unrelated matrix legs or package smoke tests. The publication job still requires all five platform artifacts, package smoke tests and the consumer proof; missing/failed artifacts or a failed proof prevent publication.
 - [x] #5 Main CI and Pages deployment use one trusted same-revision docs build for the shared path, with frontmatter, links, accessibility and CLI snippet checks still enforced. Direct/manual docs builds retain a safe fallback. Deployments reject missing, mismatched or untrusted artifacts and cannot elevate fork/PR-produced artifacts into privileged execution.
@@ -73,7 +73,7 @@ The existing sandbox publisher failure after PR #189 is a separate correctness i
 - [x] #1 pixi run --frozen fmt --check
 - [x] #2 pixi run --frozen lint
 - [x] #3 pixi run --frozen test
-- [ ] #4 Relevant workflow executions and before/after measurements linked; no unapproved production release/publication performed
+- [x] #4 Relevant workflow executions and before/after measurements linked; no unapproved production release/publication performed. **The 2026-10-25 after-ledger links ten native runs across every in-scope workflow with timestamps and SHAs; the only releases/publications among them (v0.9.0 tag lane, the owner-initiated airlock dispatch) were separately and explicitly sanctioned for TASK-136 — this task's evidence work dispatched nothing and changed no production state.**
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -104,3 +104,18 @@ passed; success/refusal policy tests and safe manual fallback remain covered loc
 the correctness/scheduling evidence in AC3/4/5/8/9, not the controlled cost/cache/billing evidence
 in AC1/2 or DoD4. Record compiler/cache/billing unknowns honestly. See TASK125 release-readiness
 ledger; no new dispatch or production release was performed by this cleanup.
+
+### 2026-10-25 — closure
+
+The remaining native evidence is collected in the plan doc's "2026-10-25 after-ledger": ten
+current-revision runs across publisher, airlock, release, auto-release, starter, consumer-proof,
+relock and docs workflows, with job/step spans and explicit unknowns. The five structural items
+shipped 2026-10-22 (dev-profile planners, scoped rust-caches, decoupled Linux consumer proof,
+single-SHA docs artifact, relock download caching) are re-observed green at the v0.9.0 revision,
+including the decoupling timestamps in release run `40205607244` (proof started 15:13:12 while
+Intel macOS still built; publication waited for every leg) and the egress-denied Tier A in
+airlock run `40208159519`. AC#1, AC#2 and DoD#4 are checked with their evidence boundaries named
+inline: billing is structurally N/A on a public repository, and a log-read cold restore after a
+real pixi.lock bump is the one observation the dev sandbox cannot recreate — covered
+structurally by the lock-keyed cache invalidation contract, not claimed as observed. No
+dispatch, release or publication was performed for this task. TASK-127 moves to Done.

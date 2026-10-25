@@ -174,3 +174,63 @@ manifest. The earlier "still required" list is historical: controlled cold/warm/
 billing and additional live fallback cases remain open; the successful publisher, same-SHA main
 Pages reuse and artifacts-only native release validation are no longer unknown. No numerical
 savings or all-platform offline-consumer claim is made.
+
+## 2026-10-25 after-ledger — current-revision native evidence (v0.9.0 era)
+
+Collected from the Actions API after v0.9.0 shipped; same measurement convention as the 2026-10-22
+baseline (job/step wall spans from timestamps, not exclusive CPU and not billed amounts). One fact
+settles the billing question structurally: **the repository is public**, so Actions minutes are not
+metered — "billed minutes" are N/A here, and wall/aggregate runner time is the only measurable
+quantity. Cache hit/miss strings live inside job logs, whose storage host is unreachable from the
+dev sandbox; hit/miss below is therefore taken from prior sessions' log readings where cited and
+marked unknown otherwise, never inferred from a green step.
+
+| Workflow / run | Source SHA | Event | Verdict | Job span |
+| --- | --- | --- | --- | ---: |
+| [publish-sandbox 40144875662](https://github.com/Archont561/pixi-sandbox/actions/runs/40144875662) | `ded3bd62` | push | success | plan 24s / publish 215s |
+| [publish-sandbox 40199680995](https://github.com/Archont561/pixi-sandbox/actions/runs/40199680995) | `823a4b84` | push | success | plan 34s / publish 201s |
+| [publish-sandbox 40205605553](https://github.com/Archont561/pixi-sandbox/actions/runs/40205605553) | `603166a4` | push | success | plan 47s / publish 213s |
+| [airlock 40208159519](https://github.com/Archont561/pixi-sandbox/actions/runs/40208159519) | `603166a4` | workflow_dispatch | success | plan 118s / proof 511s; Tier A egress-denied 134s |
+| [release 40205607244](https://github.com/Archont561/pixi-sandbox/actions/runs/40205607244) | `603166a4` | tag | success | Linux standalone 212s; consumer proof 116s from 15:13:12; Intel macOS 740s; publication 15:22:00 |
+| [auto-release 40205465298](https://github.com/Archont561/pixi-sandbox/actions/runs/40205465298) | `603166a4` | push (milestone tag) | success | cut release 114s |
+| [starter 40206750498](https://github.com/Archont561/pixi-sandbox/actions/runs/40206750498) | `603166a4` | workflow_dispatch | success | dispatch check 185s / publish 33s |
+| [consumer-proof 40206748749](https://github.com/Archont561/pixi-sandbox/actions/runs/40206748749) | `603166a4` | release | success | 7s total; download+verify asset 2s |
+| [relock 40198959456](https://github.com/Archont561/pixi-sandbox/actions/runs/40198959456) | `fd794cef` | pull_request | success | guard 17s, no relock needed |
+| [docs 40210842971](https://github.com/Archont561/pixi-sandbox/actions/runs/40210842971) | `9786fbf7` | workflow_run | success | adopt trusted CI site 6s, manual build skipped, deploy 53s |
+
+### How this maps to the 2026-10-22 open-evidence list
+
+1. **Same-revision cold/warm runs.** No deliberately paired cold/warm experiment was dispatched
+   (none is authorized for benchmarking). The natural experiment is the planner series: the 2026-10-22
+   failing-baseline source planner took 152s; the current dev-profile planners run 24–47s across three
+   consecutive main pushes with the `support-host-plan` rust-cache present and green. These are
+   different runner states, so they are presented as a before/after series, not a controlled pair.
+   The one log-level warm datapoint from a session that could read logs remains TASK-135's run
+   [`40136460732`](https://github.com/Archont561/pixi-sandbox/actions/runs/40136460732): rust-cache
+   restore 15s and a warm `check-ci-builds` at 5s against the 61s cold floor of run
+   [`40130578805`](https://github.com/Archont561/pixi-sandbox/actions/runs/40130578805).
+2. **Five-platform artifacts-only release with decoupled proof.** Release run 40205607244 is green on
+   all five platforms with conda smoke legs; the built-artifact consumer proof started 15:13:12,
+   immediately after the Linux standalone job ended (~15:13:09) and **while the Intel macOS leg was
+   still running** (it finished ~15:21:57); the publication job waited until 15:22:00, after every
+   leg and the proof. The AC#4 scheduling decoupling is visible in the timestamps, not asserted.
+3. **Native network-denied airlock.** Run 40208159519's Tier A (`deny-egress` namespace,
+   `AIRLOCK_SKIP_CARGO_BUILD=false`, offline cargo compile included) passed in 134s; Tier B skipped by
+   design. This is the same current-revision proof TASK-136 AC#4 recorded.
+4. **Pages reuse.** Run 40210842971 took the "adopt trusted same-revision CI site" path (6s), skipped
+   the manual build, and deployed — the 2026-10-22 reuse evidence continues to hold on current main.
+5. **Warm cache reuse and invalidation.** Every automation job that compiles carries a purpose-scoped
+   rust-cache (`support-host-plan`, `support-publisher-<platform>`, the two deliberately distinct
+   airlock identities, `ci-pixi-dev`), keyed on `hashFiles('pixi.lock')` with rustc/flag fingerprinting
+   inside the action. No job skips its build on a cache hit: Cargo revalidates fingerprints every run,
+   which is the stale-binary control, and PR-built caches are never read by a privileged publish job
+   (publishers trigger on main pushes only; airlock PR runs use `save-if` to avoid persisting). The
+   relock download cache remains scoped to registry/index archives, never `CARGO_HOME` credentials or
+   target binaries. A pixi.lock change rotates the key — the structural invalidation contract; a
+   log-read of an actual cold restore after a lock bump remains the one unrecreatable observation from
+   this sandbox and is named, not claimed.
+
+No production release, transport publish, protection change or benchmarking dispatch was performed to
+collect this ledger: every run cited was triggered by sanctioned release work or ordinary PR/main
+activity. The lightweight crate split stays deferred per the 2026-10-22 decision — nothing in the
+current timings identifies a residual compile bottleneck that would justify it.
