@@ -38,6 +38,31 @@ Measured for the documented small project (33 crates): the loose vendor tree is 
 262 MB transport. See [Transport sizes, sharding, and budgets](/pixi-sandbox/guides/sizes-and-budgets/)
 for the full breakdown.
 
+### One tree per workspace (nested projects)
+
+A repository can contain more than one cargo project — the root and a nested Pixi workspace with
+its own `Cargo.lock`. With vendoring enabled, **every project that owns a `Cargo.lock` gets its
+own complete vendor tree** in the same transport; there is no merged or shared tree:
+
+```text
+sandbox/<bundle>-<platform>
+└── .pixi-sandbox/
+    ├── vendor/                        # root project's tree
+    └── vendor/workspaces/<slug>/      # each nested workspace's own tree
+```
+
+On restore the nested tree lands beside that workspace's own environments at
+`subproject/.pixi-sandbox/vendor/`, and each workspace gets its own sandbox cargo-home and
+activation hooks. Cargo discovers configuration by walking up from its working directory, so a
+build inside the nested project reads that project's wiring and never the root's.
+
+If two lockfiles pin the same crate at the same version, both trees carry their own copy on
+purpose: the payload size, verification and restore budget count both, because the airlock really
+does check out and hash both. Git's content-addressed store keeps one underlying object, so
+branch storage is smaller than the sum; the pack output, pack README and `plan` name the shared
+crates and the single-copy byte count as a **vendor overlap**, with the note that checkout and
+verification still pay twice. A nested workspace without a `Cargo.lock` is simply not vendored.
+
 ## Enabling it
 
 Vendoring is controlled per bundle in `pixi-sandbox.toml`:

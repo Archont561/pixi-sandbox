@@ -87,3 +87,5 @@ would recreate `backlog/decisions/` starting again at `decision-1`, which would 
   ADR-2/3/4/24 for new producers, preserving legacy transport reading.
 - ADR-32 — A transport branch is one bundle for one platform, and its payload stays
   self-contained (TASK-129); records the shipped topology and forbids a separate vendor branch.
+- ADR-33 — One cargo vendor tree per workspace in one transport (TASK-131); extends ADR-6
+  with per-workspace trees under `vendor/workspaces/<slug>/`, shared crates counted not deduped.

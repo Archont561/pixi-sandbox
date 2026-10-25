@@ -129,6 +129,10 @@ jobs:
         run: pixi run test-payload-roundtrip
       - if: steps.changes.outputs.code != 'false'
         run: pixi run test-nested-offline
+      # TASK-131: real crates.io vendoring of two Cargo.lock files, then offline builds
+      # inside a network namespace; ignored locally because it needs egress plus unshare.
+      - if: steps.changes.outputs.code != 'false'
+        run: pixi run test-vendor-offline
       - if: steps.changes.outputs.code != 'false'
         run: pixi run coverage
       - if: steps.changes.outputs.code != 'false'

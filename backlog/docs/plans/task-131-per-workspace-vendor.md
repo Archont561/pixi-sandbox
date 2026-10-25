@@ -231,3 +231,28 @@ wiring and never sees the root's vendor directory.
   mislead; measured per-tree sizes already appear in pack's per-tree line and the branch guide.
   Gotcha: toml 1.1's `FromStr<Value>` rejects a document opening with a comment, while
   `toml::from_str` accepts it — the lock parser must use the latter.
+- **Slice 5 — decision record, offline proof, docs, closure.** ADR-33 written last as planned:
+  it *extends* ADR-6 (which stays accepted), records the per-workspace layout, schema-5
+  rationale (an older reader would silently skip nested blob verification), the explicit
+  no-dedup decision with the overlap-accounting rationale, and the registry-only source
+  limitation; the ADR README gains a subsequent-records bullet.
+  The ignored proof `tests/vendor_offline.rs` (pixi task `test-vendor-offline`, CI gate beside
+  `test-nested-offline`) packs two real cargo projects — root depends on `itoa`, nested on
+  `memchr`, two distinct `Cargo.lock` files — restores into a clean consumer, then runs both
+  `cargo build --offline` inside a fresh `unshare -n` namespace with isolated HOME/caches and
+  each project's restored sandbox `CARGO_HOME`; the binaries run and assert the crates really
+  linked, and a cold negative control (tree removed, fresh target/cache, egress denied) must
+  fail. Connected-side lock generation/vendoring need crates.io, so the whole test is a
+  CI-only Linux gate like TASK-129's. Local evidence in the sandbox: the dogfooded vendor tree
+  already contains `itoa-1.0.18`/`memchr-2.8.3`, so the restore-side mechanics were proven with
+  real crates — two namespace builds against per-project cargo-homes carrying the product's
+  exact config snippet, plus the negative control failing 101 naming the missing directory; the
+  committed test itself runs locally through egress probe, both namespace `pixi install`s and
+  lock generation, stopping exactly at the crates.io-index sync inside `cargo vendor`.
+  Dead end recorded: a hand-built local registry and `cargo vendor --offline` both hit cargo
+  1.98's hard index sync — vendor always re-syncs the replaced source's index — so no
+  fully-offline connected-side emulation exists in this sandbox.
+  Docs: `cargo-vendoring.mdx` gains the per-workspace layout/overlap section;
+  `configure-bundles.mdx` loses the now-false nested-`Cargo.lock` refusal row and names the
+  `vendor_crates` plan field; `sizes-and-budgets.mdx` records per-tree budget doubling and the
+  overlap-vs-git-dedup accounting. Ledger TASK-131 moved to Done with every AC/DoD checked.

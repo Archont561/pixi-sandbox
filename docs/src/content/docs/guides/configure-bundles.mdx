@@ -147,6 +147,15 @@ of declaring it separately rather than merging manifests. That divergence is sur
 plan above for review, not refused. What is refused is anything that would make a restore
 ambiguous — the structural cases in the table below.
 
+A nested workspace that holds its own `Cargo.lock` is vendored independently when
+`cargo_vendor` is enabled: one complete tree per project, carried in the same transport under
+`vendor/workspaces/<slug>/`, restored to that workspace's own `.pixi-sandbox/vendor/`. The plan
+text and `plan --json` report a `vendor_crates` count for every workspace that owns a lock, and
+when two lockfiles pin the same crate+version the pack output and pack README name the shared
+crates and bytes as a vendor overlap — both copies still travel, because there is no
+cross-workspace dedup. See [Cargo vendoring](/pixi-sandbox/guides/cargo-vendoring/) for the
+layout and the offline build contract.
+
 **What is refused, and why:**
 
 | Declaration | Refusal |
@@ -155,7 +164,6 @@ ambiguous — the structural cases in the table below.
 | a file that is not a `pixi.toml`, or the repository root's own | the root's environments are declared by `environments` |
 | the same manifest in two bundles | two branches would restore over one prefix |
 | a nested workspace with no `pixi.lock` | pack would fail after the root environments were already packed |
-| a nested workspace with its own `Cargo.lock` | one transport carries one vendored crate tree — see TASK-131 |
 | a root environment named `workspaces` | that is the transport segment nested environments live under |
 | a nested manifest missing a platform the bundle publishes, or a lock that cannot resolve the selected environment | the matrix job would fail on the runner |
 
