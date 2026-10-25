@@ -151,10 +151,10 @@ jobs:
         if: failure()
         continue-on-error: true
         run: | # multiline-run-allowed
-          pixi run bun --cwd crates run lint:fmt > /tmp/p-fmt.log 2>&1 || true
-          pixi run bun --cwd crates run lint:deps > /tmp/p-deps.log 2>&1 || true
-          pixi run bun --cwd crates run lint:clippy > /tmp/p-clip.log 2>&1 || true
-          python3 -c 'enc=lambda s: s.replace("%","%25").replace(chr(13),"%0D").replace(chr(10),"%0A"); lines=[]; [lines.extend(["=== " + f + " ==="] + [l.rstrip() for l in open(f) if l.strip()][-12:]) for f in ("/tmp/p-fmt.log","/tmp/p-deps.log","/tmp/p-clip.log")]; [print(f"::error file=crates/pixi-sandbox/src/mirror.rs,line={10+i},title=lint-probe::{enc(l[:380])}") for i, l in enumerate(lines[:40])]'
+          cd "$GITHUB_WORKSPACE/crates" && pixi run bun run lint:fmt > /tmp/p-fmt.log 2>&1 || true
+          cd "$GITHUB_WORKSPACE/crates" && pixi run bun run lint:deps > /tmp/p-deps.log 2>&1 || true
+          cd "$GITHUB_WORKSPACE/crates" && pixi run bun run lint:clippy > /tmp/p-clip.log 2>&1 || true
+          python3 -c 'import os; enc=lambda s: s.replace("%","%25").replace(chr(13),"%0D").replace(chr(10),"%0A"); lines=[]; [lines.extend(["=== " + f + " ==="] + [l.rstrip() for l in open(f) if l.strip()][-12:]) for f in ("/tmp/p-fmt.log","/tmp/p-deps.log","/tmp/p-clip.log") if os.path.exists(f)]; [print(f"::error file=crates/pixi-sandbox/src/mirror.rs,line={10+i},title=lint-probe::{enc(l[:380])}") for i, l in enumerate(lines[:40])]'
       - if: steps.changes.outputs.code != 'false'
         run: pixi run coverage
       - if: steps.changes.outputs.code != 'false'
