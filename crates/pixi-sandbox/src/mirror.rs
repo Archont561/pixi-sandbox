@@ -130,7 +130,7 @@ pub fn build_local_registry(
         mirror_bytes += bytes;
 
         let manifest = crate_manifest(&destination)?;
-        let entry = index_entry(&package, &manifest)?;
+        let entry = index_entry(package, &manifest)?;
         append_index_entry(&index_root, &package.name, &entry)?;
         index_entries += 1;
     }
