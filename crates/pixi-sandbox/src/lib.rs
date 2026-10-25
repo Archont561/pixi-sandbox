@@ -10,6 +10,7 @@ pub mod embedded_tools;
 pub mod generated;
 pub mod github;
 pub mod host_probe;
+pub mod mirror;
 pub mod native_pack;
 pub mod nested;
 pub mod pack;

@@ -97,6 +97,9 @@ test-payload-roundtrip = "cargo test -p pixi-sandbox --test payload_roundtrip --
 # inside a Linux network namespace with no egress (ignored test; the namespace is a CI asset).
 test-nested-offline = "cargo test -p pixi-sandbox --test nested_offline -- --ignored --nocapture"
 test-vendor-offline = "cargo test -p pixi-sandbox --test vendor_offline -- --ignored --nocapture"
+# TASK-137 / ADR-34 spike: two Cargo.lock files share one local-registry mirror, then both
+# build --offline inside a network namespace (ignored test; egress and unshare are CI assets).
+test-mirror-offline = "cargo test -p pixi-sandbox --test mirror_offline -- --ignored --nocapture"
 test-doc = "cargo test --doc --workspace"
 # task-47 AC#2: replacing the binary that is currently executing, on a real Windows host — the
 # one behaviour no amount of Linux testing can confirm, because Linux will happily unlink a

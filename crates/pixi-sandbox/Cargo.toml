@@ -34,6 +34,8 @@ fs2 = { workspace = true }
 # Same-parent rollback directory for atomic unpack promotion.
 tempfile = { workspace = true }
 tar = { workspace = true }
+# TASK-137 spike only: read gzip `.crate` tarballs in the experimental mirror module.
+flate2 = { workspace = true }
 ureq = { workspace = true }
 # Adopted per ADR-27 (TASK-124): supplies release-lookup (backends::github ReleaseList),
 # download engine (Download) and SHA256SUMS parser (Checksum). Ownership ladder and replace

@@ -43,6 +43,8 @@ sha2 = "0.11"
 walkdir = "2"
 fs2 = "0.4"
 tar = "0.4"
+# TASK-137 spike: gzip decoding of cached `.crate` tarballs for the local-registry mirror.
+flate2 = "1"
 # Connected-side fetching: HTTPS release assets are verified against the embedded tool pins before use.
 ureq = "3.4"
 # TASK-125 native, local-only package installation. TLS is provided only by the

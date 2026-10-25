@@ -89,3 +89,6 @@ would recreate `backlog/decisions/` starting again at `decision-1`, which would 
   self-contained (TASK-129); records the shipped topology and forbids a separate vendor branch.
 - ADR-33 — One cargo vendor tree per workspace in one transport (TASK-131); extends ADR-6
   with per-workspace trees under `vendor/workspaces/<slug>/`, shared crates counted not deduped.
+- ADR-34 — **experimental spike** (TASK-137): one Cargo local-registry mirror serving many
+  lockfiles, tested behind an ignored `unshare -n` offline gate; no product wiring, ADR-6/33
+  stay in force unless a later accepted ADR amends them.
