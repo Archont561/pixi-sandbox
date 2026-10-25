@@ -98,7 +98,7 @@ pub fn verify(manifest: &Manifest, branch_location: &Path, envs: Option<&[String
         let abs = manifest.blob_abs_path(branch_location, blob);
         report.files += 1;
         report.bytes += blob.size;
-        check_blob(env, blob, &abs, &mut report);
+        check_blob(&env, blob, &abs, &mut report);
     }
 
     // The oracle is only as good as its own bytes: an env's files manifest is a blob like

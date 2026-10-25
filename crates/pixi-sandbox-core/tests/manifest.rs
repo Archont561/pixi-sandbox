@@ -72,7 +72,7 @@ fn a_well_formed_manifest_validates_and_summarises() {
     assert!(
         blobs
             .iter()
-            .any(|(owner, blob)| *owner == "vendor" && blob.path.starts_with("vendor/")),
+            .any(|(owner, blob)| owner.as_ref() == "vendor" && blob.path.starts_with("vendor/")),
         "the vendor blob must be part of the verified set"
     );
     // ... and they are validated like any other reference to a file
@@ -596,5 +596,191 @@ mod nested_workspaces {
         manifest
             .validate()
             .expect("an older schema must stay readable");
+    }
+}
+
+/// TASK-131: schema 5 carries one vendor tree per nested workspace beside the unchanged root
+/// `vendor` field, reusing the Vendor payload under a workspace-qualified transport directory.
+mod workspace_vendors {
+    use super::*;
+    use pixi_sandbox_core::manifest::Vendor;
+
+    /// The valid fixture plus one nested vendor tree for `subproject`, its blobs living under
+    /// `vendor/workspaces/subproject/` — the sibling of the env `workspaces/` segment.
+    fn nested_vendor_manifest() -> Manifest {
+        let mut value: serde_json::Value = serde_json::from_str(&valid_manifest()).unwrap();
+        // The tree's identity must match a declared TASK-129 workspace exactly.
+        value["workspaces"] = serde_json::json!([
+            {
+                "slug": "subproject",
+                "manifest": "subproject/pixi.toml",
+                "directory": "subproject",
+                "environments": ["default"]
+            }
+        ]);
+        value["workspace_vendors"] = serde_json::json!([
+            {
+                "slug": "subproject",
+                "manifest": "subproject/pixi.toml",
+                "directory": "subproject",
+                "vendor": {
+                    "mode": "loose",
+                    "crates": 2,
+                    "size_bytes": 4096,
+                    "cargo_lock_sha256": "cc",
+                    "directory": ".pixi-sandbox/vendor/workspaces/subproject",
+                    "blobs": [
+                        { "path": "vendor/workspaces/subproject/demo-dep-1.0.0/Cargo.toml",
+                          "size": 4096,
+                          "sha256": "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069" }
+                    ]
+                }
+            }
+        ]);
+        serde_json::from_value(value).expect("nested vendor fixture parses")
+    }
+
+    #[test]
+    fn the_current_manifest_schema_is_five() {
+        assert_eq!(SCHEMA_VERSION, 5, "TASK-131 adds workspace_vendors");
+    }
+
+    #[test]
+    fn a_nested_vendor_tree_validates_and_its_blobs_join_the_verified_set() {
+        let manifest = nested_vendor_manifest();
+        manifest
+            .validate()
+            .expect("the nested vendor fixture must validate");
+        let contexts: Vec<String> = manifest
+            .blobs(None)
+            .into_iter()
+            .map(|(context, _)| context.into_owned())
+            .collect();
+        assert!(
+            contexts.contains(&"vendor/workspaces/subproject".to_string()),
+            "nested vendor blobs are verified with their own context: {contexts:?}"
+        );
+        let nested_path = "vendor/workspaces/subproject/demo-dep-1.0.0/Cargo.toml";
+        assert!(
+            manifest
+                .blobs(None)
+                .iter()
+                .any(|(_, blob)| blob.path == nested_path),
+            "the nested tree's blob is part of the verified set"
+        );
+    }
+
+    #[test]
+    fn payload_bytes_sum_envs_tools_root_vendor_and_every_workspace_tree() {
+        let manifest = nested_vendor_manifest();
+        let (envs, tools, vendor) = manifest.payload_split();
+        let root_vendor = manifest
+            .vendor
+            .as_ref()
+            .expect("root vendor present")
+            .size_bytes;
+        assert_eq!(vendor, root_vendor + 4096, "root plus nested tree bytes");
+        assert_eq!(
+            manifest.payload_bytes(),
+            envs + tools + vendor,
+            "the transport ceiling judges every vendor byte once"
+        );
+    }
+
+    #[test]
+    fn a_nested_vendor_blob_outside_its_workspace_directory_is_refused() {
+        let mut manifest = nested_vendor_manifest();
+        let tree = &mut manifest.workspace_vendors[0].vendor;
+        tree.blobs[0].path = "vendor/serde-1.0.0/Cargo.toml".to_string();
+        let message = manifest.validate().expect_err("must refuse");
+        assert!(
+            message.to_string().contains("vendor/workspaces/subproject"),
+            "the refusal names the required directory: {message}"
+        );
+    }
+
+    #[test]
+    fn a_nested_vendor_entry_with_an_empty_slug_is_refused() {
+        let mut manifest = nested_vendor_manifest();
+        manifest.workspace_vendors[0].slug.clear();
+        let message = manifest.validate().expect_err("must refuse");
+        assert!(message.to_string().contains("empty slug"), "{message}");
+    }
+
+    #[test]
+    fn a_vendor_tree_without_a_matching_declared_workspace_is_refused() {
+        let mut manifest = nested_vendor_manifest();
+        manifest.workspace_vendors[0].directory = "other-project".to_string();
+        let message = manifest.validate().expect_err("must refuse");
+        assert!(
+            message.to_string().contains("no declared workspace"),
+            "the refusal names the broken identity link: {message}"
+        );
+    }
+
+    #[test]
+    fn two_vendor_trees_with_one_slug_are_refused() {
+        let mut manifest = nested_vendor_manifest();
+        let duplicate = manifest.workspace_vendors[0].clone();
+        manifest.workspace_vendors.push(duplicate);
+        let message = manifest.validate().expect_err("must refuse");
+        assert!(
+            message.to_string().contains("duplicate vendor tree"),
+            "one slug owns one restore destination: {message}"
+        );
+    }
+
+    #[test]
+    fn a_multi_segment_workspace_directory_is_refused_like_env_workspace_refs() {
+        // Parity with the WorkspaceRef rule: a transport's workspace directories are one
+        // segment, so a vendor tree cannot quietly introduce a shape the envs forbid.
+        let mut manifest = nested_vendor_manifest();
+        manifest.workspace_vendors[0].directory = "apps/web".to_string();
+        let message = manifest.validate().expect_err("must refuse");
+        assert!(
+            message.to_string().contains("one path segment"),
+            "the refusal mirrors the env workspace rule: {message}"
+        );
+    }
+
+    #[test]
+    fn root_only_manifests_omit_the_key_and_keep_their_shape() {
+        let manifest = parse(&valid_manifest());
+        manifest.validate().expect("root-only fixture stays valid");
+        assert!(
+            manifest.workspace_vendors.is_empty(),
+            "no nested vendors means an empty list in memory"
+        );
+        let rendered = serde_json::to_string(&manifest).unwrap();
+        assert!(
+            !rendered.contains("workspace_vendors"),
+            "the key is skipped entirely, matching the workspaces[] precedent"
+        );
+    }
+
+    #[test]
+    fn a_schema_four_manifest_is_still_readable_but_carries_no_nested_vendors() {
+        let text =
+            valid_manifest().replace(&format!("\"schema\": {SCHEMA_VERSION}"), "\"schema\": 4");
+        let manifest = parse(&text);
+        manifest.validate().expect("schema 4 stays restorable");
+        assert!(manifest.workspace_vendors.is_empty());
+    }
+
+    #[test]
+    fn the_nested_vendor_struct_reuses_the_vendor_payload_unchanged() {
+        let manifest = nested_vendor_manifest();
+        let entry = &manifest.workspace_vendors[0];
+        let vendor: &Vendor = &entry.vendor;
+        assert_eq!(vendor.mode, "loose");
+        assert_eq!(vendor.crates, 2);
+        assert_eq!(
+            vendor.directory.as_deref(),
+            Some(".pixi-sandbox/vendor/workspaces/subproject")
+        );
+        assert_eq!(
+            entry.manifest, "subproject/pixi.toml",
+            "the workspace identity rides beside the tree"
+        );
     }
 }

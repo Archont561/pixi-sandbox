@@ -89,6 +89,7 @@ fn manifest() -> Manifest {
                 blob("vendor/demo/src/lib.rs", 7),
             ],
         }),
+        workspace_vendors: Vec::new(),
         host_requirements: None,
     }
 }

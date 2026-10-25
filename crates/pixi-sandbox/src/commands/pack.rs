@@ -444,6 +444,8 @@ impl PackPlan {
             envs,
             workspaces: self.workspace_entries(),
             vendor,
+            // TASK-131 slice 2 fans the vendor step out per workspace and fills this in.
+            workspace_vendors: Vec::new(),
             host_requirements: self.host_requirements.clone(),
         };
         manifest.validate()?;
