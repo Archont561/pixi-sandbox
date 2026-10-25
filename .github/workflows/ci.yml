@@ -148,7 +148,7 @@ jobs:
           cargo clippy --workspace --all-targets --message-format=json -- -D warnings > /tmp/clippy.json 2>/dev/null || true
           pixi run lint > /tmp/lint.log 2>&1 || true
           python3 -c 'import json; [print("::error " + ("file=" + s["file_name"] + ",line=" + str(s["line_start"]) + "," if s else "") + "title=rustc::" + m["message"].get("rendered", m["message"]["message"]).replace(chr(10), "%0A")) for path in ("/tmp/check.json", "/tmp/clippy.json") for line in open(path) for m in [json.loads(line)] if m.get("reason") == "compiler-message" and m["message"].get("level") == "error" for s in [next((x for x in m["message"].get("spans", []) if x.get("is_primary")), None)]]'
-          python3 -c 'lines=[l.rstrip() for l in open("/tmp/lint.log") if l.strip()]; [print(f"::error title=lint-tail-{i:02d}::" + l.replace(chr(10), " ")[:400]) for i, l in enumerate(lines[-40:])]'
+          python3 -c 'lines=[l.rstrip() for l in open("/tmp/lint.log") if l.strip()]; enc=lambda s: s.replace("%","%25").replace(chr(13),"%0D").replace(chr(10),"%0A"); [print(f"::error file=.github/workflows/ci.yml,line={i+1},title=lint-tail::{enc(l[:400])}") for i, l in enumerate(lines[-40:])]'
       - if: steps.changes.outputs.code != 'false'
         run: pixi run coverage
       - if: steps.changes.outputs.code != 'false'
