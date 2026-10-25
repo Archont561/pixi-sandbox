@@ -6,7 +6,101 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to
 [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [v0.8.0](https://github.com/Archont561/pixi-sandbox/compare/v0.7.0...2e281ac12793fde76b29f5190bc705911bd6b699) (2026-10-22)
+## [v0.9.0](https://github.com/Archont561/pixi-sandbox/compare/v0.8.0...f56123741733b239b929f6e59f3e22c6657c76b9) (2026-10-25)
+
+### Features
+
+* **plan:** report per-workspace vendor costs and shared-crate overlap (TASK-131 slice 4)
+([a11b263](https://github.com/Archont561/pixi-sandbox/commit/a11b263545576864876e9cb4d9bd50f1bc0bf741))
+* **restore:** materialise per-workspace vendor trees with per-project cargo wiring (TASK-131
+slice 3)
+([b6ed1a5](https://github.com/Archont561/pixi-sandbox/commit/b6ed1a55ba3eb6fcf90986c6ff46a5b369c936e1))
+* **pack:** vendor one cargo tree per workspace into qualified transport dirs (TASK-131 slice 2)
+([572141a](https://github.com/Archont561/pixi-sandbox/commit/572141ae3029f4ba4102a017b28128a1cae3ea77))
+* **manifest:** schema 5 workspace_vendors for per-workspace cargo trees (TASK-131 slice 1)
+([2c7c5a7](https://github.com/Archont561/pixi-sandbox/commit/2c7c5a7deaadc8ca406d13d0af0fc93b9e23c87b)),
+closes [#1](https://github.com/Archont561/pixi-sandbox/issues/1)
+* **plan:** name nested-workspace channels and resolved package identities
+([a66a8eb](https://github.com/Archont561/pixi-sandbox/commit/a66a8eb70ad7f54759ddbd5312995f919fd95cbd)),
+closes [#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+* **xtask:** start the auto-release lane from a milestone-v* tag
+([bd0559a](https://github.com/Archont561/pixi-sandbox/commit/bd0559aa3d4cf02c8e061643e49fad0ac9b2cd66))
+* **workspaces:** bundle explicitly declared nested Pixi workspaces
+([9cc5b55](https://github.com/Archont561/pixi-sandbox/commit/9cc5b558fad7407e230675af833f4e73465ba0d5)),
+closes [#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+
+### Fixes
+
+* **test:** glob vendor transport entries instead of reading prefix paths (TASK-131)
+([fd794ce](https://github.com/Archont561/pixi-sandbox/commit/fd794cefb5a9549085bf0d181c2b466392a23b77))
+* **airlock:** empty the filter token so the push range is honored locally
+([34ffc42](https://github.com/Archont561/pixi-sandbox/commit/34ffc421bc9a729da496f6afc01dd37156609a09)),
+closes [#207](https://github.com/Archont561/pixi-sandbox/issues/207)
+* **airlock:** use some-semantics in the per-push filter so mixed pushes prove
+([d3bafe5](https://github.com/Archont561/pixi-sandbox/commit/d3bafe54627b4f530bf826aa9408d8b38dbeb16b)),
+closes [#207](https://github.com/Archont561/pixi-sandbox/issues/207)
+* **ci:** restore into a checkout, not a fat clone with a moved .pixi
+([7223fc6](https://github.com/Archont561/pixi-sandbox/commit/7223fc65f73611b738a17d8e25592c53ebb67c07))
+* **ci:** require pixi-unpack only from legacy airlock transports
+([b94330a](https://github.com/Archont561/pixi-sandbox/commit/b94330ad3d9a21d88b9fce4358d8bdd9493107cc))
+* **deps:** update ctutils and tokio for the two advisories
+([8a3d35b](https://github.com/Archont561/pixi-sandbox/commit/8a3d35b510d753f79c438de5543b044a407759a6))
+* **pack:** accept bare absolute paths and http mirrors in locked artifacts
+([94a6e68](https://github.com/Archont561/pixi-sandbox/commit/94a6e684ce9a631f9280ceb16aeea4d72557b0e1))
+
+### Documentation
+
+* **backlog:** close TASK-135, add TASK-136 release gate and m-1 criterion-3 ruling
+([c2644bd](https://github.com/Archont561/pixi-sandbox/commit/c2644bd092af6036458a6e988e7d4e42353f686f))
+* **task-129:** close with the AC#7 native evidence and full run ledger
+([9695e65](https://github.com/Archont561/pixi-sandbox/commit/9695e654ffcd5e12705b04066d6c1a41f935a5bc)),
+closes [#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+* **task-129:** reconstruct Stage A spike evidence and record the AC#3 rescope ruling
+([949db43](https://github.com/Archont561/pixi-sandbox/commit/949db43cec5e5ecea7ed759e3383f10e60599157)),
+closes [#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#3](https://github.com/Archont561/pixi-sandbox/issues/3)
+[#7](https://github.com/Archont561/pixi-sandbox/issues/7)
+* **backlog:** attach m-1 to TASK-129/131 and close the finished TASK-125
+([4b97348](https://github.com/Archont561/pixi-sandbox/commit/4b97348a5635b9298420d0db401403cffa2a326a))
+* **backlog:** attach the TASK-135 evidence ledger and name the open native-runner clauses
+([c286f2b](https://github.com/Archont561/pixi-sandbox/commit/c286f2ba7a8a19ef445590d529ffa6cd597685f4))
+* **backlog:** root-cause the second TASK-135 filter fault to the action token
+([a6630f5](https://github.com/Archont561/pixi-sandbox/commit/a6630f501dd948ce25d94a3fb5b832e34d47ef80))
+* **backlog:** record TASK-135's first real-runner evidence on PR #207
+([d087805](https://github.com/Archont561/pixi-sandbox/commit/d087805a2006fee52164db811978f625fdb8321a)),
+closes [#207](https://github.com/Archont561/pixi-sandbox/issues/207)
+* **session:** hand off the next session in chat instead of a follow-up PR (TASK-135)
+([01f4329](https://github.com/Archont561/pixi-sandbox/commit/01f43293b4860f6f50f8dbd7969cc14040c45a54)),
+closes [#206](https://github.com/Archont561/pixi-sandbox/issues/206)
+* **sprint:** make a session a sprint and open milestone m-1 (0.9.0)
+([bf862fe](https://github.com/Archont561/pixi-sandbox/commit/bf862fefd49ad5c5fdae8c6387ab0fe1b3e721a2))
+* **backlog:** record the two TASK-134 causes and the green airlock proof
+([47df2bc](https://github.com/Archont561/pixi-sandbox/commit/47df2bc39af892b339490f526e1e4e34fa6f265e))
+* **verification:** call the oracle by one name and the manifest by its schema
+([70f9d08](https://github.com/Archont561/pixi-sandbox/commit/70f9d0881de49a011693ba1805e5743e60456396))
+* **backlog:** file TASK-134 for the pre-existing airlock Tier B failure
+([7fd8861](https://github.com/Archont561/pixi-sandbox/commit/7fd88615e80237a50c226aeecc869a86f0ef431d))
+* **backlog:** close TASK-133 and record the two-phase verification
+([bf3f859](https://github.com/Archont561/pixi-sandbox/commit/bf3f8597862104d929aea3894f8411ef3d69090e))
+* **backlog:** file the ctutils and tokio advisory update
+([33fd426](https://github.com/Archont561/pixi-sandbox/commit/33fd426aa4a0afedd93f4586408a280a6b82b241))
+* **backlog:** record TASK-129 slice 0 premise evidence and file TASK-132
+([c6bcaa2](https://github.com/Archont561/pixi-sandbox/commit/c6bcaa27c27c04dc0d5709107a28532b304096cf))
+* **backlog:** ratify TASK-129 design decisions and split out per-workspace vendoring
+([8b3f2c2](https://github.com/Archont561/pixi-sandbox/commit/8b3f2c2a011cf12d0105f59be071ea3f61686974))
+* **backlog:** record nested-workspace transport design and branch topology decisions
+([ca1a8fb](https://github.com/Archont561/pixi-sandbox/commit/ca1a8fb43601012de73b0d568be484fc7129eccd))
+
+### CI
+
+* per-push airlock skip plus an always-restored rust cache for docs PRs (TASK-135)
+([9ce4933](https://github.com/Archont561/pixi-sandbox/commit/9ce493311fca52125f853b5ba610091360da6111)),
+closes [#202](https://github.com/Archont561/pixi-sandbox/issues/202)
+[#206](https://github.com/Archont561/pixi-sandbox/issues/206)
+
+## [v0.8.0](https://github.com/Archont561/pixi-sandbox/compare/v0.7.0...v0.8.0) (2026-10-22)
 
 ### ⚠ BREAKING CHANGE
 
