@@ -130,7 +130,7 @@ pub fn build_local_registry(
         mirror_bytes += bytes;
 
         let manifest = crate_manifest(&destination)?;
-        let entry = index_entry(package, &manifest)?;
+        let entry = index_entry(package, &manifest);
         append_index_entry(&index_root, &package.name, &entry)?;
         index_entries += 1;
     }
@@ -322,8 +322,9 @@ fn crate_manifest(crate_path: &Path) -> Result<Value> {
 }
 
 /// Build one registry index JSON line for a crate version.
-fn index_entry(package: &RegistryPackage, manifest: &Value) -> Result<Json> {
-    Ok(json!({
+#[must_use]
+fn index_entry(package: &RegistryPackage, manifest: &Value) -> Json {
+    json!({
         "name": package.name,
         "vers": package.version,
         "deps": collect_deps(manifest),
@@ -334,7 +335,7 @@ fn index_entry(package: &RegistryPackage, manifest: &Value) -> Result<Json> {
             .and_then(|table| serde_json::to_value(table).ok())
             .unwrap_or_else(|| json!({})),
         "yanked": false,
-    }))
+    })
 }
 
 /// Collect normal, dev and build dependencies, including target-specific tables.

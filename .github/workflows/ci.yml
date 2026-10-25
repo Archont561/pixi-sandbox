@@ -146,9 +146,15 @@ jobs:
         run: | # multiline-run-allowed
           cargo check --workspace --all-targets --locked --message-format=json > /tmp/check.json 2>/dev/null || true
           cargo clippy --workspace --all-targets --message-format=json -- -D warnings > /tmp/clippy.json 2>/dev/null || true
-          pixi run bash -c 'cd crates && for t in lint:fmt lint:deps lint:clippy; do echo "PROBE:$t"; bun run $t > /tmp/sub.log 2>&1 || { echo "FAILED:$t"; cat /tmp/sub.log; exit 0; }; done' > /tmp/probe.log 2>&1 || true
           python3 -c 'import json; [print("::error " + ("file=" + s["file_name"] + ",line=" + str(s["line_start"]) + "," if s else "") + "title=rustc::" + m["message"].get("rendered", m["message"]["message"]).replace(chr(10), "%0A")) for path in ("/tmp/check.json", "/tmp/clippy.json") for line in open(path) for m in [json.loads(line)] if m.get("reason") == "compiler-message" and m["message"].get("level") == "error" for s in [next((x for x in m["message"].get("spans", []) if x.get("is_primary")), None)]]'
-          python3 -c 'lines=[l.rstrip() for l in open("/tmp/probe.log") if l.strip()]; enc=lambda s: s.replace("%","%25").replace(chr(13),"%0D").replace(chr(10),"%0A"); [print(f"::error file=crates/pixi-sandbox/src/mirror.rs,line={10+i},title=lint-probe::{enc(l[:400])}") for i, l in enumerate(lines[-40:])]'
+      - name: Probe lint sub-tasks (temporary)
+        if: failure()
+        continue-on-error: true
+        run: | # multiline-run-allowed
+          pixi run bun --cwd crates run lint:fmt > /tmp/p-fmt.log 2>&1 || true
+          pixi run bun --cwd crates run lint:deps > /tmp/p-deps.log 2>&1 || true
+          pixi run bun --cwd crates run lint:clippy > /tmp/p-clip.log 2>&1 || true
+          python3 -c 'enc=lambda s: s.replace("%","%25").replace(chr(13),"%0D").replace(chr(10),"%0A"); lines=[]; [lines.extend(["=== " + f + " ==="] + [l.rstrip() for l in open(f) if l.strip()][-12:]) for f in ("/tmp/p-fmt.log","/tmp/p-deps.log","/tmp/p-clip.log")]; [print(f"::error file=crates/pixi-sandbox/src/mirror.rs,line={10+i},title=lint-probe::{enc(l[:380])}") for i, l in enumerate(lines[:40])]'
       - if: steps.changes.outputs.code != 'false'
         run: pixi run coverage
       - if: steps.changes.outputs.code != 'false'
