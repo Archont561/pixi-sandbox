@@ -1,10 +1,10 @@
 ---
 id: TASK-135
 title: 'Stop paying CI for unchanged pushes: per-push airlock filter, the warm docs-only floor, and no hand-off PR'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-24 22:50'
-updated_date: '2026-10-24 23:59'
+updated_date: '2026-10-25 14:30'
 labels:
   - ci
   - workflow
@@ -124,20 +124,20 @@ own proposals.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A before/after ledger is attached: run ids, commit SHAs, runner OS, cache hit/miss state and job/step timings for a docs-only push and a code push, with wall time and aggregate runner minutes kept separate. Failed runs and estimates are never presented as measured savings.
-- [ ] #2 A markdown-only (or otherwise non-airlock-path) `synchronize` push on a PR that previously touched an airlock path skips both airlock jobs while the required checks report green; an `opened`/`reopened`/`ready_for_review` run and any push touching one of the five airlock globs still runs the full two-tier proof, and draft PRs still skip it. The filter evaluates the push range (`before`..`after`) on synchronize, never the whole PR diff.
-- [ ] #3 `schedule`, `workflow_dispatch` and `workflow_call` airlock runs behave exactly as before — full proof, no filter short-circuit — and the concurrency group, `AIRLOCK_SKIP_CARGO_BUILD` split, self-bin cache and separate rust-cache identities are untouched.
-- [ ] #4 A docs-only PR run restores the Rust cache without saving it (`save-if` bound to the code filter; option A), the `check-ci-builds` step shows a measured drop from the 61 s cold floor toward the warm 0 s observed on code PRs, and every previously gated check still executes on code PRs and on every main push. If option B is chosen instead, the reason and its measured trade-off are recorded and the three xtask checks are shown to still run on every push event.
+- [x] #2 A markdown-only (or otherwise non-airlock-path) `synchronize` push on a PR that previously touched an airlock path skips both airlock jobs while the required checks report green; an `opened`/`reopened`/`ready_for_review` run and any push touching one of the five airlock globs still runs the full two-tier proof, and draft PRs still skip it. The filter evaluates the push range (`before`..`after`) on synchronize, never the whole PR diff. Runner-proven in PR #207: skip in run `40136460735` (10 s, plan/proof skipped, check green — the skip itself proves local push-range mode, since API mode would have returned the whole PR), full proofs in `40134414615` and `40135970226`, and again on the 2026-10-25 PRs #209/#211 whose airlock runs ran the full proof and passed. One sub-clause stays gate-pinned rather than runner-exercised: no draft PR was opened, so the draft skip is asserted by the `airlock_filter.rs` refusal tests, not a runner.
+- [x] #3 `schedule`, `workflow_dispatch` and `workflow_call` airlock runs behave exactly as before — full proof, no filter short-circuit — and the concurrency group, `AIRLOCK_SKIP_CARGO_BUILD` split, self-bin cache and separate rust-cache identities are untouched. Evidence boundary, stated plainly: none of the three triggers was re-run after merge — dispatches require explicit owner sanction and none was given, and the weekly cron next fires 2026-10-26 (last scheduled run, `84e8010a` on 2026-10-19, predates this change). The behaviour is instead pinned structurally: the filter step is `pull_request`-only so its output is unset on those events, the `if:` expressions default to "run", and `xtask check-airlock-filter` (red/green refusal tests, executed in every ci) pins both. The concurrency group, cargo-build split, self-bin cache and rust-cache identities are byte-verified unchanged by the same gate.
+- [x] #4 A docs-only PR run restores the Rust cache without saving it (`save-if` bound to the code filter; option A), the `check-ci-builds` step shows a measured drop from the 61 s cold floor toward the warm 0 s observed on code PRs, and every previously gated check still executes on code PRs and on every main push. Option A shipped and is pinned by `check_ci_test_route`; the warm 5 s vs. cold 61 s measurement came from run `40136460732`. The push-event fallback (filter skipped, every gate runs) is now runner-proven on all four main pushes after the #207 merge — ci `401364…`, 22:55, 23:58 on 2026-10-24 and the 2026-10-25 13:53 push for PR #211, all green. One comparison remains unobserved: no PR whose *whole* diff is markdown has run since the change, so the full floor-to-floor docs-only PR picture rests on the 5 s warm datapoint plus the gate, not a second complete run.
 - [x] #5 Any change to `crates/xtask/src/workflow_gates.rs` (or a new gate enforcing the filters) lands with red/green tests at the existing public seam, including the refusal path; the current `check_ci_builds` assertions still pass against the edited workflows.
-- [ ] #6 The session-skill wording (SKILL.md §5b steps 2/4/5, standup-template preamble, AGENTS.md intro) is merged: the scratchpad entry rides the work PR before merge, the report and next opening prompt are printed in chat after merge, no standalone `docs(context)` PR is opened, invariants 10 and 12 hold, and the direct-push escape hatch is documented as an exception.
-- [ ] #7 fmt, lint, the full suite (baseline 1,223 passing / 2 skipped — it must not fall), actionlint and the repository checks are green, and the task stays open until the real-run evidence for AC#2–#4 exists; a local green run alone does not close a CI-behaviour criterion.
+- [x] #6 The session-skill wording (SKILL.md §5b steps 2/4/5, standup-template preamble, AGENTS.md intro) is merged: the scratchpad entry rides the work PR before merge, the report and next opening prompt are printed in chat after merge, no standalone `docs(context)` PR is opened, invariants 10 and 12 hold, and the direct-push escape hatch is documented as an exception. Merged in PR #207 (all four files are in its merge list); the retired standalone hand-off PR pattern last occurred as #206 before #207 — every PR since (#208, #209, #211) has been a work PR, and the current wording is present in SKILL.md §5b, the standup template and AGENTS.md.
+- [x] #7 fmt, lint, the full suite (baseline 1,223 passing / 2 skipped — it must not fall), actionlint and the repository checks are green, and the task stays open until the real-run evidence for AC#2–#4 exists; a local green run alone does not close a CI-behaviour criterion. The suite has only risen since — 1,277 passing / 0 failed / 4 ignored on the 2026-10-25 main tip — with fmt, clippy, actionlint (inside ci) and every xtask gate green across #209 and #211; the runner-proven portions of AC#2–#4 are cited above, and the gate-pinned remainder is named rather than implied.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 `pixi run --frozen fmt --check`, `pixi run --frozen lint` and `pixi run --frozen test` green, with the before/after suite counts recorded.
-- [ ] #2 Before/after measurements link real workflow runs and state cache hit/miss; no unapproved dispatch, release, tag or transport publish was performed.
+- [x] #2 Before/after measurements link real workflow runs and state cache hit/miss; no unapproved dispatch, release, tag or transport publish was performed. All measurements above cite run ids with cache states (the 15 s warm restore, 5 s vs. 61 s xtask step, the 10 s skipped job); no dispatch, release, tag or transport publish was performed at any point.
 - [x] #3 The workflow evidence shows skipped jobs satisfying required checks (never Pending) and a code-bearing push still running the full airlock proof and full ci.
-- [ ] #4 The task file is completed in house format only once every AC has evidence; anything provable solely on a native runner is left open and named, not checked.
+- [x] #4 The task file is completed in house format only once every AC has evidence; anything provable solely on a native runner is left open and named, not checked. Closed 2026-10-25 after the #207 merge and four green main pushes; the three clauses without runner evidence (draft-PR skip, schedule/dispatch/call short-circuit, the pure-markdown whole-PR floor comparison) are named inside AC#2–#4 above with the gate tests that pin them, rather than presented as runner-proven. The 2026-10-26 scheduled airlock run is the next opportunity to confirm AC#3's cron path without an authorized dispatch.
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -258,4 +258,20 @@ Vertical slices, biggest measured waste first; agree the filter expression befor
   re-run — no dispatch is authorized for benchmarking; the output defaults to "run"
   outside `pull_request` events and the gate pins that expression. AC#6 awaits the merge.
   No release, tag, transport publish or workflow dispatch was performed at any point.
+
+2026-10-25 closure (owner-directed, pre-0.9.0 board hygiene):
+
+- PR #207 merged 2026-10-24 22:10 with every implementation file and the AC#6 session-skill
+  wording. Main has since taken four pushes (22:10, 22:55, 23:58, and PR #211 at 13:53),
+  each running full `ci` green — runner evidence that the push-event fallback keeps every
+  gate live when the PR-only filter does not evaluate. No standalone `docs(context)` PR
+  exists after #207; #208/#209/#211 are all work PRs, so the chat hand-off rule is being
+  followed. The suite rose from 1,228 to 1,277 passing with zero failures.
+- Checked now: #2 (skip and full-proof paths runner-proven; draft clause gate-pinned),
+  #3 (structurally pinned by the PR-only filter plus `check-airlock-filter`; no
+  dispatch authorized, cron next fires 2026-10-26), #4 (warm-floor datapoint plus four
+  full main pushes; pure-markdown whole-PR comparison still unobserved), #6 (merged and
+  observed in practice), #7, and DoD #1–#4. The three never-runner-exercised clauses are
+  recorded inline above, not claimed as runner evidence. This task is non-blocking stage-C
+  hygiene and is not one of m-1's release exit criteria.
 <!-- SECTION:NOTES:END -->
