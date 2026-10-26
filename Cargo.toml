@@ -56,7 +56,7 @@ url = "2"
 # resolver/preparer or Python subprocess. Its declared MSRV sets our 1.94 floor.
 uv-install-wheel = "=0.0.57"
 uv-distribution-filename = "=0.0.57"
-uv-pypi-types = "=0.0.57"
+uv-pypi-types = "=0.0.97"
 zip = { version = "9.0.3", default-features = false, features = ["deflate"] }
 # The self-update transport (TASK-90 / doc-14, adopted as ADR-27): `self_update` supplies the
 # release-lookup, download and checksum-parse path; our `ownership` refusal ladder, `replace` swap
