@@ -97,13 +97,13 @@ jobs:
               - '!backlog/**'
               - '!**/*.md'
               - '!.agents/**'
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           environments: default
           cache: true
       # TASK-135: restore unconditionally so docs-only PRs reuse target/ instead of compiling
       # the xtask gates cold (61 s measured on PR #206 vs 0 s warm); save only for code pushes.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           cmd-format: pixi run --frozen -- {0}
           shared-key: ci-pixi-dev
@@ -178,7 +178,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           environments: default
           cache: true
@@ -205,9 +205,9 @@ jobs:
       # `run-install: false` for the same reason release.yml's matrix sets it: no environment
       # can be installed on win-64, so the empty `package` one is what runs — against the Rust
       # toolchain the runner image already ships, exactly as the release build leg does.
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           run-install: false
           cache: false
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: pixi run -e package test-self-update-replace
