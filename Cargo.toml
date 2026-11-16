@@ -47,7 +47,7 @@ tar = "0.4"
 ureq = "3.4"
 # TASK-125 native, local-only package installation. TLS is provided only by the
 # connected ureq adapter; do not enable rattler's rustls/native-tls defaults.
-rattler = { version = "=0.54.2", default-features = false }
+rattler = { version = "=0.55.0", default-features = false }
 rattler_conda_types = { version = "=0.57.1", default-features = false }
 rattler_package_streaming = { version = "=0.27.15", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "fs"] }
