@@ -9,13 +9,13 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@astrojs/markdown-satteri": "^0.4.3",
-    "@astrojs/starlight": "^0.42.6",
-    "@iconify-json/lucide": "^1.2.142",
+    "@astrojs/markdown-satteri": "^0.4.10",
+    "@astrojs/starlight": "^0.43.1",
+    "@iconify-json/lucide": "^1.2.157",
     "@iconify-json/mdi": "^1.2.0",
-    "@iconify-json/simple-icons": "^1.2.99",
-    "@iconify-json/tabler": "^1.2.42",
-    "astro": "^7.3.8",
+    "@iconify-json/simple-icons": "^1.2.103",
+    "@iconify-json/tabler": "^1.2.46",
+    "astro": "^7.4.13",
     "astro-icon": "^1.1.5",
     "sharp": "^0.35.4"
   }
